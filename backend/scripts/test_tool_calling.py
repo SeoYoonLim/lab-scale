@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.tools.news_tool import news_tool  # noqa: E402
 from app.tools.stock_tool import stock_tool  # noqa: E402
+from app.utils import extract_answer_text  # noqa: E402
 
 MODEL_NAME = "llama3.1:8b"
 
@@ -129,7 +130,7 @@ def ask(question: str):
     if not tool_calls:
         # 모델이 tool 없이 바로 답한 경우
         print("[Tool 호출 없음]")
-        print("최종 답변:", msg["content"])
+        print("최종 답변:", extract_answer_text(msg["content"]))
         return
 
     print(f"[Tool 호출 감지] {len(tool_calls)}건")
@@ -160,7 +161,7 @@ def ask(question: str):
 
     # 3. tool 결과를 반영한 최종 답변 생성
     final = ollama.chat(model=MODEL_NAME, messages=messages)
-    print("\n최종 답변:", final["message"]["content"])
+    print("\n최종 답변:", extract_answer_text(final["message"]["content"]))
 
 
 if __name__ == "__main__":
