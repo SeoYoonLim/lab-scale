@@ -14,30 +14,16 @@ Ollama tool calling 검증 스크립트
 """
 
 import json
+import os
+import sys
+
 import ollama
 
-MODEL_NAME = "qwen2.5:7b-instruct"
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from app.tools.stock_tool import stock_tool  # noqa: E402
 
-# ------------------------------------------------------------
-# 1. 가짜(mock) stock_tool 정의
-#    실제 프로젝트에서는 이 함수 안에서 pykrx 등을 호출해서
-#    진짜 주가 데이터를 가져오게 됩니다. 지금은 tool calling
-#    구조 자체가 동작하는지만 확인하는 단계라 더미 데이터로 대체.
-# ------------------------------------------------------------
-def stock_tool(ticker: str, period_days: int = 1) -> dict:
-    """지정한 종목의 최근 N일 등락률/거래량을 조회한다 (mock)."""
-    fake_db = {
-        "삼성전자": {"change_pct": 5.2, "volume": 25_000_000},
-        "SK하이닉스": {"change_pct": -2.1, "volume": 8_500_000},
-    }
-    data = fake_db.get(ticker, {"change_pct": 0.0, "volume": 0})
-    return {
-        "ticker": ticker,
-        "period_days": period_days,
-        "change_pct": data["change_pct"],
-        "volume": data["volume"],
-    }
+MODEL_NAME = "llama3.1:8b"
 
 
 # Ollama에게 알려줄 tool 스펙 (OpenAI function calling과 동일한 형식)
@@ -46,17 +32,28 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "stock_tool",
-            "description": "특정 종목의 최근 N일간 주가 등락률과 거래량을 조회한다.",
+            "description": (
+                "DB에 저장된 실제 데이터 기준으로, 특정 종목의 최근 N일간 주가"
+                "(등락률, 거래량, 종가 등)를 조회한다. 아직 pykrx로 수집되지 않은"
+                "종목이거나 데이터가 없는 경우 found=false와 함께 그 사유를 담은"
+                "message를 반환한다."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "ticker": {
                         "type": "string",
-                        "description": "종목명 (예: 삼성전자, SK하이닉스)",
+                        "description": (
+                            "종목코드가 아니라 종목명(예: 삼성전자, SK하이닉스)."
+                            " company 테이블의 name 컬럼으로 조회한다."
+                        ),
                     },
                     "period_days": {
                         "type": "integer",
-                        "description": "조회할 기간(일). 기본값 1.",
+                        "description": (
+                            "조회할 기간(일). 기본값 1. 2 이상이면 응답의 prices"
+                            "리스트에 날짜별(등락률/거래량/종가) 데이터가 여러 건 담긴다."
+                        ),
                     },
                 },
                 "required": ["ticker"],
@@ -71,7 +68,18 @@ AVAILABLE_FUNCTIONS = {"stock_tool": stock_tool}
 def ask(question: str):
     print(f"\n{'='*60}\n질문: {question}\n{'='*60}")
 
-    messages = [{"role": "user", "content": question}]
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "너는 한국 주식 투자자를 돕는 리서치 어시스턴트다. "
+                "반드시 한국어로만 답변하고 다른 언어를 절대 섞지 마라. "
+                "주가·종목·투자 데이터 조회가 필요한 질문에만 stock_tool을 호출하고, "
+                "일반적인 용어 설명이나 개념 질문에는 절대 tool을 호출하지 말고 바로 답변하라."
+            ),
+        },
+        {"role": "user", "content": question},
+    ]
 
     # 1차 호출: 모델이 tool을 쓸지 말지 스스로 판단
     response = ollama.chat(
