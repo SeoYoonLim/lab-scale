@@ -21,6 +21,7 @@ import ollama
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from app.tools.disclosure_tool import disclosure_tool  # noqa: E402
 from app.tools.news_tool import news_tool  # noqa: E402
 from app.tools.stock_tool import stock_tool  # noqa: E402
 from app.utils import extract_answer_text  # noqa: E402
@@ -93,9 +94,43 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "disclosure_tool",
+            "description": (
+                "DB에 저장된 실제 데이터 기준으로, 특정 종목의 최근 공시(DART 전자공시)를"
+                "조회한다. 공시·공시내용·공식 발표 관련 질문에만 호출한다 (예: 최근 공시,"
+                "자사주 매입 공시, 사업보고서 등). 단순 주가 수치나 일반 뉴스 질문에는"
+                "호출하지 않는다. 아직 공시가 수집되지 않은 종목이거나 등록되지 않은"
+                "종목인 경우 found=false와 함께 그 사유를 담은 message를 반환한다."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "company_name": {
+                        "type": "string",
+                        "description": (
+                            "종목명 또는 종목코드(예: 삼성전자, 005930)."
+                            " company 테이블의 name 또는 ticker 컬럼으로 조회한다."
+                        ),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "조회할 최근 공시 건수. 기본값 5.",
+                    },
+                },
+                "required": ["company_name"],
+            },
+        },
+    },
 ]
 
-AVAILABLE_FUNCTIONS = {"stock_tool": stock_tool, "news_tool": news_tool}
+AVAILABLE_FUNCTIONS = {
+    "stock_tool": stock_tool,
+    "news_tool": news_tool,
+    "disclosure_tool": disclosure_tool,
+}
 
 
 def ask(question: str):
@@ -109,7 +144,8 @@ def ask(question: str):
                 "반드시 한국어로만 답변하고 다른 언어를 절대 섞지 마라. "
                 "주가·등락률·거래량 등 수치 조회가 필요한 질문에는 stock_tool을 호출하고, "
                 "최근 이슈나 '왜 올랐는지/내렸는지' 같이 뉴스가 필요한 질문에는 news_tool을 호출하라. "
-                "두 종류의 정보가 모두 필요한 질문이면 stock_tool과 news_tool을 함께 호출하라. "
+                "공시나 공식 발표(자사주 매입, 사업보고서 등)가 필요한 질문에는 disclosure_tool을 호출하라. "
+                "여러 종류의 정보가 필요한 질문이면 해당하는 tool들을 함께 호출하라. "
                 "일반적인 용어 설명이나 개념 질문에는 절대 tool을 호출하지 말고 바로 답변하라. "
                 "답변은 절대 JSON 형식으로 하지 말고, 자연스러운 문장으로 답하라."
             ),
@@ -175,6 +211,9 @@ if __name__ == "__main__":
     # 케이스 3: news_tool만 필요한 질문
     ask("삼성전자 관련 최근 뉴스 좀 알려줘.")
 
-    # 케이스 4: tool 호출 없이도 답할 수 있는 일반 질문
+    # 케이스 4: disclosure_tool만 필요한 질문
+    ask("삼성전자 최근 공시 알려줘.")
+
+    # 케이스 5: tool 호출 없이도 답할 수 있는 일반 질문
     # (모델이 불필요하게 tool을 남발하지 않는지 확인하는 목적)
     ask("주식 투자를 처음 시작할 때 알아야 할 기본 용어를 알려줘.")

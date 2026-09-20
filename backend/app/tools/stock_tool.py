@@ -1,12 +1,18 @@
+from sqlalchemy import or_
+
 from app.db.session import SessionLocal
 from app.models import Company, StockPrice
 
 
 def stock_tool(ticker: str, period_days: int = 1) -> dict:
-    """지정한 종목(이름)의 최근 N일 주가(등락률/거래량 등)를 DB에서 조회한다."""
+    """지정한 종목(이름 또는 티커)의 최근 N일 주가(등락률/거래량 등)를 DB에서 조회한다."""
     db = SessionLocal()
     try:
-        company = db.query(Company).filter(Company.name == ticker).first()
+        company = (
+            db.query(Company)
+            .filter(or_(Company.name == ticker, Company.ticker == ticker))
+            .first()
+        )
         if company is None:
             return {
                 "ticker": ticker,
