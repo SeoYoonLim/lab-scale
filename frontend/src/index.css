@@ -1,0 +1,76 @@
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --border: #e3e6eb;
+  --text: #191f28;
+  --text-muted: #6b7684;
+  --accent: #5b5bd6;
+  --accent-soft: #ececfd;
+  --accent-text: #ffffff;
+  --up: #e5484d; /* 상승 = 빨강 (한국 주식 관례) */
+  --down: #2f6fe4; /* 하락 = 파랑 */
+  --ok: #1f9d6b;
+  --warn: #b7791f;
+  --danger: #d33a3f;
+  --radius: 12px;
+  --topbar-h: 56px;
+
+  font-family:
+    'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    'Malgun Gothic', sans-serif;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  color-scheme: light dark;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115;
+    --surface: #171a21;
+    --surface-2: #1f232c;
+    --border: #2a2f3a;
+    --text: #eceef2;
+    --text-muted: #9aa3b2;
+    --accent: #8b8bf0;
+    --accent-soft: #24244a;
+    --accent-text: #10101f;
+    --up: #ff6b6f;
+    --down: #6aa3ff;
+    --ok: #4cc38a;
+    --warn: #e0a84b;
+    --danger: #ff7a7e;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--bg);
+}
+
+a {
+  color: inherit;
+}
+
+button,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+h1,
+h2 {
+  margin: 0;
+}

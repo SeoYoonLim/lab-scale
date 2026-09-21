@@ -1,0 +1,552 @@
+/* ---------- 공통 ---------- */
+.app {
+  min-height: 100dvh;
+}
+
+.container {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.page {
+  padding-top: 24px;
+  padding-bottom: 48px;
+}
+
+.page-title {
+  font-size: 24px;
+  margin-bottom: 16px;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.small {
+  font-size: 13px;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.up {
+  color: var(--up);
+}
+
+.down {
+  color: var(--down);
+}
+
+.flat {
+  color: var(--text-muted);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.card + .card,
+.card + .two-col,
+.two-col + .card,
+.summary + .card {
+  margin-top: 16px;
+}
+
+.card h2 {
+  font-size: 16px;
+  margin-bottom: 12px;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.card-head h2 {
+  margin-bottom: 0;
+}
+
+.notice {
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 14px;
+}
+
+.notice-error {
+  color: var(--danger);
+}
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 12px;
+  font-size: 14px;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.back-link:hover {
+  color: var(--text);
+}
+
+/* ---------- 상단 바 ---------- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  height: var(--topbar-h);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar-inner {
+  height: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 17px;
+  text-decoration: none;
+}
+
+.nav {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+
+.nav-link {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 15px;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.nav-link:hover {
+  background: var(--surface-2);
+}
+
+.nav-link.active {
+  color: var(--text);
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.badge-mock {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--warn);
+  border: 1px solid var(--warn);
+}
+
+/* ---------- 리서치 채팅 ---------- */
+.chat-page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - var(--topbar-h));
+}
+
+.chat-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.chat-column {
+  padding-top: 24px;
+  padding-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.chat-empty {
+  margin: 8vh auto 0;
+  text-align: center;
+}
+
+.chat-empty h1 {
+  font-size: 28px;
+  margin-bottom: 8px;
+}
+
+.chat-empty p {
+  margin: 0 0 24px;
+  color: var(--text-muted);
+}
+
+.suggestions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  text-align: left;
+}
+
+.suggestion {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.suggestion:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.message {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.message-user {
+  align-items: flex-end;
+}
+
+.message-assistant {
+  align-items: flex-start;
+}
+
+.bubble {
+  max-width: 85%;
+  padding: 12px 16px;
+  border-radius: 16px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.message-user .bubble {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-bottom-right-radius: 4px;
+}
+
+.message-assistant .bubble {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+}
+
+.bubble-error {
+  color: var(--danger);
+}
+
+.bubble-pending {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+}
+
+.dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: blink 1.2s infinite ease-in-out both;
+}
+
+.dots i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.dots i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes blink {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+.tool-calls {
+  width: min(85%, 640px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tool-calls-title {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.tool-call {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.tool-call summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.tool-call summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool-label {
+  font-weight: 600;
+}
+
+.tool-args {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.status {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid currentColor;
+}
+
+.status-ok {
+  color: var(--ok);
+}
+
+.status-empty {
+  color: var(--text-muted);
+}
+
+.status-error {
+  color: var(--danger);
+}
+
+.tool-body {
+  padding: 0 12px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.tool-name {
+  margin: 8px 0 4px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.tool-message {
+  margin: 0 0 8px;
+}
+
+.tool-body pre {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 12px;
+}
+
+.composer {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  padding: 12px 0 16px;
+}
+
+.composer-inner {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.composer textarea {
+  flex: 1;
+  resize: none;
+  field-sizing: content;
+  max-height: 160px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  outline: none;
+}
+
+.composer textarea:focus {
+  border-color: var(--accent);
+}
+
+.send {
+  padding: 10px 18px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.send:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---------- 종목 ---------- */
+.company-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.company-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-decoration: none;
+}
+
+.company-card:hover {
+  border-color: var(--accent);
+}
+
+.company-name {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.company-price {
+  text-align: right;
+}
+
+.summary {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.company-title {
+  font-size: 26px;
+}
+
+.summary-price {
+  text-align: right;
+}
+
+.price-big {
+  font-size: 30px;
+  font-weight: 700;
+}
+
+.segmented {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.seg {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.seg.active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.two-col .card {
+  margin-top: 0;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.list li {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.list li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.list a {
+  text-decoration: none;
+  font-size: 15px;
+}
+
+.list a:hover {
+  text-decoration: underline;
+}
+
+/* ---------- 좁은 화면 ---------- */
+@media (max-width: 720px) {
+  .suggestions,
+  .two-col {
+    grid-template-columns: 1fr;
+  }
+
+  .bubble,
+  .tool-calls {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .message-user .bubble {
+    width: auto;
+    max-width: 90%;
+  }
+}
