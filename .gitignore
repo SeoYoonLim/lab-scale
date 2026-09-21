@@ -2,3 +2,5 @@
 __pycache__/
 *.pyc
 .vscode/
+backend/scripts/benchmark_raw.json
+backend/scripts/benchmark_summary.json
