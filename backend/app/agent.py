@@ -11,6 +11,7 @@ import ollama
 
 from app.tools.disclosure_tool import disclosure_tool
 from app.tools.news_tool import news_tool
+from app.tools.rag_search_tool import rag_search_tool
 from app.tools.stock_tool import stock_tool
 from app.utils import extract_answer_text
 
@@ -27,6 +28,10 @@ SYSTEM_PROMPT = (
     "주가·등락률·거래량 등 수치 조회가 필요한 질문에는 stock_tool을 호출하고, "
     "최근 이슈나 '왜 올랐는지/내렸는지' 같이 뉴스가 필요한 질문에는 news_tool을 호출하라. "
     "공시나 공식 발표(자사주 매입, 사업보고서 등)가 필요한 질문에는 disclosure_tool을 호출하라. "
+    "news_tool/disclosure_tool은 '최신순으로 N건 그대로' 가져오는 조회용이다. 반면 특정 "
+    "주제나 맥락에 대해 의미적으로 관련된 근거를 찾아야 하는 질문(예: '삼성전자 반도체 업황 "
+    "관련 근거 찾아줘', '자사주 매입 관련 공시 내용 자세히 알려줘'처럼 최신순이 아니라 특정 "
+    "주제·키워드에 대한 관련도 기준 검색이 필요한 경우)에는 rag_search_tool을 호출하라. "
     "여러 종류의 정보가 필요한 질문이면 해당하는 tool들을 한 번의 응답에서 함께(동시에) 호출하라. "
     "일반적인 용어 설명이나 개념 질문에는 절대 tool을 호출하지 말고 바로 답변하라. "
     "답변은 절대 JSON 형식으로 하지 말고, 자연스러운 문장으로 답하라. "
@@ -203,12 +208,48 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "rag_search_tool",
+            "description": (
+                "news/disclosure 전체 내용을 의미(semantic) 기준으로 검색해, 질문과 관련도가"
+                "높은 문서 top-k를 찾는다. news_tool/disclosure_tool처럼 '최신순 N건'을"
+                "가져오는 게 아니라, 특정 주제·맥락에 대해 근거가 될 만한 내용을 찾을 때"
+                "호출한다 (예: '~관련 근거 찾아줘', '~내용 자세히 알려줘'처럼 특정 이슈에"
+                "대한 관련도 기준 검색이 필요한 질문). 임베딩이 아직 채워지지 않았거나"
+                "일치하는 문서가 없으면 found=false를 반환한다."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "검색하려는 주제/맥락을 자연어 문장으로 표현한 질의.",
+                    },
+                    "company_name": {
+                        "type": "string",
+                        "description": (
+                            "종목명 또는 종목코드로 검색 범위를 좁힐 때만 지정한다"
+                            " (예: 삼성전자, 005930). 특정 종목에 한정하지 않으면 생략한다."
+                        ),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "반환할 최대 문서 건수. 기본값 5.",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
 ]
 
 AVAILABLE_FUNCTIONS = {
     "stock_tool": stock_tool,
     "news_tool": news_tool,
     "disclosure_tool": disclosure_tool,
+    "rag_search_tool": rag_search_tool,
 }
 
 
