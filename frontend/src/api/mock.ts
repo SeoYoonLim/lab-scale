@@ -114,8 +114,6 @@ function makeDisclosures(name: string, limit: number): DisclosureItem[] {
   })
 }
 
-let reportSeq = 1
-
 export const mockApi: Api = {
   async listCompanies() {
     await delay(200)
@@ -199,13 +197,7 @@ export const mockApi: Api = {
       ? `[샘플 응답] ${company.name}에 대해 조회했어요. ${summary.join(' ')}\n실제 백엔드가 연결되면 모델이 도구 결과를 바탕으로 만든 답변이 여기에 표시돼요.`
       : '[샘플 응답] 도구를 호출하지 않고 바로 답하는 경우예요. 종목명(삼성전자, SK하이닉스, NAVER)을 넣어서 질문하면 도구 호출 결과도 함께 볼 수 있어요.'
 
-    const response: ResearchResponse = {
-      report_id: reportSeq++,
-      question,
-      answer,
-      tool_calls: toolCalls,
-      created_at: new Date().toISOString(),
-    }
+    const response: ResearchResponse = { answer, tool_calls: toolCalls }
     return response
   },
 }

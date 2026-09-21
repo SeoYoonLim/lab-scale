@@ -41,18 +41,16 @@ export interface ToolResult {
   [key: string]: unknown
 }
 
-// tool_call_log 테이블과 동일
+// tool_call_log 테이블과 동일.
+// 백엔드가 used_tools(도구 이름만)로 응답하면 arguments/result 는 없다.
 export interface ToolCall {
   tool_name: string
-  arguments: Record<string, unknown>
-  result: ToolResult
+  arguments?: Record<string, unknown>
+  result?: ToolResult
 }
 
-// research_report + tool_call_log 를 묶은 응답
+// POST /api/research 응답 (프론트에서 쓰는 형태)
 export interface ResearchResponse {
-  report_id: number
-  question: string
   answer: string
   tool_calls: ToolCall[]
-  created_at: string
 }

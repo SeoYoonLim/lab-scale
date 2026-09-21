@@ -4,10 +4,25 @@ import type {
   NewsItem,
   PricePoint,
   ResearchResponse,
+  ToolCall,
 } from '../types'
 import type { Api } from './index'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
+
+// /research 응답 형식은 아직 확정 전이라 두 가지를 모두 받는다.
+//   현재 백엔드: { answer, used_tools: string[] }
+//   제안 형식:   { answer, tool_calls: [{ tool_name, arguments, result }] }
+interface RawResearchResponse {
+  answer: string
+  used_tools?: string[]
+  tool_calls?: ToolCall[]
+}
+
+function normalizeResearch(raw: RawResearchResponse): ResearchResponse {
+  const tool_calls = raw.tool_calls ?? (raw.used_tools ?? []).map((tool_name) => ({ tool_name }))
+  return { answer: raw.answer, tool_calls }
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -30,8 +45,8 @@ export const httpApi: Api = {
   getDisclosures: (ticker, limit = 5) =>
     request<DisclosureItem[]>(`/companies/${encodeURIComponent(ticker)}/disclosures?limit=${limit}`),
   askResearch: (question) =>
-    request<ResearchResponse>('/research', {
+    request<RawResearchResponse>('/research', {
       method: 'POST',
       body: JSON.stringify({ question }),
-    }),
+    }).then(normalizeResearch),
 }

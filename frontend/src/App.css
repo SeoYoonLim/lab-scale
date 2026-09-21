@@ -355,6 +355,18 @@
   color: var(--danger);
 }
 
+.status-called {
+  color: var(--text-muted);
+}
+
+.tool-call-simple {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
 .tool-body {
   padding: 0 12px 12px;
   border-top: 1px solid var(--border);
