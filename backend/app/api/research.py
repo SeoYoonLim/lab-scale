@@ -53,19 +53,25 @@ class ReportListItem(BaseModel):
     used_tools: list[str]
 
 
+class ReportList(BaseModel):
+    total: int
+    items: list[ReportListItem]
+
+
 @router.post("/research", response_model=ResearchResponse)
 def research(request: ResearchRequest) -> ResearchResponse:
     result = ask_question(request.question)
     return ResearchResponse(**result)
 
 
-@router.get("/research", response_model=list[ReportListItem])
+@router.get("/research", response_model=ReportList)
 def list_research(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-) -> list[ReportListItem]:
-    """최근 리포트 목록(최신순)."""
-    return [ReportListItem(**r) for r in list_reports(limit=limit, offset=offset)]
+) -> ReportList:
+    """최근 리포트 목록(최신순). total은 전체 리포트 수(페이지네이션용)."""
+    total, items = list_reports(limit=limit, offset=offset)
+    return ReportList(total=total, items=[ReportListItem(**r) for r in items])
 
 
 @router.get("/research/{report_id}", response_model=ReportDetail)

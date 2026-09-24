@@ -29,7 +29,36 @@ from app.models import Company, Disclosure, News, StockPrice
 load_dotenv()
 
 NAVER_NEWS_URL = "https://openapi.naver.com/v1/search/news.json"
+NAVER_MAX_DISPLAY = 100
+# 걸러낼 기사를 감안해 요청 건수의 몇 배를 받아온 뒤 필터링해서 요청 건수만큼만 남긴다.
+NEWS_OVERFETCH = 3
 HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+# 종목명이 프로 스포츠팀 이름과 겹치는 종목(현대모비스, KCC, 한국가스공사, NC, KT 등)의 뉴스 검색에는
+# 스포츠/연예 기사가 섞여 들어온다. 저장된 뉴스 3,060건의 도메인 집계에서 네이버 스포츠/연예 섹션이 4.4%
+# (135건)를 차지했고, 현대모비스는 20건 중 18건이 농구 기사였다.
+# 도메인 이름의 키워드('star', 'game' 등)로 거르면 주가 시세 기사를 쓰는 매체(topstarnews)나 게임사 관련
+# 기사를 싣는 게임 전문지까지 걸리므로, 내용이 명백히 비금융인 도메인만 정확히 지정한다(하위 도메인 포함).
+NON_FINANCIAL_DOMAINS = (
+    "sports.naver.com",
+    "entertain.naver.com",
+    "basketkorea.com",
+    "sportalkorea.com",
+    "thesportstimes.co.kr",
+    "golfhankook.hankooki.com",
+    "ent.sbs.co.kr",
+    "maxmovie.com",
+)
+
+
+def is_non_financial_host(host: str) -> bool:
+    host = (host or "").lower()
+    return any(host == d or host.endswith("." + d) for d in NON_FINANCIAL_DOMAINS)
+
+
+def _is_non_financial_item(item: dict) -> bool:
+    # 네이버 뉴스 링크(link)와 원문 링크(originallink) 중 하나라도 비금융 도메인이면 제외한다.
+    return any(is_non_financial_host(urlparse(item.get(k) or "").netloc) for k in ("link", "originallink"))
 
 DART_CORP_CODE_URL = "https://opendart.fss.or.kr/api/corpCode.xml"
 DART_DISCLOSURE_LIST_URL = "https://opendart.fss.or.kr/api/list.json"
@@ -156,8 +185,8 @@ def _clean_text(raw: str) -> str:
 class CollectResult:
     """수집 함수의 결과. ok=False이면 error에 실패 사유가 들어간다.
 
-    saved: 신규 저장 건수 (dry_run이면 저장 예정 건수), fetched: API가 돌려준 전체 건수,
-    records: dry_run일 때만 채워지는 저장 예정 레코드.
+    saved: 신규 저장 건수 (dry_run이면 저장 예정 건수), fetched: 필터 후 저장 대상으로 검토한 건수,
+    skipped: 비금융 도메인이라 제외한 건수(뉴스만), records: dry_run일 때만 채워지는 저장 예정 레코드.
     """
 
     ok: bool
@@ -165,6 +194,7 @@ class CollectResult:
     fetched: int = 0
     error: str | None = None
     records: list = field(default_factory=list)
+    skipped: int = 0
 
 
 _API_KEY_RE = re.compile(r"(crtfc_key=)[^&\s]+")
@@ -300,11 +330,21 @@ def fetch_and_save_news(
     print(f"[{company_name}] 뉴스 {display}건 수집 중...")
 
     try:
-        items = fetch_naver_news(company_name, display=display)
+        candidates = fetch_naver_news(company_name, display=min(NAVER_MAX_DISPLAY, display * NEWS_OVERFETCH))
     except Exception as e:
         msg = _safe_error(e)
         print(f"오류 발생: {msg}")
         return CollectResult(ok=False, error=msg)
+
+    # 비금융 도메인 기사를 제외하고, 요청한 건수만큼만 남긴다.
+    items, skipped = [], 0
+    for it in candidates:
+        if len(items) >= display:
+            break
+        if _is_non_financial_item(it):
+            skipped += 1
+        else:
+            items.append(it)
 
     db = SessionLocal()
     try:
@@ -352,19 +392,24 @@ def fetch_and_save_news(
             )
 
         if dry_run:
-            print(f"[dry-run] 신규 저장 예정 {len(to_insert)}건 (전체 조회 {len(items)}건 중)")
-            return CollectResult(ok=True, saved=len(to_insert), fetched=len(items), records=to_insert)
+            print(
+                f"[dry-run] 신규 저장 예정 {len(to_insert)}건 "
+                f"(검토 {len(items)}건 중, 비금융 도메인 제외 {skipped}건)"
+            )
+            return CollectResult(
+                ok=True, saved=len(to_insert), fetched=len(items), records=to_insert, skipped=skipped
+            )
 
         for record in to_insert:
             db.add(record)
         db.commit()
-        print(f"DB 저장 완료: 신규 {len(to_insert)}건 데이터 추가됨")
-        return CollectResult(ok=True, saved=len(to_insert), fetched=len(items))
+        print(f"DB 저장 완료: 신규 {len(to_insert)}건 데이터 추가됨 (비금융 도메인 제외 {skipped}건)")
+        return CollectResult(ok=True, saved=len(to_insert), fetched=len(items), skipped=skipped)
     except Exception as e:
         db.rollback()
         msg = _safe_error(e)
         print(f"오류 발생: {msg}")
-        return CollectResult(ok=False, fetched=len(items), error=msg)
+        return CollectResult(ok=False, fetched=len(items), error=msg, skipped=skipped)
     finally:
         db.close()
 

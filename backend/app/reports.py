@@ -11,6 +11,8 @@
 import json
 import logging
 
+from sqlalchemy import func
+
 from app.db.session import SessionLocal
 from app.models import Company, ResearchReport, ToolCallLog
 from app.sources import build_sources
@@ -105,10 +107,11 @@ def get_report(report_id: int) -> dict | None:
         db.close()
 
 
-def list_reports(limit: int = 20, offset: int = 0) -> list[dict]:
-    """최근 리포트 목록(최신순). sources는 무거우니 빼고 미리보기(summary)만 담는다."""
+def list_reports(limit: int = 20, offset: int = 0) -> tuple[int, list[dict]]:
+    """(전체 리포트 수, 최근 리포트 목록(최신순)). 목록에는 sources를 빼고 미리보기(summary)만 담는다."""
     db = SessionLocal()
     try:
+        total = db.query(func.count(ResearchReport.id)).scalar()
         rows = (
             db.query(ResearchReport, Company.name)
             .outerjoin(Company, Company.id == ResearchReport.company_id)
@@ -126,7 +129,7 @@ def list_reports(limit: int = 20, offset: int = 0) -> list[dict]:
                 .order_by(ToolCallLog.id)
             ):
                 tools.setdefault(report_id, []).append(tool_name)
-        return [
+        items = [
             {
                 "report_id": r.id,
                 "question": r.question,
@@ -137,5 +140,6 @@ def list_reports(limit: int = 20, offset: int = 0) -> list[dict]:
             }
             for r, company_name in rows
         ]
+        return total, items
     finally:
         db.close()
