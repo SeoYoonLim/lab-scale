@@ -285,8 +285,12 @@ def fetch_and_save_news(
         for item in items:
             url = item.get("link") or item.get("originallink")
 
-            # 중복 저장 방지 (url 기준)
-            exists = db.query(News).filter(News.url == url).first()
+            # 중복 저장 방지 (종목별 url 기준). 여러 종목이 함께 언급된 기사는 종목마다 저장한다.
+            exists = (
+                db.query(News)
+                .filter(News.url == url, News.company_id == company.id)
+                .first()
+            )
             if exists:
                 continue
 
