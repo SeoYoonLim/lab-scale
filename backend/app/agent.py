@@ -5,7 +5,9 @@ scripts/test_tool_calling.py에서 검증했던 ask() 로직을 재사용 가능
 FastAPI 라우트(app/api/research.py)와 CLI 스모크 테스트 스크립트가 이 모듈을 공유한다.
 """
 
+import inspect
 import json
+import re
 
 import ollama
 
@@ -253,6 +255,119 @@ AVAILABLE_FUNCTIONS = {
 }
 
 
+FALLBACK_ANSWER = "죄송합니다. 요청을 처리하는 중 문제가 발생했습니다. 종목명을 포함해 질문을 조금 더 구체적으로 다시 해주세요."
+
+_TOOL_NAME_RE = re.compile(r'"name"\s*:\s*"(?:%s)"' % "|".join(AVAILABLE_FUNCTIONS))
+
+
+def _mentions_tool_call(content: str) -> bool:
+    """모델이 tool_calls 대신 tool 호출 JSON을 본문 텍스트로 내보낸 경우인지 판별한다."""
+    return bool(content) and bool(_TOOL_NAME_RE.search(content))
+
+
+def _recover_text_tool_calls(content: str) -> list[dict]:
+    """본문에 텍스트로 나온 tool 호출 JSON({"name":..., "parameters":{...}})을 tool_calls 형태로 복구한다.
+    JSON이 깨져 있으면(모델이 잘못된 이스케이프를 내보내는 경우) 빈 리스트를 반환한다."""
+    decoder = json.JSONDecoder()
+    calls, idx = [], 0
+    while idx < len(content):
+        if content[idx] in " \t\r\n,;":
+            idx += 1
+            continue
+        try:
+            obj, idx = decoder.raw_decode(content, idx)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(obj, dict) or obj.get("name") not in AVAILABLE_FUNCTIONS:
+            return []
+        params = obj.get("parameters", obj.get("arguments", {}))
+        if not isinstance(params, dict):
+            return []
+        calls.append({"function": {"name": obj["name"], "arguments": params}})
+    return calls
+
+
+def _run_tool(fn_name: str, fn_args) -> dict:
+    """tool을 안전하게 실행한다. 모르는 tool/인자, 필수 인자 누락, 실행 중 예외도 예외 대신 결과로 돌려준다."""
+    fn = AVAILABLE_FUNCTIONS.get(fn_name)
+    if fn is None:
+        return {"found": False, "error": f"unknown tool: {fn_name}"}
+
+    if isinstance(fn_args, str):
+        try:
+            fn_args = json.loads(fn_args)
+        except json.JSONDecodeError:
+            fn_args = {}
+    if not isinstance(fn_args, dict):
+        fn_args = {}
+
+    params = inspect.signature(fn).parameters
+    kwargs = {k: v for k, v in fn_args.items() if k in params}
+    missing = [
+        n for n, p in params.items() if p.default is inspect.Parameter.empty and kwargs.get(n) in (None, "")
+    ]
+    if missing:
+        return {"found": False, "message": f"{fn_name} 호출에 필요한 인자가 없습니다: {', '.join(missing)}"}
+
+    try:
+        return fn(**kwargs)
+    except Exception as e:
+        return {"found": False, "error": f"{fn_name} 실행 중 오류: {e}"}
+
+
+def _extract_sources(fn_name: str, result: dict) -> list[dict]:
+    """tool 결과에서 근거로 쓸 수 있는 문서(news/disclosure) 목록을 뽑는다. 주가 tool은 문서가 없어 제외."""
+    if not isinstance(result, dict) or not result.get("found"):
+        return []
+
+    def source(type_, title, names, url):
+        return {
+            "tool": fn_name,
+            "type": type_,
+            "title": title,
+            "company_names": names,
+            "company_filter": None,
+            "url": url,
+        }
+
+    if fn_name == "news_tool":
+        return [source("news", n["title"], [n["company_name"]], n.get("url")) for n in result.get("news", [])]
+    if fn_name == "disclosure_tool":
+        return [
+            source("disclosure", d["title"], [d["company_name"]], d.get("source_url"))
+            for d in result.get("disclosures", [])
+        ]
+    if fn_name == "rag_search_tool":
+        out = []
+        for r in result.get("results", []):
+            s = source(r["type"], r["title"], r.get("company_names", []), r.get("url") or r.get("source_url"))
+            s["company_filter"] = result.get("company_name")
+            out.append(s)
+        return out
+    return []
+
+
+def _first_call(model: str, messages: list[dict]):
+    """1차 호출. tool 호출 JSON이 본문 텍스트로 새어 나오면 복구하고, 복구 불가면 한 번 재시도한다.
+
+    Returns: (assistant message, tool_calls 또는 None). 끝내 실패하면 (None, None).
+    """
+    for _ in range(2):
+        msg = ollama.chat(model=model, messages=messages, tools=TOOLS)["message"]
+        tool_calls = msg.get("tool_calls")
+        if tool_calls:
+            return msg, tool_calls
+
+        content = msg.get("content") or ""
+        if not _mentions_tool_call(content):
+            return msg, None
+
+        recovered = _recover_text_tool_calls(content)
+        if recovered:
+            return {"role": "assistant", "content": "", "tool_calls": recovered}, recovered
+    return None, None
+
+
 def ask_question(question: str, model: str = MODEL_NAME) -> dict:
     """질문을 받아 필요한 tool을 호출하고 최종 답변을 생성한다.
 
@@ -260,7 +375,8 @@ def ask_question(question: str, model: str = MODEL_NAME) -> dict:
     (scripts/benchmark_models.py) 파라미터로 열어둔 것이다.
 
     Returns:
-        {"answer": str, "used_tools": list[str]}
+        {"answer": str, "used_tools": list[str], "sources": list[dict]}
+        sources는 tool 결과에서 뽑은 근거 문서(news/disclosure) 목록이다.
     """
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -269,31 +385,32 @@ def ask_question(question: str, model: str = MODEL_NAME) -> dict:
     ]
 
     # 1차 호출: 모델이 tool을 쓸지 말지 스스로 판단
-    response = ollama.chat(model=model, messages=messages, tools=TOOLS)
+    msg, tool_calls = _first_call(model, messages)
 
-    msg = response["message"]
-    tool_calls = msg.get("tool_calls")
+    if msg is None:
+        return {"answer": FALLBACK_ANSWER, "used_tools": [], "sources": []}
 
     if not tool_calls:
         # 모델이 tool 없이 바로 답한 경우
-        return {"answer": extract_answer_text(msg["content"]), "used_tools": []}
+        return {"answer": extract_answer_text(msg["content"]), "used_tools": [], "sources": []}
 
     messages.append(msg)
     used_tools = []
+    sources = []
+    seen_sources = set()
 
     # 2. 모델이 요청한 tool을 실제로 실행하고 결과를 다시 넘겨줌
     for call in tool_calls:
         fn_name = call["function"]["name"]
-        fn_args = call["function"]["arguments"]
         used_tools.append(fn_name)
 
-        if fn_name not in AVAILABLE_FUNCTIONS:
-            result = {"error": f"unknown tool: {fn_name}"}
-        else:
-            try:
-                result = AVAILABLE_FUNCTIONS[fn_name](**fn_args)
-            except Exception as e:
-                result = {"error": f"{fn_name} 실행 중 오류: {e}"}
+        result = _run_tool(fn_name, call["function"]["arguments"])
+
+        for s in _extract_sources(fn_name, result):
+            key = (s["type"], s["url"] or s["title"])
+            if key not in seen_sources:
+                seen_sources.add(key)
+                sources.append(s)
 
         messages.append(
             {
@@ -304,7 +421,7 @@ def ask_question(question: str, model: str = MODEL_NAME) -> dict:
 
     # 3. tool 결과를 반영한 최종 답변 생성
     final = ollama.chat(model=model, messages=messages)
-    return {
-        "answer": extract_answer_text(final["message"]["content"]),
-        "used_tools": used_tools,
-    }
+    answer = extract_answer_text(final["message"]["content"])
+    if _mentions_tool_call(answer):
+        answer = FALLBACK_ANSWER
+    return {"answer": answer, "used_tools": used_tools, "sources": sources}

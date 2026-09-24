@@ -1,25 +1,18 @@
-from sqlalchemy import or_
-
 from app.db.session import SessionLocal
-from app.models import Company, StockPrice
+from app.models import StockPrice
+from app.tools.company_resolver import not_found_response, resolve_company, to_int
 
 
 def stock_tool(ticker: str, period_days: int = 1) -> dict:
     """지정한 종목(이름 또는 티커)의 최근 N일 주가(등락률/거래량 등)를 DB에서 조회한다."""
+    period_days = to_int(period_days, default=1, hi=60)
     db = SessionLocal()
     try:
-        company = (
-            db.query(Company)
-            .filter(or_(Company.name == ticker, Company.ticker == ticker))
-            .first()
-        )
-        if company is None:
-            return {
-                "ticker": ticker,
-                "period_days": period_days,
-                "found": False,
-                "message": f"'{ticker}'는 company 테이블에 등록되지 않은 종목입니다. 데이터 없음.",
-            }
+        res = resolve_company(db, ticker)
+        if res.company is None:
+            return not_found_response({"ticker": ticker, "period_days": period_days}, res)
+        company = res.company
+        corrected = {"corrected_from": res.corrected_from} if res.corrected_from else {}
 
         rows = (
             db.query(StockPrice)
@@ -31,10 +24,12 @@ def stock_tool(ticker: str, period_days: int = 1) -> dict:
 
         if not rows:
             return {
-                "ticker": ticker,
+                "ticker": company.ticker,
+                "company_name": company.name,
                 "period_days": period_days,
                 "found": False,
-                "message": f"'{ticker}'는 등록된 종목이지만 아직 수집된 주가 데이터가 없습니다.",
+                "message": f"'{company.name}'는 등록된 종목이지만 아직 수집된 주가 데이터가 없습니다.",
+                **corrected,
             }
 
         # 최근 날짜가 먼저 오도록 조회했으니, 응답은 날짜 오름차순으로 보기 좋게 정렬
@@ -53,12 +48,14 @@ def stock_tool(ticker: str, period_days: int = 1) -> dict:
         latest = prices[-1]
 
         return {
-            "ticker": ticker,
+            "ticker": company.ticker,
+            "company_name": company.name,
             "period_days": period_days,
             "found": True,
             "change_pct": latest["change_pct"],
             "volume": latest["volume"],
             "prices": prices,
+            **corrected,
         }
     finally:
         db.close()

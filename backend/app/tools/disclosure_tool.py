@@ -1,25 +1,18 @@
-from sqlalchemy import or_
-
 from app.db.session import SessionLocal
-from app.models import Company, Disclosure
+from app.models import Disclosure
+from app.tools.company_resolver import not_found_response, resolve_company, to_int
 
 
 def disclosure_tool(company_name: str, limit: int = 5) -> dict:
     """지정한 종목(이름 또는 티커)의 최근 공시(DART)를 DB에서 조회한다."""
+    limit = to_int(limit, default=5)
     db = SessionLocal()
     try:
-        company = (
-            db.query(Company)
-            .filter(or_(Company.name == company_name, Company.ticker == company_name))
-            .first()
-        )
-        if company is None:
-            return {
-                "company_name": company_name,
-                "limit": limit,
-                "found": False,
-                "message": f"'{company_name}'는 company 테이블에 등록되지 않은 종목입니다. 데이터 없음.",
-            }
+        res = resolve_company(db, company_name)
+        if res.company is None:
+            return not_found_response({"company_name": company_name, "limit": limit}, res)
+        company = res.company
+        corrected = {"corrected_from": res.corrected_from} if res.corrected_from else {}
 
         rows = (
             db.query(Disclosure)
@@ -31,14 +24,16 @@ def disclosure_tool(company_name: str, limit: int = 5) -> dict:
 
         if not rows:
             return {
-                "company_name": company_name,
+                "company_name": company.name,
                 "limit": limit,
                 "found": False,
-                "message": f"'{company_name}'는 등록된 종목이지만 아직 수집된 공시가 없습니다.",
+                "message": f"'{company.name}'는 등록된 종목이지만 아직 수집된 공시가 없습니다.",
+                **corrected,
             }
 
         disclosure_items = [
             {
+                "company_name": company.name,
                 "title": row.title,
                 "disclosure_type": row.disclosure_type,
                 "disclosed_at": row.disclosed_at.isoformat() if row.disclosed_at else None,
@@ -48,10 +43,11 @@ def disclosure_tool(company_name: str, limit: int = 5) -> dict:
         ]
 
         return {
-            "company_name": company_name,
+            "company_name": company.name,
             "limit": limit,
             "found": True,
             "disclosures": disclosure_items,
+            **corrected,
         }
     finally:
         db.close()
