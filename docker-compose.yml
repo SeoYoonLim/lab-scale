@@ -10,7 +10,8 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: ai_investment
     ports:
-      - "5432:5432"
+      # 호스트 5432는 Windows 예약 포트 범위(5357-5456)에 걸려 바인딩이 거부되므로 15432 사용
+      - "15432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
 

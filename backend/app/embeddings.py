@@ -8,19 +8,21 @@ news/disclosure 둘 다 지원한다. 기존 fetch_and_save_* 함수들과 같�
 dry_run=True가 기본값이며, 이 경우 DB에 쓰지 않고 대상 건수/샘플만 보여준다.
 """
 
+import time
+
 import ollama
 
 from app.db.session import SessionLocal
 from app.models import Disclosure, News
 
 EMBEDDING_MODEL = "bge-m3"
-BATCH_SIZE = 16
+BATCH_SIZE = 32
+MAX_TEXT_LEN = 500        # 본문을 이 길이로 잘라서 임베딩 (긴 본문에서 처리 속도 약 4배)
 
 
 def _build_text(title: str, content: str | None) -> str:
-    if content:
-        return f"{title}\n{content}"
-    return title
+    text = f"{title}\n{content}" if content else title
+    return text[:MAX_TEXT_LEN]
 
 
 def _embed_pending(model, label: str, limit: int | None, batch_size: int, dry_run: bool) -> int:
@@ -42,6 +44,7 @@ def _embed_pending(model, label: str, limit: int | None, batch_size: int, dry_ru
                 print(f"  - id={row.id} title={row.title[:40]!r}")
             return len(rows)
 
+        start = time.time()
         processed = 0
         for i in range(0, len(rows), batch_size):
             batch = rows[i : i + batch_size]
@@ -50,8 +53,11 @@ def _embed_pending(model, label: str, limit: int | None, batch_size: int, dry_ru
             for row, vector in zip(batch, response["embeddings"]):
                 row.embedding = vector
             db.commit()
+
             processed += len(batch)
-            print(f"임베딩 저장 완료: {processed}/{len(rows)}건 ({label})")
+            elapsed = time.time() - start
+            rate = processed / elapsed if elapsed > 0 else 0
+            print(f"임베딩 저장 완료: {processed}/{len(rows)}건 ({label}) — {rate:.1f}건/초")
 
         return processed
     except Exception as e:
