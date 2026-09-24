@@ -88,6 +88,52 @@ def resolve_company(db, raw) -> Resolution:
     return Resolution(message=f"'{s}' 종목을 찾지 못했습니다. company 테이블에 등록된 종목명 또는 종목코드를 지정해주세요.")
 
 
+# 종목명 바로 뒤에 붙은 우선주 표기('삼성전자우', '현대차2우B', '삼성전자우선주'). 우선주는 보통주와 다른
+# 종목이라 보통주로 취급하면 안 된다. '우' 뒤에 한글이 이어지면('우리', '우수') 우선주가 아니다.
+_PREFERRED_RE = re.compile(r"^(?:\d?우b?(?![가-힣])|우선주)")
+_ASCII_ALNUM = re.compile(r"[0-9a-z]")
+
+
+def extract_from_text(db, text: str) -> list[Company]:
+    """질문 원문에 포함된 회사명/티커를 DB의 전체 종목과 대조해 찾는다. 등장 순서대로 반환한다.
+
+    - 겹치는 후보는 더 긴 이름이 이긴다 ('카카오뱅크' 질문에서 '카카오'는 제외).
+    - 영문/숫자 이름·티커는 앞뒤가 영문/숫자가 아닐 때만 인정한다 ('DL' -> 'DLNA' 제외).
+    - 이름 바로 뒤에 우선주 표기가 붙으면 보통주로 취급하지 않는다 ('삼성전자우' -> 제외).
+    여러 회사가 언급되면 전부 반환하므로, 어느 것을 쓸지는 호출측이 정한다."""
+    hay = unicodedata.normalize("NFC", text or "").casefold()
+    if not hay:
+        return []
+
+    hits = []  # (start, end, company)
+    for c in db.query(Company).all():
+        for token, is_name in ((c.name, True), (c.ticker, False)):
+            t = token.casefold()
+            for m in re.finditer(re.escape(t), hay):
+                st, en = m.span()
+                if _ASCII_ALNUM.match(t[0]) and st > 0 and _ASCII_ALNUM.match(hay[st - 1]):
+                    continue
+                if _ASCII_ALNUM.match(t[-1]) and en < len(hay) and _ASCII_ALNUM.match(hay[en]):
+                    continue
+                # 우선주로 거절한 구간도 남겨서, 그 안의 더 짧은 이름('LG전자우' -> 'LG')이 대신 잡히지 않게 한다.
+                if is_name and _PREFERRED_RE.match(hay[en:]):
+                    hits.append((st, en, None))
+                    continue
+                hits.append((st, en, c))
+
+    accepted = []
+    for st, en, c in sorted(hits, key=lambda h: (-(h[1] - h[0]), h[0])):
+        if all(en <= a_st or st >= a_en for a_st, a_en, _ in accepted):
+            accepted.append((st, en, c))
+
+    out, seen = [], set()
+    for _, _, c in sorted(accepted, key=lambda h: h[0]):
+        if c is not None and c.id not in seen:
+            seen.add(c.id)
+            out.append(c)
+    return out
+
+
 def to_int(value, default: int, lo: int = 1, hi: int = 50) -> int:
     """LLM이 '5'처럼 문자열이나 null로 넘기는 정수 인자를 안전하게 변환한다."""
     try:

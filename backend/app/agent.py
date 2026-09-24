@@ -11,6 +11,8 @@ import re
 
 import ollama
 
+from app.db.session import SessionLocal
+from app.tools.company_resolver import extract_from_text, normalize_name, resolve_company
 from app.tools.disclosure_tool import disclosure_tool
 from app.tools.news_tool import news_tool
 from app.tools.rag_search_tool import rag_search_tool
@@ -287,19 +289,83 @@ def _recover_text_tool_calls(content: str) -> list[dict]:
     return calls
 
 
+def _as_args(fn_args) -> dict:
+    """tool 인자를 dict로 맞춘다(JSON 문자열이거나 깨져 있으면 빈 dict)."""
+    if isinstance(fn_args, str):
+        try:
+            fn_args = json.loads(fn_args)
+        except json.JSONDecodeError:
+            return {}
+    return fn_args if isinstance(fn_args, dict) else {}
+
+
+# tool별로 종목명/티커를 받는 인자 이름
+_COMPANY_ARG = {
+    "stock_tool": "ticker",
+    "news_tool": "company_name",
+    "disclosure_tool": "company_name",
+    "rag_search_tool": "company_name",
+}
+
+
+def _repair_company_args(calls: list[dict], question: str) -> dict[int, str]:
+    """모델이 만든 종목 인자가 DB 종목으로 해석되지 않으면, 질문 원문에서 회사명을 찾아 대신 넣는다.
+
+    모델이 질문 속 회사명을 JSON 인자로 옮기다 엉뚱한 문자열로 깨뜨리는 경우를 위한 fallback이다.
+    같은 tool로 이미 정상 해석된 회사는 후보에서 빼고, 남은 후보와 실패한 호출이 일대일로 맞을 때만
+    (질문 등장 순서대로) 채운다. 임의로 고르지 않으므로 애매하면 그대로 두어 not-found 응답이 나간다.
+    calls를 직접 수정하고, {호출 인덱스: 모델이 만든 원래 인자}를 돌려준다."""
+    targets = []
+    for i, call in enumerate(calls):
+        fn_name = call["function"]["name"]
+        key = _COMPANY_ARG.get(fn_name)
+        if key is None:
+            continue
+        args = _as_args(call["function"]["arguments"])
+        call["function"]["arguments"] = args
+        targets.append((i, fn_name, key, args))
+    if not targets:
+        return {}
+
+    db = SessionLocal()
+    try:
+        resolved_names: dict[str, set[str]] = {}
+        failed = []
+        for i, fn_name, key, args in targets:
+            raw = args.get(key)
+            # 종목 필터 없이 검색하려는 rag 호출(인자 없음/null)은 손대지 않는다
+            if fn_name == "rag_search_tool" and not normalize_name(raw):
+                continue
+            res = resolve_company(db, raw)
+            if res.company is not None:
+                resolved_names.setdefault(fn_name, set()).add(res.company.name)
+            else:
+                failed.append((i, fn_name, key, args, raw))
+        if not failed:
+            return {}
+
+        candidates = extract_from_text(db, question)
+        repaired: dict[int, str] = {}
+        for fn_name in {f[1] for f in failed}:
+            fails = [f for f in failed if f[1] == fn_name]
+            remaining = [c for c in candidates if c.name not in resolved_names.get(fn_name, set())]
+            if len(remaining) != len(fails):
+                continue
+            for (i, _, key, args, raw), company in zip(fails, remaining):
+                args[key] = company.name
+                repaired[i] = "" if raw is None else str(raw)
+        return repaired
+    finally:
+        db.close()
+
+
 def _run_tool(fn_name: str, fn_args) -> dict:
     """tool을 안전하게 실행한다. 모르는 tool/인자, 필수 인자 누락, 실행 중 예외도 예외 대신 결과로 돌려준다."""
     fn = AVAILABLE_FUNCTIONS.get(fn_name)
     if fn is None:
         return {"found": False, "error": f"unknown tool: {fn_name}"}
 
-    if isinstance(fn_args, str):
-        try:
-            fn_args = json.loads(fn_args)
-        except json.JSONDecodeError:
-            fn_args = {}
-    if not isinstance(fn_args, dict):
-        fn_args = {}
+    fn_args = _as_args(fn_args)
 
     params = inspect.signature(fn).parameters
     kwargs = {k: v for k, v in fn_args.items() if k in params}
@@ -399,12 +465,17 @@ def ask_question(question: str, model: str = MODEL_NAME) -> dict:
     sources = []
     seen_sources = set()
 
-    # 2. 모델이 요청한 tool을 실제로 실행하고 결과를 다시 넘겨줌
-    for call in tool_calls:
+    # 2. 모델이 만든 종목 인자가 깨졌으면 질문 원문에서 회사명을 찾아 보정한 뒤, tool을 실제로 실행하고
+    #    결과를 다시 넘겨줌
+    repaired = _repair_company_args(tool_calls, question)
+    for idx, call in enumerate(tool_calls):
         fn_name = call["function"]["name"]
         used_tools.append(fn_name)
 
         result = _run_tool(fn_name, call["function"]["arguments"])
+        if idx in repaired and isinstance(result, dict):
+            result.setdefault("corrected_from", repaired[idx])
+            result.setdefault("corrected_via", "question_text")
 
         for s in _extract_sources(fn_name, result):
             key = (s["type"], s["url"] or s["title"])
