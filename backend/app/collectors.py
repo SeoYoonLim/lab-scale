@@ -11,6 +11,7 @@ import os
 import re
 import xml.etree.ElementTree as ET
 import zipfile
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse
@@ -36,6 +37,11 @@ KST = ZoneInfo("Asia/Seoul")
 # stock_code -> corp_code 매핑 캐시. corpCode.xml이 11만 건이 넘는 zip이라
 # 프로세스당 한 번만 내려받아 메모리에 캐싱한다.
 _dart_stock_to_corp_code: dict[str, str] | None = None
+# corp_name(DART 정식 회사명) -> 상장 stock_code 목록. 티커 조회(resolve_ticker)용.
+_dart_name_to_stock_codes: dict[str, list[str]] = {}
+
+# KRX 종목코드 형식 (6자리 숫자, 신규 상장분은 영문 대문자 포함 가능)
+TICKER_RE = re.compile(r"^[0-9A-Z]{6}$")
 
 
 def _load_dart_corp_code_map() -> dict[str, str]:
@@ -51,11 +57,14 @@ def _load_dart_corp_code_map() -> dict[str, str]:
     root = ET.fromstring(zf.read("CORPCODE.xml"))
 
     mapping = {}
+    names: dict[str, list[str]] = {}
     for el in root.findall("list"):
         stock_code = (el.findtext("stock_code") or "").strip()
         if stock_code:
             mapping[stock_code] = el.findtext("corp_code")
+            names.setdefault((el.findtext("corp_name") or "").strip(), []).append(stock_code)
 
+    _dart_name_to_stock_codes.update(names)
     _dart_stock_to_corp_code = mapping
     return mapping
 
@@ -63,6 +72,17 @@ def _load_dart_corp_code_map() -> dict[str, str]:
 def get_dart_corp_code(ticker: str) -> str | None:
     """company.ticker(종목코드)로 DART corp_code를 찾는다. stock_code 기준 정확 매칭."""
     return _load_dart_corp_code_map().get(ticker)
+
+
+def resolve_ticker(name: str) -> str | None:
+    """DART 상장사 정식 회사명으로 종목코드를 찾는다. 정확 일치 + 유일할 때만 반환.
+
+    부분 일치는 쓰지 않는다 ('현대차' -> '현대차증권', '카카오' -> '카카오뱅크' 오매칭 방지).
+    약칭('현대차' 등)처럼 정식명과 다르면 None이므로 호출측이 ticker를 직접 넘겨야 한다.
+    """
+    _load_dart_corp_code_map()
+    codes = _dart_name_to_stock_codes.get(name.strip(), [])
+    return codes[0] if len(codes) == 1 else None
 
 
 def fetch_dart_disclosures(corp_code: str, days: int = 90) -> list[dict]:
@@ -103,23 +123,55 @@ def fetch_dart_disclosures(corp_code: str, days: int = 90) -> list[dict]:
 
 
 def get_or_create_company(db, ticker: str, name: str) -> Company:
-    # ticker 또는 name 둘 중 하나만 일치해도 같은 회사로 취급한다.
-    # (뉴스 수집은 종목코드를 모르는 채로 이름만 가지고 회사를 조회/생성하기 때문에,
-    #  ticker만으로 매칭하면 이미 주가 수집으로 만들어진 회사와 별개의 중복 행이 생긴다.)
-    company = (
-        db.query(Company)
-        .filter(or_(Company.ticker == ticker, Company.name == name))
-        .first()
-    )
-    if company is None:
-        company = Company(ticker=ticker, name=name)
-        db.add(company)
-        db.flush()
+    """(ticker, name) 쌍으로 회사를 조회/생성한다. 회사 row를 만드는 유일한 경로.
+
+    ticker가 KRX 코드 형식이 아니면(예: 회사명이 그대로 들어온 경우) 예외를 던져
+    잘못된 row가 만들어지지 않게 한다.
+    """
+    if not TICKER_RE.match(ticker):
+        raise ValueError(f"유효하지 않은 종목코드 {ticker!r} (name={name!r}); KRX 6자리 코드가 필요합니다.")
+
+    company = db.query(Company).filter(Company.ticker == ticker).first()
+    if company is not None:
+        return company
+
+    same_name = db.query(Company).filter(Company.name == name).first()
+    if same_name is not None:
+        raise ValueError(
+            f"name={name!r}인 회사가 이미 다른 종목코드({same_name.ticker})로 존재합니다. 요청 종목코드={ticker}"
+        )
+
+    company = Company(ticker=ticker, name=name)
+    db.add(company)
+    db.flush()
     return company
 
 
 def _clean_text(raw: str) -> str:
     return html.unescape(HTML_TAG_RE.sub("", raw)).strip()
+
+
+@dataclass
+class CollectResult:
+    """수집 함수의 결과. ok=False이면 error에 실패 사유가 들어간다.
+
+    saved: 신규 저장 건수 (dry_run이면 저장 예정 건수), fetched: API가 돌려준 전체 건수,
+    records: dry_run일 때만 채워지는 저장 예정 레코드.
+    """
+
+    ok: bool
+    saved: int = 0
+    fetched: int = 0
+    error: str | None = None
+    records: list = field(default_factory=list)
+
+
+_API_KEY_RE = re.compile(r"(crtfc_key=)[^&\s]+")
+
+
+def _safe_error(e: Exception) -> str:
+    # requests 예외 메시지에는 요청 URL이 들어가고 DART URL에는 API 키가 있어 마스킹한다.
+    return _API_KEY_RE.sub(r"\1***", f"{type(e).__name__}: {e}")
 
 
 def fetch_naver_news(company_name: str, display: int = 10) -> list[dict]:
@@ -191,14 +243,43 @@ def fetch_and_save_stock(ticker: str, name: str, days: int = 7):
 
 
 # 네이버 뉴스 검색 API로 뉴스 수집 후 DB 저장 함수
-def fetch_and_save_news(company_name: str, display: int = 10, dry_run: bool = False):
+def fetch_and_save_news(
+    company_name: str, display: int = 10, dry_run: bool = False, ticker: str | None = None
+) -> CollectResult:
+    """ticker를 주면 (ticker, company_name) 쌍으로 회사를 조회/생성한다.
+
+    ticker가 없으면 이미 등록된 회사(name 또는 ticker 일치)를 쓰고, 없으면 DART 정식
+    회사명으로 종목코드를 조회한다. 조회에 실패하면 회사를 만들지 않고 중단한다.
+    """
     print(f"[{company_name}] 뉴스 {display}건 수집 중...")
 
-    items = fetch_naver_news(company_name, display=display)
+    try:
+        items = fetch_naver_news(company_name, display=display)
+    except Exception as e:
+        msg = _safe_error(e)
+        print(f"오류 발생: {msg}")
+        return CollectResult(ok=False, error=msg)
 
     db = SessionLocal()
     try:
-        company = get_or_create_company(db, ticker=company_name, name=company_name)
+        if ticker is not None:
+            company = get_or_create_company(db, ticker=ticker, name=company_name)
+        else:
+            company = (
+                db.query(Company)
+                .filter(or_(Company.name == company_name, Company.ticker == company_name))
+                .first()
+            )
+            if company is None:
+                resolved = resolve_ticker(company_name)
+                if resolved is None:
+                    msg = (
+                        f"'{company_name}'의 종목코드를 찾지 못해 중단합니다. "
+                        f"ticker 인자로 종목코드를 직접 넘기거나 DART 정식 회사명을 사용하세요."
+                    )
+                    print(msg)
+                    return CollectResult(ok=False, fetched=len(items), error=msg)
+                company = get_or_create_company(db, ticker=resolved, name=company_name)
 
         to_insert = []
         for item in items:
@@ -222,22 +303,28 @@ def fetch_and_save_news(company_name: str, display: int = 10, dry_run: bool = Fa
 
         if dry_run:
             print(f"[dry-run] 신규 저장 예정 {len(to_insert)}건 (전체 조회 {len(items)}건 중)")
-            return to_insert
+            return CollectResult(ok=True, saved=len(to_insert), fetched=len(items), records=to_insert)
 
         for record in to_insert:
             db.add(record)
         db.commit()
         print(f"DB 저장 완료: 신규 {len(to_insert)}건 데이터 추가됨")
+        return CollectResult(ok=True, saved=len(to_insert), fetched=len(items))
     except Exception as e:
         db.rollback()
-        print(f"오류 발생: {e}")
+        msg = _safe_error(e)
+        print(f"오류 발생: {msg}")
+        return CollectResult(ok=False, fetched=len(items), error=msg)
     finally:
         db.close()
 
 
 # DART Open API로 공시 수집 후 DB 저장 함수
-def fetch_and_save_disclosures(company_name: str, days: int = 90, dry_run: bool = False):
+def fetch_and_save_disclosures(
+    company_name: str, days: int = 90, dry_run: bool = False
+) -> CollectResult:
     db = SessionLocal()
+    items: list[dict] = []
     try:
         company = (
             db.query(Company)
@@ -245,13 +332,15 @@ def fetch_and_save_disclosures(company_name: str, days: int = 90, dry_run: bool 
             .first()
         )
         if company is None:
-            print(f"'{company_name}'는 company 테이블에 등록되지 않았습니다. 먼저 주가 수집 등으로 등록해주세요.")
-            return
+            msg = f"'{company_name}'는 company 테이블에 등록되지 않았습니다. 먼저 주가 수집 등으로 등록해주세요."
+            print(msg)
+            return CollectResult(ok=False, error=msg)
 
         corp_code = get_dart_corp_code(company.ticker)
         if corp_code is None:
-            print(f"'{company_name}'(ticker={company.ticker})에 해당하는 DART corp_code를 찾지 못했습니다.")
-            return
+            msg = f"'{company_name}'(ticker={company.ticker})에 해당하는 DART corp_code를 찾지 못했습니다."
+            print(msg)
+            return CollectResult(ok=False, error=msg)
 
         print(f"[{company_name}] DART 공시 수집 중... (corp_code={corp_code})")
         items = fetch_dart_disclosures(corp_code, days=days)
@@ -287,15 +376,18 @@ def fetch_and_save_disclosures(company_name: str, days: int = 90, dry_run: bool 
                 f"[dry-run] 신규 저장 예정 {len(to_insert)}건 "
                 f"(전체 조회 {len(items)}건 중, 회사 명의만 필터링)"
             )
-            return to_insert
+            return CollectResult(ok=True, saved=len(to_insert), fetched=len(items), records=to_insert)
 
         for record in to_insert:
             db.add(record)
         db.commit()
         print(f"DB 저장 완료: 신규 {len(to_insert)}건 데이터 추가됨")
+        return CollectResult(ok=True, saved=len(to_insert), fetched=len(items))
     except Exception as e:
         db.rollback()
-        print(f"오류 발생: {e}")
+        msg = _safe_error(e)
+        print(f"오류 발생: {msg}")
+        return CollectResult(ok=False, fetched=len(items), error=msg)
     finally:
         db.close()
 
