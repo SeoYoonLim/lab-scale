@@ -1,5 +1,5 @@
 """
-외부 데이터 소스(pykrx, 네이버 뉴스, DART) 수집 후 DB 저장 스크립트 모음.
+외부 데이터 소스(FinanceDataReader 주가, 네이버 뉴스, DART) 수집 후 DB 저장 스크립트 모음.
 
 FastAPI 앱(app/main.py)과는 별개로, 배치성으로 직접 실행하거나
 (python -m app.collectors) 다른 스크립트에서 함수 단위로 import해서 쓴다.
@@ -17,10 +17,11 @@ from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
+import FinanceDataReader as fdr
 import requests
 from dotenv import load_dotenv
-from pykrx import stock
 from sqlalchemy import or_
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db.session import SessionLocal
 from app.models import Company, Disclosure, News, StockPrice
@@ -190,54 +191,99 @@ def fetch_naver_news(company_name: str, display: int = 10) -> list[dict]:
     return resp.json().get("items", [])
 
 
-# pykrx로 주가 수집 후 DB 저장 함수
-def fetch_and_save_stock(ticker: str, name: str, days: int = 7):
-    today = datetime.now()
-    start_date = (today - timedelta(days=days)).strftime("%Y%m%d")
-    end_date = today.strftime("%Y%m%d")
+_STOCK_PRICE_COLUMNS = ("open_price", "high_price", "low_price", "close_price", "volume", "change_pct")
+
+
+def _price_row(date_index, row) -> dict:
+    # FDR의 Change는 소수(0.0577)라서 등락률(%)로 바꾼다. 결측이면 None.
+    change = row["Change"]
+    return {
+        "price_date": date_index.date(),
+        "open_price": float(row["Open"]),
+        "high_price": float(row["High"]),
+        "low_price": float(row["Low"]),
+        "close_price": float(row["Close"]),
+        "volume": int(row["Volume"]),
+        "change_pct": None if change != change else round(float(change) * 100, 2),
+    }
+
+
+def _price_values(record: dict) -> tuple:
+    return (
+        round(record["open_price"], 2),
+        round(record["high_price"], 2),
+        round(record["low_price"], 2),
+        round(record["close_price"], 2),
+        int(record["volume"]),
+        None if record["change_pct"] is None else round(record["change_pct"], 2),
+    )
+
+
+# FinanceDataReader(KRX 로그인 불필요)로 주가 수집 후 DB에 upsert하는 함수.
+# 이미 있는 날짜는 최신 값으로 갱신한다. 장 마감 전에 저장된 행(거래량 등)이 남지 않게 하기 위해서다.
+def fetch_and_save_stock(
+    ticker: str, name: str, days: int = 7, dry_run: bool = False
+) -> CollectResult:
+    today = datetime.now(KST)
+    start_date = (today - timedelta(days=days)).strftime("%Y-%m-%d")
+    end_date = today.strftime("%Y-%m-%d")
 
     print(f"[{name}({ticker})] {start_date} ~ {end_date} 주가 데이터 수집 중...")
 
-    # pykrx 데이터 수집
-    df = stock.get_market_ohlcv_by_date(start_date, end_date, ticker)
+    try:
+        df = fdr.DataReader(ticker, start_date, end_date)
+    except Exception as e:
+        msg = _safe_error(e)
+        print(f"오류 발생: {msg}")
+        return CollectResult(ok=False, error=msg)
+
+    if df is None or df.empty:
+        msg = f"FinanceDataReader가 '{ticker}'의 {start_date}~{end_date} 주가 데이터를 반환하지 않았습니다."
+        print(msg)
+        return CollectResult(ok=False, error=msg)
+
+    records = [_price_row(i, r) for i, r in df.dropna(subset=["Close"]).iterrows()]
 
     db = SessionLocal()
     try:
         company = get_or_create_company(db, ticker, name)
 
-        count = 0
-        for date_index, row in df.iterrows():
-            current_date = date_index.date()
-
-            # 중복 저장 방지
-            exists = (
-                db.query(StockPrice)
-                .filter(
-                    StockPrice.company_id == company.id,
-                    StockPrice.price_date == current_date,
-                )
-                .first()
+        existing = {
+            row.price_date: (
+                round(float(row.open_price), 2) if row.open_price is not None else None,
+                round(float(row.high_price), 2) if row.high_price is not None else None,
+                round(float(row.low_price), 2) if row.low_price is not None else None,
+                round(float(row.close_price), 2),
+                int(row.volume) if row.volume is not None else None,
+                round(float(row.change_pct), 2) if row.change_pct is not None else None,
             )
+            for row in db.query(StockPrice).filter(
+                StockPrice.company_id == company.id,
+                StockPrice.price_date >= records[0]["price_date"],
+            )
+        }
+        new = [r for r in records if r["price_date"] not in existing]
+        changed = [r for r in records if r["price_date"] in existing and existing[r["price_date"]] != _price_values(r)]
+        summary = f"신규 {len(new)}건, 값 갱신 {len(changed)}건, 변경 없음 {len(records) - len(new) - len(changed)}건"
 
-            if not exists:
-                price_record = StockPrice(
-                    company_id=company.id,
-                    price_date=current_date,
-                    open_price=float(row["시가"]),
-                    high_price=float(row["고가"]),
-                    low_price=float(row["저가"]),
-                    close_price=float(row["종가"]),
-                    volume=int(row["거래량"]),
-                    change_pct=float(row["등락률"]),
-                )
-                db.add(price_record)
-                count += 1
+        if dry_run:
+            print(f"[dry-run] {summary} (조회 {len(records)}건)")
+            return CollectResult(ok=True, saved=len(new), fetched=len(records))
 
+        stmt = pg_insert(StockPrice).values([{**r, "company_id": company.id} for r in records])
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_stock_price_company_date",
+            set_={col: stmt.excluded[col] for col in _STOCK_PRICE_COLUMNS},
+        )
+        db.execute(stmt)
         db.commit()
-        print(f"DB 저장 완료: 신규 {count}건 데이터 추가됨")
+        print(f"DB 저장 완료: {summary}")
+        return CollectResult(ok=True, saved=len(new), fetched=len(records))
     except Exception as e:
         db.rollback()
-        print(f"오류 발생: {e}")
+        msg = _safe_error(e)
+        print(f"오류 발생: {msg}")
+        return CollectResult(ok=False, fetched=len(records), error=msg)
     finally:
         db.close()
 
