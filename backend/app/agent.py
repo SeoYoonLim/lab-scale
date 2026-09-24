@@ -8,10 +8,14 @@ FastAPI 라우트(app/api/research.py)와 CLI 스모크 테스트 스크립트�
 import inspect
 import json
 import re
+import time
+from datetime import datetime, timezone
 
 import ollama
 
 from app.db.session import SessionLocal
+from app.reports import save_report as save_report_row
+from app.sources import build_sources
 from app.tools.company_resolver import extract_from_text, normalize_name, resolve_company
 from app.tools.disclosure_tool import disclosure_tool
 from app.tools.news_tool import news_tool
@@ -381,38 +385,6 @@ def _run_tool(fn_name: str, fn_args) -> dict:
         return {"found": False, "error": f"{fn_name} 실행 중 오류: {e}"}
 
 
-def _extract_sources(fn_name: str, result: dict) -> list[dict]:
-    """tool 결과에서 근거로 쓸 수 있는 문서(news/disclosure) 목록을 뽑는다. 주가 tool은 문서가 없어 제외."""
-    if not isinstance(result, dict) or not result.get("found"):
-        return []
-
-    def source(type_, title, names, url):
-        return {
-            "tool": fn_name,
-            "type": type_,
-            "title": title,
-            "company_names": names,
-            "company_filter": None,
-            "url": url,
-        }
-
-    if fn_name == "news_tool":
-        return [source("news", n["title"], [n["company_name"]], n.get("url")) for n in result.get("news", [])]
-    if fn_name == "disclosure_tool":
-        return [
-            source("disclosure", d["title"], [d["company_name"]], d.get("source_url"))
-            for d in result.get("disclosures", [])
-        ]
-    if fn_name == "rag_search_tool":
-        out = []
-        for r in result.get("results", []):
-            s = source(r["type"], r["title"], r.get("company_names", []), r.get("url") or r.get("source_url"))
-            s["company_filter"] = result.get("company_name")
-            out.append(s)
-        return out
-    return []
-
-
 def _first_call(model: str, messages: list[dict]):
     """1차 호출. tool 호출 JSON이 본문 텍스트로 새어 나오면 복구하고, 복구 불가면 한 번 재시도한다.
 
@@ -434,16 +406,10 @@ def _first_call(model: str, messages: list[dict]):
     return None, None
 
 
-def ask_question(question: str, model: str = MODEL_NAME) -> dict:
-    """질문을 받아 필요한 tool을 호출하고 최종 답변을 생성한다.
+def _answer(question: str, model: str) -> tuple[dict, list[dict]]:
+    """답변을 만든다. (응답 dict, tool 실행 기록 목록)을 돌려준다.
 
-    model은 기본값(MODEL_NAME) 외에 다른 모델로도 같은 로직을 검증할 수 있도록
-    (scripts/benchmark_models.py) 파라미터로 열어둔 것이다.
-
-    Returns:
-        {"answer": str, "used_tools": list[str], "sources": list[dict]}
-        sources는 tool 결과에서 뽑은 근거 문서(news/disclosure) 목록이다.
-    """
+    tool 실행 기록: {"tool_name", "arguments", "result", "called_at", "elapsed_ms"} (실행 순서대로)."""
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         *FEW_SHOT_MESSAGES,
@@ -454,35 +420,40 @@ def ask_question(question: str, model: str = MODEL_NAME) -> dict:
     msg, tool_calls = _first_call(model, messages)
 
     if msg is None:
-        return {"answer": FALLBACK_ANSWER, "used_tools": [], "sources": []}
+        return {"answer": FALLBACK_ANSWER, "used_tools": [], "sources": []}, []
 
     if not tool_calls:
         # 모델이 tool 없이 바로 답한 경우
-        return {"answer": extract_answer_text(msg["content"]), "used_tools": [], "sources": []}
+        return {"answer": extract_answer_text(msg["content"]), "used_tools": [], "sources": []}, []
 
     messages.append(msg)
-    used_tools = []
-    sources = []
-    seen_sources = set()
+    records = []
 
     # 2. 모델이 만든 종목 인자가 깨졌으면 질문 원문에서 회사명을 찾아 보정한 뒤, tool을 실제로 실행하고
     #    결과를 다시 넘겨줌
     repaired = _repair_company_args(tool_calls, question)
     for idx, call in enumerate(tool_calls):
         fn_name = call["function"]["name"]
-        used_tools.append(fn_name)
+        fn_args = _as_args(call["function"]["arguments"])
 
-        result = _run_tool(fn_name, call["function"]["arguments"])
+        called_at = datetime.now(timezone.utc)
+        started = time.perf_counter()
+        result = _run_tool(fn_name, fn_args)
+        elapsed_ms = round((time.perf_counter() - started) * 1000)
+
         if idx in repaired and isinstance(result, dict):
             result.setdefault("corrected_from", repaired[idx])
             result.setdefault("corrected_via", "question_text")
 
-        for s in _extract_sources(fn_name, result):
-            key = (s["type"], s["url"] or s["title"])
-            if key not in seen_sources:
-                seen_sources.add(key)
-                sources.append(s)
-
+        records.append(
+            {
+                "tool_name": fn_name,
+                "arguments": fn_args,
+                "result": result,
+                "called_at": called_at,
+                "elapsed_ms": elapsed_ms,
+            }
+        )
         messages.append(
             {
                 "role": "tool",
@@ -495,4 +466,28 @@ def ask_question(question: str, model: str = MODEL_NAME) -> dict:
     answer = extract_answer_text(final["message"]["content"])
     if _mentions_tool_call(answer):
         answer = FALLBACK_ANSWER
-    return {"answer": answer, "used_tools": used_tools, "sources": sources}
+    response = {
+        "answer": answer,
+        "used_tools": [r["tool_name"] for r in records],
+        "sources": build_sources((r["tool_name"], r["result"]) for r in records),
+    }
+    return response, records
+
+
+def ask_question(question: str, model: str = MODEL_NAME, save_report: bool = True) -> dict:
+    """질문을 받아 필요한 tool을 호출하고 최종 답변을 생성한다.
+
+    model은 기본값(MODEL_NAME) 외에 다른 모델로도 같은 로직을 검증할 수 있도록
+    (scripts/benchmark_models.py) 파라미터로 열어둔 것이다.
+
+    save_report=True이면 질문/답변을 research_report에, tool 실행 이력을 tool_call_log에 저장한다.
+    저장이 실패해도 답변은 정상 반환하고 report_id만 None이 된다. 벤치마크/스모크 스크립트는
+    DB를 오염시키지 않도록 save_report=False로 호출한다.
+
+    Returns:
+        {"answer": str, "used_tools": list[str], "sources": list[dict], "report_id": int | None}
+        sources는 tool 결과에서 뽑은 근거 문서(news/disclosure) 목록이다.
+    """
+    response, records = _answer(question, model)
+    response["report_id"] = save_report_row(question, response["answer"], records) if save_report else None
+    return response

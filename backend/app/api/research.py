@@ -1,11 +1,14 @@
 from typing import Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Path, Query
 from pydantic import BaseModel
 
 from app.agent import ask_question
+from app.reports import get_report, list_reports
 
 router = APIRouter(prefix="/api", tags=["research"])
+
+BIGINT_MAX = 9223372036854775807
 
 
 class ResearchRequest(BaseModel):
@@ -25,9 +28,50 @@ class ResearchResponse(BaseModel):
     answer: str
     used_tools: list[str]
     sources: list[Source] = []
+    # 저장에 실패하면 None. 답변은 저장 성공 여부와 무관하게 정상 반환된다.
+    report_id: int | None = None
+
+
+class ReportDetail(BaseModel):
+    report_id: int
+    question: str
+    answer: str
+    summary: str | None = None
+    # 질문에서 다룬 종목이 정확히 1개일 때만 채워진다(여러 개거나 없으면 None)
+    company_name: str | None = None
+    created_at: str
+    used_tools: list[str]
+    sources: list[Source]
+
+
+class ReportListItem(BaseModel):
+    report_id: int
+    question: str
+    summary: str | None = None
+    company_name: str | None = None
+    created_at: str
+    used_tools: list[str]
 
 
 @router.post("/research", response_model=ResearchResponse)
 def research(request: ResearchRequest) -> ResearchResponse:
     result = ask_question(request.question)
     return ResearchResponse(**result)
+
+
+@router.get("/research", response_model=list[ReportListItem])
+def list_research(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> list[ReportListItem]:
+    """최근 리포트 목록(최신순)."""
+    return [ReportListItem(**r) for r in list_reports(limit=limit, offset=offset)]
+
+
+@router.get("/research/{report_id}", response_model=ReportDetail)
+def get_research(report_id: int = Path(ge=1, le=BIGINT_MAX)) -> ReportDetail:
+    """저장된 리포트 한 건(질문/답변/sources)."""
+    report = get_report(report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail=f"report_id={report_id} 리포트를 찾을 수 없습니다.")
+    return ReportDetail(**report)
