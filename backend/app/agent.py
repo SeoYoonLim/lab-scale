@@ -55,13 +55,30 @@ SYSTEM_PROMPT = (
 # 겹치면 안 된다. 겹치면 모델이 "이미 답변한 질문"으로 인식해 tool을 호출하지 않고
 # 이 few-shot 안의 가짜 데이터를 그대로 베껴서 답하는 현상이 있었다
 # (scripts/benchmark_models.py 1차 실행에서 qwen2.5:7b-instruct가 5/5 재현, 자세한
-# 내용은 해당 스크립트 상단 주석 참고). 그래서 예시는 삼성전자가 아닌 SK하이닉스로,
-# 문구도 실제 테스트 케이스와 다르게 구성한다.
+# 내용은 해당 스크립트 상단 주석 참고).
+# 예시에는 실제 종목과 복사할 만한 헤드라인/수치를 넣지 않는다. 실제 종목(SK하이닉스)과 그럴듯한
+# 헤드라인("HBM 수주 확대 소식에 매수세 유입")을 넣었을 때, 모델이 실제 데이터가 빈약하면 예시를 실제 뉴스처럼
+# 베껴 답변에 넣었다(SK네트웍스 질문에 DB에 없는 "SK네트웍스, HBM 수주 확대 소식에 매수세 유입"을 지어내거나,
+# KCC 질문에 "SK하이닉스는 최근 뉴스…"라고 답한 사례).
+# 종목명만 가상("가상전자")으로 바꾸고 가상 헤드라인을 남기면 오염이 그대로였다: 모델이 헤드라인을 회사명만
+# 바꿔 베꼈고("KCC, 신규 공장 증설 계획 발표"), 예시의 가상 수치·종목명이 답변에 그대로 출력되기도 했다
+# (오염 5/135, 종목별 25회 반복 측정). 원인은 이름이 아니라 "예시에 복사 가능한 헤드라인이 있다"는 점이라서,
+# 예시의 뉴스 결과를 헤드라인 없는 "수집된 뉴스 없음" 사례로 바꿨다 (오염 0/135, p=0.03).
+# 시스템 프롬프트에 "지어내지 마라" 지침 문장을 추가해서 오염을 막는 것도 시도했으나, 이는 multi_tool
+# (주가+뉴스 동시 호출) 성공률을 87%→62%까지 떨어뜨려(30회 측정) 제외했다. 오염 방지는 few-shot의
+# 뉴스 결과를 found=false로 만드는 것만으로 충분하다.
+# 종목명은 실제 상장사이면서 이 프로젝트 DB(company 테이블, 300종목 백필)에는 없는 롯데칠성을 쓴다.
+# 애초 후보였던 SK하이닉스는 그사이 300종목 백필에 포함돼 DB에 실제 주가·뉴스가 존재하게 되어(예시의
+# found=false가 실제 조회 결과와 모순되므로) 제외했다. 롯데칠성은 company 테이블에 아예 없어서
+# resolve_company()가 stock_tool/news_tool 모두에 대해 동일하게 "종목을 찾지 못했습니다" found=false를
+# 돌려준다(실제 호출로 확인). 그래서 예시의 두 tool 결과도 그 실제 메시지를 그대로 쓴다 — 가짜 수치나
+# 가짜 헤드라인이 전혀 없다. 문구도 실제 테스트 케이스(benchmark_models.py의 CASE_*, 삼성전자 기준)와
+# 다르게 구성한다.
 FEW_SHOT_MESSAGES = [
     # 예시 1: 여러 정보가 필요한 질문 -> stock_tool + news_tool을 한 응답에서 동시에 호출
     {
         "role": "user",
-        "content": "SK하이닉스 요즘 흐름이 심상치 않던데, 주가 움직임이랑 관련 소식 같이 정리해줄 수 있어?",
+        "content": "롯데칠성 요즘 흐름이 심상치 않던데, 주가 움직임이랑 관련 소식 같이 정리해줄 수 있어?",
     },
     {
         "role": "assistant",
@@ -70,13 +87,13 @@ FEW_SHOT_MESSAGES = [
             {
                 "function": {
                     "name": "stock_tool",
-                    "arguments": {"ticker": "SK하이닉스", "period_days": 1},
+                    "arguments": {"ticker": "롯데칠성", "period_days": 1},
                 }
             },
             {
                 "function": {
                     "name": "news_tool",
-                    "arguments": {"company_name": "SK하이닉스", "limit": 5},
+                    "arguments": {"company_name": "롯데칠성", "limit": 5},
                 }
             },
         ],
@@ -84,7 +101,12 @@ FEW_SHOT_MESSAGES = [
     {
         "role": "tool",
         "content": json.dumps(
-            {"ticker": "SK하이닉스", "found": True, "change_pct": -2.3, "volume": 9876543},
+            {
+                "ticker": "롯데칠성",
+                "period_days": 1,
+                "found": False,
+                "message": "'롯데칠성' 종목을 찾지 못했습니다. company 테이블에 등록된 종목명 또는 종목코드를 지정해주세요.",
+            },
             ensure_ascii=False,
         ),
     },
@@ -92,9 +114,10 @@ FEW_SHOT_MESSAGES = [
         "role": "tool",
         "content": json.dumps(
             {
-                "company_name": "SK하이닉스",
-                "found": True,
-                "news": [{"title": "SK하이닉스, HBM 수주 확대 소식에 매수세 유입", "source": "example.com"}],
+                "company_name": "롯데칠성",
+                "limit": 5,
+                "found": False,
+                "message": "'롯데칠성' 종목을 찾지 못했습니다. company 테이블에 등록된 종목명 또는 종목코드를 지정해주세요.",
             },
             ensure_ascii=False,
         ),
@@ -102,8 +125,8 @@ FEW_SHOT_MESSAGES = [
     {
         "role": "assistant",
         "content": (
-            "SK하이닉스는 오늘 2.3% 하락했고 거래량은 9,876,543주였습니다. 다만 HBM 수주 확대 "
-            "소식이 전해지며 매수세가 유입되고 있다는 뉴스도 함께 확인됩니다."
+            "죄송합니다. '롯데칠성'은 현재 등록된 종목 목록에서 찾지 못해 주가와 뉴스 모두 "
+            "확인할 수 없었습니다. 정확한 종목명이나 종목코드를 알려주시면 다시 확인해드리겠습니다."
         ),
     },
     # 예시 2: DB 조회가 필요 없는 일반 개념 질문 -> tool 호출 없이 바로 답변
