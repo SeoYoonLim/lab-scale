@@ -235,3 +235,7 @@ FastAPI 기본 형식으로 `detail`이 **배열**이다. 필드별 위치는 `l
 
 - `answer`는 로컬 LLM(llama3.1:8b)이 생성하므로 같은 질문에도 매번 표현이 다르고, 뉴스가 질문 종목과 무관해 보이는 경우나 모델의 사실 오류가 섞일 수 있다. 근거는 `sources`로 확인하도록 UI에 링크를 노출하는 것을 권장한다.
 - `POST`는 성공할 때마다 리포트를 저장한다(`report_id`). 테스트 호출도 목록에 쌓인다.
+
+## 테스트 실행 (백엔드)
+
+`cd backend && pytest` — 단위 테스트 + dev DB 통합 테스트(DB가 꺼져 있으면 자동 skip). LLM을 실제로 호출하는 느린 테스트는 기본 제외이며 `pytest -m slow`로 따로 돌린다. DB 없이 단위 테스트만: `pytest -m "not integration"`.
