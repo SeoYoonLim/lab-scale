@@ -33,14 +33,18 @@ def _news_text(row: News) -> str:
 
 
 def _disclosure_text(row: Disclosure) -> str:
-    """공시는 본문(content)이 수집되지 않고 제목이 '증권발행실적보고서' 같은 서식명이라, 제목만 쓰면
-    6,308건 중 96.9%가 다른 공시와 코사인 0.99 이상으로 겹쳤다(서로 다른 벡터 478개).
-    회사명과 접수일(KST)을 붙이면 겹침이 30.5%로 줄고(남은 겹침은 회사·제목·접수일이 모두 같은 공시뿐),
-    '삼성전자 공시'처럼 종목을 말하는 질문의 top-10 적중이 0~1건에서 9~10건이 된다(주제 질문 적중은 유지)."""
+    """공시 임베딩 텍스트 = '회사명 제목 (접수일 KST)'. 제목이 '증권발행실적보고서' 같은 서식명이라 제목만 쓰면
+    6,308건 중 96.9%가 다른 공시와 코사인 0.99 이상으로 겹쳤다(서로 다른 벡터 478개). 회사명과 접수일을 붙이면
+    30.4%로 줄고 '삼성전자 공시' 같은 종목 질문의 top-10 적중이 0~1건에서 9~10건이 된다.
+
+    원문(row.content, DART document.xml에서 수집)은 일부러 넣지 않는다. 같은 8개 질의로 재본 결과 원문을 이어
+    붙이면 중복이 줄지 않고(30.4% -> 28.2~31.5%, 남은 건 같은 회사의 정기 공시라 표지 문구가 같다) top-10
+    적중은 오히려 78/80 -> 70~73/80으로 떨어졌다(표지/서식 문구가 제목·회사명 신호를 희석하고 '현대차 공시'에
+    현대건설·현대글로비스가 섞임). 원문은 rag_search_tool의 content_snippet으로 LLM에 보여주는 용도로만 쓴다."""
     parts = [row.company.name, row.title]
     if row.disclosed_at is not None:
         parts.append(f"({row.disclosed_at.astimezone(KST):%Y-%m-%d})")
-    return _build_text(" ".join(parts), row.content)
+    return " ".join(parts)[:MAX_TEXT_LEN]
 
 
 def _embed_pending(

@@ -29,10 +29,13 @@ def test_disclosure_without_date():
     assert _disclosure_text(disclosure()) == "삼성전자 증권발행실적보고서"
 
 
-def test_disclosure_content_appended_and_truncated():
-    text = _disclosure_text(disclosure(content="가" * 1000))
-    assert text.startswith("삼성전자 증권발행실적보고서\n가")
-    assert len(text) == MAX_TEXT_LEN
+def test_disclosure_content_is_not_embedded():
+    # 원문을 붙이면 중복이 안 줄고 검색 적중이 떨어졌다(_disclosure_text docstring 참고)
+    assert _disclosure_text(disclosure(content="가" * 1000)) == _disclosure_text(disclosure(content=None))
+
+
+def test_disclosure_text_truncated_to_max_len():
+    assert len(_disclosure_text(disclosure(title="가" * 1000))) == MAX_TEXT_LEN
 
 
 def test_news_text_unchanged():
