@@ -51,6 +51,29 @@ NON_FINANCIAL_DOMAINS = (
 )
 
 
+# 회사명이 프로 스포츠팀/연예 등 다른 개체 이름과 겹쳐서, 회사명만으로 검색하면 스포츠·연예 기사가 섞여
+# 들어오는 종목. 위 도메인 필터로 걸러낸 뒤에도 일반 경제 매체에 실린 스포츠 기사(예: '프로농구 현대모비스
+# 시범경기')가 남아서, 이 종목들에 한해 검색어에 재무 키워드를 붙여(앵커링) 검색 단계에서 걸러낸다.
+# 근거: 2026-09 저장된 뉴스 3,060건 중 스포츠/연예 도메인 기사가 3건 이상 섞인 14개 종목(건수 내림차순).
+# 1~2건만 섞인 24개 종목(삼성전자, 셀트리온, 신세계 등)은 우연한 혼입이라 대상에서 뺐다. 앵커링은 "주가/실적"이
+# 없는 일반 기업 뉴스를 대부분 걸러내므로(같은 기간 기준 기존 결과와의 겹침 14~24%) 꼭 필요한 종목에만 쓴다.
+# 목록에 없는 종목은 기존대로 회사명 단독으로 검색한다.
+NAME_COLLISION_COMPANIES = frozenset(
+    {
+        "KCC", "현대모비스", "한국가스공사", "NC", "KT", "LG", "두산", "한화생명", "CJ", "SK",
+        "대한항공", "하이브", "한화", "삼성생명",
+    }
+)
+NAME_COLLISION_ANCHOR = "주가 실적"
+
+
+def news_search_query(company_name: str) -> str:
+    """네이버 뉴스 검색어. 이름 충돌 종목이면 재무 키워드를 붙이고, 아니면 회사명 단독이다."""
+    if company_name in NAME_COLLISION_COMPANIES:
+        return f"{company_name} {NAME_COLLISION_ANCHOR}"
+    return company_name
+
+
 def is_non_financial_host(host: str) -> bool:
     host = (host or "").lower()
     return any(host == d or host.endswith("." + d) for d in NON_FINANCIAL_DOMAINS)
@@ -330,7 +353,9 @@ def fetch_and_save_news(
     print(f"[{company_name}] 뉴스 {display}건 수집 중...")
 
     try:
-        candidates = fetch_naver_news(company_name, display=min(NAVER_MAX_DISPLAY, display * NEWS_OVERFETCH))
+        candidates = fetch_naver_news(
+            news_search_query(company_name), display=min(NAVER_MAX_DISPLAY, display * NEWS_OVERFETCH)
+        )
     except Exception as e:
         msg = _safe_error(e)
         print(f"오류 발생: {msg}")
