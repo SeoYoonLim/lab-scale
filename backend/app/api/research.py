@@ -1,7 +1,7 @@
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Path, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from app.agent import ask_question
 from app.reports import get_report, list_reports
@@ -9,10 +9,19 @@ from app.reports import get_report, list_reports
 router = APIRouter(prefix="/api", tags=["research"])
 
 BIGINT_MAX = 9223372036854775807
+MAX_QUESTION_LEN = 1000
 
 
 class ResearchRequest(BaseModel):
-    question: str
+    question: str = Field(max_length=MAX_QUESTION_LEN)
+
+    @field_validator("question")
+    @classmethod
+    def not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("질문이 비어 있습니다.")
+        return v
 
 
 class Source(BaseModel):

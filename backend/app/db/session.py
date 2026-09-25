@@ -13,7 +13,8 @@ DB_URL = os.getenv(
     "postgresql+psycopg://postgres:postgres@localhost:15432/ai_investment",
 )
 
-engine = create_engine(DB_URL)
+# DB가 꺼져 있으면 기본 설정은 요청이 끝없이 매달린다. 5초 안에 실패시켜 API가 503을 돌려줄 수 있게 한다.
+engine = create_engine(DB_URL, connect_args={"connect_timeout": 5}, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
