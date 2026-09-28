@@ -120,10 +120,48 @@ class TestRepairFromPreviousQuestion:
         agent._repair_company_args(calls, "카카오는 어때?", "삼성전자 최근 주가 어때?")
         assert calls[0]["function"]["arguments"]["company_name"] == "카카오"
 
-    def test_valid_company_argument_is_left_alone(self):
-        calls = self.calls("카카오")
+    def test_valid_company_argument_matching_previous_subject_is_left_alone(self):
+        calls = self.calls("삼성전자")
         assert agent._repair_company_args(calls, "그럼 최근 뉴스는?", "삼성전자 최근 주가 어때?") == {}
+        assert calls[0]["function"]["arguments"]["company_name"] == "삼성전자"
+
+    def test_wrong_but_valid_company_is_replaced_by_previous_subject(self):
+        # 모델이 회사명 없는 후속 질문에 기본값처럼 다른 유효한 회사를 채운 경우(직전은 카카오인데 삼성전자로 조회)
+        calls = self.calls("삼성전자")
+        repaired = agent._repair_company_args(calls, "그럼 최근 뉴스는?", "카카오 최근 주가 어때?")
+        assert repaired == {0: "삼성전자"}
         assert calls[0]["function"]["arguments"]["company_name"] == "카카오"
+
+    def test_wrong_valid_company_replaced_for_every_company_tool(self):
+        calls = [
+            {"function": {"name": "stock_tool", "arguments": {"ticker": "삼성전자"}}},
+            {"function": {"name": "news_tool", "arguments": {"company_name": "삼성전자"}}},
+            {"function": {"name": "rag_search_tool", "arguments": {"query": "x", "company_name": "삼성전자"}}},
+        ]
+        agent._repair_company_args(calls, "주가랑 뉴스 같이 알려줘", "카카오 최근 주가 어때?")
+        company_args = [c["function"]["arguments"][agent._COMPANY_ARG[c["function"]["name"]]] for c in calls]
+        assert company_args == ["카카오", "카카오", "카카오"]
+
+    def test_company_named_in_new_question_is_never_overridden(self):
+        calls = self.calls("삼성전자")
+        assert agent._repair_company_args(calls, "삼성전자는 어때?", "카카오 최근 주가 어때?") == {}
+        assert calls[0]["function"]["arguments"]["company_name"] == "삼성전자"
+
+    def test_rag_call_without_company_filter_is_left_alone(self):
+        calls = [{"function": {"name": "rag_search_tool", "arguments": {"query": "반도체 업황"}}}]
+        assert agent._repair_company_args(calls, "반도체 업황 근거도 찾아줘", "카카오 최근 주가 어때?") == {}
+        assert "company_name" not in calls[0]["function"]["arguments"]
+
+    def test_previous_question_without_company_changes_nothing(self):
+        calls = self.calls("삼성전자")
+        assert agent._repair_company_args(calls, "그럼 최근 뉴스는?", "PER이 뭐야?") == {}
+        assert calls[0]["function"]["arguments"]["company_name"] == "삼성전자"
+
+    def test_standalone_question_never_overrides_a_valid_company(self):
+        # 후속 질문이 아니면(직전 질문 없음) 이전과 똑같이 유효한 종목 인자는 손대지 않는다
+        calls = self.calls("삼성전자")
+        assert agent._repair_company_args(calls, "그럼 최근 뉴스는?") == {}
+        assert calls[0]["function"]["arguments"]["company_name"] == "삼성전자"
 
     def test_without_previous_question_nothing_is_guessed(self):
         calls = self.calls("산호다항백")

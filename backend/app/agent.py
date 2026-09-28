@@ -393,6 +393,9 @@ def _repair_company_args(calls: list[dict], question: str, previous_question: st
     같은 tool로 이미 정상 해석된 회사는 후보에서 빼고, 남은 후보와 실패한 호출이 일대일로 맞을 때만
     (질문 등장 순서대로) 채운다. 임의로 고르지 않으므로 애매하면 그대로 두어 not-found 응답이 나간다.
     후속 질문("그럼 최근 뉴스는?")처럼 이번 질문에 회사명이 하나도 없을 때만 직전 질문(previous_question)에서 찾는다.
+    또 그런 후속 질문에서 직전 질문에 회사가 정확히 하나면, 모델이 채운 회사가 그 종목이 아닐 때 직전 종목으로 바꾼다:
+    모델은 회사명이 없는 질문에 "삼성전자" 같은 유효한 이름을 기본값처럼 채우는데(직전 종목이 카카오/현대차/네이버일 때
+    후속 뉴스 조회의 60~80%가 다른 회사로 갔다), 해석이 되는 이름이라 위 보정이 손대지 못하기 때문이다.
     calls를 직접 수정하고, {호출 인덱스: 모델이 만든 원래 인자}를 돌려준다."""
     targets = []
     for i, call in enumerate(calls):
@@ -409,6 +412,7 @@ def _repair_company_args(calls: list[dict], question: str, previous_question: st
     db = SessionLocal()
     try:
         resolved_names: dict[str, set[str]] = {}
+        resolved = []
         failed = []
         for i, fn_name, key, args in targets:
             raw = args.get(key)
@@ -418,14 +422,18 @@ def _repair_company_args(calls: list[dict], question: str, previous_question: st
             res = resolve_company(db, raw)
             if res.company is not None:
                 resolved_names.setdefault(fn_name, set()).add(res.company.name)
+                resolved.append((i, key, args, raw, res.company))
             else:
                 failed.append((i, fn_name, key, args, raw))
-        if not failed:
+        if not failed and not previous_question:
             return {}
 
         candidates = extract_from_text(db, question)
+        follow_up_subject = None
         if not candidates and previous_question:
             candidates = extract_from_text(db, previous_question)
+            if len(candidates) == 1:
+                follow_up_subject = candidates[0]
         repaired: dict[int, str] = {}
         for fn_name in {f[1] for f in failed}:
             fails = [f for f in failed if f[1] == fn_name]
@@ -435,6 +443,11 @@ def _repair_company_args(calls: list[dict], question: str, previous_question: st
             for (i, _, key, args, raw), company in zip(fails, remaining):
                 args[key] = company.name
                 repaired[i] = "" if raw is None else str(raw)
+        if follow_up_subject is not None:
+            for i, key, args, raw, company in resolved:
+                if company.id != follow_up_subject.id:
+                    args[key] = follow_up_subject.name
+                    repaired[i] = "" if raw is None else str(raw)
         return repaired
     finally:
         db.close()
