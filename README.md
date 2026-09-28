@@ -18,13 +18,13 @@ FastAPI  ──  POST /api/research ─▶ 에이전트(app/agent.py)
                                      └─ rag_search_tool  bge-m3 임베딩 유사도 검색(뉴스+공시)
                                              │
                                      PostgreSQL 16 + pgvector (docker)
-                                     company · stock_price · news · disclosure
+                                     company · stock_price · market_index · news · disclosure
                                      research_report · tool_call_log
 ```
 
 - **백엔드:** FastAPI, SQLAlchemy 2, Alembic. 질문/답변/tool 호출 이력은 매 요청마다 DB에 저장되고 `GET /api/research`로 다시 볼 수 있습니다.
 - **모델:** 답변·tool 선택은 `llama3.1:8b`, 임베딩은 `bge-m3`(1024차원, HNSW 인덱스). 모두 로컬 Ollama에서 돌아갑니다.
-- **데이터 소스:** 주가는 FinanceDataReader, 뉴스는 네이버 검색 API, 공시는 DART OpenAPI(목록 + 원문).
+- **데이터 소스:** 주가와 시장 지수(코스피 KS11, 코스닥 KQ11)는 FinanceDataReader, 뉴스는 네이버 검색 API, 공시는 DART OpenAPI(목록 + 원문).
 - **프론트엔드:** React + Vite로 서윤님이 진행 중입니다. 이 저장소(`feature/backend` 브랜치)에는 프론트엔드 코드가 아직 없어서 진행 상황은 여기서 확인하지 못했습니다.
 
 ## 로컬 실행
@@ -82,6 +82,7 @@ DB가 비어 있을 때 순서대로 실행합니다. 각 스크립트의 옵션
 ```bash
 python -m scripts.build_universe 300            # 시총 상위 300종목 목록 생성 (scripts/universe_top300.json, 커밋 대상 아님)
 python -m scripts.collect_prices --days 90      # 주가(OHLCV)
+python -m scripts.collect_market_index --days 180    # 코스피/코스닥 지수 일별 종가 + company.market(상장 시장) 채우기
 python -m scripts.collect_universe --report r.json   # 종목별 뉴스 + DART 공시 목록
 python -m app.embeddings --apply                # 임베딩이 비어 있는 뉴스/공시에 bge-m3 임베딩 채우기 (--apply 없으면 dry-run)
 python scripts/collect_disclosure_content.py --apply   # 공시 원문 수집 (이어서 실행 가능, DART 일일 한도 약 2만 건)
@@ -89,6 +90,12 @@ python scripts/collect_disclosure_content.py --apply   # 공시 원문 수집 (�
 
 공시 원문은 `disclosure.content`에 저장되어 `rag_search_tool`이 근거 요약문으로 LLM에 보여줍니다. 임베딩 텍스트에는 일부러 넣지 않습니다
 (재본 결과 검색 적중이 떨어졌습니다. 근거는 `backend/app/embeddings.py`의 `_disclosure_text` 주석 참고).
+
+`app/tools/market_tool.py`(종목 등락률 vs 상장 시장 지수 등락률 비교)는 `market_index`(지수)와 `company.market`(상장 시장)이
+필요합니다. 새 종목을 등록한 뒤에는 `collect_market_index`를 다시 실행해야 그 종목의 시장 구분이 채워집니다(멱등).
+지수 데이터가 종목 주가보다 며칠 일찍 끝나 있으면 지수의 마지막 날짜까지만 비교하고 결과의 `note`에 그 사실을 남깁니다.
+**이 tool은 아직 agent(`app/agent.py`)에 등록하지 않았습니다.** 등록하면 기존 multi-tool 케이스가 떨어지기 때문입니다
+(아래 Known Issues 참고).
 
 ## 테스트
 
@@ -110,6 +117,10 @@ pytest        # backend/ 에서
 - [x] 데이터 수집: 300종목 주가 · 뉴스(네이버, 비금융 도메인 필터·동명 종목 검색 보정) · DART 공시와 공시 원문
 - [x] 임베딩 + 유사도 검색: bge-m3 / pgvector HNSW, 뉴스·공시 전체 임베딩 완료
 - [x] 에이전트: 4개 tool 호출, 종목명 보정(오타/공백/우선주 처리), few-shot, 실패 시 안내 응답
+- [x] FR-06 시장 지수 비교(1차 범위) — 데이터·계산: 코스피/코스닥 지수 수집(`market_index`), 종목 상장 시장 구분,
+  종목 vs 시장 등락률 비교 함수 `market_tool`(테스트 포함)
+- [ ] FR-06 시장 지수 비교 — agent 연동: 구현은 끝났지만 multi-tool 회귀 때문에 agent에 미등록(아래 Known Issues)
+- [ ] FR-06 업종(섹터) 지수 비교: 1차 범위 밖, 후속 작업(업종 지수 수집과 종목-업종 매핑 필요)
 - [x] 리포트 저장·조회: 질문/답변/근거/tool 호출 이력
 - [x] REST API + 에러 처리(Ollama/DB 장애 시 502/503) + CORS
 - [x] 자동 테스트(pytest)와 API 문서
@@ -152,6 +163,22 @@ pytest        # backend/ 에서
     tool 트리거 키워드가 하나도 없으면 1차 호출에 tools를 아예 넘기지 않기(개념 질문은 tool 없이 바로 답변).
     프롬프트 변경 없이 확실히 막을 수 있지만, 종목 없이 묻는 정당한 rag 검색("반도체 업황 관련 근거")도
     막지 않도록 키워드 목록을 함께 검증해야 함.
+- **market_tool(FR-06 시장 지수 비교)을 agent에 못 넣음 — multi-tool 회귀**: `market_tool` 자체는 구현·검증 끝
+  (삼성전자 5거래일을 손계산과 대조, 1일 값은 DB 일별 등락률과 일치). 그러나 tool로 노출하면 stock_tool+news_tool 동시
+  호출(multi)이 떨어져서 등록을 보류함. `benchmark_routing.py`로 interleaved A/B 측정:
+  - 시장 질문 라우팅 자체는 잘 됨: market 48/48, held-out market_ho 32/40(tool만)~40/40(tool+프롬프트 문장).
+  - 회귀: multi(n=96) 도입 전 60% → tool만 추가 36%, 설명을 짧게 줄여도 36%, tool+프롬프트 문장 29%
+    (표준오차 약 ±5%p라서 노이즈가 아님). market_tool이 multi 질문에서 실제로 호출된 건 1/96뿐이라, "5번째 tool이
+    목록에 있다"는 것 자체가 모델을 한 tool만 고르게 만드는 것으로 보임. rag/rag_ho/disc_list/disc_ho/stock/news는 유지.
+  - tool을 늘리지 않고 stock_tool 설명(+프롬프트 문장)에 "시장 대비 비교도 함께 돌려준다"를 넣는 통합안도 시험:
+    시장 질문은 92~100% stock_tool로 가지만 multi(n=64)가 50% → 33%(설명만)/28%(설명+문장)로 똑같이 떨어짐.
+    즉 stock/news 근처에 "시장 흐름 비교"를 언급하는 문구 자체가 multi를 흔든다.
+  - 결론: 프롬프트/설명 수준의 국소 수정으로는 회귀 없이 못 넣음. 그래서 `agent.py`는 그대로 두고 데이터·함수만 커밋.
+  - 다음 후보: (1) 코드 레벨 사전 분류 — 질문에 "코스피/코스닥/시장 대비/장 전체" 같은 키워드가 있을 때만 그 요청의
+    tools 목록에 market_tool을 추가(그 외 질문은 지금의 4-tool 프롬프트 그대로라 회귀 없음). 키워드 커버리지는
+    market_ho 같은 held-out 질문으로 검증 필요. (2) multi 회귀를 감수하고 등록. (3) stock_tool 응답에 시장 비교를
+    항상 포함시키고 설명은 그대로 둠(라우팅 무변경이지만 시장 질문 중 news_tool로 가는 경우는 못 잡음: 도입 전
+    기준 시장 질문의 55~73%만 stock_tool로 감).
 - **[해결] 공시 "내용" 질문이 rag_search_tool 대신 disclosure_tool로 라우팅되던 문제**:
   "삼성전자 자사주 매입 관련 공시 내용 자세히 알려줘"류 질문이 "공시"라는 단어
   때문에 거의 항상 disclosure_tool(최신순 목록)로 갔던 문제. `scripts/benchmark_routing.py`로

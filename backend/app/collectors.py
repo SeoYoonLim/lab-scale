@@ -24,7 +24,7 @@ from sqlalchemy import or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db.session import SessionLocal
-from app.models import Company, Disclosure, News, StockPrice
+from app.models import Company, Disclosure, MarketIndex, News, StockPrice
 
 load_dotenv()
 
@@ -337,6 +337,91 @@ def fetch_and_save_stock(
         msg = _safe_error(e)
         print(f"오류 발생: {msg}")
         return CollectResult(ok=False, fetched=len(records), error=msg)
+    finally:
+        db.close()
+
+
+# 시장 전체 지수(MARKET_INDEXES) 수집. market_tool이 종목 등락률과 같은 기간으로 비교한다.
+_MARKET_INDEX_COLUMNS = ("close_price", "change_pct")
+
+
+def _index_row(date_index, row) -> dict:
+    change = row["Change"] if "Change" in row else None
+    return {
+        "price_date": date_index.date(),
+        "close_price": round(float(row["Close"]), 2),
+        "change_pct": None if change is None or change != change else round(float(change) * 100, 2),
+    }
+
+
+def fetch_and_save_market_index(index_code: str, days: int = 7, dry_run: bool = False) -> CollectResult:
+    """FinanceDataReader로 지수 일별 종가를 받아 market_index에 upsert한다(멱등)."""
+    today = datetime.now(KST)
+    start_date = (today - timedelta(days=days)).strftime("%Y-%m-%d")
+    end_date = today.strftime("%Y-%m-%d")
+
+    try:
+        df = fdr.DataReader(index_code, start_date, end_date)
+    except Exception as e:
+        return CollectResult(ok=False, error=_safe_error(e))
+
+    if df is None or df.empty:
+        return CollectResult(ok=False, error=f"'{index_code}'의 {start_date}~{end_date} 지수 데이터를 받지 못했습니다.")
+
+    records = [_index_row(i, r) for i, r in df.dropna(subset=["Close"]).iterrows()]
+
+    db = SessionLocal()
+    try:
+        existing = {
+            row.price_date: (float(row.close_price), None if row.change_pct is None else float(row.change_pct))
+            for row in db.query(MarketIndex).filter(
+                MarketIndex.index_code == index_code, MarketIndex.price_date >= records[0]["price_date"]
+            )
+        }
+        new = [r for r in records if r["price_date"] not in existing]
+        if dry_run:
+            return CollectResult(ok=True, saved=len(new), fetched=len(records))
+
+        stmt = pg_insert(MarketIndex).values([{**r, "index_code": index_code} for r in records])
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_market_index_code_date",
+            set_={col: stmt.excluded[col] for col in _MARKET_INDEX_COLUMNS},
+        )
+        db.execute(stmt)
+        db.commit()
+        return CollectResult(ok=True, saved=len(new), fetched=len(records))
+    except Exception as e:
+        db.rollback()
+        return CollectResult(ok=False, fetched=len(records), error=_safe_error(e))
+    finally:
+        db.close()
+
+
+def backfill_company_market(dry_run: bool = False) -> tuple[int, int]:
+    """company.market(KOSPI/KOSDAQ/KOSDAQ GLOBAL)을 KRX 상장 목록(fdr, build_universe와 같은 소스)에서 채운다.
+
+    이미 값이 같으면 건드리지 않는다. 목록에 없는 종목은 그대로 둔다. (갱신 건수, 목록에 없어 못 채운 건수)를 돌려준다.
+    """
+    listing = fdr.StockListing("KRX")
+    market_by_ticker = dict(zip(listing["Code"], listing["Market"]))
+
+    db = SessionLocal()
+    try:
+        updated = missing = 0
+        for company in db.query(Company).all():
+            market = market_by_ticker.get(company.ticker)
+            if market is None:
+                missing += 1
+            elif company.market != market:
+                updated += 1
+                if not dry_run:
+                    company.market = market
+        if not dry_run:
+            db.commit()
+        return updated, missing
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 

@@ -89,6 +89,22 @@ CASES = {
         "PER이 뭐야? 쉽게 설명해줘.",
         "ETF랑 펀드 차이가 뭐야?",
     ],
+    # 시장 지수 비교(market_tool). market_ho는 tool 설명/프롬프트 문구를 다듬는 동안 보지 않은 다른 표현.
+    "market": [
+        "삼성전자가 최근 일주일 떨어진 게 시장 전체 때문이야, 아니면 삼성전자만의 문제야?",
+        "SK하이닉스 최근 5일 등락률을 코스피랑 비교해줘",
+        "카카오 요즘 주가 하락이 시장 전체 흐름 때문인지 궁금해",
+        "현대차가 코스피보다 더 올랐어?",
+        "LG에너지솔루션 이번 주 주가, 시장 대비 어땠어?",
+        "알테오젠 최근 10일 성과를 코스닥 지수와 비교해서 알려줘",
+    ],
+    "market_ho": [
+        "셀트리온 주가 빠진 게 장 전체가 약해서야, 이 종목 이슈야?",
+        "에코프로 최근 일주일 코스닥보다 잘 버텼어?",
+        "기아가 지수 대비 초과 수익을 냈는지 알려줘",
+        "한화에어로스페이스 코스피 흐름이랑 비교하면 어때?",
+        "HLB 이번 달 시장 평균보다 부진한 게 개별 종목 요인 때문인지 알고 싶어",
+    ],
     # no_tool 프롬프트를 고치는 동안 예시로 쓰지 않은 개념 질문 (개발용 질문에 맞춰 튜닝됐는지 확인)
     "no_tool_ho": [
         "배당수익률이 뭐고 어떻게 계산해?",
@@ -100,8 +116,10 @@ CASES = {
 }
 
 
-def judge(group: str, tools: set[str]) -> bool:
-    group = {"rag_ho": "rag", "disc_ho": "disc_list", "no_tool_ho": "no_tool"}.get(group, group)
+def judge(group: str, tools: set[str], market_tools: frozenset = frozenset({"market_tool"})) -> bool:
+    group = {"rag_ho": "rag", "disc_ho": "disc_list", "no_tool_ho": "no_tool", "market_ho": "market"}.get(group, group)
+    if group == "market":
+        return bool(market_tools & tools)
     if group == "rag":
         return "rag_search_tool" in tools
     if group == "disc_list":
@@ -280,7 +298,67 @@ def variant_nt_sp_fs():
     return tools, sp, fs + copy.deepcopy(NT_FEW_SHOT)
 
 
-VARIANTS = {"current": variant_current, "desc": variant_desc, "fs": variant_fs, "fs_pair": variant_fs_pair,
+# market_tool 도입 전/후 비교. 기준(mt_base)은 TOOLS에서 market_tool을, SYSTEM_PROMPT에서 그 문장을 뺀 것이다.
+MT_SP_SENTENCE = (
+    "종목의 움직임이 그 종목만의 요인 때문인지 시장 전체 흐름 때문인지 구분해야 하거나 코스피·코스닥 지수와 "
+    "비교하는 질문에는 market_tool도 함께 호출하라. "
+)
+
+
+def _without_market_tool(tools):
+    return [t for t in copy.deepcopy(tools) if t["function"]["name"] != "market_tool"]
+
+
+def variant_mt_base():
+    assert MT_SP_SENTENCE in ORIG_SYSTEM_PROMPT
+    return _without_market_tool(ORIG_TOOLS), ORIG_SYSTEM_PROMPT.replace(MT_SP_SENTENCE, ""), ORIG_FEW_SHOT
+
+
+def variant_mt_tool():
+    assert MT_SP_SENTENCE in ORIG_SYSTEM_PROMPT
+    return copy.deepcopy(ORIG_TOOLS), ORIG_SYSTEM_PROMPT.replace(MT_SP_SENTENCE, ""), ORIG_FEW_SHOT
+
+
+MT_TERSE_DESC = (
+    "종목 등락률을 그 종목이 상장된 시장(코스피/코스닥) 지수의 같은 기간 등락률과 비교한다. "
+    "시장 전체 흐름 대비 성과를 물을 때만 호출한다. 데이터가 없으면 found=false를 반환한다."
+)
+
+
+def variant_mt_tool_terse():
+    tools, sp, fs = variant_mt_tool()
+    _tool(tools, "market_tool")["description"] = MT_TERSE_DESC
+    return tools, sp, fs
+
+
+# 통합안: tool을 늘리지 않고(5번째 tool은 multi를 떨어뜨림) stock_tool이 시장 대비 비교를 함께 돌려주는 것으로 설명한다.
+FOLD_STOCK_SUFFIX = (
+    " 이 종목의 등락률이 시장 전체(코스피/코스닥 지수) 흐름과 비교해 어떤지(시장 대비 차이)도 함께 돌려주므로, "
+    "종목 요인인지 시장 요인인지 구분하는 질문에도 호출한다."
+)
+FOLD_SP_SENTENCE = (
+    "종목의 움직임이 그 종목만의 요인 때문인지 시장 전체 흐름 때문인지 구분해야 하거나 코스피·코스닥 지수와 "
+    "비교하는 질문에는 stock_tool을 호출하라(시장 지수 대비 등락률도 함께 나온다). "
+)
+MARKET_TOOLS = {"fold_desc": frozenset({"stock_tool"}), "fold_sp": frozenset({"stock_tool"})}
+
+
+def variant_fold_desc():
+    tools, sp, fs = variant_mt_base()
+    _tool(tools, "stock_tool")["description"] += FOLD_STOCK_SUFFIX
+    return tools, sp, fs
+
+
+def variant_fold_sp():
+    tools, sp, fs = variant_fold_desc()
+    anchor = "최근 이슈나 '왜 올랐는지/내렸는지' 같이 뉴스가 필요한 질문에는 news_tool을 호출하라. "
+    assert anchor in sp
+    return tools, sp.replace(anchor, anchor + FOLD_SP_SENTENCE), fs
+
+
+VARIANTS = {"current": variant_current, "mt_base": variant_mt_base, "mt_tool": variant_mt_tool,
+            "mt_tool_terse": variant_mt_tool_terse,
+            "fold_desc": variant_fold_desc, "fold_sp": variant_fold_sp, "desc": variant_desc, "fs": variant_fs, "fs_pair": variant_fs_pair,
             "sp": variant_sp, "sp_desc": variant_sp_desc,
             "nt_sp": variant_nt_sp, "nt_desc": variant_nt_desc, "nt_fs": variant_nt_fs, "nt_sp_fs": variant_nt_sp_fs,
             "nt_desc2": variant_nt_desc2, "nt_desc2_sp": variant_nt_desc2_sp}
@@ -300,7 +378,7 @@ def run(variant_names: list[str], reps: int, groups: list[str]):
                             tools = select_tools(q)
                         except Exception as e:  # noqa: BLE001
                             tools = {f"ERROR:{type(e).__name__}"}
-                        results[name][group].append((q, judge(group, tools), sorted(tools)))
+                        results[name][group].append((q, judge(group, tools, MARKET_TOOLS.get(name, frozenset({"market_tool"}))), sorted(tools)))
             print(f"round {rep + 1}/{reps} done", flush=True)
     finally:
         agent.TOOLS, agent.SYSTEM_PROMPT, agent.FEW_SHOT_MESSAGES = orig
@@ -318,6 +396,15 @@ def summarize(results, variant_names, groups):
             summary.setdefault(n, {})[group] = [ok, len(rs)]
             row += f"{ok:>10}/{len(rs):<3} ({100 * ok / len(rs):3.0f}%)  "
         print(row)
+
+    # market_tool이 market 그룹 밖의 질문에서 불필요하게 호출된 비율(추가 호출은 위 성공 판정에는 안 잡힌다)
+    row = f"{'mt 오호출':<11}"
+    for n in variant_names:
+        rs = [r for g in groups if not g.startswith("market") for r in results[n][g]]
+        hit = sum(1 for _, _, tools in rs if "market_tool" in tools)
+        summary.setdefault(n, {})["market_tool_false_calls"] = [hit, len(rs)]
+        row += f"{hit:>10}/{len(rs):<3} ({100 * hit / max(len(rs), 1):3.0f}%)  "
+    print(row)
     return summary
 
 
