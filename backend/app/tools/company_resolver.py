@@ -1,7 +1,7 @@
 """tool 입력 종목명/티커 정규화 및 보정.
 
 LLM이 만든 인자에는 앞뒤 공백, 따옴표, 'null', 깨진 문자열 등이 섞여 들어온다.
-정확 일치 -> 공백/대소문자 무시 일치 -> 유사 종목명 보정(difflib) 순으로 시도하고,
+정확 일치 -> 공백/대소문자 무시 일치 -> 별칭(app/company_aliases.py) -> 유사 종목명 보정(difflib) 순으로 시도하고,
 그래도 못 찾으면 예외 대신 "종목을 찾지 못했습니다" 응답을 돌려준다.
 """
 
@@ -10,6 +10,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
+from app.company_aliases import COMPANY_ALIASES
 from app.models import Company
 
 # 유사 종목명 보정 임계값. 종목명 오타를 사용 가능한 수준으로 복구하면서, DB에 없는 실제 상장사가
@@ -35,6 +36,13 @@ def normalize_name(raw) -> str:
 
 def _key(s: str) -> str:
     return s.replace(" ", "").casefold()
+
+
+# 별칭 조회용. 정규화한 별칭 -> 등록명(resolve_company), 등록명 -> 별칭 목록(extract_from_text).
+_ALIAS_BY_KEY = {_key(alias): name for alias, name in COMPANY_ALIASES.items()}
+_ALIASES_BY_NAME: dict[str, list[str]] = {}
+for _alias, _name in COMPANY_ALIASES.items():
+    _ALIASES_BY_NAME.setdefault(_name, []).append(_alias)
 
 
 @dataclass
@@ -63,8 +71,16 @@ def resolve_company(db, raw) -> Resolution:
     if len(loose) == 1:
         return Resolution(company=loose[0], corrected_from=str(raw))
 
-    # 3) 유사 종목명 보정
+    # 3) 별칭 (예: '네이버' -> 'NAVER'). 퍼지 매칭보다 먼저 본다: 퍼지는 못 찾는 데서 끝나지 않고 '삼성SDS' -> 삼성SDI처럼
+    #    다른 종목으로 잘못 연결하기도 한다. 별칭의 등록명이 DB에 없으면 아무것도 하지 않고 다음 단계로 넘어간다.
     key = _key(s)
+    alias_name = _ALIAS_BY_KEY.get(key)
+    if alias_name is not None:
+        for c in companies:
+            if c.name == alias_name:
+                return Resolution(company=c, corrected_from=str(raw))
+
+    # 4) 유사 종목명 보정
     keys = {}
     for c in companies:
         keys.setdefault(_key(c.name), []).append(c)
@@ -100,6 +116,7 @@ def extract_from_text(db, text: str) -> list[Company]:
     - 겹치는 후보는 더 긴 이름이 이긴다 ('카카오뱅크' 질문에서 '카카오'는 제외).
     - 영문/숫자 이름·티커는 앞뒤가 영문/숫자가 아닐 때만 인정한다 ('DL' -> 'DLNA' 제외).
     - 이름 바로 뒤에 우선주 표기가 붙으면 보통주로 취급하지 않는다 ('삼성전자우' -> 제외).
+    - 별칭('네이버' -> NAVER)도 그 회사의 이름처럼 찾는다.
     여러 회사가 언급되면 전부 반환하므로, 어느 것을 쓸지는 호출측이 정한다."""
     hay = unicodedata.normalize("NFC", text or "").casefold()
     if not hay:
@@ -107,7 +124,8 @@ def extract_from_text(db, text: str) -> list[Company]:
 
     hits = []  # (start, end, company)
     for c in db.query(Company).all():
-        for token, is_name in ((c.name, True), (c.ticker, False)):
+        aliases = ((a, True) for a in _ALIASES_BY_NAME.get(c.name, ()))
+        for token, is_name in ((c.name, True), (c.ticker, False), *aliases):
             t = token.casefold()
             for m in re.finditer(re.escape(t), hay):
                 st, en = m.span()
