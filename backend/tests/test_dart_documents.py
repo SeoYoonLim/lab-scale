@@ -5,7 +5,7 @@ import pytest
 import requests
 
 import app.dart_documents as dd
-from app.dart_documents import CONTENT_MAX_LEN, FetchOutcome, QuotaExceeded, extract_text, fetch_document_text
+from app.dart_documents import CONTENT_MAX_LEN, QuotaExceeded, extract_text, fetch_document_text
 
 DART_XML = (
     '<?xml version="1.0" encoding="utf-8"?>\r\n<DOCUMENT xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n'

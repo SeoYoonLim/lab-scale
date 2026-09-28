@@ -10,8 +10,17 @@
 - multi:      주가+뉴스 -> stock_tool과 news_tool을 함께 호출
 - stock/news: 각각 그 tool을 호출 (다른 tool을 더 불러도 해당 tool이 있으면 성공)
 - no_tool:    개념 질문 -> tool 호출 없음 (llama3.1:8b의 알려진 약점, 회귀 여부만 본다)
+- *_ho:       rag_ho/disc_ho/no_tool_ho/market_ho는 프롬프트를 고치는 동안 보지 않은 hold-out. 개발용 질문에만 맞춰
+              튜닝됐는지(문구 겹침으로 인한 착시) 확인한다.
+- market/market_ho: 시장 지수 비교 질문 -> market_tool 호출. market_tool은 기본 tool 목록에 없고 app/routing.py의 키워드
+              게이트가 True일 때만 추가된다. gate_off/gate_always 변형으로 게이트 유무를 비교한다.
 
-사용:  python scripts/benchmark_routing.py [--reps 4] [--variants current,desc] [--out routing.json]
+측정 방식이 실제 요청 경로(agent.build_request)를 그대로 쓰므로, 요청 구성이 바뀌는 수정을 하면 반드시 이 스크립트로
+가드레일 그룹(rag, rag_ho, disc_list, disc_ho, stock, news, multi, no_tool, no_tool_ho)의 회귀를 확인한다.
+같은 입력도 실행마다 결과가 달라서(multi는 n=32에서 ±9%p 수준) 같은 입력끼리(gate_off vs current 등) 노이즈를 먼저 본다.
+
+사용:  python scripts/benchmark_routing.py [--reps 8] [--variants current,gate_off] [--groups multi,market] [--out routing.json]
+       (--out 경로는 저장소 밖이나 .gitignore 대상 위치를 쓸 것)
 """
 
 import argparse
@@ -153,27 +162,10 @@ def variant_current():
     return ORIG_TOOLS, ORIG_SYSTEM_PROMPT, ORIG_FEW_SHOT
 
 
-DISCLOSURE_DESC = (
-    "DB에 저장된 실제 데이터 기준으로, 특정 종목의 '최근 공시 목록'(DART 전자공시)을 최신순으로 N건 그대로 "
-    "조회한다. 최근에 어떤 공시가 올라왔는지 목록을 볼 때만 호출한다 (예: 최근 공시 뭐 있어?, 오늘 올라온 공시, "
-    "최신 공시 목록). 공시에 담긴 구체적인 내용·조건·금액을 특정 주제로 찾아야 하는 질문에는 호출하지 말고 "
-    "rag_search_tool을 호출한다. 단순 주가 수치나 일반 뉴스 질문에도 호출하지 않는다. 아직 공시가 수집되지 "
-    "않은 종목이거나 등록되지 않은 종목인 경우 found=false와 함께 그 사유를 담은 message를 반환한다."
-)
-RAG_DESC = (
-    "공시와 뉴스의 '내용'을 의미(semantic) 기준으로 검색해, 질문과 관련도가 높은 문서 top-k를 찾는다. "
-    "특정 주제(전환사채 발행, 임상시험, 사업 양수도 등)에 대해 공시·뉴스에 담긴 구체적인 내용, 조건, 금액 "
-    "같은 근거를 찾을 때 호출한다 (예: '전환사채 발행 공시에 나온 조건 알려줘', '임상시험 결과 공시 내용을 "
-    "자세히 알려줘', '~ 관련 근거 찾아줘'). 단순히 최신순 목록이 필요한 질문에는 호출하지 않는다. 임베딩이 아직 "
-    "채워지지 않았거나 일치하는 문서가 없으면 found=false를 반환한다."
-)
-
-
-def variant_desc():
-    tools, sp, fs = copy.deepcopy(ORIG_TOOLS), ORIG_SYSTEM_PROMPT, ORIG_FEW_SHOT
-    _tool(tools, "disclosure_tool")["description"] = DISCLOSURE_DESC
-    _tool(tools, "rag_search_tool")["description"] = RAG_DESC
-    return tools, sp, fs
+# 반영 완료로 제거한 변형: `desc`, `sp`, `sp_desc` (공시 목록 vs 내용 검색 라우팅 수정: SYSTEM_PROMPT 라우팅 문장 +
+# disclosure_tool/rag_search_tool 설명 재작성). 이 수정은 커밋 99b5081에서 app/agent.py에 들어갔고 지금은 "current"가 곧 그
+# 결과다. 수정 전 프롬프트가 있어야 재현되므로 다시 돌리려면 99b5081의 부모 커밋 agent.py에서 시작해야 한다.
+# 아래 fs/fs_pair/nt_* 변형은 기각된 실험이지만 README의 수치를 재현하는 데 그대로 쓸 수 있어 남겨 둔다.
 
 
 def _not_found(company: str, **base) -> str:
@@ -213,31 +205,6 @@ def variant_fs():
 
 def variant_fs_pair():
     return copy.deepcopy(ORIG_TOOLS), ORIG_SYSTEM_PROMPT, _with_examples(RAG_EXAMPLE, LIST_EXAMPLE)
-
-
-SP_ROUTING = (
-    "최근에 올라온 공시 목록(예: '최근 공시 뭐 있어?')이 필요한 질문에는 disclosure_tool을 호출하라. "
-    "news_tool/disclosure_tool은 '최신순으로 N건 그대로' 가져오는 조회용이다. 반면 공시나 뉴스에 담긴 내용을 "
-    "특정 주제로 찾아야 하는 질문, 즉 '공시 내용', '자세히', '구체적으로', '근거'처럼 목록이 아니라 내용을 묻는 "
-    "질문에는 disclosure_tool이 아니라 rag_search_tool을 호출하라(예: '삼성전자 반도체 업황 관련 근거 찾아줘', "
-    "'~ 관련 공시 내용 자세히 알려줘'). "
-)
-
-
-def _sp_edit(sp: str) -> str:
-    i, j = sp.index("공시나 공식 발표"), sp.index("여러 종류의 정보가")
-    return sp[:i] + SP_ROUTING + sp[j:]
-
-
-def variant_sp():
-    return copy.deepcopy(ORIG_TOOLS), _sp_edit(ORIG_SYSTEM_PROMPT), ORIG_FEW_SHOT
-
-
-def variant_sp_desc():
-    tools = copy.deepcopy(ORIG_TOOLS)
-    _tool(tools, "disclosure_tool")["description"] = DISCLOSURE_DESC
-    _tool(tools, "rag_search_tool")["description"] = RAG_DESC
-    return tools, _sp_edit(ORIG_SYSTEM_PROMPT), ORIG_FEW_SHOT
 
 
 NT_SENTENCE_OLD = "일반적인 용어 설명이나 개념 질문에는 절대 tool을 호출하지 말고 바로 답변하라. "
@@ -309,8 +276,7 @@ ORIG_GATE = agent.needs_market_tool
 
 
 VARIANTS = {"current": variant_current, "gate_off": variant_current, "gate_always": variant_current,
-            "desc": variant_desc, "fs": variant_fs, "fs_pair": variant_fs_pair,
-            "sp": variant_sp, "sp_desc": variant_sp_desc,
+            "fs": variant_fs, "fs_pair": variant_fs_pair,
             "nt_sp": variant_nt_sp, "nt_desc": variant_nt_desc, "nt_fs": variant_nt_fs, "nt_sp_fs": variant_nt_sp_fs,
             "nt_desc2": variant_nt_desc2, "nt_desc2_sp": variant_nt_desc2_sp}
 
@@ -364,7 +330,7 @@ def summarize(results, variant_names, groups):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--reps", type=int, default=4, help="질문당 반복 횟수")
-    ap.add_argument("--variants", default=",".join(VARIANTS))
+    ap.add_argument("--variants", default="current,gate_off", help=f"쉼표 구분. 선택: {','.join(VARIANTS)}")
     ap.add_argument("--groups", default=",".join(CASES), help="측정할 그룹(쉼표 구분). 기본은 전부")
     ap.add_argument("--out", default=None, help="원시 결과 JSON 저장 경로")
     a = ap.parse_args()

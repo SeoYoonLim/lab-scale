@@ -4,6 +4,80 @@
 로컬 LLM이 필요한 조회(주가·뉴스·공시·의미 검색)를 스스로 골라 실행하고 그 결과로 답변과 근거 링크를 돌려주는 리서치 서비스입니다.
 2인 팀 프로젝트로, 백엔드/데이터/에이전트와 프론트엔드를 나눠서 진행하고 있습니다.
 
+## 지금 상태 요약 (서윤님 복귀용, 2026-09-28 기준)
+
+**한 줄 요약:** 백엔드(API + 에이전트 + 데이터 수집)는 동작하고 테스트가 전부 통과합니다(기본 232개 + 실제 Ollama를 부르는 slow 6개 = 238개,
+`pytest -m "slow or not slow"`로 한 번에). 남은 큰 일은 프론트엔드 연동입니다. 작업 브랜치는 `feature/backend`이고 원격에 push되어 있습니다.
+
+### 구현된 API
+
+요청/응답 예시, 에러 형식, CORS는 전부 **[backend/API.md](backend/API.md)** 에 있습니다. 프론트 연동은 이 문서만 보면 됩니다.
+
+| 메서드 | 경로 | 설명 |
+| --- | --- | --- |
+| POST | `/api/research` | 질문 → AI 답변 + 근거 + 리포트 저장. `previous_report_id`로 직전 리포트를 이어서 후속 질문 |
+| GET | `/api/research` | 저장된 리포트 목록(최신순, `limit`/`offset` 페이지네이션, `total` 포함) |
+| GET | `/api/research/{report_id}` | 리포트 한 건(전체 답변, sources, tool 사용 이력) |
+| DELETE | `/api/research/{report_id}` | 리포트 삭제(204, 본문 없음). 후속 리포트는 남고 연결만 끊김 |
+
+프론트에서 특히 챙길 것: POST는 로컬 LLM이라 **2~25초**(로딩 상태와 60초 이상 타임아웃) / 에러 `detail`은 404·502·503에서는 문자열, 422에서는 배열
+/ `report_id`는 저장 실패 시 null / 허용 origin은 `localhost:5173`, `localhost:3000` 두 개뿐(다른 포트면 알려주세요).
+
+### DB 스키마 개요
+
+PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(`backend/alembic/versions/`, 현재 head `0c0a80524432`)입니다.
+
+| 테이블 | 내용 | 주요 컬럼 |
+| --- | --- | --- |
+| `company` | 종목 300개(시총 상위) | `ticker`(unique), `name`, `market`(KOSPI/KOSDAQ/KOSDAQ GLOBAL), `sector`(현재 비어 있음) |
+| `stock_price` | 일별 OHLCV | `company_id`, `price_date`, `close_price`, `volume`, `change_pct` (종목+날짜 unique) |
+| `market_index` | 코스피(KS11)/코스닥(KQ11) 일별 종가 | `index_code`, `price_date`, `close_price`, `change_pct` (지수+날짜 unique) |
+| `news` | 네이버 뉴스 | `company_id`, `title`, `url`, `published_at`, `embedding vector(1024)` |
+| `disclosure` | DART 공시 | `company_id`, `title`, `disclosed_at`, `source_url`, `content`(원문), `embedding vector(1024)` |
+| `research_report` | 질문/답변 보고서 | `question`, `content`(답변), `summary`, `company_id`, `previous_report_id`(직전 리포트, 자기 참조) |
+| `tool_call_log` | 보고서별 tool 호출 이력 | `report_id`(삭제 시 cascade), `tool_name`, `arguments`/`result`(JSONB) |
+
+**서윤님이 설계한 스키마와 실제로 만들어진 스키마를 맞춰봐 주세요.** 최초 설계 스냅샷은 `db/schema.sql`(서윤님 커밋)이고, 임시 DB에 그 파일을 적용해서
+실제 DB와 컬럼·인덱스·FK를 기계적으로 비교했습니다. 컬럼/타입/FK는 모두 같고 **차이는 아래 4가지**입니다(설계와 다른 것이 의도에 맞는지 확인 필요).
+
+1. `market_index` 테이블 추가(FR-06, 설계에 없던 확장)
+2. `research_report.previous_report_id` 컬럼 + 자기 참조 FK(`ON DELETE SET NULL`) 추가(FR-10, 설계에 없던 확장)
+3. `news.embedding`, `disclosure.embedding`에 HNSW 인덱스(코사인, m=16, ef_construction=64) 추가(유사도 검색 성능)
+4. 인덱스 정렬 방향: 설계는 `(company_id, 날짜 DESC)`, 실제는 오름차순. btree는 역방향 스캔이 되므로 조회 기능상 동일
+
+`db/schema.sql`은 갱신하지 않고 상단에 "최초 설계 스냅샷이며 기준은 Alembic"이라는 안내만 달았습니다.
+
+### 데이터 현황 (2026-09-28 조회, 수집은 수동)
+
+종목 300 · 주가 18,565행(6/26~9/23) · 지수 코스피/코스닥 각 116행(4/1~9/17) · 뉴스 3,013건(최신 9/24, 임베딩 완료) ·
+공시 6,308건(최신 9/22, 원문 6,268건, 임베딩 완료) · 리포트 6건(1~6번은 **데모 데이터라 지우지 않습니다**).
+지수는 FinanceDataReader가 오늘도 9/17까지만 줘서 종목 주가보다 며칠 늦습니다(우리 쪽 문제가 아니라 원천의 제한, 재확인함).
+
+### FR 대응 현황
+
+PRD 원문은 이 저장소에 없어서, 아래는 `db/schema.sql` 주석과 실제 코드에서 확인되는 만큼만 적은 것입니다.
+**"정의 확인 필요"인 항목은 PRD 기준으로 다시 맞춰봐 주세요.**
+
+| FR | 저장소에서 확인되는 근거 | 상태 |
+| --- | --- | --- |
+| FR-01 | `db/schema.sql` 대상 FR에 포함, 정의는 확인 불가(`company`와 종목명 해석이 관련된 것으로 추정) | 정의 확인 필요 |
+| FR-02 주가·거래량 | `stock_price`, `stock_tool`, 300종목 수집 | 완료 |
+| FR-03 뉴스 | `news`, `news_tool`, 네이버 수집 | 완료 |
+| FR-04 공시 | `disclosure`, `disclosure_tool`, DART 목록+원문 | 완료 |
+| FR-05 리서치 보고서 | `research_report` 저장·조회·삭제 API | 완료 |
+| FR-06 기업·산업·시장 요인 비교 | `market_tool` | **1차 완료**(시장 지수). 업종(섹터) 비교는 미구현 |
+| FR-07 | `db/schema.sql`이 "FR-06/07 확장 시 고려: 산업 지표(`industry_index`), 경제 지표(`economic_indicator`)"라고만 적음 | 미구현, 정의 확인 필요 |
+| FR-08 근거 임베딩/RAG | bge-m3 임베딩, `rag_search_tool` | 완료 |
+| FR-09 tool 호출 이력 | `tool_call_log`, 리포트 상세의 `used_tools` | 완료 |
+| FR-10 대화형 후속 질문 | `previous_report_id` | 완료(직전 1개까지, 체이닝은 범위 밖) |
+| FR-11 | `db/schema.sql`이 `research_report`를 "FR-05, FR-11 대비"라고만 적음 | 정의 확인 필요 |
+| FR-12, FR-13 | 저장소에 언급 없음(아래 "모의투자 기능 미구현" 항목과 관련될 수 있음) | 정의 확인 필요 |
+
+### 성능
+
+PRD 비기능 요구(일반 API P95 500ms 이내)는 만족합니다. 조회 API는 실서버 기준 p95 약 4~5ms이고, 보고서가 5만 건이어도 DB 쿼리는
+수십 ms입니다(POST는 AI 연산이라 예외). 측정 방법과 수치는 [backend/API.md](backend/API.md)의 "성능" 절에 있습니다.
+
 ## 아키텍처
 
 ```
@@ -102,7 +176,9 @@ python scripts/collect_disclosure_content.py --apply   # 공시 원문 수집 (�
 ## 테스트
 
 ```bash
-pytest        # backend/ 에서
+pytest                            # backend/ 에서. 빠른 테스트(단위 + dev DB 통합), slow는 기본 제외
+pytest -m slow                    # 실제 Ollama를 부르는 slow만 (약 30초, dev DB에 리포트를 만들었다가 지움)
+pytest -m "slow or not slow"      # 전부 한 번에 (2026-09-28 기준 238개 통과)
 ```
 
 구성(단위 / DB 통합 / LLM을 호출하는 slow)과 실행 옵션은 [backend/API.md](backend/API.md)의 "테스트 실행" 절을 참고하세요.
@@ -111,14 +187,15 @@ pytest        # backend/ 에서
 
 ## API
 
-엔드포인트(`POST /api/research`, `GET /api/research`, `GET /api/research/{report_id}`), 요청/응답 스키마, 에러 형식, CORS 안내는
-**[backend/API.md](backend/API.md)** 에 있습니다.
+엔드포인트(`POST /api/research`, `GET /api/research`, `GET /api/research/{report_id}`, `DELETE /api/research/{report_id}`), 요청/응답 스키마,
+에러 형식, CORS 안내, 성능 실측은 **[backend/API.md](backend/API.md)** 에 있습니다.
 
 ## 구현 상태
 
 - [x] 데이터 수집: 300종목 주가 · 뉴스(네이버, 비금융 도메인 필터·동명 종목 검색 보정) · DART 공시와 공시 원문
 - [x] 임베딩 + 유사도 검색: bge-m3 / pgvector HNSW, 뉴스·공시 전체 임베딩 완료
-- [x] 에이전트: 4개 tool 호출, 종목명 보정(오타/공백/우선주 처리), few-shot, 실패 시 안내 응답
+- [x] 에이전트: 4개 기본 tool(주가/뉴스/공시/RAG 검색) + 시장 비교 질문에만 붙는 `market_tool`, 종목명 보정(오타/공백/우선주 처리),
+  few-shot, 실패 시 안내 응답. 단 "네이버", "포스코홀딩스"처럼 DB 등록명과 다른 통칭은 인식하지 못함(Known Issues)
 - [x] FR-06 시장 지수 비교(1차 범위: 코스피/코스닥): 지수 수집(`market_index`), 종목 상장 시장 구분, 종목 vs 시장
   등락률 비교 `market_tool`, agent 연동(키워드 사전 분류로 시장 비교 질문에만 tool 노출)
 - [ ] FR-06 업종(섹터) 지수 비교: 1차 범위 밖, 후속 작업(업종 지수 수집과 종목-업종 매핑 필요)
@@ -128,7 +205,7 @@ pytest        # backend/ 에서
   (자기 참조 FK, 직전 보고서 삭제 시 SET NULL)로 저장되고 GET 응답에도 나옴. 여러 턴을 따라가는 체이닝은 범위 밖
   (직전 답변은 800자까지만 맥락에 넣고, 이전 tool 호출/결과는 넣지 않음). 종목 인자를 모델이 깨뜨리면 이번 질문에 회사가
   없을 때만 직전 질문에서 회사를 되찾는 보정이 있음(`app/agent.py`)
-- [x] REST API + 에러 처리(Ollama/DB 장애 시 502/503) + CORS
+- [x] REST API(리포트 생성/목록/조회/삭제) + 에러 처리(Ollama/DB 장애 시 502/503) + CORS
 - [x] 자동 테스트(pytest)와 API 문서
 - [ ] 프론트엔드 연동: 서윤님 담당, API 스펙은 확정(API.md), 실제 연동은 진행 필요
 - [ ] 모의투자 기능: 미구현, 범위 논의 필요
@@ -137,10 +214,24 @@ pytest        # backend/ 에서
 
 ## Known Issues / TODO (tool-calling 신뢰도, llama3.1:8b)
 
-`app/agent.py`의 tool 선택 신뢰도 관련 이슈. 재현/벤치마크 방법은
-`backend/scripts/benchmark_models.py`, `backend/scripts/test_tool_calling.py`,
+`app/agent.py`의 tool 선택 신뢰도 등 미해결 이슈(위쪽)와, 이미 해결한 이슈의 기록(아래 "해결된 이슈 기록")입니다.
+재현/벤치마크 방법은 `backend/scripts/benchmark_models.py`, `backend/scripts/test_tool_calling.py`,
 `backend/scripts/benchmark_routing.py` 참고.
 
+### 미해결 이슈
+
+- **한글 통칭 종목명을 인식하지 못함** (2026-09-28 정기 점검에서 발견): DB에는 `NAVER`, `POSCO홀딩스`, `현대차`로 등록돼 있어서 사용자가
+  "네이버", "포스코홀딩스", "현대자동차"라고 물으면 `resolve_company`가 "종목을 찾지 못했습니다"를 돌려주고 답변도 그렇게 나간다
+  (`NAVER`, `POSCO홀딩스`, `현대차`로 쓰면 정상). 벤치마크는 첫 tool 선택만 봐서 지금까지 드러나지 않았고, 이 3개 외에 얼마나 더 있는지는
+  아직 조사하지 않았다. 고치려면 통칭→등록명 별칭 표(또는 이름 정규화 규칙)가 필요해서 기능 추가에 가깝다고 보고 점검 세션에서는 고치지 않았다.
+  사용자가 가장 많이 쓸 이름들이라 우선순위가 높다.
+- **데이터가 수동 갱신이라 오래됨** (2026-09-28 기준): 주가 9/23, 뉴스 9/24, 공시 9/22까지. 코스피/코스닥 지수는 FinanceDataReader가 9/17까지만
+  줘서 종목 주가보다 며칠 늦고, `market_tool`은 지수의 마지막 날짜까지만 비교한다(결과의 `note`에 표시). 자동 갱신 여부는 논의 필요.
+- **답변 품질(llama3.1:8b)**: 답변이 짧고 수치 없이 결론만 말하거나(시장 비교 질문 4건 중 2건), 드물게 어색한 표현과 다른 언어 문자가 섞인다
+  (예: 뉴스 답변에 "관련ニュ스"). tool 결과의 숫자는 대체로 정확히 옮기지만 서술은 불안정하다. 별도 대응은 아직 없다.
+- **slow 테스트의 드문 실패 1건**: 후속 질문 slow 테스트(`test_follow_up_without_company_name_keeps_previous_company[news_tool]`)가 처음 돌렸을 때
+  한 번 실패했고 이후 약 90회(재현 시도 포함)에서는 재현되지 않았다. 원인 미특정이며, 다음 실패 때 원인이 보이도록 단언 메시지에
+  호출된 tool/종목/답변을 남기게 해 두었다. 이 테스트들은 LLM 특성상 비결정적이다.
 - **no_tool 남발**: "주식 기본 용어 알려줘" 같은 개념성 질문에도 매번 불필요하게
   tool을 호출함 (반복 테스트 기준 0/5 ~ 6/6 실패 유지, rag_search_tool 도입 전엔
   stock_tool/disclosure_tool을, 도입 후엔 주로 rag_search_tool을 잘못 호출).
@@ -169,6 +260,9 @@ pytest        # backend/ 에서
     tool 트리거 키워드가 하나도 없으면 1차 호출에 tools를 아예 넘기지 않기(개념 질문은 tool 없이 바로 답변).
     프롬프트 변경 없이 확실히 막을 수 있지만, 종목 없이 묻는 정당한 rag 검색("반도체 업황 관련 근거")도
     막지 않도록 키워드 목록을 함께 검증해야 함.
+
+### 해결된 이슈 기록
+
 - **[완료] FR-06 시장 지수 비교(market_tool) — 키워드 사전 분류 방식**: 시장 비교 질문에서 종목 등락률을 코스피/코스닥
   지수의 같은 기간 등락률과 비교해 답한다(1차 범위는 시장 전체 지수, 업종(섹터) 지수 비교는 후속 작업).
   - 배경: `market_tool`을 5번째 tool로 LLM에 상시 노출하면 stock_tool+news_tool 동시 호출(multi)이 깨진다
@@ -217,7 +311,7 @@ pytest        # backend/ 에서
     커밋 `99b5081`에 반영.
 - **결론 / 다음 작업**: 공시 라우팅 이슈는 SYSTEM_PROMPT와 tool description을
   함께(따로가 아니라) 고쳐야 회귀 없이 개선된다는 것을 확인함 — 국소 패치 하나만으로는
-  부족했음. 남은 이슈는 no_tool 남발 하나(위 항목: 프롬프트로는 못 풀어 보류). tool을 더 추가할 때는 이번처럼
+  부족했음. 프롬프트로 풀리는 라우팅 이슈는 여기까지고 no_tool 남발은 위 "미해결 이슈"에 보류돼 있다. tool을 더 추가할 때는 이번처럼
   `scripts/benchmark_routing.py`로 변경 전/후를 interleaved A/B 측정해서 회귀
   여부를 확인할 것 (특히 multi처럼 노이즈가 큰 그룹은 n을 충분히 늘려서 판단).
   장기적으로 로컬 8B 모델 하나의 프롬프트 튜닝만으로 감당하기 어려워지면
