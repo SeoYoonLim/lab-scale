@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 import ollama
 import pytest
 from fastapi.testclient import TestClient
@@ -123,3 +125,67 @@ class TestReportRoutes:
         assert r.headers["access-control-allow-origin"] == "http://localhost:5173"
         r = client.get("/api/research", headers={"Origin": "http://evil.example"})
         assert "access-control-allow-origin" not in r.headers
+
+
+class TestDeleteReport:
+    def test_delete_then_get_is_404(self, monkeypatch):
+        store = {7: {"report_id": 7}}
+        monkeypatch.setattr(research_api, "delete_report", lambda report_id: store.pop(report_id, None) is not None)
+        monkeypatch.setattr(research_api, "get_report", lambda report_id: store.get(report_id))
+
+        r = client.delete("/api/research/7")
+        assert r.status_code == 204
+        assert r.content == b""
+        assert client.get("/api/research/7").status_code == 404
+
+    def test_delete_missing_is_404_with_same_format_as_get(self, monkeypatch):
+        monkeypatch.setattr(research_api, "delete_report", lambda report_id: False)
+        monkeypatch.setattr(research_api, "get_report", lambda report_id: None)
+
+        r = client.delete("/api/research/12345")
+        assert r.status_code == 404
+        assert "12345" in r.json()["detail"]
+        assert r.json() == client.get("/api/research/12345").json()
+
+    def test_db_error_on_delete_is_503(self, monkeypatch):
+        def boom(report_id):
+            raise OperationalError("DELETE", {}, Exception("connection refused"))
+
+        monkeypatch.setattr(research_api, "delete_report", boom)
+        r = client.delete("/api/research/7")
+        assert r.status_code == 503
+        assert "데이터베이스" in r.json()["detail"]
+
+    @pytest.mark.parametrize("report_id", ["0", "abc", "99999999999999999999"])
+    def test_delete_bad_id_is_422(self, report_id):
+        assert client.delete(f"/api/research/{report_id}").status_code == 422
+
+    @pytest.mark.integration
+    def test_delete_also_removes_tool_call_logs(self, dev_db):
+        from sqlalchemy import text
+
+        from app.reports import delete_report, save_report
+
+        records = [
+            {"tool_name": "stock_tool", "arguments": {"ticker": "삼성전자"}, "result": {"found": False},
+             "called_at": datetime.now(timezone.utc), "elapsed_ms": 1},
+            {"tool_name": "news_tool", "arguments": {"company_name": "삼성전자"}, "result": {"found": False},
+             "called_at": datetime.now(timezone.utc), "elapsed_ms": 1},
+        ]
+        report_id = save_report("[pytest] DELETE cascade 확인용 임시 리포트", "임시 답변", records)
+        assert report_id is not None
+        try:
+            count_logs = text("SELECT count(*) FROM tool_call_log WHERE report_id = :id")
+            assert dev_db.execute(count_logs, {"id": report_id}).scalar() == 2
+            dev_db.rollback()
+
+            assert client.delete(f"/api/research/{report_id}").status_code == 204
+
+            assert dev_db.execute(count_logs, {"id": report_id}).scalar() == 0
+            assert dev_db.execute(
+                text("SELECT count(*) FROM research_report WHERE id = :id"), {"id": report_id}
+            ).scalar() == 0
+            assert client.get(f"/api/research/{report_id}").status_code == 404
+        finally:
+            dev_db.rollback()
+            delete_report(report_id)

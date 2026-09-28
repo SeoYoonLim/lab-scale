@@ -107,6 +107,23 @@ def get_report(report_id: int) -> dict | None:
         db.close()
 
 
+def delete_report(report_id: int) -> bool:
+    """리포트 한 건을 삭제한다. 없으면 False. tool_call_log는 FK ON DELETE CASCADE(및 ORM cascade)로 함께 지워진다."""
+    db = SessionLocal()
+    try:
+        report = db.get(ResearchReport, report_id)
+        if report is None:
+            return False
+        db.delete(report)
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 def list_reports(limit: int = 20, offset: int = 0) -> tuple[int, list[dict]]:
     """(전체 리포트 수, 최근 리포트 목록(최신순)). 목록에는 sources를 빼고 미리보기(summary)만 담는다."""
     db = SessionLocal()

@@ -1,10 +1,10 @@
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Path, Query
+from fastapi import APIRouter, HTTPException, Path, Query, Response
 from pydantic import BaseModel, Field, field_validator
 
 from app.agent import ask_question
-from app.reports import get_report, list_reports
+from app.reports import delete_report, get_report, list_reports
 
 router = APIRouter(prefix="/api", tags=["research"])
 
@@ -90,3 +90,11 @@ def get_research(report_id: int = Path(ge=1, le=BIGINT_MAX)) -> ReportDetail:
     if report is None:
         raise HTTPException(status_code=404, detail=f"report_id={report_id} 리포트를 찾을 수 없습니다.")
     return ReportDetail(**report)
+
+
+@router.delete("/research/{report_id}", status_code=204)
+def delete_research(report_id: int = Path(ge=1, le=BIGINT_MAX)) -> Response:
+    """리포트 한 건과 딸린 tool 호출 이력을 삭제한다."""
+    if not delete_report(report_id):
+        raise HTTPException(status_code=404, detail=f"report_id={report_id} 리포트를 찾을 수 없습니다.")
+    return Response(status_code=204)

@@ -24,6 +24,7 @@
 | POST | `/api/research` | 질문을 보내 AI 답변 생성(+리포트 저장) |
 | GET | `/api/research` | 저장된 리포트 목록(최신순, 페이지네이션) |
 | GET | `/api/research/{report_id}` | 저장된 리포트 한 건 조회 |
+| DELETE | `/api/research/{report_id}` | 저장된 리포트 한 건 삭제(tool 호출 이력 포함) |
 
 ---
 
@@ -199,6 +200,40 @@ curl http://localhost:8000/api/research/18
 
 ---
 
+## DELETE /api/research/{report_id}
+
+리포트 한 건을 삭제한다. 그 리포트의 tool 호출 이력(`tool_call_log`)도 함께 지워진다(DB의 `ON DELETE CASCADE`).
+**되돌릴 수 없다.** 리포트는 생성 후 수정하지 않는 것이 설계 원칙이라 수정(PATCH/PUT)은 제공하지 않고, 삭제만 지원한다.
+
+### 요청
+
+본문 없음.
+
+```bash
+curl -X DELETE http://localhost:8000/api/research/18 -i
+```
+
+### 응답 204
+
+```
+HTTP/1.1 204 No Content
+```
+
+본문이 비어 있으므로 `response.json()`을 호출하면 안 된다. 삭제 후 같은 ID로 `GET`하면 404다.
+
+### 에러
+
+| 상태 | 언제 | body |
+| --- | --- | --- |
+| 404 | 해당 ID의 리포트가 없음(이미 삭제된 경우 포함) | `{"detail": "report_id=999999 리포트를 찾을 수 없습니다."}` |
+| 422 | ID가 정수가 아니거나 1 미만/BIGINT 초과 | 검증 오류 형식 |
+| 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
+
+404/503 body는 `GET /api/research/{report_id}`와 같다. 같은 ID를 두 번 삭제하면 두 번째는 404이므로,
+프론트에서 "이미 없음"을 성공처럼 다룰지 정해서 처리하세요.
+
+---
+
 ## 에러 응답 형식
 
 ### 일반 오류 (404 / 502 / 503)
@@ -234,7 +269,7 @@ FastAPI 기본 형식으로 `detail`이 **배열**이다. 필드별 위치는 `l
 ## 알아둘 점
 
 - `answer`는 로컬 LLM(llama3.1:8b)이 생성하므로 같은 질문에도 매번 표현이 다르고, 뉴스가 질문 종목과 무관해 보이는 경우나 모델의 사실 오류가 섞일 수 있다. 근거는 `sources`로 확인하도록 UI에 링크를 노출하는 것을 권장한다.
-- `POST`는 성공할 때마다 리포트를 저장한다(`report_id`). 테스트 호출도 목록에 쌓인다.
+- `POST`는 성공할 때마다 리포트를 저장한다(`report_id`). 테스트 호출도 목록에 쌓인다. 필요 없는 리포트는 `DELETE`로 지운다.
 
 ## 테스트 실행 (백엔드)
 
