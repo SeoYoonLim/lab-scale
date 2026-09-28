@@ -89,11 +89,19 @@ CASES = {
         "PER이 뭐야? 쉽게 설명해줘.",
         "ETF랑 펀드 차이가 뭐야?",
     ],
+    # no_tool 프롬프트를 고치는 동안 예시로 쓰지 않은 개념 질문 (개발용 질문에 맞춰 튜닝됐는지 확인)
+    "no_tool_ho": [
+        "배당수익률이 뭐고 어떻게 계산해?",
+        "공매도가 뭔지 초보자도 알기 쉽게 설명해줘.",
+        "분산투자를 왜 하는지 알려줘.",
+        "시가총액이랑 주가 차이가 뭐야?",
+        "손절매는 언제 하는 게 좋은지 일반적인 원칙만 알려줘.",
+    ],
 }
 
 
 def judge(group: str, tools: set[str]) -> bool:
-    group = {"rag_ho": "rag", "disc_ho": "disc_list"}.get(group, group)
+    group = {"rag_ho": "rag", "disc_ho": "disc_list", "no_tool_ho": "no_tool"}.get(group, group)
     if group == "rag":
         return "rag_search_tool" in tools
     if group == "disc_list":
@@ -213,18 +221,79 @@ def variant_sp_desc():
     return tools, _sp_edit(ORIG_SYSTEM_PROMPT), ORIG_FEW_SHOT
 
 
+NT_SENTENCE_OLD = "일반적인 용어 설명이나 개념 질문에는 절대 tool을 호출하지 말고 바로 답변하라. "
+# 예시 문구는 no_tool/no_tool_ho 질문과 겹치지 않게 고른다.
+NT_SENTENCE_NEW = (
+    "질문이 개념 설명이나 일반 지식이라 종목별 데이터(주가·뉴스·공시) 조회가 필요 없다면 "
+    "(예: '해외 주식 세금이 어떻게 돼?', '환율이 오르면 왜 수출주가 유리해?') tool을 호출하지 말고 바로 답변하라. "
+    "특정 종목이 언급되지 않은 질문에는 rag_search_tool도 호출하지 마라. "
+)
+NT_DESC_SUFFIX = " 특정 종목·공시·뉴스와 무관한 일반 지식이나 용어·개념 설명 질문에는 호출하지 않는다."
+
+NT_FEW_SHOT = [
+    {"role": "user", "content": "물가가 오르면 채권 가격은 왜 내려가는지 설명해줘."},
+    {"role": "assistant", "content": (
+        "금리가 오르면 새로 발행되는 채권의 이자가 더 높아져서, 기존 채권의 매력이 떨어지고 가격이 내려갑니다. "
+        "물가 상승은 보통 금리 인상 기대로 이어지기 때문에 채권 가격에 부담이 됩니다. "
+        "특정 종목 데이터가 필요 없는 일반 지식이라 tool 호출 없이 바로 답변했습니다.")},
+]
+
+
+def variant_nt_sp():
+    assert NT_SENTENCE_OLD in ORIG_SYSTEM_PROMPT
+    return copy.deepcopy(ORIG_TOOLS), ORIG_SYSTEM_PROMPT.replace(NT_SENTENCE_OLD, NT_SENTENCE_NEW), ORIG_FEW_SHOT
+
+
+def variant_nt_desc():
+    tools = copy.deepcopy(ORIG_TOOLS)
+    d = _tool(tools, "rag_search_tool")
+    d["description"] += NT_DESC_SUFFIX
+    return tools, ORIG_SYSTEM_PROMPT, ORIG_FEW_SHOT
+
+
+NT_RAG_DESC_PREFIX = (
+    "종목명이 명시된 질문에서 그 종목의 공시·뉴스 '내용'을 찾을 때만 호출한다. "
+    "종목이 언급되지 않은 일반 지식·용어·개념 질문(예: 세금, 환율, 투자 원칙)에는 절대 호출하지 않는다. "
+)
+NT_STOCK_DESC_PREFIX = "특정 종목의 주가 수치가 필요할 때만 호출한다. 개념·용어 설명 질문에는 호출하지 않는다. "
+
+
+def variant_nt_desc2():
+    tools = copy.deepcopy(ORIG_TOOLS)
+    _tool(tools, "rag_search_tool")["description"] = NT_RAG_DESC_PREFIX + _tool(tools, "rag_search_tool")["description"]
+    _tool(tools, "stock_tool")["description"] = NT_STOCK_DESC_PREFIX + _tool(tools, "stock_tool")["description"]
+    return tools, ORIG_SYSTEM_PROMPT, ORIG_FEW_SHOT
+
+
+def variant_nt_desc2_sp():
+    tools, _, fs = variant_nt_desc2()
+    return tools, variant_nt_sp()[1], fs
+
+
+def variant_nt_fs():
+    # 기존 예시들 뒤, 실제 질문 바로 앞에 개념 질문 예시를 하나 더 둔다.
+    return copy.deepcopy(ORIG_TOOLS), ORIG_SYSTEM_PROMPT, ORIG_FEW_SHOT + copy.deepcopy(NT_FEW_SHOT)
+
+
+def variant_nt_sp_fs():
+    tools, sp, fs = variant_nt_sp()
+    return tools, sp, fs + copy.deepcopy(NT_FEW_SHOT)
+
+
 VARIANTS = {"current": variant_current, "desc": variant_desc, "fs": variant_fs, "fs_pair": variant_fs_pair,
-            "sp": variant_sp, "sp_desc": variant_sp_desc}
+            "sp": variant_sp, "sp_desc": variant_sp_desc,
+            "nt_sp": variant_nt_sp, "nt_desc": variant_nt_desc, "nt_fs": variant_nt_fs, "nt_sp_fs": variant_nt_sp_fs,
+            "nt_desc2": variant_nt_desc2, "nt_desc2_sp": variant_nt_desc2_sp}
 
 
-def run(variant_names: list[str], reps: int):
+def run(variant_names: list[str], reps: int, groups: list[str]):
     orig = (agent.TOOLS, agent.SYSTEM_PROMPT, agent.FEW_SHOT_MESSAGES)
     assert orig[0] == ORIG_TOOLS  # 시작 시점의 agent 전역이 원본과 같아야 한다
     results = defaultdict(lambda: defaultdict(list))  # variant -> group -> [(question, ok, tools)]
     try:
         for rep in range(reps):
-            for group, questions in CASES.items():
-                for q in questions:
+            for group in groups:
+                for q in CASES[group]:
                     for name in variant_names:
                         agent.TOOLS, agent.SYSTEM_PROMPT, agent.FEW_SHOT_MESSAGES = copy.deepcopy(VARIANTS[name]())
                         try:
@@ -238,11 +307,11 @@ def run(variant_names: list[str], reps: int):
     return results
 
 
-def summarize(results, variant_names):
-    print(f"\n{'group':<10}" + "".join(f"{n:>22}" for n in variant_names))
+def summarize(results, variant_names, groups):
+    print(f"\n{'group':<11}" + "".join(f"{n:>22}" for n in variant_names))
     summary = {}
-    for group in CASES:
-        row = f"{group:<10}"
+    for group in groups:
+        row = f"{group:<11}"
         for n in variant_names:
             rs = results[n][group]
             ok = sum(1 for _, o, _ in rs if o)
@@ -256,13 +325,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--reps", type=int, default=4, help="질문당 반복 횟수")
     ap.add_argument("--variants", default=",".join(VARIANTS))
+    ap.add_argument("--groups", default=",".join(CASES), help="측정할 그룹(쉼표 구분). 기본은 전부")
     ap.add_argument("--out", default=None, help="원시 결과 JSON 저장 경로")
     a = ap.parse_args()
     names = a.variants.split(",")
+    groups = a.groups.split(",")
 
     started = time.time()
-    results = run(names, a.reps)
-    summary = summarize(results, names)
+    results = run(names, a.reps, groups)
+    summary = summarize(results, names, groups)
     print(f"\n소요 {time.time() - started:.0f}s")
     if a.out:
         raw = {n: {g: [{"q": q, "ok": o, "tools": t} for q, o, t in rs] for g, rs in gs.items()} for n, gs in results.items()}

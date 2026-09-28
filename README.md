@@ -128,7 +128,30 @@ pytest        # backend/ 에서
   tool을 호출함 (반복 테스트 기준 0/5 ~ 6/6 실패 유지, rag_search_tool 도입 전엔
   stock_tool/disclosure_tool을, 도입 후엔 주로 rag_search_tool을 잘못 호출).
   답변 내용 자체는 안전(사실 왜곡 없음)하고, DB 조회 낭비(지연/비용)만 있는
-  효율성 문제. 우선순위 낮음 — 아래 "4-tool 프롬프트 재설계"와 함께 처리.
+  효율성 문제. **우선순위가 낮아 프롬프트 수정으로는 안전한 해결책을 못 찾은 채 보류.**
+  - 측정: `benchmark_routing.py`의 `no_tool`(3문항)과, 프롬프트 튜닝 중 예시로 쓰지 않은
+    `no_tool_ho`(5문항)로 8회씩 interleaved 측정. 베이스라인은 no_tool 0~4%, no_tool_ho 0%.
+    잘못 호출되는 tool은 거의 전부 `rag_search_tool`(종목 언급이 없어도 기본 "검색 tool"로 고름),
+    그다음 `stock_tool`.
+  - 시도 1, SYSTEM_PROMPT 문장 교체(종목별 데이터 조회가 필요 없는 개념·일반 지식 질문엔 tool 금지,
+    종목 언급이 없으면 rag도 금지; `nt_sp`): 0/24, 0/40 — 효과 없음. 기존 프롬프트에 이미
+    "개념 질문에는 절대 tool을 호출하지 말라"는 문장과 개념 질문 few-shot이 있어서 더해도 변화가 없음.
+  - 시도 2, 개념 질문 few-shot 1개 추가(채권 가격 설명, 실제 질문과 문구 겹침 없음; `nt_fs`) 및
+    시도 1과 병행(`nt_sp_fs`): 둘 다 0/24, 0/40 — 효과 없음.
+  - 시도 3, rag_search_tool 설명에 "일반 지식·용어 질문엔 호출하지 않는다" 한 줄 추가(`nt_desc`):
+    no_tool 17%, no_tool_ho 5% — 소폭 개선이지만 실익 없는 수준.
+  - 시도 4, rag_search_tool·stock_tool 설명 앞머리에 "종목명이 명시된 질문에서만 호출, 일반 지식·용어·개념
+    질문엔 절대 호출 금지"(`nt_desc2`): no_tool 46%로 올랐지만 **no_tool_ho는 0/40 그대로**. 설명에 넣은
+    "용어·개념"이 개발용 질문("기본 용어를 알려줘")과 겹쳐서 생긴 착시이고 일반화되지 않음
+    (few-shot 오염 때와 같은 유형). `nt_desc2_sp`(+시도 1 문장)는 0/24, 0/40.
+  - 결론: 시도한 프롬프트 변형(SYSTEM_PROMPT / few-shot / tool description) 중 held-out에서 의미 있게
+    개선된 것이 없어 `app/agent.py`는 수정하지 않음. 회귀 확인용 전체 가드레일 재측정도 적용할 변경이 없어
+    생략함(`agent.py` 프롬프트/TOOLS는 위 공시 라우팅 수정 이후 그대로). 원인 추정은 8B 모델이 "종목 언급 없는
+    질문"과 "rag_search_tool"의 관계를 프롬프트 문장으로는 못 구분하고 검색형 tool을 기본값으로 고른다는 것.
+  - 대안(우선순위가 올라가면): 코드 레벨 사전 분류 — 질문에서 종목명(`company_resolver.extract_from_text`)과
+    tool 트리거 키워드가 하나도 없으면 1차 호출에 tools를 아예 넘기지 않기(개념 질문은 tool 없이 바로 답변).
+    프롬프트 변경 없이 확실히 막을 수 있지만, 종목 없이 묻는 정당한 rag 검색("반도체 업황 관련 근거")도
+    막지 않도록 키워드 목록을 함께 검증해야 함.
 - **[해결] 공시 "내용" 질문이 rag_search_tool 대신 disclosure_tool로 라우팅되던 문제**:
   "삼성전자 자사주 매입 관련 공시 내용 자세히 알려줘"류 질문이 "공시"라는 단어
   때문에 거의 항상 disclosure_tool(최신순 목록)로 갔던 문제. `scripts/benchmark_routing.py`로
@@ -149,7 +172,7 @@ pytest        # backend/ 에서
     커밋 `99b5081`에 반영.
 - **결론 / 다음 작업**: 공시 라우팅 이슈는 SYSTEM_PROMPT와 tool description을
   함께(따로가 아니라) 고쳐야 회귀 없이 개선된다는 것을 확인함 — 국소 패치 하나만으로는
-  부족했음. 남은 이슈는 no_tool 남발 하나. tool을 더 추가할 때는 이번처럼
+  부족했음. 남은 이슈는 no_tool 남발 하나(위 항목: 프롬프트로는 못 풀어 보류). tool을 더 추가할 때는 이번처럼
   `scripts/benchmark_routing.py`로 변경 전/후를 interleaved A/B 측정해서 회귀
   여부를 확인할 것 (특히 multi처럼 노이즈가 큰 그룹은 n을 충분히 늘려서 판단).
   장기적으로 로컬 8B 모델 하나의 프롬프트 튜닝만으로 감당하기 어려워지면
