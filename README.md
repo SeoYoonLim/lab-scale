@@ -146,7 +146,7 @@ pytest        # backend/ 에서
     표준오차 약 ±9%p)와 겹쳐 유의한 회귀로 보지 않음. no_tool은 원래부터 0%였던
     이슈라 그대로 유지(위 항목과 동일 사안).
   - SYSTEM_PROMPT/TOOLS의 disclosure_tool·rag_search_tool 부분과 `benchmark_routing.py`는
-    커밋 `<COMMIT_SHA>`에 반영.
+    커밋 `99b5081`에 반영.
 - **결론 / 다음 작업**: 공시 라우팅 이슈는 SYSTEM_PROMPT와 tool description을
   함께(따로가 아니라) 고쳐야 회귀 없이 개선된다는 것을 확인함 — 국소 패치 하나만으로는
   부족했음. 남은 이슈는 no_tool 남발 하나. tool을 더 추가할 때는 이번처럼
