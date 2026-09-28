@@ -120,32 +120,38 @@ pytest        # backend/ 에서
 
 ## Known Issues / TODO (tool-calling 신뢰도, llama3.1:8b)
 
-`app/agent.py`의 tool 선택 신뢰도 관련 미해결 이슈. 재현/벤치마크 방법은
-`backend/scripts/benchmark_models.py`, `backend/scripts/test_tool_calling.py` 참고.
+`app/agent.py`의 tool 선택 신뢰도 관련 이슈. 재현/벤치마크 방법은
+`backend/scripts/benchmark_models.py`, `backend/scripts/test_tool_calling.py`,
+`backend/scripts/benchmark_routing.py` 참고.
 
 - **no_tool 남발**: "주식 기본 용어 알려줘" 같은 개념성 질문에도 매번 불필요하게
   tool을 호출함 (반복 테스트 기준 0/5 ~ 6/6 실패 유지, rag_search_tool 도입 전엔
   stock_tool/disclosure_tool을, 도입 후엔 주로 rag_search_tool을 잘못 호출).
   답변 내용 자체는 안전(사실 왜곡 없음)하고, DB 조회 낭비(지연/비용)만 있는
   효율성 문제. 우선순위 낮음 — 아래 "4-tool 프롬프트 재설계"와 함께 처리.
-- **특정 주제 질문이 rag_search_tool 대신 disclosure_tool로 라우팅됨**:
-  "삼성전자 자사주 매입 관련 공시 내용 자세히 알려줘"류 질문은 rag_search_tool이
-  적합한데, "공시"라는 단어가 disclosure_tool의 트리거 문구와 겹쳐서 대부분
-  disclosure_tool(최신순 5건)로 감 (반복 테스트 기준 10회 중 1회만 rag_search_tool
-  성공). disclosure_tool도 실제 DB 데이터를 반환하므로 사실 왜곡은 없지만, 의도한
-  의미 기반 검색이 아니라서 답변 완성도가 떨어질 수 있음.
-- **rag_search_tool 도입 시 SYSTEM_PROMPT/few-shot 국소 수정만으로는 위 이슈를
-  못 고침**: disclosure_tool 트리거 문구와 안 겹치게 SYSTEM_PROMPT를 다듬고
-  few-shot 예시(LG에너지솔루션)를 추가해봤지만, 목표 케이스는 거의 개선 안 됐고
-  (0/5 -> 1/10) 오히려 기존에 안정적이던 multi-tool 케이스(stock_tool+news_tool
-  동시 호출)가 80%대에서 50%로 떨어지는 회귀가 발생 (일부는 종목명이 깨진
-  문자열로 환각되기도 함). 해당 변경은 되돌렸고, 그 뒤 multi-tool 케이스는
-  100%(5/5)로 복구 확인. (이후 few-shot은 뉴스 헤드라인이 답변에 복사되는 오염을
-  없애려고 "뉴스 없음" 예시로 한 번 더 바꿨고, 시스템 프롬프트 문장 추가는 multi-tool
-  성공률을 떨어뜨려서 넣지 않음 — 근거는 `app/agent.py`의 FEW_SHOT_MESSAGES 주석.)
-- **결론 / 다음 작업**: tool이 3개 -> 4개로 늘면서, 로컬 8B 모델 하나에
-  국소적인 프롬프트 패치를 반복하는 방식은 한 곳을 고치면 다른 곳이 깨지는
-  패턴이 반복됨 (whack-a-mole). 다음에 tool을 더 추가하기 전에 SYSTEM_PROMPT/
-  TOOLS/FEW_SHOT_MESSAGES 전체를 한 번에 재설계하고,
-  `scripts/benchmark_models.py` 같은 재현 가능한 벤치마크로 검증할 것. 위
-  두 이슈(no_tool 남발, 공시 라우팅)는 그때 함께 처리.
+- **[해결] 공시 "내용" 질문이 rag_search_tool 대신 disclosure_tool로 라우팅되던 문제**:
+  "삼성전자 자사주 매입 관련 공시 내용 자세히 알려줘"류 질문이 "공시"라는 단어
+  때문에 거의 항상 disclosure_tool(최신순 목록)로 갔던 문제. `scripts/benchmark_routing.py`로
+  세 가지 방향을 A/B 측정(interleaved, 질문당 8회 반복)한 끝에 해결함:
+  - *tool description만 수정*: few-shot과 겹치는 예시 문구를 써서 rag 64%로 보였지만,
+    질문 문구와 few-shot 문구가 겹쳐 생긴 측정 오염이었음(de-overlap 후 rag 15%,
+    rag_ho 2%, multi 33→67%대 회귀) → 폐기.
+  - *few-shot 예시 추가*(rag 전용, rag+list 쌍): rag 12~15%, rag_ho 0/48으로 개선폭이
+    작고 회귀도 없어 적용할 가치가 없다고 판단 → 폐기.
+  - *SYSTEM_PROMPT 라우팅 문장 재작성 + tool description 동시 수정* (`sp_desc` 변형,
+    현재 적용됨): "최신순 목록"과 "내용 검색"을 대비시켜 명시. 8반복 A/B 결과
+    rag 0%→80%(51/64), held-out rag_ho 0%→67~72%(43~46/64)로 크게 개선. disc_list
+    100%, disc_ho 100%, stock 100%, news 100% 그대로 유지(회귀 없음). multi(stock_tool+
+    news_tool 동시 호출)는 56~72%(n=32)로 변경 전 노이즈 범위(38~67%, 반복 실행 시
+    표준오차 약 ±9%p)와 겹쳐 유의한 회귀로 보지 않음. no_tool은 원래부터 0%였던
+    이슈라 그대로 유지(위 항목과 동일 사안).
+  - SYSTEM_PROMPT/TOOLS의 disclosure_tool·rag_search_tool 부분과 `benchmark_routing.py`는
+    커밋 `<COMMIT_SHA>`에 반영.
+- **결론 / 다음 작업**: 공시 라우팅 이슈는 SYSTEM_PROMPT와 tool description을
+  함께(따로가 아니라) 고쳐야 회귀 없이 개선된다는 것을 확인함 — 국소 패치 하나만으로는
+  부족했음. 남은 이슈는 no_tool 남발 하나. tool을 더 추가할 때는 이번처럼
+  `scripts/benchmark_routing.py`로 변경 전/후를 interleaved A/B 측정해서 회귀
+  여부를 확인할 것 (특히 multi처럼 노이즈가 큰 그룹은 n을 충분히 늘려서 판단).
+  장기적으로 로컬 8B 모델 하나의 프롬프트 튜닝만으로 감당하기 어려워지면
+  코드 레벨 사전 분류(키워드/임베딩 기반 라우터로 tool 후보를 먼저 좁히기)나
+  disclosure_tool과 rag_search_tool을 하나의 tool로 통합하는 방안을 검토할 것.
