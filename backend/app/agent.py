@@ -17,7 +17,9 @@ from app.db.session import SessionLocal
 from app.reports import save_report as save_report_row
 from app.sources import build_sources
 from app.tools.company_resolver import extract_from_text, normalize_name, resolve_company
+from app.routing import needs_market_tool
 from app.tools.disclosure_tool import disclosure_tool
+from app.tools.market_tool import market_tool
 from app.tools.news_tool import news_tool
 from app.tools.rag_search_tool import rag_search_tool
 from app.tools.stock_tool import stock_tool
@@ -275,12 +277,61 @@ TOOLS = [
     },
 ]
 
+# market_tool은 TOOLS(기본 tool 목록)에 넣지 않는다. 5번째 tool을 LLM에 상시 노출하면 stock_tool+news_tool 동시
+# 호출(multi)이 깨져서(60%->36%, n=96) 코드에서 질문 문구로 판단해(app/routing.py) 시장 비교 질문일 때만 그 요청의
+# tool 목록과 시스템 프롬프트에 추가한다. 그 외 질문은 4-tool 프롬프트가 이전과 완전히 같다.
+MARKET_TOOL_SPEC = {
+    "type": "function",
+    "function": {
+        "name": "market_tool",
+        "description": (
+            "DB에 저장된 실제 데이터 기준으로, 특정 종목의 최근 N거래일 등락률을 그 종목이 상장된 시장"
+            "(코스피/코스닥) 전체 지수의 같은 기간 등락률과 비교한다. 종목 주가 변동이 종목 개별 요인인지 "
+            "시장 전체 흐름 때문인지 가릴 때, 또는 시장 지수 대비 성과를 물을 때 호출한다. 종목 등락률, 시장 "
+            "등락률, 그 차이(%p)를 돌려준다. 단순 주가·등락률·거래량 수치만 필요한 질문에는 호출하지 않는다"
+            "(그때는 stock_tool). 업종(섹터) 지수와의 비교는 지원하지 않는다. 등록되지 않은 종목이거나 "
+            "주가·지수 데이터가 없으면 found=false와 함께 그 사유를 담은 message를 반환한다."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ticker": {
+                    "type": "string",
+                    "description": (
+                        "종목명 또는 종목코드(예: 삼성전자, 005930)."
+                        " company 테이블의 name 또는 ticker 컬럼으로 조회한다."
+                    ),
+                },
+                "period_days": {
+                    "type": "integer",
+                    "description": "비교할 기간(거래일 수, 달력 일수가 아님). 기본값 5. 일주일이면 5, 한 달이면 20.",
+                },
+            },
+            "required": ["ticker"],
+        },
+    },
+}
+
+_MARKET_HINT_ANCHOR = "최근 이슈나 '왜 올랐는지/내렸는지' 같이 뉴스가 필요한 질문에는 news_tool을 호출하라. "
+MARKET_HINT = (
+    "종목의 움직임이 그 종목만의 요인 때문인지 시장 전체 흐름 때문인지 구분해야 하거나 코스피·코스닥 지수와 "
+    "비교하는 질문에는 market_tool도 함께 호출하라. "
+)
+
 AVAILABLE_FUNCTIONS = {
     "stock_tool": stock_tool,
     "news_tool": news_tool,
     "disclosure_tool": disclosure_tool,
     "rag_search_tool": rag_search_tool,
+    "market_tool": market_tool,
 }
+
+
+def build_request(question: str) -> tuple[str, list[dict]]:
+    """질문에 맞는 (시스템 프롬프트, tool 목록)을 만든다. 시장 비교 질문이 아니면 기본값 그대로다."""
+    if not needs_market_tool(question):
+        return SYSTEM_PROMPT, TOOLS
+    return SYSTEM_PROMPT.replace(_MARKET_HINT_ANCHOR, _MARKET_HINT_ANCHOR + MARKET_HINT, 1), [*TOOLS, MARKET_TOOL_SPEC]
 
 
 FALLBACK_ANSWER = "죄송합니다. 요청을 처리하는 중 문제가 발생했습니다. 종목명을 포함해 질문을 조금 더 구체적으로 다시 해주세요."
@@ -328,6 +379,7 @@ def _as_args(fn_args) -> dict:
 # tool별로 종목명/티커를 받는 인자 이름
 _COMPANY_ARG = {
     "stock_tool": "ticker",
+    "market_tool": "ticker",
     "news_tool": "company_name",
     "disclosure_tool": "company_name",
     "rag_search_tool": "company_name",
@@ -407,13 +459,14 @@ def _run_tool(fn_name: str, fn_args) -> dict:
         return {"found": False, "error": f"{fn_name} 실행 중 오류: {e}"}
 
 
-def _first_call(model: str, messages: list[dict]):
+def _first_call(model: str, messages: list[dict], tools: list[dict] | None = None):
     """1차 호출. tool 호출 JSON이 본문 텍스트로 새어 나오면 복구하고, 복구 불가면 한 번 재시도한다.
 
+    tools를 생략하면 기본 TOOLS를 쓴다.
     Returns: (assistant message, tool_calls 또는 None). 끝내 실패하면 (None, None).
     """
     for _ in range(2):
-        msg = ollama.chat(model=model, messages=messages, tools=TOOLS)["message"]
+        msg = ollama.chat(model=model, messages=messages, tools=TOOLS if tools is None else tools)["message"]
         tool_calls = msg.get("tool_calls")
         if tool_calls:
             return msg, tool_calls
@@ -432,14 +485,15 @@ def _answer(question: str, model: str) -> tuple[dict, list[dict]]:
     """답변을 만든다. (응답 dict, tool 실행 기록 목록)을 돌려준다.
 
     tool 실행 기록: {"tool_name", "arguments", "result", "called_at", "elapsed_ms"} (실행 순서대로)."""
+    system_prompt, tools = build_request(question)
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         *FEW_SHOT_MESSAGES,
         {"role": "user", "content": question},
     ]
 
     # 1차 호출: 모델이 tool을 쓸지 말지 스스로 판단
-    msg, tool_calls = _first_call(model, messages)
+    msg, tool_calls = _first_call(model, messages, tools)
 
     if msg is None:
         return {"answer": FALLBACK_ANSWER, "used_tools": [], "sources": []}, []

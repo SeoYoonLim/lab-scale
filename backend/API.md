@@ -66,8 +66,8 @@
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
 | `answer` | string | 최종 답변(한국어, 줄바꿈 `\n` 포함, 마크다운 목록 문법이 섞여 올 수 있음) |
-| `used_tools` | string[] | 실제로 실행된 tool 이름(호출 순서). `stock_tool`, `news_tool`, `disclosure_tool`, `rag_search_tool` 중. 개념 질문 등은 **빈 배열**일 수 있다 |
-| `sources` | object[] | 답변의 근거 문서(뉴스/공시). 주가만 조회했거나 tool을 안 썼으면 **빈 배열** |
+| `used_tools` | string[] | 실제로 실행된 tool 이름(호출 순서). `stock_tool`, `news_tool`, `disclosure_tool`, `rag_search_tool`, `market_tool`(시장 지수 비교 질문일 때만) 중. 개념 질문 등은 **빈 배열**일 수 있다 |
+| `sources` | object[] | 답변의 근거 문서(뉴스/공시). 주가·시장 지수만 조회했거나 tool을 안 썼으면 **빈 배열** |
 | `sources[].tool` | string | 이 근거를 가져온 tool |
 | `sources[].type` | `"news"` \| `"disclosure"` | 근거 종류 |
 | `sources[].title` | string | 기사/공시 제목 |

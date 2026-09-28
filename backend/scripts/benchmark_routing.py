@@ -116,10 +116,10 @@ CASES = {
 }
 
 
-def judge(group: str, tools: set[str], market_tools: frozenset = frozenset({"market_tool"})) -> bool:
+def judge(group: str, tools: set[str]) -> bool:
     group = {"rag_ho": "rag", "disc_ho": "disc_list", "no_tool_ho": "no_tool", "market_ho": "market"}.get(group, group)
     if group == "market":
-        return bool(market_tools & tools)
+        return "market_tool" in tools
     if group == "rag":
         return "rag_search_tool" in tools
     if group == "disc_list":
@@ -134,12 +134,13 @@ def judge(group: str, tools: set[str], market_tools: frozenset = frozenset({"mar
 
 
 def select_tools(question: str) -> set[str]:
+    system_prompt, tools = agent.build_request(question)
     messages = [
-        {"role": "system", "content": agent.SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         *agent.FEW_SHOT_MESSAGES,
         {"role": "user", "content": question},
     ]
-    _, calls = agent._first_call(agent.MODEL_NAME, messages)
+    _, calls = agent._first_call(agent.MODEL_NAME, messages, tools)
     return {c["function"]["name"] for c in calls or []}
 
 
@@ -298,67 +299,17 @@ def variant_nt_sp_fs():
     return tools, sp, fs + copy.deepcopy(NT_FEW_SHOT)
 
 
-# market_tool 도입 전/후 비교. 기준(mt_base)은 TOOLS에서 market_tool을, SYSTEM_PROMPT에서 그 문장을 뺀 것이다.
-MT_SP_SENTENCE = (
-    "종목의 움직임이 그 종목만의 요인 때문인지 시장 전체 흐름 때문인지 구분해야 하거나 코스피·코스닥 지수와 "
-    "비교하는 질문에는 market_tool도 함께 호출하라. "
-)
+# market_tool 게이트(agent.needs_market_tool) 비교. 게이트 없이 5번째 tool을 항상 보여주면 multi가 깨진다
+# (60% -> 36%, n=96). 그 실험용 변형(mt_tool 등)은 커밋 377d8dc의 이 파일에 남아 있다.
+GATES = {
+    "gate_off": lambda q: False,   # 시장 비교 질문에도 market_tool을 안 보여줌 (도입 전과 같은 4-tool)
+    "gate_always": lambda q: True,  # 모든 질문에 market_tool + 프롬프트 문장을 보여줌
+}
+ORIG_GATE = agent.needs_market_tool
 
 
-def _without_market_tool(tools):
-    return [t for t in copy.deepcopy(tools) if t["function"]["name"] != "market_tool"]
-
-
-def variant_mt_base():
-    assert MT_SP_SENTENCE in ORIG_SYSTEM_PROMPT
-    return _without_market_tool(ORIG_TOOLS), ORIG_SYSTEM_PROMPT.replace(MT_SP_SENTENCE, ""), ORIG_FEW_SHOT
-
-
-def variant_mt_tool():
-    assert MT_SP_SENTENCE in ORIG_SYSTEM_PROMPT
-    return copy.deepcopy(ORIG_TOOLS), ORIG_SYSTEM_PROMPT.replace(MT_SP_SENTENCE, ""), ORIG_FEW_SHOT
-
-
-MT_TERSE_DESC = (
-    "종목 등락률을 그 종목이 상장된 시장(코스피/코스닥) 지수의 같은 기간 등락률과 비교한다. "
-    "시장 전체 흐름 대비 성과를 물을 때만 호출한다. 데이터가 없으면 found=false를 반환한다."
-)
-
-
-def variant_mt_tool_terse():
-    tools, sp, fs = variant_mt_tool()
-    _tool(tools, "market_tool")["description"] = MT_TERSE_DESC
-    return tools, sp, fs
-
-
-# 통합안: tool을 늘리지 않고(5번째 tool은 multi를 떨어뜨림) stock_tool이 시장 대비 비교를 함께 돌려주는 것으로 설명한다.
-FOLD_STOCK_SUFFIX = (
-    " 이 종목의 등락률이 시장 전체(코스피/코스닥 지수) 흐름과 비교해 어떤지(시장 대비 차이)도 함께 돌려주므로, "
-    "종목 요인인지 시장 요인인지 구분하는 질문에도 호출한다."
-)
-FOLD_SP_SENTENCE = (
-    "종목의 움직임이 그 종목만의 요인 때문인지 시장 전체 흐름 때문인지 구분해야 하거나 코스피·코스닥 지수와 "
-    "비교하는 질문에는 stock_tool을 호출하라(시장 지수 대비 등락률도 함께 나온다). "
-)
-MARKET_TOOLS = {"fold_desc": frozenset({"stock_tool"}), "fold_sp": frozenset({"stock_tool"})}
-
-
-def variant_fold_desc():
-    tools, sp, fs = variant_mt_base()
-    _tool(tools, "stock_tool")["description"] += FOLD_STOCK_SUFFIX
-    return tools, sp, fs
-
-
-def variant_fold_sp():
-    tools, sp, fs = variant_fold_desc()
-    anchor = "최근 이슈나 '왜 올랐는지/내렸는지' 같이 뉴스가 필요한 질문에는 news_tool을 호출하라. "
-    assert anchor in sp
-    return tools, sp.replace(anchor, anchor + FOLD_SP_SENTENCE), fs
-
-
-VARIANTS = {"current": variant_current, "mt_base": variant_mt_base, "mt_tool": variant_mt_tool,
-            "mt_tool_terse": variant_mt_tool_terse,
-            "fold_desc": variant_fold_desc, "fold_sp": variant_fold_sp, "desc": variant_desc, "fs": variant_fs, "fs_pair": variant_fs_pair,
+VARIANTS = {"current": variant_current, "gate_off": variant_current, "gate_always": variant_current,
+            "desc": variant_desc, "fs": variant_fs, "fs_pair": variant_fs_pair,
             "sp": variant_sp, "sp_desc": variant_sp_desc,
             "nt_sp": variant_nt_sp, "nt_desc": variant_nt_desc, "nt_fs": variant_nt_fs, "nt_sp_fs": variant_nt_sp_fs,
             "nt_desc2": variant_nt_desc2, "nt_desc2_sp": variant_nt_desc2_sp}
@@ -374,14 +325,16 @@ def run(variant_names: list[str], reps: int, groups: list[str]):
                 for q in CASES[group]:
                     for name in variant_names:
                         agent.TOOLS, agent.SYSTEM_PROMPT, agent.FEW_SHOT_MESSAGES = copy.deepcopy(VARIANTS[name]())
+                        agent.needs_market_tool = GATES.get(name, ORIG_GATE)
                         try:
                             tools = select_tools(q)
                         except Exception as e:  # noqa: BLE001
                             tools = {f"ERROR:{type(e).__name__}"}
-                        results[name][group].append((q, judge(group, tools, MARKET_TOOLS.get(name, frozenset({"market_tool"}))), sorted(tools)))
+                        results[name][group].append((q, judge(group, tools), sorted(tools)))
             print(f"round {rep + 1}/{reps} done", flush=True)
     finally:
         agent.TOOLS, agent.SYSTEM_PROMPT, agent.FEW_SHOT_MESSAGES = orig
+        agent.needs_market_tool = ORIG_GATE
     return results
 
 

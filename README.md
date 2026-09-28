@@ -15,7 +15,9 @@ FastAPI  ──  POST /api/research ─▶ 에이전트(app/agent.py)
                                      ├─ stock_tool       주가/등락률/거래량
                                      ├─ news_tool        최신 뉴스
                                      ├─ disclosure_tool  최신 DART 공시
-                                     └─ rag_search_tool  bge-m3 임베딩 유사도 검색(뉴스+공시)
+                                     ├─ rag_search_tool  bge-m3 임베딩 유사도 검색(뉴스+공시)
+                                     └─ market_tool      종목 vs 시장(코스피/코스닥) 지수 등락률 비교
+                                                         (시장 비교 질문일 때만 tool 목록에 동적 추가)
                                              │
                                      PostgreSQL 16 + pgvector (docker)
                                      company · stock_price · market_index · news · disclosure
@@ -94,8 +96,8 @@ python scripts/collect_disclosure_content.py --apply   # 공시 원문 수집 (�
 `app/tools/market_tool.py`(종목 등락률 vs 상장 시장 지수 등락률 비교)는 `market_index`(지수)와 `company.market`(상장 시장)이
 필요합니다. 새 종목을 등록한 뒤에는 `collect_market_index`를 다시 실행해야 그 종목의 시장 구분이 채워집니다(멱등).
 지수 데이터가 종목 주가보다 며칠 일찍 끝나 있으면 지수의 마지막 날짜까지만 비교하고 결과의 `note`에 그 사실을 남깁니다.
-**이 tool은 아직 agent(`app/agent.py`)에 등록하지 않았습니다.** 등록하면 기존 multi-tool 케이스가 떨어지기 때문입니다
-(아래 Known Issues 참고).
+`market_tool`은 기본 tool 목록에 없고, 질문에 시장 비교 표현이 있을 때만 그 요청에 추가됩니다(`app/routing.py`,
+아래 Known Issues 참고).
 
 ## 테스트
 
@@ -117,9 +119,8 @@ pytest        # backend/ 에서
 - [x] 데이터 수집: 300종목 주가 · 뉴스(네이버, 비금융 도메인 필터·동명 종목 검색 보정) · DART 공시와 공시 원문
 - [x] 임베딩 + 유사도 검색: bge-m3 / pgvector HNSW, 뉴스·공시 전체 임베딩 완료
 - [x] 에이전트: 4개 tool 호출, 종목명 보정(오타/공백/우선주 처리), few-shot, 실패 시 안내 응답
-- [x] FR-06 시장 지수 비교(1차 범위) — 데이터·계산: 코스피/코스닥 지수 수집(`market_index`), 종목 상장 시장 구분,
-  종목 vs 시장 등락률 비교 함수 `market_tool`(테스트 포함)
-- [ ] FR-06 시장 지수 비교 — agent 연동: 구현은 끝났지만 multi-tool 회귀 때문에 agent에 미등록(아래 Known Issues)
+- [x] FR-06 시장 지수 비교(1차 범위: 코스피/코스닥): 지수 수집(`market_index`), 종목 상장 시장 구분, 종목 vs 시장
+  등락률 비교 `market_tool`, agent 연동(키워드 사전 분류로 시장 비교 질문에만 tool 노출)
 - [ ] FR-06 업종(섹터) 지수 비교: 1차 범위 밖, 후속 작업(업종 지수 수집과 종목-업종 매핑 필요)
 - [x] 리포트 저장·조회: 질문/답변/근거/tool 호출 이력
 - [x] REST API + 에러 처리(Ollama/DB 장애 시 502/503) + CORS
@@ -163,22 +164,34 @@ pytest        # backend/ 에서
     tool 트리거 키워드가 하나도 없으면 1차 호출에 tools를 아예 넘기지 않기(개념 질문은 tool 없이 바로 답변).
     프롬프트 변경 없이 확실히 막을 수 있지만, 종목 없이 묻는 정당한 rag 검색("반도체 업황 관련 근거")도
     막지 않도록 키워드 목록을 함께 검증해야 함.
-- **market_tool(FR-06 시장 지수 비교)을 agent에 못 넣음 — multi-tool 회귀**: `market_tool` 자체는 구현·검증 끝
-  (삼성전자 5거래일을 손계산과 대조, 1일 값은 DB 일별 등락률과 일치). 그러나 tool로 노출하면 stock_tool+news_tool 동시
-  호출(multi)이 떨어져서 등록을 보류함. `benchmark_routing.py`로 interleaved A/B 측정:
-  - 시장 질문 라우팅 자체는 잘 됨: market 48/48, held-out market_ho 32/40(tool만)~40/40(tool+프롬프트 문장).
-  - 회귀: multi(n=96) 도입 전 60% → tool만 추가 36%, 설명을 짧게 줄여도 36%, tool+프롬프트 문장 29%
-    (표준오차 약 ±5%p라서 노이즈가 아님). market_tool이 multi 질문에서 실제로 호출된 건 1/96뿐이라, "5번째 tool이
-    목록에 있다"는 것 자체가 모델을 한 tool만 고르게 만드는 것으로 보임. rag/rag_ho/disc_list/disc_ho/stock/news는 유지.
-  - tool을 늘리지 않고 stock_tool 설명(+프롬프트 문장)에 "시장 대비 비교도 함께 돌려준다"를 넣는 통합안도 시험:
-    시장 질문은 92~100% stock_tool로 가지만 multi(n=64)가 50% → 33%(설명만)/28%(설명+문장)로 똑같이 떨어짐.
-    즉 stock/news 근처에 "시장 흐름 비교"를 언급하는 문구 자체가 multi를 흔든다.
-  - 결론: 프롬프트/설명 수준의 국소 수정으로는 회귀 없이 못 넣음. 그래서 `agent.py`는 그대로 두고 데이터·함수만 커밋.
-  - 다음 후보: (1) 코드 레벨 사전 분류 — 질문에 "코스피/코스닥/시장 대비/장 전체" 같은 키워드가 있을 때만 그 요청의
-    tools 목록에 market_tool을 추가(그 외 질문은 지금의 4-tool 프롬프트 그대로라 회귀 없음). 키워드 커버리지는
-    market_ho 같은 held-out 질문으로 검증 필요. (2) multi 회귀를 감수하고 등록. (3) stock_tool 응답에 시장 비교를
-    항상 포함시키고 설명은 그대로 둠(라우팅 무변경이지만 시장 질문 중 news_tool로 가는 경우는 못 잡음: 도입 전
-    기준 시장 질문의 55~73%만 stock_tool로 감).
+- **[완료] FR-06 시장 지수 비교(market_tool) — 키워드 사전 분류 방식**: 시장 비교 질문에서 종목 등락률을 코스피/코스닥
+  지수의 같은 기간 등락률과 비교해 답한다(1차 범위는 시장 전체 지수, 업종(섹터) 지수 비교는 후속 작업).
+  - 배경: `market_tool`을 5번째 tool로 LLM에 상시 노출하면 stock_tool+news_tool 동시 호출(multi)이 깨진다
+    (`benchmark_routing.py` n=96: 60% → 36%, 설명을 줄여도 36%, +프롬프트 문장 29%. 표준오차 약 ±5%p라 노이즈 아님).
+    market_tool이 multi 질문에서 호출된 건 1/96뿐이라 "5번째 tool이 목록에 있는 것" 자체가 원인이다. stock_tool 설명에
+    시장 비교를 녹이는 통합안도 multi가 50% → 28~33%(n=64)로 같이 깨져서 폐기(시험용 변형은 커밋 377d8dc).
+  - 방식: LLM에게 맡기지 않고 코드가 판단한다. `app/routing.py`의 `needs_market_tool(question)`이 True인 요청에만
+    `build_request()`가 market_tool과 시스템 프롬프트 문장 하나를 추가한다. False면 SYSTEM_PROMPT/TOOLS/few-shot이 이전과
+    완전히 같은 4-tool 요청이다(비시장 벤치마크 질문 44개의 LLM 요청을 바이트 단위로 비교해 차이 0건 확인).
+  - 키워드(하나라도 맞으면 True): `코스피|코스닥|KOSPI|KOSDAQ`, `시장|증시` + `전체·전반·대비·평균·흐름·수익률·보다·요인·
+    분위기·영향·지수`, `장` + `전체·전반·대비·평균·흐름·분위기`('공장 전체'처럼 한글 뒤에 붙은 '장'은 제외), `지수` + `대비·보다·
+    와·과·랑·하고·비교·흐름·때문·영향·상승률·하락률·수익률`, `초과 수익|상대 수익|벤치마크|장세`, `개별 (종목) 요인|이슈`, `종목만의`.
+    '시장 점유율', '시장 진출', '소비자물가지수'처럼 비교가 아닌 표현은 일부러 뺐다.
+  - 커버리지/오탐(단위 테스트 `tests/test_routing.py`):
+    - 벤치마크 market 6/6, market_ho 5/5 — 단, 이 질문들을 보고 키워드를 정했으므로 낙관적인 수치다.
+    - 키워드 설계와 별개로 새로 쓴 시장 비교 질문 14개: 첫 실행 12/14(86%). 놓친 것은 "장세"(패턴 추가함)와 키워드가
+      전혀 없는 "다 같이 빠진 거야?"식 표현(코드 키워드로는 못 잡는 한계). "장세" 추가 뒤 13/14이지만 그 수치는 더는 독립 측정이 아님.
+    - 오탐: market 외 벤치마크 질문 44개에서 0건. 시장/지수 단어가 들어간 비교 아닌 질문 15개에서는 3건("코스피 200이 뭐야?",
+      "코스닥 상장 요건", "PER이 시장 전체 평균보다 높으면…" 같은 개념 질문 — 키워드로 구분 불가). 오탐의 비용은 그 질문의
+      tool 목록이 5개가 되는 것뿐이다(못 잡는 쪽이 기능 누락이라 더 나쁘다).
+  - 라우팅 재검증(`benchmark_routing.py`, 8회 interleaved): market 48/48, market_ho 40/40, market_tool 오호출 0/352.
+    비시장 그룹은 게이트 적용/미적용 수치가 rag 77/77%, rag_ho 69/78%, disc_list·disc_ho·stock·news 100/100%, multi 78/53%,
+    no_tool·no_tool_ho 0/0%로 나왔다. 요청이 바이트 단위로 같은데도 multi·rag_ho가 다른 것은 샘플링 노이즈다(같은 입력에서도
+    질문별 결과가 실행마다 7:1 vs 5:3처럼 갈린다).
+  - 답변 확인(`ask_question`): 시장 질문 4개 모두 market_tool이 호출됐고, 수치를 말한 답변 2건은 tool 결과와 일치했으며 나머지 2건은 수치 없이 결론만 말했다. "최근 일주일"을
+    모델이 period_days=7(약 열흘)로 넘기던 것을 인자 설명("일주일이면 5, 한 달이면 20")으로 고쳐 6/6이 5로 들어간다.
+    다만 llama3.1:8b 특성상 답변이 짧고 수치 없이 모호하거나 어색한 표현이 섞이기도 한다(별개의 기존 한계).
+  - 알려진 한계: 키워드가 없는 시장 비교 표현은 못 잡는다. 업종 비교는 미지원. 지수 데이터가 종목 주가보다 일찍 끝나면 그 날짜까지만 비교한다.
 - **[해결] 공시 "내용" 질문이 rag_search_tool 대신 disclosure_tool로 라우팅되던 문제**:
   "삼성전자 자사주 매입 관련 공시 내용 자세히 알려줘"류 질문이 "공시"라는 단어
   때문에 거의 항상 disclosure_tool(최신순 목록)로 갔던 문제. `scripts/benchmark_routing.py`로
