@@ -27,7 +27,7 @@ from app.agent import ask_question  # noqa: E402
 def ask(question: str):
     print(f"\n{'='*60}\n질문: {question}\n{'='*60}")
 
-    result = ask_question(question)
+    result = ask_question(question, save_report=False)
 
     if result["used_tools"]:
         print(f"[Tool 호출 감지] {result['used_tools']}")

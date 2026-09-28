@@ -57,19 +57,19 @@ def has_language_leak(text: str) -> bool:
 
 
 def run_multi_tool(model: str):
-    result = ask_question(CASE_MULTI, model=model)
+    result = ask_question(CASE_MULTI, model=model, save_report=False)
     ok = "stock_tool" in result["used_tools"] and "news_tool" in result["used_tools"]
     return ok, result
 
 
 def run_no_tool(model: str):
-    result = ask_question(CASE_NONE, model=model)
+    result = ask_question(CASE_NONE, model=model, save_report=False)
     ok = len(result["used_tools"]) == 0
     return ok, result
 
 
 def run_no_language_leak(model: str):
-    result = ask_question(CASE_LANG, model=model)
+    result = ask_question(CASE_LANG, model=model, save_report=False)
     ok = not has_language_leak(result["answer"])
     return ok, result
 

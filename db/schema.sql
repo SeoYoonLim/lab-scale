@@ -1,3 +1,12 @@
+-- ------------------------------------------------------------
+-- [안내] 이 파일은 프로젝트 초기에 작성한 스키마 설계 스냅샷이다. 이후 갱신하지 않았다.
+-- 실제 DB 스키마의 기준은 backend/alembic/versions/ 의 Alembic 마이그레이션이다.
+-- 2026-09-28 기준 실제 DB와의 차이(컬럼/타입/FK는 동일, 아래 4가지만 다름):
+--   1) market_index 테이블 추가 (FR-06 시장 지수 비교)
+--   2) research_report.previous_report_id 추가 + 자기 참조 FK ON DELETE SET NULL (FR-10 후속 질문)
+--   3) news.embedding, disclosure.embedding에 HNSW 인덱스 추가 (vector_cosine_ops, m=16, ef_construction=64)
+--   4) (company_id, 날짜) 인덱스가 DESC가 아니라 오름차순 (btree라 조회 기능상 동일)
+-- ------------------------------------------------------------
 -- ============================================================
 -- AI 투자 리서치 에이전트 - DB 스키마 (MVP)
 -- PostgreSQL + pgvector

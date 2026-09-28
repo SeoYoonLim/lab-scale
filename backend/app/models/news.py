@@ -9,6 +9,13 @@ class News(Base):
     __tablename__ = "news"
     __table_args__ = (
         Index("idx_news_company_published", "company_id", "published_at"),
+        Index(
+            "idx_news_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_with={"m": 16, "ef_construction": 64},
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
     )
 
     id = Column(BigInteger, primary_key=True)

@@ -9,6 +9,13 @@ class Disclosure(Base):
     __tablename__ = "disclosure"
     __table_args__ = (
         Index("idx_disclosure_company_date", "company_id", "disclosed_at"),
+        Index(
+            "idx_disclosure_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_with={"m": 16, "ef_construction": 64},
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
     )
 
     id = Column(BigInteger, primary_key=True)
