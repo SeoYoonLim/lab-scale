@@ -1,5 +1,57 @@
-// 백엔드(backend/app/models, backend/app/tools)의 필드 이름을 그대로 따른 타입.
-// 백엔드 응답 형식이 바뀌면 이 파일과 src/api 만 고치면 된다.
+// backend/API.md 기준 타입. 필드 이름은 백엔드 응답 그대로 따른다.
+
+// ---------- 리서치(/api/research) : 실제 백엔드 연동 대상 ----------
+
+export interface Source {
+  tool: string
+  type: 'news' | 'disclosure'
+  title: string
+  company_names: string[]
+  company_filter: string | null
+  url: string | null
+}
+
+// POST /api/research 응답
+export interface ResearchResponse {
+  answer: string
+  used_tools: string[]
+  sources: Source[]
+  // 저장 실패 시 null (답변 자체는 정상). previous_report_id로 이어서 조회 가능.
+  report_id: number | null
+  previous_report_id: number | null
+}
+
+// GET /api/research 목록 항목
+export interface ReportListItem {
+  report_id: number
+  previous_report_id: number | null
+  question: string
+  summary: string | null
+  // 질문에서 다룬 종목이 정확히 1개일 때만 채워짐
+  company_name: string | null
+  created_at: string // ISO 8601
+  used_tools: string[]
+}
+
+export interface ReportList {
+  total: number
+  items: ReportListItem[]
+}
+
+// GET /api/research/{id} 응답 (목록 항목 + 전체 답변/근거)
+export interface ReportDetail {
+  report_id: number
+  previous_report_id: number | null
+  question: string
+  answer: string
+  summary: string | null
+  company_name: string | null
+  created_at: string
+  used_tools: string[]
+  sources: Source[]
+}
+
+// ---------- 종목 조회 : 아직 대응하는 백엔드 API가 없어 항상 mock ----------
 
 export interface Company {
   ticker: string
@@ -8,7 +60,6 @@ export interface Company {
   sector: string | null
 }
 
-// stock_tool 응답의 prices 항목과 동일
 export interface PricePoint {
   price_date: string // YYYY-MM-DD
   close_price: number
@@ -16,41 +67,17 @@ export interface PricePoint {
   change_pct: number | null
 }
 
-// news_tool 응답의 news 항목과 동일
 export interface NewsItem {
   title: string
   source: string | null
-  published_at: string | null // ISO 8601
+  published_at: string | null
   url: string | null
   content: string | null
 }
 
-// disclosure_tool 응답의 disclosures 항목과 동일
 export interface DisclosureItem {
   title: string
   disclosure_type: string | null
-  disclosed_at: string | null // ISO 8601
+  disclosed_at: string | null
   source_url: string | null
-}
-
-// 도구 응답은 found=false 일 때 message 에 사유가 담긴다. 그 외 필드는 도구마다 다르다.
-export interface ToolResult {
-  found?: boolean
-  message?: string
-  error?: string
-  [key: string]: unknown
-}
-
-// tool_call_log 테이블과 동일.
-// 백엔드가 used_tools(도구 이름만)로 응답하면 arguments/result 는 없다.
-export interface ToolCall {
-  tool_name: string
-  arguments?: Record<string, unknown>
-  result?: ToolResult
-}
-
-// POST /api/research 응답 (프론트에서 쓰는 형태)
-export interface ResearchResponse {
-  answer: string
-  tool_calls: ToolCall[]
 }

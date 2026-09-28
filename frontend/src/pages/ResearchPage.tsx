@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { api } from '../api'
-import ToolCallChip from '../components/ToolCallChip'
-import type { ToolCall } from '../types'
+import ToolUsage from '../components/ToolUsage'
+import type { Source } from '../types'
 
 interface Message {
   id: number
   role: 'user' | 'assistant'
   content: string
-  toolCalls?: ToolCall[]
+  usedTools?: string[]
+  sources?: Source[]
   isError?: boolean
 }
 
@@ -23,6 +24,9 @@ export default function ResearchPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [pending, setPending] = useState(false)
+  // 직전 성공한 report_id. 있으면 다음 질문에 이어서(previous_report_id) 물어본다.
+  // (backend/API.md: "그럼 최근 뉴스는?"처럼 종목명이 빠진 후속 질문도 이어받아 답함)
+  const [threadReportId, setThreadReportId] = useState<number | null>(null)
   const nextId = useRef(1)
   const endRef = useRef<HTMLDivElement>(null)
 
@@ -39,11 +43,19 @@ export default function ResearchPage() {
     setPending(true)
 
     try {
-      const res = await api.askResearch(question)
+      const res = await api.askResearch(question, threadReportId)
       setMessages((prev) => [
         ...prev,
-        { id: nextId.current++, role: 'assistant', content: res.answer, toolCalls: res.tool_calls },
+        {
+          id: nextId.current++,
+          role: 'assistant',
+          content: res.answer,
+          usedTools: res.used_tools,
+          sources: res.sources,
+        },
       ])
+      // 저장에 실패하면(report_id: null) 이어받을 리포트가 없으니 대화 스레드를 끊는다.
+      setThreadReportId(res.report_id)
     } catch (error) {
       const content = error instanceof Error ? error.message : '답변을 가져오지 못했어요.'
       setMessages((prev) => [
@@ -89,11 +101,15 @@ export default function ResearchPage() {
           {messages.map((message) => (
             <div key={message.id} className={`message message-${message.role}`}>
               <div className={message.isError ? 'bubble bubble-error' : 'bubble'}>{message.content}</div>
-              {message.toolCalls && message.toolCalls.length > 0 && (
+              {message.usedTools && message.usedTools.length > 0 && (
                 <div className="tool-calls">
                   <div className="tool-calls-title">사용한 도구</div>
-                  {message.toolCalls.map((call, index) => (
-                    <ToolCallChip key={index} call={call} />
+                  {message.usedTools.map((toolName, index) => (
+                    <ToolUsage
+                      key={index}
+                      toolName={toolName}
+                      sources={(message.sources ?? []).filter((s) => s.tool === toolName)}
+                    />
                   ))}
                 </div>
               )}
@@ -118,17 +134,27 @@ export default function ResearchPage() {
 
       <form className="composer" onSubmit={handleSubmit}>
         <div className="container composer-inner">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="예: 삼성전자 최근 3일 등락률 알려줘"
-            rows={1}
-            aria-label="질문 입력"
-          />
-          <button type="submit" className="send" disabled={pending || !input.trim()}>
-            보내기
-          </button>
+          {threadReportId != null && (
+            <div className="thread-hint">
+              <span>이전 답변에 이어서 대화 중이에요</span>
+              <button type="button" onClick={() => setThreadReportId(null)}>
+                새 질문으로 시작
+              </button>
+            </div>
+          )}
+          <div className="composer-row">
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="예: 삼성전자 최근 3일 등락률 알려줘"
+              rows={1}
+              aria-label="질문 입력"
+            />
+            <button type="submit" className="send" disabled={pending || !input.trim()}>
+              보내기
+            </button>
+          </div>
         </div>
       </form>
     </div>

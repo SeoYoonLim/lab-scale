@@ -3,8 +3,10 @@ import type {
   DisclosureItem,
   NewsItem,
   PricePoint,
+  ReportDetail,
+  ReportListItem,
   ResearchResponse,
-  ToolCall,
+  Source,
 } from '../types'
 import type { Api } from './index'
 
@@ -31,6 +33,10 @@ const DISCLOSURE_TYPES = [
 ]
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+function notFound(reportId: number): Error {
+  return new Error(`report_id=${reportId} 리포트를 찾을 수 없습니다.`)
+}
 
 // 같은 종목은 항상 같은 값이 나오도록 시드 기반 난수를 쓴다.
 function mulberry32(seed: number) {
@@ -114,90 +120,158 @@ function makeDisclosures(name: string, limit: number): DisclosureItem[] {
   })
 }
 
+// ---------- 리서치 리포트 (실제 /api/research 계약을 흉내) ----------
+
+const reportStore: ReportDetail[] = []
+let nextReportId = 1
+
+function toListItem(report: ReportDetail): ReportListItem {
+  const { report_id, previous_report_id, question, summary, company_name, created_at, used_tools } = report
+  return { report_id, previous_report_id, question, summary, company_name, created_at, used_tools }
+}
+
+function summarize(answer: string): string {
+  const flat = answer.replace(/\s+/g, ' ').trim()
+  return flat.length > 200 ? `${flat.slice(0, 200)}...` : flat
+}
+
+// 백엔드 에이전트(backend/app/agent.py)의 도구 선택 규칙을 흉내 낸다.
+async function askResearch(question: string, previousReportId?: number | null): Promise<ResearchResponse> {
+  await delay(1200)
+
+  let previous: ReportDetail | undefined
+  if (previousReportId != null) {
+    previous = reportStore.find((r) => r.report_id === previousReportId)
+    if (!previous) throw notFound(previousReportId)
+  }
+
+  const company =
+    COMPANIES.find((c) => question.includes(c.name) || question.includes(c.ticker)) ??
+    (previous ? findCompany(previous.company_name ?? '') : undefined)
+
+  const wantsDisclosure = /공시|사업보고서|자사주|공식/.test(question)
+  const wantsNews = /뉴스|이슈|왜|소식/.test(question)
+  const wantsStock = /주가|등락|거래량|오른|올랐|내렸|내린|하락|상승|시세/.test(question)
+  const useStock = company != null && (wantsStock || (!wantsNews && !wantsDisclosure))
+
+  const used_tools: string[] = []
+  const sources: Source[] = []
+  const summaryParts: string[] = []
+
+  if (useStock && company) {
+    const prices = getPriceSeries(company.ticker).slice(-1)
+    const latest = prices[0]
+    used_tools.push('stock_tool')
+    summaryParts.push(
+      `최근 등락률은 ${latest.change_pct}%, 거래량은 ${latest.volume?.toLocaleString('ko-KR')}주예요.`,
+    )
+  }
+  if (wantsNews && company) {
+    used_tools.push('news_tool')
+    for (const item of makeNews(company.name, 3)) {
+      sources.push({
+        tool: 'news_tool',
+        type: 'news',
+        title: item.title,
+        company_names: [company.name],
+        company_filter: null,
+        url: item.url,
+      })
+    }
+    summaryParts.push('관련 뉴스를 확인했어요.')
+  }
+  if (wantsDisclosure && company) {
+    used_tools.push('disclosure_tool')
+    for (const item of makeDisclosures(company.name, 3)) {
+      sources.push({
+        tool: 'disclosure_tool',
+        type: 'disclosure',
+        title: item.title,
+        company_names: [company.name],
+        company_filter: null,
+        url: item.source_url,
+      })
+    }
+    summaryParts.push('최근 공시를 확인했어요.')
+  }
+
+  const intro = previous ? `[샘플 응답 · "${previous.question}"에 이어서] ` : '[샘플 응답] '
+  const answer = company
+    ? `${intro}${company.name}에 대해 조회했어요. ${summaryParts.join(' ')}\n실제 백엔드가 연결되면 llama3.1:8b가 도구 결과를 바탕으로 만든 답변이 여기에 표시돼요.`
+    : `${intro}도구를 호출하지 않고 바로 답하는 경우예요. 종목명(삼성전자, SK하이닉스, NAVER)을 넣어서 질문하면 근거(sources)도 함께 볼 수 있어요.`
+
+  const report: ReportDetail = {
+    report_id: nextReportId++,
+    previous_report_id: previousReportId ?? null,
+    question,
+    answer,
+    summary: summarize(answer),
+    company_name: company?.name ?? null,
+    created_at: new Date().toISOString(),
+    used_tools,
+    sources,
+  }
+  reportStore.push(report)
+
+  return {
+    answer,
+    used_tools,
+    sources,
+    report_id: report.report_id,
+    previous_report_id: report.previous_report_id,
+  }
+}
+
+async function listReports(limit = 20, offset = 0) {
+  await delay(200)
+  const items = reportStore
+    .slice()
+    .reverse()
+    .slice(offset, offset + limit)
+    .map(toListItem)
+  return { total: reportStore.length, items }
+}
+
+async function getReport(reportId: number) {
+  await delay(150)
+  const report = reportStore.find((r) => r.report_id === reportId)
+  if (!report) throw notFound(reportId)
+  return report
+}
+
+async function deleteReport(reportId: number) {
+  await delay(150)
+  const index = reportStore.findIndex((r) => r.report_id === reportId)
+  if (index === -1) throw notFound(reportId)
+  reportStore.splice(index, 1)
+  // DB의 ON DELETE SET NULL 흉내: 이 리포트를 이어받던 후속 리포트의 링크를 끊는다.
+  for (const r of reportStore) {
+    if (r.previous_report_id === reportId) r.previous_report_id = null
+  }
+}
+
 export const mockApi: Api = {
+  askResearch,
+  listReports,
+  getReport,
+  deleteReport,
+
   async listCompanies() {
     await delay(200)
     return COMPANIES
   },
-
   async getPrices(ticker, days) {
     await delay(300)
     return getPriceSeries(ticker).slice(-days)
   },
-
   async getNews(ticker, limit = 5) {
     await delay(300)
     const company = findCompany(ticker)
     return company ? makeNews(company.name, limit) : []
   },
-
   async getDisclosures(ticker, limit = 5) {
     await delay(300)
     const company = findCompany(ticker)
     return company ? makeDisclosures(company.name, limit) : []
-  },
-
-  // 백엔드 에이전트(scripts/test_tool_calling.py)의 도구 선택 규칙을 흉내 낸다.
-  async askResearch(question) {
-    await delay(1200)
-
-    const company = COMPANIES.find((c) => question.includes(c.name) || question.includes(c.ticker))
-    const wantsDisclosure = /공시|사업보고서|자사주|공식/.test(question)
-    const wantsNews = /뉴스|이슈|왜|소식/.test(question)
-    const wantsStock = /주가|등락|거래량|오른|올랐|내렸|내린|하락|상승|시세/.test(question)
-    const daysMatch = question.match(/(\d+)\s*일/)
-    const periodDays = daysMatch ? Math.min(Number(daysMatch[1]), 90) : 1
-
-    const toolCalls: ToolCall[] = []
-    const summary: string[] = []
-
-    if (company) {
-      const useStock = wantsStock || (!wantsNews && !wantsDisclosure)
-
-      if (useStock) {
-        const prices = getPriceSeries(company.ticker).slice(-periodDays)
-        const latest = prices[prices.length - 1]
-        toolCalls.push({
-          tool_name: 'stock_tool',
-          arguments: { ticker: company.name, period_days: periodDays },
-          result: {
-            ticker: company.name,
-            period_days: periodDays,
-            found: true,
-            change_pct: latest.change_pct,
-            volume: latest.volume,
-            prices,
-          },
-        })
-        summary.push(
-          `최근 ${periodDays}일 기준으로 가장 최근 등락률은 ${latest.change_pct}%, 거래량은 ${latest.volume?.toLocaleString('ko-KR')}주예요.`,
-        )
-      }
-      if (wantsNews) {
-        const news = makeNews(company.name, 5)
-        toolCalls.push({
-          tool_name: 'news_tool',
-          arguments: { company_name: company.name, limit: 5 },
-          result: { company_name: company.name, limit: 5, found: true, news },
-        })
-        summary.push(`관련 뉴스 ${news.length}건을 확인했어요.`)
-      }
-      if (wantsDisclosure) {
-        const disclosures = makeDisclosures(company.name, 5)
-        toolCalls.push({
-          tool_name: 'disclosure_tool',
-          arguments: { company_name: company.name, limit: 5 },
-          result: { company_name: company.name, limit: 5, found: true, disclosures },
-        })
-        summary.push(`최근 공시 ${disclosures.length}건을 확인했어요.`)
-      }
-    }
-
-    const answer = company
-      ? `[샘플 응답] ${company.name}에 대해 조회했어요. ${summary.join(' ')}\n실제 백엔드가 연결되면 모델이 도구 결과를 바탕으로 만든 답변이 여기에 표시돼요.`
-      : '[샘플 응답] 도구를 호출하지 않고 바로 답하는 경우예요. 종목명(삼성전자, SK하이닉스, NAVER)을 넣어서 질문하면 도구 호출 결과도 함께 볼 수 있어요.'
-
-    const response: ResearchResponse = { answer, tool_calls: toolCalls }
-    return response
   },
 }
