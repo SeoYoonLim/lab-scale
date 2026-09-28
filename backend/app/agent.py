@@ -386,12 +386,13 @@ _COMPANY_ARG = {
 }
 
 
-def _repair_company_args(calls: list[dict], question: str) -> dict[int, str]:
+def _repair_company_args(calls: list[dict], question: str, previous_question: str | None = None) -> dict[int, str]:
     """모델이 만든 종목 인자가 DB 종목으로 해석되지 않으면, 질문 원문에서 회사명을 찾아 대신 넣는다.
 
     모델이 질문 속 회사명을 JSON 인자로 옮기다 엉뚱한 문자열로 깨뜨리는 경우를 위한 fallback이다.
     같은 tool로 이미 정상 해석된 회사는 후보에서 빼고, 남은 후보와 실패한 호출이 일대일로 맞을 때만
     (질문 등장 순서대로) 채운다. 임의로 고르지 않으므로 애매하면 그대로 두어 not-found 응답이 나간다.
+    후속 질문("그럼 최근 뉴스는?")처럼 이번 질문에 회사명이 하나도 없을 때만 직전 질문(previous_question)에서 찾는다.
     calls를 직접 수정하고, {호출 인덱스: 모델이 만든 원래 인자}를 돌려준다."""
     targets = []
     for i, call in enumerate(calls):
@@ -423,6 +424,8 @@ def _repair_company_args(calls: list[dict], question: str) -> dict[int, str]:
             return {}
 
         candidates = extract_from_text(db, question)
+        if not candidates and previous_question:
+            candidates = extract_from_text(db, previous_question)
         repaired: dict[int, str] = {}
         for fn_name in {f[1] for f in failed}:
             fails = [f for f in failed if f[1] == fn_name]
@@ -481,14 +484,37 @@ def _first_call(model: str, messages: list[dict], tools: list[dict] | None = Non
     return None, None
 
 
-def _answer(question: str, model: str) -> tuple[dict, list[dict]]:
+# 후속 질문에 넘기는 직전 답변의 최대 길이. 저장된 답변은 보통 수백 자(dev DB 최대 314자)라서 대부분 그대로 들어가고,
+# 뉴스 목록처럼 긴 답변만 잘린다. 대화 맥락은 "무슨 종목/주제였는지"를 잇는 용도라 앞부분이면 충분하다.
+MAX_PREVIOUS_ANSWER_CHARS = 800
+
+
+def _previous_turn(previous: dict | None) -> list[dict]:
+    """직전 보고서의 질문/답변을 대화 기록(user, assistant 메시지)으로 만든다. 없으면 빈 리스트.
+
+    직전 답변을 만들 때 쓴 tool 호출/결과는 넣지 않는다(질문과 최종 답변 텍스트만)."""
+    if not previous:
+        return []
+    answer = (previous.get("answer") or "").strip()
+    if len(answer) > MAX_PREVIOUS_ANSWER_CHARS:
+        answer = answer[: MAX_PREVIOUS_ANSWER_CHARS - 1] + "…"
+    return [
+        {"role": "user", "content": previous["question"]},
+        {"role": "assistant", "content": answer},
+    ]
+
+
+def _answer(question: str, model: str, previous: dict | None = None) -> tuple[dict, list[dict]]:
     """답변을 만든다. (응답 dict, tool 실행 기록 목록)을 돌려준다.
 
+    previous={"question", "answer", ...}가 있으면 후속 질문으로 보고 그 질문/답변을 few-shot 뒤, 이번 질문 앞에
+    대화 기록으로 넣는다. 없으면 메시지 구성이 이전과 완전히 같다.
     tool 실행 기록: {"tool_name", "arguments", "result", "called_at", "elapsed_ms"} (실행 순서대로)."""
     system_prompt, tools = build_request(question)
     messages = [
         {"role": "system", "content": system_prompt},
         *FEW_SHOT_MESSAGES,
+        *_previous_turn(previous),
         {"role": "user", "content": question},
     ]
 
@@ -507,7 +533,7 @@ def _answer(question: str, model: str) -> tuple[dict, list[dict]]:
 
     # 2. 모델이 만든 종목 인자가 깨졌으면 질문 원문에서 회사명을 찾아 보정한 뒤, tool을 실제로 실행하고
     #    결과를 다시 넘겨줌
-    repaired = _repair_company_args(tool_calls, question)
+    repaired = _repair_company_args(tool_calls, question, previous["question"] if previous else None)
     for idx, call in enumerate(tool_calls):
         fn_name = call["function"]["name"]
         fn_args = _as_args(call["function"]["arguments"])
@@ -550,8 +576,13 @@ def _answer(question: str, model: str) -> tuple[dict, list[dict]]:
     return response, records
 
 
-def ask_question(question: str, model: str = MODEL_NAME, save_report: bool = True) -> dict:
+def ask_question(
+    question: str, model: str = MODEL_NAME, save_report: bool = True, previous: dict | None = None
+) -> dict:
     """질문을 받아 필요한 tool을 호출하고 최종 답변을 생성한다.
+
+    previous는 후속 질문일 때 이어받을 직전 보고서({"report_id", "question", "answer"}, get_report()의 결과)다.
+    바로 직전 1개만 잇고 그보다 앞선 체인은 따라가지 않는다. 새 보고서의 previous_report_id로 저장된다.
 
     model은 기본값(MODEL_NAME) 외에 다른 모델로도 같은 로직을 검증할 수 있도록
     (scripts/benchmark_models.py) 파라미터로 열어둔 것이다.
@@ -561,9 +592,14 @@ def ask_question(question: str, model: str = MODEL_NAME, save_report: bool = Tru
     DB를 오염시키지 않도록 save_report=False로 호출한다.
 
     Returns:
-        {"answer": str, "used_tools": list[str], "sources": list[dict], "report_id": int | None}
+        {"answer": str, "used_tools": list[str], "sources": list[dict], "report_id": int | None,
+         "previous_report_id": int | None}
         sources는 tool 결과에서 뽑은 근거 문서(news/disclosure) 목록이다.
     """
-    response, records = _answer(question, model)
-    response["report_id"] = save_report_row(question, response["answer"], records) if save_report else None
+    previous_id = previous["report_id"] if previous else None
+    response, records = _answer(question, model, previous)
+    response["report_id"] = (
+        save_report_row(question, response["answer"], records, previous_report_id=previous_id) if save_report else None
+    )
+    response["previous_report_id"] = previous_id
     return response

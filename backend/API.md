@@ -21,7 +21,7 @@
 
 | 메서드 | 경로 | 설명 |
 | --- | --- | --- |
-| POST | `/api/research` | 질문을 보내 AI 답변 생성(+리포트 저장) |
+| POST | `/api/research` | 질문을 보내 AI 답변 생성(+리포트 저장). `previous_report_id`로 직전 보고서를 이어서 후속 질문 가능 |
 | GET | `/api/research` | 저장된 리포트 목록(최신순, 페이지네이션) |
 | GET | `/api/research/{report_id}` | 저장된 리포트 한 건 조회 |
 | DELETE | `/api/research/{report_id}` | 저장된 리포트 한 건 삭제(tool 호출 이력 포함) |
@@ -42,6 +42,22 @@
 | 필드 | 타입 | 규칙 |
 | --- | --- | --- |
 | `question` | string | 필수. 앞뒤 공백 제거 후 1자 이상, **최대 1000자**. 위반 시 422 |
+| `previous_report_id` | int 또는 null | 선택. 이어서 물을 **바로 직전 보고서**의 ID(1 이상). 생략하거나 null이면 독립 질문. 없는 ID면 404, 정수가 아니거나 1 미만이면 422 |
+
+#### 후속 질문 (`previous_report_id`)
+
+"그럼 최근 뉴스는?", "그건 코스피랑 비교하면 어때?"처럼 종목명이 빠진 질문도 직전 보고서의 종목을 이어받아 답한다.
+서버가 그 보고서의 **질문과 답변 텍스트**를 대화 기록으로 모델에 함께 넘기는 방식이다.
+
+```json
+{ "question": "그럼 최근 뉴스는?", "previous_report_id": 48 }
+```
+
+- **바로 직전 1개만** 잇는다. 직전 보고서가 다시 이어받은 더 앞선 보고서까지는 따라가지 않는다(3턴째 질문은 2턴째 보고서 ID만 넘기면 된다).
+- 직전 답변이 800자를 넘으면 앞 800자만 맥락으로 쓰인다(응답과 저장된 보고서는 그대로).
+- 이번 질문에 다른 종목명이 있으면(예: "카카오는 어때?") 직전 종목이 아니라 이번 질문의 종목을 따른다.
+- 새 보고서에는 `previous_report_id`가 저장되고, 응답과 `GET`(목록/상세)에 그대로 나온다. 프론트는 이 값으로 대화 스레드를 이을 수 있다.
+- 직전 보고서를 나중에 `DELETE`해도 후속 보고서는 남고, 그 `previous_report_id`만 `null`이 된다.
 
 ### 응답 200
 
@@ -59,7 +75,8 @@
       "url": "https://n.news.naver.com/mnews/article/011/0004665230?sid=101"
     }
   ],
-  "report_id": 18
+  "report_id": 18,
+  "previous_report_id": null
 }
 ```
 
@@ -75,6 +92,7 @@
 | `sources[].company_filter` | string \| null | rag 검색에서 종목으로 범위를 좁힌 경우 그 종목명, 아니면 null |
 | `sources[].url` | string \| null | 원문 링크. 없으면 null |
 | `report_id` | int \| null | 저장된 리포트 ID. `GET /api/research/{report_id}`로 다시 조회 가능. **저장에 실패하면 null**(답변 자체는 정상 반환) |
+| `previous_report_id` | int 또는 null | 요청으로 이어받은 직전 보고서 ID. 후속 질문이 아니면 null |
 
 참고: 종목이 DB에 없으면 오류가 아니라 200 응답의 `answer`에 "찾지 못했다"는 안내가 담긴다.
 
@@ -86,11 +104,39 @@ curl -X POST http://localhost:8000/api/research \
   -d '{"question": "삼성전자 최근 3일 등락률이랑 거래량 알려줘."}'
 ```
 
+후속 질문(앞 호출의 `report_id`가 48일 때). 이번 질문에 종목명이 없어도 삼성전자 뉴스를 조회한다:
+
+```bash
+curl -X POST http://localhost:8000/api/research \
+  -H "Content-Type: application/json" \
+  -d '{"question": "그럼 최근 뉴스는?", "previous_report_id": 48}'
+```
+
+```json
+{
+  "answer": "삼성전자 최근 뉴스는 다음과 같습니다.\n\n*   \"성과급 6억\" 삼성 반도체, 추석 뒤 실제 지급 기준 나온다\n ... ",
+  "used_tools": ["news_tool"],
+  "sources": [
+    {
+      "tool": "news_tool",
+      "type": "news",
+      "title": "'성과급 6억' 삼성 반도체, 추석 뒤 실제 지급 기준 나온다",
+      "company_names": ["삼성전자"],
+      "company_filter": null,
+      "url": "https://www.straightnews.co.kr/news/articleView.html?idxno=311947"
+    }
+  ],
+  "report_id": 49,
+  "previous_report_id": 48
+}
+```
+
 ### 에러
 
 | 상태 | 언제 | body |
 | --- | --- | --- |
-| 422 | `question` 누락 / 공백뿐 / 1000자 초과 / 잘못된 JSON | 아래 "검증 오류(422)" 형식 |
+| 404 | `previous_report_id`에 해당하는 리포트가 없음(이 경우 LLM은 호출하지 않음) | `{"detail": "report_id=999999 리포트를 찾을 수 없습니다."}` (`GET /api/research/{report_id}`의 404와 같은 형식) |
+| 422 | `question` 누락 / 공백뿐 / 1000자 초과 / `previous_report_id`가 정수가 아니거나 1 미만·BIGINT 초과 / 잘못된 JSON | 아래 "검증 오류(422)" 형식 |
 | 502 | Ollama가 응답은 했으나 오류 반환(모델 미설치 등) | `{"detail": "AI 모델 서버가 오류를 반환했습니다. 잠시 후 다시 시도해주세요."}` |
 | 503 | Ollama 서버에 연결 불가 | `{"detail": "AI 모델 서버(Ollama)에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
 | 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
@@ -122,6 +168,7 @@ curl -X POST http://localhost:8000/api/research \
   "items": [
     {
       "report_id": 17,
+      "previous_report_id": null,
       "question": "SK하이닉스 HBM 관련 근거 찾아줘",
       "summary": "SK하이닉스 HBM 관련 근거는 다음과 같습니다. * SK하이닉스가 HBM(...",
       "company_name": "SK하이닉스",
@@ -136,6 +183,7 @@ curl -X POST http://localhost:8000/api/research \
 | --- | --- |
 | `total` | 저장된 전체 리포트 수(`limit`/`offset`과 무관). 페이지 수 계산용 |
 | `items[].report_id` | 리포트 ID |
+| `items[].previous_report_id` | 이어받은 직전 리포트 ID. 독립 질문이거나 직전 리포트가 삭제됐으면 null |
 | `items[].question` | 원래 질문 |
 | `items[].summary` | 답변 앞부분 미리보기(약 200자, 공백 정리됨). null일 수 있음 |
 | `items[].company_name` | 질문에서 다룬 종목이 **정확히 1개일 때만** 채워지고, 0개나 2개 이상이면 null |
@@ -165,6 +213,7 @@ curl "http://localhost:8000/api/research?limit=2&offset=1"
 ```json
 {
   "report_id": 18,
+  "previous_report_id": null,
   "question": "현대차 오늘 왜 올랐어? 최근 주가랑 관련 뉴스 같이 확인해줘.",
   "answer": "현대차의 최근 뉴스는 다음과 같습니다. ...",
   "summary": "현대차의 최근 뉴스는 다음과 같습니다. * 아반떼 가격 논란 ...",
@@ -270,6 +319,8 @@ FastAPI 기본 형식으로 `detail`이 **배열**이다. 필드별 위치는 `l
 
 - `answer`는 로컬 LLM(llama3.1:8b)이 생성하므로 같은 질문에도 매번 표현이 다르고, 뉴스가 질문 종목과 무관해 보이는 경우나 모델의 사실 오류가 섞일 수 있다. 근거는 `sources`로 확인하도록 UI에 링크를 노출하는 것을 권장한다.
 - `POST`는 성공할 때마다 리포트를 저장한다(`report_id`). 테스트 호출도 목록에 쌓인다. 필요 없는 리포트는 `DELETE`로 지운다.
+- 대화 스레드는 `previous_report_id`로 이어진다(각 리포트는 자기 직전 것만 가리킨다). 모델 맥락으로는 직전 1개만 쓰이므로,
+  더 앞선 대화 내용을 참조하는 질문("아까 첫 질문에서 말한 그 종목")은 이어받지 못할 수 있다.
 
 ## 테스트 실행 (백엔드)
 

@@ -32,9 +32,12 @@ def _summary(answer: str) -> str:
     return s if len(s) <= SUMMARY_LEN else s[: SUMMARY_LEN - 1] + "…"
 
 
-def save_report(question: str, answer: str, tool_records: list[dict]) -> int | None:
+def save_report(
+    question: str, answer: str, tool_records: list[dict], previous_report_id: int | None = None
+) -> int | None:
     """질문/답변과 tool 실행 이력을 한 트랜잭션으로 저장하고 report_id를 돌려준다.
 
+    previous_report_id는 후속 질문이 이어받은 직전 보고서다(없으면 None).
     저장 중 어떤 오류가 나도 예외를 밖으로 내지 않는다(답변 생성 흐름을 막지 않기 위해).
     실패하면 로그만 남기고 None을 돌려준다."""
     try:
@@ -49,7 +52,11 @@ def save_report(question: str, answer: str, tool_records: list[dict]) -> int | N
                 company_id = ids[0] if len(ids) == 1 else None
 
             report = ResearchReport(
-                company_id=company_id, question=question, summary=_summary(answer), content=answer
+                company_id=company_id,
+                previous_report_id=previous_report_id,
+                question=question,
+                summary=_summary(answer),
+                content=answer,
             )
             db.add(report)
             db.flush()
@@ -95,6 +102,7 @@ def get_report(report_id: int) -> dict | None:
         )
         return {
             "report_id": report.id,
+            "previous_report_id": report.previous_report_id,
             "question": report.question,
             "answer": report.content or "",
             "summary": report.summary,
@@ -149,6 +157,7 @@ def list_reports(limit: int = 20, offset: int = 0) -> tuple[int, list[dict]]:
         items = [
             {
                 "report_id": r.id,
+                "previous_report_id": r.previous_report_id,
                 "question": r.question,
                 "summary": r.summary,
                 "company_name": company_name,
