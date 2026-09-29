@@ -24,7 +24,7 @@ export default function Layout() {
             </NavLink>
           </nav>
           {USE_MOCK && (
-            <span className="badge badge-mock" title="백엔드 API 연결 전 화면 개발용 샘플 데이터예요">
+            <span className="mock-flag" title="백엔드 API 연결 전 화면 개발용 샘플 데이터예요">
               샘플 데이터
             </span>
           )}

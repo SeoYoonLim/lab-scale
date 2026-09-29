@@ -1,16 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { api } from '../api'
-import ToolUsage from '../components/ToolUsage'
+import SourceFootnotes from '../components/SourceFootnotes'
 import type { Source } from '../types'
+import { formatTime } from '../utils/format'
 
-interface Message {
+// 질문 하나 = 장부 항목 하나. reportId는 응답이 오기 전까지 없고(pending),
+// 저장에 실패하면 계속 null로 남는다(그래도 답변 자체는 보여준다).
+interface Entry {
   id: number
-  role: 'user' | 'assistant'
-  content: string
+  question: string
+  askedAt: string
+  status: 'pending' | 'done' | 'error'
+  reportId?: number | null
+  previousReportId?: number | null
+  answer?: string
   usedTools?: string[]
   sources?: Source[]
-  isError?: boolean
+  errorMessage?: string
 }
 
 const SUGGESTIONS = [
@@ -21,7 +28,7 @@ const SUGGESTIONS = [
 ]
 
 export default function ResearchPage() {
-  const [messages, setMessages] = useState<Message[]>([])
+  const [entries, setEntries] = useState<Entry[]>([])
   const [input, setInput] = useState('')
   const [pending, setPending] = useState(false)
   // 직전 성공한 report_id. 있으면 다음 질문에 이어서(previous_report_id) 물어본다.
@@ -32,36 +39,43 @@ export default function ResearchPage() {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [messages, pending])
+  }, [entries, pending])
 
   async function send(text: string) {
     const question = text.trim()
     if (!question || pending) return
 
     setInput('')
-    setMessages((prev) => [...prev, { id: nextId.current++, role: 'user', content: question }])
+    const id = nextId.current++
+    const previousReportId = threadReportId
+    setEntries((prev) => [
+      ...prev,
+      { id, question, askedAt: new Date().toISOString(), status: 'pending', previousReportId },
+    ])
     setPending(true)
 
     try {
-      const res = await api.askResearch(question, threadReportId)
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: nextId.current++,
-          role: 'assistant',
-          content: res.answer,
-          usedTools: res.used_tools,
-          sources: res.sources,
-        },
-      ])
+      const res = await api.askResearch(question, previousReportId)
+      setEntries((prev) =>
+        prev.map((e) =>
+          e.id === id
+            ? {
+                ...e,
+                status: 'done',
+                reportId: res.report_id,
+                previousReportId: res.previous_report_id,
+                answer: res.answer,
+                usedTools: res.used_tools,
+                sources: res.sources,
+              }
+            : e,
+        ),
+      )
       // 저장에 실패하면(report_id: null) 이어받을 리포트가 없으니 대화 스레드를 끊는다.
       setThreadReportId(res.report_id)
     } catch (error) {
-      const content = error instanceof Error ? error.message : '답변을 가져오지 못했어요.'
-      setMessages((prev) => [
-        ...prev,
-        { id: nextId.current++, role: 'assistant', content, isError: true },
-      ])
+      const message = error instanceof Error ? error.message : '답변을 가져오지 못했어요.'
+      setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, status: 'error', errorMessage: message } : e)))
     } finally {
       setPending(false)
     }
@@ -83,51 +97,57 @@ export default function ResearchPage() {
   return (
     <div className="chat-page">
       <div className="chat-scroll">
-        <div className="container chat-column">
-          {messages.length === 0 && !pending && (
-            <div className="chat-empty">
+        <div className="container">
+          {entries.length === 0 && (
+            <div className="entry-empty">
               <h1>무엇이 궁금하세요?</h1>
               <p>종목의 주가, 뉴스, 공시를 근거로 답해드려요.</p>
-              <div className="suggestions">
+              <ul className="suggestion-list">
                 {SUGGESTIONS.map((text) => (
-                  <button key={text} type="button" className="suggestion" onClick={() => void send(text)}>
-                    {text}
-                  </button>
+                  <li key={text}>
+                    <button type="button" className="suggestion" onClick={() => void send(text)}>
+                      {text}
+                    </button>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </div>
           )}
 
-          {messages.map((message) => (
-            <div key={message.id} className={`message message-${message.role}`}>
-              <div className={message.isError ? 'bubble bubble-error' : 'bubble'}>{message.content}</div>
-              {message.usedTools && message.usedTools.length > 0 && (
-                <div className="tool-calls">
-                  <div className="tool-calls-title">사용한 도구</div>
-                  {message.usedTools.map((toolName, index) => (
-                    <ToolUsage
-                      key={index}
-                      toolName={toolName}
-                      sources={(message.sources ?? []).filter((s) => s.tool === toolName)}
-                    />
-                  ))}
+          <div className="entries">
+            {entries.map((entry) => (
+              <article className="entry" key={entry.id}>
+                <div className="entry-head">
+                  <span className="entry-number num">
+                    {entry.reportId != null ? `#${entry.reportId}` : entry.status === 'pending' ? '…' : '—'}
+                  </span>
+                  {entry.previousReportId != null && (
+                    <span className="entry-followup">#{entry.previousReportId}에 이어서</span>
+                  )}
+                  <span className="num">{formatTime(entry.askedAt)}</span>
                 </div>
-              )}
-            </div>
-          ))}
+                <h2 className="entry-question">{entry.question}</h2>
 
-          {pending && (
-            <div className="message message-assistant">
-              <div className="bubble bubble-pending">
-                <span className="dots" aria-hidden="true">
-                  <i />
-                  <i />
-                  <i />
-                </span>
-                도구를 호출하고 답변을 만드는 중이에요
-              </div>
-            </div>
-          )}
+                {entry.status === 'pending' && (
+                  <p className="entry-pending muted">
+                    <span className="dots" aria-hidden="true">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                    도구를 호출하고 답변을 만드는 중이에요
+                  </p>
+                )}
+                {entry.status === 'error' && <p className="entry-answer entry-error">{entry.errorMessage}</p>}
+                {entry.status === 'done' && (
+                  <>
+                    <p className="entry-answer">{entry.answer}</p>
+                    <SourceFootnotes usedTools={entry.usedTools ?? []} sources={entry.sources ?? []} />
+                  </>
+                )}
+              </article>
+            ))}
+          </div>
           <div ref={endRef} />
         </div>
       </div>
@@ -136,7 +156,7 @@ export default function ResearchPage() {
         <div className="container composer-inner">
           {threadReportId != null && (
             <div className="thread-hint">
-              <span>이전 답변에 이어서 대화 중이에요</span>
+              <span>#{threadReportId}에 이어서 대화 중이에요</span>
               <button type="button" onClick={() => setThreadReportId(null)}>
                 새 질문으로 시작
               </button>

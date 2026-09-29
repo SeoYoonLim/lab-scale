@@ -9,11 +9,13 @@ function CompanyCard({ company }: { company: Company }) {
   const latest = data?.[data.length - 1]
 
   return (
-    <Link to={`/companies/${company.ticker}`} className="card company-card">
+    <Link to={`/companies/${company.ticker}`} className="company-card">
       <div>
         <div className="company-name">{company.name}</div>
-        <div className="muted">
-          {company.ticker} · {[company.market, company.sector].filter(Boolean).join(' · ')}
+        <div className="meta muted">
+          <span>{company.ticker}</span>
+          {company.market && <span>{company.market}</span>}
+          {company.sector && <span>{company.sector}</span>}
         </div>
       </div>
       {latest ? (

@@ -26,3 +26,12 @@ export function formatDate(value: string | null) {
     .toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
     .replaceAll('-', '.')
 }
+
+// ISO 8601 문자열을 한국 시간 기준 HH:MM 으로. 같은 날 여러 건 올라오는 리서치 항목 구분용.
+export function formatTime(value: string) {
+  return new Date(value).toLocaleTimeString('ko-KR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Asia/Seoul',
+  })
+}

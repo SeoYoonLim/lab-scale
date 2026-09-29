@@ -1,18 +1,12 @@
 import { useState } from 'react'
 import { api } from '../api'
+import SourceFootnotes from '../components/SourceFootnotes'
 import { useAsync } from '../hooks/useAsync'
 import type { ReportDetail, ReportListItem } from '../types'
 import { formatDate } from '../utils/format'
+import { TOOL_LABELS } from '../utils/toolLabels'
 
 const PAGE_SIZE = 20
-
-const TOOL_LABELS: Record<string, string> = {
-  stock_tool: '주가',
-  news_tool: '뉴스',
-  disclosure_tool: '공시',
-  rag_search_tool: '의미 검색',
-  market_tool: '시장 지수',
-}
 
 function ReportRow({ item, onDeleted }: { item: ReportListItem; onDeleted: (reportId: number) => void }) {
   const [open, setOpen] = useState(false)
@@ -52,42 +46,30 @@ function ReportRow({ item, onDeleted }: { item: ReportListItem; onDeleted: (repo
   }
 
   return (
-    <li className="report-row">
-      <button type="button" className="report-summary" onClick={() => void toggle()}>
-        <div className="report-summary-main">
-          <span className="report-question">{item.question}</span>
-          {item.company_name && <span className="report-company">{item.company_name}</span>}
+    <li className="ledger-row">
+      <button type="button" className="ledger-summary" onClick={() => void toggle()}>
+        <div className="ledger-head">
+          <span className="ledger-number num">#{item.report_id}</span>
+          <span className="ledger-question">{item.question}</span>
         </div>
-        <div className="report-summary-meta muted small">
-          {formatDate(item.created_at)}
-          {item.used_tools.length > 0 &&
-            ` · ${item.used_tools.map((t) => TOOL_LABELS[t] ?? t).join(', ')}`}
-          {item.previous_report_id != null && ' · 후속 질문'}
+        <div className="meta muted small">
+          <span className="num">{formatDate(item.created_at)}</span>
+          {item.company_name && <span>{item.company_name}</span>}
+          {item.used_tools.length > 0 && (
+            <span>{item.used_tools.map((t) => TOOL_LABELS[t] ?? t).join(', ')}</span>
+          )}
+          {item.previous_report_id != null && <span>#{item.previous_report_id}에 이어서</span>}
         </div>
       </button>
 
       {open && (
-        <div className="report-detail">
+        <div className="ledger-detail">
           {loading && <p className="muted">불러오는 중…</p>}
           {loadError && <p className="notice notice-error">{loadError}</p>}
           {detail && (
             <>
-              <p className="report-answer">{detail.answer}</p>
-              {detail.sources.length > 0 && (
-                <ul className="source-list">
-                  {detail.sources.map((source, index) => (
-                    <li key={index}>
-                      {source.url ? (
-                        <a href={source.url} target="_blank" rel="noreferrer">
-                          {source.title}
-                        </a>
-                      ) : (
-                        <span>{source.title}</span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <p className="ledger-answer">{detail.answer}</p>
+              <SourceFootnotes usedTools={detail.used_tools} sources={detail.sources} />
             </>
           )}
           <button type="button" className="delete-report" onClick={() => void handleDelete()} disabled={deleting}>
@@ -118,7 +100,7 @@ export default function ReportsPage() {
       {error && <p className="notice notice-error">{error.message}</p>}
       {data && items.length === 0 && <p className="muted">아직 저장된 리포트가 없어요. 리서치 탭에서 질문해보세요.</p>}
 
-      <ul className="report-list">
+      <ul className="ledger">
         {items.map((item) => (
           <ReportRow key={item.report_id} item={item} onDeleted={handleDeleted} />
         ))}

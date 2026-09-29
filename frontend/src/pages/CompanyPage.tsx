@@ -35,17 +35,18 @@ export default function CompanyPage() {
       <section className="card summary">
         <div>
           <h1 className="company-title">{company?.name ?? ticker}</h1>
-          <div className="muted">
-            {ticker}
-            {company && ` · ${[company.market, company.sector].filter(Boolean).join(' · ')}`}
+          <div className="meta muted">
+            <span>{ticker}</span>
+            {company?.market && <span>{company.market}</span>}
+            {company?.sector && <span>{company.sector}</span>}
           </div>
         </div>
         {latest && (
           <div className="summary-price">
             <div className="price-big num">{formatPrice(latest.close_price)}원</div>
-            <div className={`num ${trendClass(latest.change_pct)}`}>
-              {formatPct(latest.change_pct)}
-              <span className="muted"> · 거래량 {formatVolume(latest.volume)}주</span>
+            <div className={`meta meta-end ${trendClass(latest.change_pct)}`}>
+              <span className="num">{formatPct(latest.change_pct)}</span>
+              <span className="muted">거래량 {formatVolume(latest.volume)}주</span>
             </div>
             <div className="muted small">{formatDate(latest.price_date)} 종가 기준</div>
           </div>
@@ -88,8 +89,9 @@ export default function CompanyPage() {
                 <a href={item.url ?? undefined} target="_blank" rel="noreferrer">
                   {item.title}
                 </a>
-                <div className="muted small">
-                  {item.source} · {formatDate(item.published_at)}
+                <div className="meta muted small">
+                  <span>{item.source}</span>
+                  <span>{formatDate(item.published_at)}</span>
                 </div>
               </li>
             ))}
@@ -109,8 +111,9 @@ export default function CompanyPage() {
                 <a href={item.source_url ?? undefined} target="_blank" rel="noreferrer">
                   {item.title}
                 </a>
-                <div className="muted small">
-                  DART · {formatDate(item.disclosed_at)}
+                <div className="meta muted small">
+                  <span>DART</span>
+                  <span>{formatDate(item.disclosed_at)}</span>
                 </div>
               </li>
             ))}
