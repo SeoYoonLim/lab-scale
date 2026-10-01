@@ -25,6 +25,7 @@
 | GET | `/api/research` | 저장된 리포트 목록(최신순, 페이지네이션) |
 | GET | `/api/research/{report_id}` | 저장된 리포트 한 건 조회 |
 | DELETE | `/api/research/{report_id}` | 저장된 리포트 한 건 삭제(tool 호출 이력 포함) |
+| GET | `/api/stocks/{ticker}/realtime-price` | 종목 현재가(비공식 소스 기반 실시간 시세, 장외/장애 시 자동 폴백) |
 
 ---
 
@@ -280,6 +281,92 @@ HTTP/1.1 204 No Content
 
 404/503 body는 `GET /api/research/{report_id}`와 같다. 같은 ID를 두 번 삭제하면 두 번째는 404이므로,
 프론트에서 "이미 없음"을 성공처럼 다룰지 정해서 처리하세요.
+
+---
+
+## GET /api/stocks/{ticker}/realtime-price
+
+종목의 현재가/전일대비/등락률을 돌려준다.
+
+> ⚠️ **비공식 소스 기반이라 장애 가능성 있음.** 네이버 금융(finance.naver.com) 종목 페이지가 장중에 자기 페이지에서
+> 쓰는 공개 폴링 API를 백엔드가 대신 호출하는 방식이라(계좌/인증 불필요), 네이버가 막거나 응답 형식을 바꾸면 언제든
+> 실패할 수 있다. 그래서 이 API는 **실패해도 500/502 에러를 내지 않고** 항상 200으로, 대신 DB에 저장된 최근 종가로
+> 자동 폴백하면서 `is_realtime: false`, `source: "fallback"`로 "지연된 데이터"임을 표시한다. 프론트는 이 두 필드로
+> 실시간/지연 여부를 구분해서 UI에 보여주는 것을 권장한다(예: 지연 데이터면 "종가 기준" 배지 표시).
+
+### 요청
+
+| 파라미터 | 위치 | 설명 |
+| --- | --- | --- |
+| `ticker` | path | 종목코드(예: `005930`) 또는 종목명(별칭/유사 종목명 포함, `/api/research`와 같은 `company_resolver` 사용) |
+
+```bash
+curl http://localhost:8000/api/stocks/005930/realtime-price
+```
+
+### 응답 200 (장중, 실시간 성공)
+
+```json
+{
+  "ticker": "005930",
+  "company_name": "삼성전자",
+  "current_price": 268000.0,
+  "change_amount": -500.0,
+  "change_pct": -0.19,
+  "as_of": "2026-10-01T11:14:11.124728+09:00",
+  "queried_at": "2026-10-01T02:14:12.001000+00:00",
+  "is_realtime": true,
+  "source": "naver",
+  "corrected_from": null
+}
+```
+
+### 응답 200 (장외/상위 소스 실패 — 폴백)
+
+장 마감 후·주말·공휴일이거나 네이버 쪽 호출이 실패하면 자동으로 이 형태가 된다(상태 코드는 그대로 200).
+
+```json
+{
+  "ticker": "005930",
+  "company_name": "삼성전자",
+  "current_price": 71000.0,
+  "change_amount": null,
+  "change_pct": 1.23,
+  "as_of": "2026-09-23",
+  "queried_at": "2026-10-01T02:14:12.001000+00:00",
+  "is_realtime": false,
+  "source": "fallback",
+  "corrected_from": null
+}
+```
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `ticker` | string | 종목코드(DB 등록 기준) |
+| `company_name` | string | 종목명(DB 등록 기준) |
+| `current_price` | number | 현재가(실시간) 또는 최근 종가(폴백) |
+| `change_amount` | number \| null | 전일 종가 대비 금액. **폴백일 때는 항상 null**(저장된 데이터에 전일대비 금액이 없음) |
+| `change_pct` | number \| null | 등락률(%). 폴백이어도 `stock_price.change_pct`가 있으면 채워진다 |
+| `as_of` | string | 가격의 기준 시각. 실시간이면 네이버가 보낸 체결 시각(ISO 8601, KST), 폴백이면 그 종가의 날짜(`YYYY-MM-DD`) |
+| `queried_at` | string | 이 응답을 만든 시각(ISO 8601, UTC). 서버 캐시로 값이 재사용됐어도 호출마다 새로 채워진다 |
+| `is_realtime` | boolean | `true`면 네이버 실시간 조회 성공, `false`면 폴백 |
+| `source` | `"naver"` \| `"fallback"` | 값의 출처 |
+| `corrected_from` | string \| null | 입력이 별칭/유사 종목명이라 보정됐을 때만 원래 입력값, 아니면 null |
+
+### 캐싱
+
+종목별로 **서버에서 3~5초(`CACHE_TTL_SECONDS`, 현재 4초) 캐싱**한다. 같은 종목을 그 안에 여러 번 호출해도 상위
+소스(네이버)는 한 번만 불린다 — 프론트가 짧은 주기(예: 2~3초)로 폴링해도 안전하다. 폴백 결과도 같은 TTL로
+캐싱되므로, 장 마감 후처럼 매번 폴백으로 끝나는 상황에서도 매 요청마다 네이버를 다시 두드리지 않는다.
+(지금은 프로세스 메모리 캐시라 워커를 여러 개 띄우면 워커별로 따로 캐싱된다.)
+
+### 에러
+
+| 상태 | 언제 | body |
+| --- | --- | --- |
+| 404 | 종목을 찾지 못함(`company_resolver`가 등록명/티커/별칭/유사명 어디에도 못 맞춘 경우) | `{"detail": "'...' 종목을 찾지 못했습니다. ..."}` |
+| 503 | 네이버 조회도 실패하고 DB에 그 종목의 저장된 주가도 없음(둘 다 없을 때만) | `{"detail": "'...'의 시세를 가져올 수 없습니다. ..."}` |
+| 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
 
 ---
 

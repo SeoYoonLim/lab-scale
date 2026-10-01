@@ -19,6 +19,7 @@
 | GET | `/api/research` | 저장된 리포트 목록(최신순, `limit`/`offset` 페이지네이션, `total` 포함) |
 | GET | `/api/research/{report_id}` | 리포트 한 건(전체 답변, sources, tool 사용 이력) |
 | DELETE | `/api/research/{report_id}` | 리포트 삭제(204, 본문 없음). 후속 리포트는 남고 연결만 끊김 |
+| GET | `/api/stocks/{ticker}/realtime-price` | 종목 현재가(비공식 소스 기반 실시간, 장외/장애 시 DB 최근 종가로 자동 폴백) |
 
 프론트에서 특히 챙길 것: POST는 로컬 LLM이라 **2~25초**(로딩 상태와 60초 이상 타임아웃) / 에러 `detail`은 404·502·503에서는 문자열, 422에서는 배열
 / `report_id`는 저장 실패 시 null / 허용 origin은 `localhost:5173`, `localhost:3000` 두 개뿐(다른 포트면 알려주세요).
@@ -264,6 +265,9 @@ pytest -m "slow or not slow"      # 전부 한 번에 (2026-09-28 기준 238개 
 - [ ] FR-11 AI 리서치 보고서: **백엔드 부분 구현 / 프론트 연동 필요** — 답변 자동 생성·근거(sources)·저장·조회는 됨, 종합 보고서 형식(원인·시장 상황·위험요인 섹션)은 없음
 - [ ] FR-12 관심종목 및 이력: **리서치 이력은 완료, 관심종목은 미구현(신규 테이블 필요)**
 - [ ] FR-13 시장 관심 종목 탐색: **미구현 — 신규 기능**
+- [x] 종목 실시간 시세: `GET /api/stocks/{ticker}/realtime-price`. 계좌 개설이 필요한 KIS Open API 대신, 네이버 금융
+  종목 페이지가 장중에 쓰는 비공식 폴링 API(`polling.finance.naver.com`, 인증 불필요)를 서버가 대신 호출. 종목별
+  3~5초 서버 캐싱, 상위 소스 실패·장외 시간에는 예외 대신 DB 최근 종가로 자동 폴백(`is_realtime`/`source`로 구분)
 - [x] REST API(리포트 생성/목록/조회/삭제) + 에러 처리(Ollama/DB 장애 시 502/503) + CORS
 - [x] 자동 테스트(pytest)와 API 문서
 - [ ] 프론트엔드 연동: 서윤님 담당, API 스펙은 확정(API.md), 실제 연동은 진행 필요
