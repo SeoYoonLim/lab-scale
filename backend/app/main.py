@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError, OperationalError
 
 from app.api.research import router as research_router
+from app.api.stocks import router as stocks_router
 
 logger = logging.getLogger(__name__)
 
@@ -45,3 +46,4 @@ app.add_middleware(
 )
 
 app.include_router(research_router)
+app.include_router(stocks_router)
