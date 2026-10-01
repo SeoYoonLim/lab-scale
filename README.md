@@ -6,8 +6,9 @@
 
 ## 지금 상태 요약 (서윤님 복귀용, 2026-09-28 기준)
 
-**한 줄 요약:** 백엔드(API + 에이전트 + 데이터 수집 + 관심종목/모의투자)는 동작하고 테스트가 전부 통과합니다(기본 512개 + 실제
-Ollama를 부르는 slow 10개 = 522개, `pytest -m "slow or not slow"`로 한 번에). 남은 큰 일은 프론트엔드 연동입니다. 작업 브랜치는
+**한 줄 요약:** 백엔드(API + 에이전트 + 데이터 수집 + 관심종목/모의투자 + 환율 영향 분석)는 동작하고 테스트가 전부 통과합니다
+(기본 546개 + 실제 Ollama를 부르는 slow 13개 = 559개, `pytest -m "slow or not slow"`로 한 번에). 남은 큰 일은 프론트엔드
+연동입니다. 작업 브랜치는
 `feature/backend`이고 원격에 push되어 있습니다.
 
 ### 구현된 API
@@ -34,7 +35,7 @@ Ollama를 부르는 slow 10개 = 522개, `pytest -m "slow or not slow"`로 한 �
 
 ### DB 스키마 개요
 
-PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(`backend/alembic/versions/`, 현재 head `45a92b436bc1`)입니다.
+PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(`backend/alembic/versions/`, 현재 head `d1bbfc5e2f0f`)입니다.
 
 | 테이블 | 내용 | 주요 컬럼 |
 | --- | --- | --- |
@@ -49,9 +50,10 @@ PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(
 | `virtual_account` | 모의투자 가상 계좌(디바이스ID당 1개) | `device_id`(PK), `cash_balance`(초기 1,000만원) |
 | `holding` | 모의투자 보유 종목 | `device_id`, `company_id`(조합 unique), `quantity`, `avg_price`(가중평균) |
 | `trade` | 모의투자 체결 내역 | `device_id`, `company_id`, `side`(buy/sell), `quantity`, `price`, `executed_at` |
+| `exchange_rate` | 환율(USD/KRW) 일별 종가(FR-07) | `pair_code`, `price_date`, `close_price`, `change_pct` (통화쌍+날짜 unique) |
 
 **서윤님이 설계한 스키마와 실제로 만들어진 스키마를 맞춰봐 주세요.** 최초 설계 스냅샷은 `db/schema.sql`(서윤님 커밋)이고, 임시 DB에 그 파일을 적용해서
-실제 DB와 컬럼·인덱스·FK를 기계적으로 비교했습니다. 컬럼/타입/FK는 모두 같고 **차이는 아래 4가지**입니다(설계와 다른 것이 의도에 맞는지 확인 필요).
+실제 DB와 컬럼·인덱스·FK를 기계적으로 비교했습니다. 컬럼/타입/FK는 모두 같고 **차이는 아래 6가지**입니다(설계와 다른 것이 의도에 맞는지 확인 필요).
 
 1. `market_index` 테이블 추가(FR-06, 설계에 없던 확장)
 2. `research_report.previous_report_id` 컬럼 + 자기 참조 FK(`ON DELETE SET NULL`) 추가(FR-10, 설계에 없던 확장)
@@ -61,6 +63,8 @@ PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(
    회원가입/로그인이 없는 서비스라 사용자 구분을 프론트가 만드는 디바이스ID(`X-Device-Id` 헤더, uuid)로 했다 -
    인증이 아니라 단순 구분자이고, `company`처럼 다른 테이블과 달리 `device_id`는 FK가 아니라 프론트가 보낸
    문자열을 그대로 저장한다. `virtual_account.device_id`를 기본키로 써서 "디바이스ID당 계좌 1개"를 표현했다.
+6. `exchange_rate` 테이블 추가(FR-07 경제지표 영향 분석, 1차 범위는 환율만, 설계에 없던 확장). `market_index`와
+   같은 구조(통화쌍 코드 + 날짜 + 종가 + 등락률)를 그대로 따랐다.
 
 `db/schema.sql`은 갱신하지 않고 상단에 "최초 설계 스냅샷이며 기준은 Alembic"이라는 안내만 달았습니다.
 
@@ -72,7 +76,8 @@ PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(
 ### 데이터 현황 (2026-09-28 조회, 수집은 수동)
 
 종목 300 · 주가 18,565행(6/26~9/23) · 지수 코스피/코스닥 각 116행(4/1~9/17) · 뉴스 3,013건(최신 9/24, 임베딩 완료) ·
-공시 6,308건(최신 9/22, 원문 6,268건, 임베딩 완료) · 리포트 6건(1~6번은 **데모 데이터라 지우지 않습니다**).
+공시 6,308건(최신 9/22, 원문 6,268건, 임베딩 완료) · 리포트 6건(1~6번은 **데모 데이터라 지우지 않습니다**) ·
+환율(USD/KRW) 129행(4/2~9/29, 2026-10-01 수집).
 지수는 FinanceDataReader가 오늘도 9/17까지만 줘서 종목 주가보다 며칠 늦습니다(우리 쪽 문제가 아니라 원천의 제한, 재확인함).
 
 ### FR 대응 현황
@@ -93,11 +98,11 @@ PRD 원문을 확인해보니 **FR-05는 "주가 변동 원인 분석"이고 `re
 | FR-04 공시 | `disclosure`, `disclosure_tool`, DART 목록+원문 | 완료 |
 | FR-05 (P1) 주가 변동 원인 분석 | 전용 tool/로직은 없음. `agent.py`가 "왜 올랐는지/내렸는지" 질문에 stock_tool(수치)+news_tool(뉴스 근거)을 함께 호출하도록 유도하고, 종목 고유 요인인지 시장 전체 요인인지는 FR-06의 `market_tool`이 구분 | **부분 구현**: 원인과 관련된 신호(뉴스, 시장 요인 구분)는 tool로 제공되지만 "원인 분석"을 전담하는 로직이 없고 최종 종합은 LLM 서술에 의존. 원인 분석의 정확도를 재는 테스트도 없음(아래 FR-05 상세) |
 | FR-06 기업·산업·시장 요인 비교 | `market_tool` | **1차 완료**(시장 지수). 업종(섹터) 비교는 미구현 |
-| FR-07 (P1) 경제지표 영향 분석 | 금리/환율 수집·저장·tool 코드와 DB 테이블이 없음. `db/schema.sql`도 "`economic_indicator`는 지금 만들지 않음"이라고 적음 | **미구현 - 신규 기능, 데이터 소스부터 필요** |
+| FR-07 (P1) 경제지표 영향 분석 | `exchange_rate` 테이블 + `fx_tool` + `routing.needs_fx_tool` 키워드 게이트(2026-10-01). 금리는 범위 밖 | **1차 완료(환율만)**. 금리는 쓸 만한 무료 소스를 찾지 못해 범위 밖(아래 FR-07 상세) |
 | FR-08 근거 임베딩/RAG | bge-m3 임베딩, `rag_search_tool` | 완료 |
 | FR-09 tool 호출 이력 | `tool_call_log`, 리포트 상세의 `used_tools` | 완료 |
 | FR-10 대화형 후속 질문 | `previous_report_id` | 완료(직전 1개까지, 체이닝은 범위 밖) |
-| FR-11 (P1) AI 리서치 보고서 생성 | `agent._answer`(답변 자동 생성) + `reports.save_report` + `sources`(근거 문서). 프론트엔드 없음 | **백엔드 부분 구현 / 프론트 연동 필요**: 자동 생성·근거 포함은 됨, PRD가 말한 종합 "보고서 형식"(주가 동향·원인·뉴스·공시·시장 상황·위험요인)은 없음 |
+| FR-11 (P1) AI 리서치 보고서 생성 | `agent._answer`(답변 자동 생성, 2026-10-01부터 `ANSWER_STRUCTURE_INSTRUCTION`으로 섹션 구조화 유도) + `reports.save_report` + `sources`(근거 문서). 프론트엔드 없음 | **백엔드 부분 구현 / 프론트 연동 필요**: 자동 생성·근거 포함·섹션 구조화(조회한 tool에 맞는 섹션만)는 됨, 위험요인 판단은 여전히 LLM 서술에 의존하고 전담 검증 로직은 없음(아래 FR-11 상세) |
 | FR-12 (P2) 관심종목 및 리서치 이력 | 리서치 이력: `GET /api/research`, `GET /api/research/{id}`, `DELETE`. 관심종목: `watchlist` 테이블 + `GET`/`POST /api/watchlist`, `DELETE /api/watchlist/{ticker}` | **완료** (2026-10-01, 사용자 구분은 로그인이 아니라 `X-Device-Id` 헤더) |
 | FR-13 (P2) AI 시장 관심 종목 탐색 | 후보 탐색/스크리닝 코드, tool, 엔드포인트가 없음 | **미구현 - 신규 기능** |
 
@@ -132,20 +137,44 @@ PRD 원문을 확인해보니 **FR-05는 "주가 변동 원인 분석"이고 `re
   무관해 보이는 경우가 있다고 이미 기록돼 있어(API.md "알아둘 점"), LLM이 무관한 뉴스를 원인처럼 서술할 위험이 있다. (3) 시장
   요인 비교(market_tool)는 질문이 명시적으로 시장 비교를 요청할 때만 붙고, "왜 올랐어?"만으로는 자동으로 켜지지 않는다.
 
-**FR-07 경제지표 영향 분석 — 미구현 (신규 기능, 데이터 소스부터 필요)** (인수조건 3개 모두 미충족)
-- 저장소 전체 검색에서 금리/환율/경제지표를 수집·저장·조회하는 코드가 없다(검색에 걸린 것은 벤치마크·테스트의 예시 질문 문구뿐). DB 테이블 8개(`company`,
-  `stock_price`, `market_index`, `news`, `disclosure`, `research_report`, `tool_call_log`, `alembic_version`) 중 관련 테이블도 없고, 에이전트 tool 5개 중 해당 없음.
-- 데이터 소스 조사(코드는 건드리지 않음): 환율은 FinanceDataReader `USD/KRW`로 조회된다(2026-09-28 확인, 그날까지 제공). 금리는 시도한 FDR 심볼 2개가 404라
-  확인하지 못했고 한국은행 ECOS 같은 별도 소스를 조사해야 한다. "관련 경제 이벤트 확인"에 쓸 이벤트 데이터의 출처도 정해야 한다.
-- 지금은 "환율이 오르면…" 같은 질문에 데이터 조회 없이 LLM의 일반 지식으로만 답한다.
+**FR-07 경제지표 영향 분석 — 1차 완료(환율만), 금리는 범위 밖 (2026-10-01)** (인수조건 3개 중 환율 관련 부분만 충족)
+- *환율 데이터 수집·저장*: 충족. `exchange_rate` 테이블(USD/KRW, `scripts/collect_exchange_rate.py`로 FinanceDataReader에서
+  수집, 2026-10-01 기준 2026-04-02~09-29 129행). market_index와 같은 구조(통화쌍 코드 + 날짜 + 종가 + 등락률)지만, FDR이
+  통화쌍에는 `market_index`가 쓰는 `Change` 컬럼을 주지 않아서(실제 호출로 확인) 종가의 일별 변화율을 직접 계산해서 저장한다.
+- *환율 조회 tool*: 충족. `app/tools/fx_tool.py`의 `fx_tool(period_days=5)`가 최근 N거래일 현재가·전일대비 등락률·기간
+  추세(상승/하락/보합)를 돌려준다. 종목이 아니라 `ticker` 인자가 없다. `market_tool`과 같은 이유로 기본 tool 목록에는 없고,
+  `app/routing.py`의 `needs_fx_tool`(키워드: "환율", "원/달러", "달러/원", "USD/KRW")이 걸린 질문에만 `agent.build_request`가
+  `fx_tool`과 안내 문장(`FX_HINT`)을 추가한다(market_tool과 동시에 걸릴 수도 있다 - 예: "환율 때문에 코스피가 빠졌어?").
+- *금리·경제 이벤트*: **범위 밖으로 확정.** 금리는 시도한 FDR 심볼 2개가 404라 확인하지 못했고, 한국은행 ECOS 같은 별도 소스
+  연동이 필요해 이번 작업에서는 다루지 않았다. "관련 경제 이벤트 확인"에 쓸 이벤트 데이터의 출처도 아직 없다.
+- *회귀 검증*: `scripts/benchmark_routing.py --reps 4`(fx/fx_ho 그룹 신설 포함 전체 13개 그룹, 2026-10-01 측정)로 fx_tool
+  추가가 다른 그룹에 영향을 주지 않는지 확인했다 - fx 100%(24/24), fx_ho 100%(20/20), 기존 그룹은 전부 과거 기록 범위 안
+  (rag 78%, rag_ho 69%, disc_list/disc_ho 100%, multi 62%, stock/news 100%, market/market_ho 100%, no_tool/no_tool_ho 0%는
+  기존과 동일하게 미해결). **market_tool/fx_tool 모두 자기 그룹 밖 220개 질문에서 오호출 0건**이라, fx_tool이 그 220개
+  질문의 tool 목록을 전혀 바꾸지 않았다는 뜻이고(해당 질문들은 `build_request`가 바이트 단위로 이전과 동일한 결과를 돌려줌),
+  그 그룹들의 성공률 변동은 전부 LLM 자체의 실행 간 노이즈다. 자세한 내용은 아래 "해결된 이슈 기록".
+- 관련 테스트: `test_fx_tool.py`(11개, 단위 + dev DB 통합), `test_routing.py`의 `needs_fx_tool`/`build_request` 관련 테스트,
+  `test_agent_slow.py::test_fx_question_calls_fx_tool_without_fewshot_leak`(slow).
 
-**FR-11 AI 리서치 보고서 생성 — 백엔드 부분 구현 / 프론트 연동 필요** (인수조건 3개)
-- *분석 결과 기반 자동 보고서 생성*: **부분 충족.** tool 결과를 근거로 LLM이 답변을 자동 생성하고 `research_report`(`content`, `summary`)에 저장한다
-  (`agent._answer`, `reports.save_report`). 그러나 PRD가 말한 구성(주가 동향, 주요 원인, 뉴스·공시, 시장 상황, 위험요인)을 한 번에 종합하는 **"보고서 형식"은 없다.** 답변은
-  질문 하나에 대한 자유 서술이고(저장된 데모 6건: 43~314자, tool 1~2개), 섹션이나 위험요인을 요구하는 프롬프트·코드가 없다.
+**FR-11 AI 리서치 보고서 생성 — 백엔드 부분 구현 / 프론트 연동 필요 (답변 구조화는 2026-10-01 추가)** (인수조건 3개)
+- *분석 결과 기반 자동 보고서 생성*: **부분 충족(2026-10-01 이전보다 개선).** tool 결과를 근거로 LLM이 답변을 자동 생성하고
+  `research_report`(`content`, `summary`)에 저장한다(`agent._answer`, `reports.save_report`). 이제 최종 답변 생성 직전에
+  `ANSWER_STRUCTURE_INSTRUCTION`을 추가로 넣어, PRD가 말한 구성(주가 동향/원인 분석/뉴스·공시 근거/시장 상황/위험요인) 중
+  **실제로 호출한 tool의 결과가 뒷받침하는 섹션만** 마크다운 소제목(`## `)으로 나눠 쓰도록 유도한다(호출하지 않은 tool의
+  섹션은 지어내지 말 것, 단순 조회 질문은 섹션 없이 한두 문장으로 답할 것도 같이 지시). 이 안내는 **1차 호출(tool 선택)에는
+  관여하지 않는다** - `SYSTEM_PROMPT`/`TOOLS`를 건드리지 않고 tool 실행이 끝난 뒤 메시지에 한 번 추가하는 것뿐이라,
+  `scripts/benchmark_routing.py`가 측정하는 경로(`build_request` + `_first_call`)는 이 상수를 아예 거치지 않는다(코드
+  구조상 라우팅 회귀가 있을 수 없음, 실제로 재측정해도 변경 전과 동일 - 위 FR-07 회귀 검증 결과 참고).
+  **한계**: (1) 위험요인 섹션을 실제로 쓸지, 쓴다면 뭘 위험요인으로 꼽을지는 전적으로 LLM 판단이고 그 판단의 사실성·
+  타당성을 검증하는 코드가 없다. (2) 섹션 헤더가 정확히 `## ` 형식으로 나오는지도 LLM 성향에 달렸다(llama3.1:8b가 글머리
+  기호 목록으로만 답하고 섹션 헤더를 생략한 사례가 있어, 안내 문구에 예시를 붙여 개선했다 - 자세한 내용은 아래 "해결된
+  이슈 기록"). (3) 완전히 결정론적으로 검증할 수 없어 slow 테스트(`test_agent_slow.py`)로 "완전히 망가지지 않았는지"만 본다.
 - *주요 근거 및 출처 포함*: **문서 근거는 충족, 수치 출처는 없음.** `sources`(뉴스/공시/RAG 문서의 제목·종목·URL, `app/sources.py`)가 POST·GET 응답에 들어가고 저장된
-  `tool_call_log`에서 복원된다. 다만 주가·시장 지수 수치는 `sources`에 들어가지 않는다(주가만 쓴 데모 #3, #5는 `sources` 0건, `used_tools`로만 추적).
+  `tool_call_log`에서 복원된다. 다만 주가·시장 지수·환율 수치는 `sources`에 들어가지 않는다(주가만 쓴 데모 #3, #5는 `sources` 0건, `used_tools`로만 추적).
 - *브라우저에서 보고서 확인*: 프론트엔드가 이 저장소에 없어서 **백엔드 API(`GET /api/research`, `/{id}`)까지만** 되어 있고 화면은 프론트 연동이 필요하다.
+- 관련 테스트: `test_agent_slow.py::test_comprehensive_question_produces_markdown_sections`(여러 tool을 쓴 질문에서 `##` 섹션이
+  실제로 나오는지), `::test_simple_quantity_question_is_not_forced_into_unrelated_sections`(단순 조회 질문이 호출 안 한 tool의
+  섹션을 지어내지 않는지). 둘 다 slow(실제 Ollama 호출).
 
 **FR-12 관심종목 및 리서치 이력 — 완료 (2026-10-01)** (인수조건 3개)
 - *리서치 이력 조회*: 충족. `GET /api/research`(최신순, `limit`/`offset`, `total`), 후속 질문 스레드는 `previous_report_id`.
@@ -265,7 +294,7 @@ python scripts/collect_disclosure_content.py --apply   # 공시 원문 수집 (�
 ```bash
 pytest                            # backend/ 에서. 빠른 테스트(단위 + dev DB 통합), slow는 기본 제외
 pytest -m slow                    # 실제 Ollama를 부르는 slow만 (약 30초, dev DB에 리포트를 만들었다가 지움)
-pytest -m "slow or not slow"      # 전부 한 번에 (2026-10-01 기준 522개 통과)
+pytest -m "slow or not slow"      # 전부 한 번에 (2026-10-01 기준 559개 통과)
 ```
 
 구성(단위 / DB 통합 / LLM을 호출하는 slow)과 실행 옵션은 [backend/API.md](backend/API.md)의 "테스트 실행" 절을 참고하세요.
@@ -295,8 +324,12 @@ pytest -m "slow or not slow"      # 전부 한 번에 (2026-10-01 기준 522개 
 - [ ] FR-01 자연어 질문 분석: **부분 구현** — 질문 입력·Tool 선택·종목 식별은 됨(통칭은 별칭 사전), 기간 식별은 `period_parser`가 지원하는
   표현(오늘/어제/이번주/지난주/이번달/지난달/올해/작년, N일/N주/N개월/N년)은 코드가 직접 처리하고(2026-10-01) 그 외는 LLM 추론에 의존.
   뉴스/공시/RAG는 여전히 기간 인자가 없어 기간을 무시함
-- [ ] FR-07 경제지표(금리/환율) 영향 분석: **미구현 — 신규 기능, 데이터 소스부터 필요**
-- [ ] FR-11 AI 리서치 보고서: **백엔드 부분 구현 / 프론트 연동 필요** — 답변 자동 생성·근거(sources)·저장·조회는 됨, 종합 보고서 형식(원인·시장 상황·위험요인 섹션)은 없음
+- [x] FR-07 경제지표 영향 분석(1차 범위: 환율만, 금리는 범위 밖): `exchange_rate` 테이블(USD/KRW) + `fx_tool` +
+  `routing.needs_fx_tool` 키워드 게이트(market_tool과 같은 패턴, 기본 tool 목록에는 없음). 데이터는
+  `scripts/collect_exchange_rate.py`로 실제 수집 완료(2026-10-01, 129행)
+- [ ] FR-11 AI 리서치 보고서: **백엔드 부분 구현 / 프론트 연동 필요** — 답변 자동 생성·근거(sources)·저장·조회는 됨.
+  2026-10-01부터 호출한 tool에 맞는 섹션(주가 동향/원인 분석/뉴스·공시 근거/시장 상황/위험요인)으로 답변을
+  구조화하도록 유도하지만, 위험요인 판단 등은 여전히 LLM 서술에 의존하고 전담 검증 로직은 없음
 - [x] FR-12 관심종목 및 이력: 리서치 이력(기존 완료)에 이어 관심종목 추가. `watchlist` 테이블 + `GET`/`POST /api/watchlist`,
   `DELETE /api/watchlist/{ticker}`(종목 중복 등록 409, 미등록 삭제 404). 로그인이 없어 `X-Device-Id` 헤더(프론트가 만드는
   uuid)로 사용자를 구분(아래 "모의투자 기능"과 같은 방식, 인증 아님)
@@ -484,3 +517,52 @@ pytest -m "slow or not slow"      # 전부 한 번에 (2026-10-01 기준 522개 
   인수조건 검증만 바로잡았다 - 현재 코드에서 FR-05에 해당하는 것은 `agent.py`가 "왜 올랐는지" 질문에 stock_tool+news_tool을 함께
   호출하도록 유도하는 부분과, 종목 고유/시장 전체 요인 구분을 제공하는 FR-06의 `market_tool`이다(자세한 내용은 위 FR 표와 "FR-05
   인수조건별 검증"). 전담 로직이 없고 LLM 서술에 의존하는 "부분 구현"으로 평가했다.
+
+- **[완료] FR-07 환율 영향 분석 — `exchange_rate` + `fx_tool` + 키워드 게이트 (2026-10-01)**: 금리는 쓸 만한 무료 소스를
+  찾지 못해(시도한 FDR 심볼 2개 404) 범위에서 빼고 환율(USD/KRW)만 구현했다. `market_index`/`market_tool` 전례를 그대로
+  따랐다 - `app/collectors.py`의 `fetch_and_save_exchange_rate`(FDR 수집 후 upsert, 멱등)와 `scripts/collect_exchange_rate.py`
+  (실제로 129행 수집 완료, 2026-04-02~09-29), `app/tools/fx_tool.py`의 `fx_tool(period_days=5)`(최근 N거래일 현재가·전일대비
+  등락률·추세), `app/routing.py`의 `needs_fx_tool`(키워드: 환율/원달러/USD-KRW).
+  - FDR이 통화쌍에는 `Change` 컬럼을 주지 않는다(실제 호출로 확인, market_index가 쓰는 KRX 심볼과 다름) - 종가의 일별
+    변화율(`pct_change`)을 직접 계산해서 저장한다.
+  - `fx_tool`도 `market_tool`처럼 기본 tool 목록에 상시 노출하면 multi 호출이 깨질 위험이 있어(FR-06 해결 기록 참고) 기본
+    TOOLS에 넣지 않고, `needs_fx_tool`이 걸린 요청에만 `agent.build_request`가 추가한다. `build_request`를 두 게이트를
+    함께 처리하도록 고쳐서(market/fx 둘 다 안 걸리면 이전처럼 `SYSTEM_PROMPT`/`TOOLS` 객체를 그대로(식별자 동일) 돌려줌 -
+    `test_routing.py`의 identity 단언이 그대로 통과), 한 질문에서 둘 다 걸리면(예: "환율 때문에 코스피가 빠졌어?") 둘 다
+    추가되는 것도 확인했다. 기간 파서(`app/period_parser.py`)도 `fx_tool`의 `period_days`에 바로 연결했다(`_PERIOD_ARG`에
+    `fx_tool` 추가 - 예: "환율 지난달 추이" 같은 질문도 정확한 거래일 수로 바뀐다).
+  - **회귀 검증**: `scripts/benchmark_routing.py --reps 4`로 fx/fx_ho를 포함한 13개 그룹 전체(66문항×4회=264회 호출,
+    2026-10-01 측정)를 돌렸다. fx 100%(24/24), fx_ho 100%(20/20)이고, 기존 그룹은 rag 78%(25/32), rag_ho 69%(22/32),
+    disc_list/disc_ho 100%, multi 62%(10/16), stock/news 100%, market/market_ho 100%, no_tool/no_tool_ho 0% - 전부 기존에
+    기록된 범위 안(예: multi는 노이즈 범위 38~78%로 기록돼 있음)이라 유의미한 회귀가 아니다. 특히 **market_tool/fx_tool
+    둘 다 자기 그룹 밖 220개 질문에서 오호출이 0건**이었는데, 이는 그 220개 질문에 대해 `build_request`가 바이트 단위로
+    이전과 동일한 `SYSTEM_PROMPT`/`TOOLS`를 돌려줬다는 뜻이라서(식별자 비교상 전혀 다른 경로를 타지 않음), 그 그룹들의
+    성공률 변동은 전부 LLM 실행 간 노이즈이지 fx_tool 추가의 영향이 아니라고 결론 내릴 수 있다.
+  - fx_tool 게이트는 market_tool의 "코스피/코스닥"처럼 뒤 문맥을 더 보지 않고 "환율"이라는 단어 하나로 충분히 구체적이라고
+    보고, "환율이 오르면 왜 수출주가 유리해?" 같은 개념 질문에도 True가 나오는 것을 허용한다(오탐 비용은 tool 목록이
+    하나 느는 정도, market_tool의 `KNOWN_FALSE_POSITIVES`와 같은 성격 - `test_routing.py`의 `FX_KNOWN_FALSE_POSITIVES`).
+  - 테스트: `test_fx_tool.py` 11개(단위 + dev DB 통합), `test_routing.py`에 `needs_fx_tool`/`build_request` 조합 테스트
+    추가, `test_agent_slow.py`에 실제 Ollama로 "요즘 환율 어때?" 질문이 `fx_tool`을 부르는지 보는 slow 테스트 1개 추가.
+  - 알려진 한계: 금리·경제 이벤트는 범위 밖. 환율 수치는 `sources`(근거 문서 목록)에 들어가지 않는다(주가·시장 지수와
+    동일한 기존 한계, `app/sources.py`가 news/disclosure/rag 문서만 다룸).
+
+- **[완료] FR-11 답변 구조화 — 최종 답변 생성 단계에 섹션 안내 추가 (2026-10-01)**: 지금까지는 답변이 질문 하나에 대한
+  자유 서술이라 PRD가 말하는 종합 보고서 형식(주가 동향/원인/뉴스·공시/시장 상황/위험요인)이 없었다. `agent.py`의
+  `ANSWER_STRUCTURE_INSTRUCTION`을 최종 답변 생성(`_answer`의 3단계) 직전에만 `messages`에 추가해서, 실제로 호출한
+  tool의 결과가 뒷받침하는 섹션만 `## 섹션 제목` 형식으로 나누고 호출하지 않은 tool의 섹션은 쓰지 말라고 지시한다(단순
+  조회 질문은 섹션 없이 한두 문장으로 답하라는 지시도 함께).
+  - **1차 호출(tool 선택)에는 영향이 없다 - 설계상 그렇게 만들었다.** `SYSTEM_PROMPT`/`TOOLS`는 전혀 건드리지 않고
+    `_answer()`의 두 번째 `ollama.chat()` 호출 직전에만 별도 메시지로 추가했으므로, `scripts/benchmark_routing.py`가
+    측정하는 `build_request`/`_first_call` 경로는 이 상수를 아예 거치지 않는다. 즉 라우팅 회귀가 코드 구조상 있을 수
+    없다(위 FR-07의 회귀 측정도 이 사실을 실측으로 뒷받침한다 - fx_tool과 무관한 질문들은 성공률 변동이 전부 LLM
+    노이즈였다).
+  - **프롬프트 반복(실측)**: 처음 "마크다운 소제목(##)으로 나눠서 쓰라"는 한 문장짜리 지시만 줬을 때, 실제 호출에서
+    모델이 섹션 헤더 없이 글머리 기호(`*`) 목록 + 마지막 한 문장 요약으로만 답했다(stock_tool+news_tool+market_tool 모두
+    불렀는데도 `##`가 0개). 지시를 "줄글이나 글머리 기호 목록이 아니라 `## 섹션 제목`으로 나누라"고 구체화하고 실제 형식
+    예시(`'## 주가 동향\n삼성전자는 ...'`)를 넣은 뒤 재측정하니 `## 주가 동향`, `## 원인 분석` 등 실제 헤더가 나왔다.
+  - 멀티 tool 호출 자체가 비결정적이라(multi 그룹 56~78%대) "여러 tool을 쓴 질문에 `##`가 나오는지"는 어떤 tool
+    조합인지 따지지 않고 "tool 2개 이상 + `##` 포함"으로, "단순 조회 질문은 호출 안 한 tool 섹션을 안 만드는지"는
+    "## 시장 상황"/"## 위험요인"/"## 뉴스" 부재로 확인했다(3회 반복 재현, `test_agent_slow.py`).
+  - 알려진 한계: 위험요인 섹션을 실제로 쓸지, 쓴다면 뭘 위험요인으로 꼽을지는 전적으로 LLM 판단이고 그 판단의 사실성을
+    검증하는 코드가 없다. 섹션 헤더 형식 준수도 모델 성향에 달려 있어 100% 보장되지 않는다(llama3.1:8b는 로컬 소형
+    모델이라 README "답변 품질" 이슈와 같은 불안정성을 공유한다).
