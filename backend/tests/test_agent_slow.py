@@ -47,6 +47,40 @@ def test_recognized_period_expression_overrides_the_llm_guess_in_a_real_call():
     assert stock_calls[0]["arguments"]["period_days"] == expected
 
 
+def test_fx_question_calls_fx_tool_without_fewshot_leak():
+    r = ask_question("요즘 환율 어때?", save_report=False)
+    assert "fx_tool" in r["used_tools"]
+    assert not any(s in r["answer"] for s in FEWSHOT_LEAKS)
+
+
+# ---- FR-11 답변 구조화: tool 결과에 맞는 섹션만 마크다운 소제목(##)으로 나오는지 ----
+
+
+def test_comprehensive_question_produces_markdown_sections():
+    """여러 tool이 필요한 "종합적으로" 질문에서 실제로 마크다운 섹션(##)이 나오는지 확인한다.
+
+    멀티 tool 호출 자체는 비결정적이라(README "multi" 그룹, 측정마다 56~78%대) 어떤 tool 조합이 불렸는지는
+    따지지 않고, 최소 2개 이상의 tool을 함께 쓴 질문에서 구조화된 답변이 나오는지만 본다."""
+    r = ask_question(
+        "삼성전자 오늘 왜 올랐어? 주가 동향이랑 관련 뉴스도 같이 알려주고, 코스피 대비 흐름도 비교해서 종합적으로 알려줘.",
+        save_report=False,
+    )
+    detail = f"used_tools={r['used_tools']} 답변={r['answer'][:300]!r}"
+    assert len(r["used_tools"]) >= 2, detail
+    assert "##" in r["answer"], detail
+
+
+def test_simple_quantity_question_is_not_forced_into_unrelated_sections():
+    """단순 조회 질문은 호출하지 않은 tool에 대응하는 섹션(시장 상황/위험요인 등)을 지어내지 않아야 한다."""
+    r = ask_question("삼성전자 오늘 거래량 얼마야?", save_report=False)
+    detail = f"used_tools={r['used_tools']} 답변={r['answer'][:300]!r}"
+    assert "stock_tool" in r["used_tools"], detail
+    assert "market_tool" not in r["used_tools"], detail
+    assert "## 시장 상황" not in r["answer"], detail
+    assert "## 위험요인" not in r["answer"], detail
+    assert "## 뉴스" not in r["answer"], detail
+
+
 # ---- 후속 질문(previous_report_id): 이번 질문에 종목명이 없어도 직전 보고서의 종목을 이어받는지 ----
 
 
