@@ -32,6 +32,21 @@ def test_multi_question_leaves_no_fewshot_leak():
     assert not any(s in r["answer"] for s in FEWSHOT_LEAKS)
 
 
+def test_recognized_period_expression_overrides_the_llm_guess_in_a_real_call():
+    """"지난달"처럼 app.period_parser가 인식하는 기간 표현이 있으면, 모델이 뭘 추론했든 상관없이
+    실제 호출에서도 stock_tool의 period_days가 파서 값으로 덮어써지는지 확인한다."""
+    from app.agent import _answer
+    from app.period_parser import parse_period
+
+    question = "삼성전자 지난달 등락률이랑 거래량 알려줘."
+    expected = parse_period(question).period_days
+
+    _, records = _answer(question, "llama3.1:8b")
+    stock_calls = [r for r in records if r["tool_name"] == "stock_tool"]
+    assert stock_calls, f"stock_tool이 호출되지 않음: used_tools={[r['tool_name'] for r in records]}"
+    assert stock_calls[0]["arguments"]["period_days"] == expected
+
+
 # ---- 후속 질문(previous_report_id): 이번 질문에 종목명이 없어도 직전 보고서의 종목을 이어받는지 ----
 
 
