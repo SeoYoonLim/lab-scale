@@ -53,6 +53,12 @@ def test_fx_question_calls_fx_tool_without_fewshot_leak():
     assert not any(s in r["answer"] for s in FEWSHOT_LEAKS)
 
 
+def test_discovery_question_calls_discovery_tool_without_fewshot_leak():
+    r = ask_question("요즘 급등하는 종목 뭐 있어?", save_report=False)
+    assert "discovery_tool" in r["used_tools"]
+    assert not any(s in r["answer"] for s in FEWSHOT_LEAKS)
+
+
 # ---- FR-11 답변 구조화: tool 결과에 맞는 섹션만 마크다운 소제목(##)으로 나오는지 ----
 
 
