@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 import ollama
 
 from app.db.session import SessionLocal
+from app.period_parser import parse_period
 from app.reports import save_report as save_report_row
 from app.sources import build_sources
 from app.tools.company_resolver import extract_from_text, normalize_name, resolve_company
@@ -453,6 +454,33 @@ def _repair_company_args(calls: list[dict], question: str, previous_question: st
         db.close()
 
 
+# tool별로 기간(period_days)을 받는 인자 이름. news_tool/disclosure_tool/rag_search_tool은 기간 인자 자체가
+# 없어서(README "FR-01 인수조건별 검증" 참고) 여기 없고, 손대지 않는다.
+_PERIOD_ARG = {"stock_tool": "period_days", "market_tool": "period_days"}
+
+
+def _apply_period_override(calls: list[dict], question: str) -> dict[int, object]:
+    """질문에서 app.period_parser.parse_period가 기간 표현을 인식했으면, 기간 인자를 받는 tool 호출의
+    period_days를 그 값으로 덮어써서 LLM이 추론한(종종 틀리는) 값보다 우선하게 한다.
+
+    인식하지 못하면(parse_period가 None) 아무것도 하지 않는다 - 이전처럼 LLM이 추론한 값을 그대로 쓴다.
+    calls를 직접 수정하고, {호출 인덱스: 덮어쓰기 전 원래 값(없었으면 None)}을 돌려준다."""
+    parsed = parse_period(question)
+    if parsed is None:
+        return {}
+
+    overridden: dict[int, object] = {}
+    for i, call in enumerate(calls):
+        key = _PERIOD_ARG.get(call["function"]["name"])
+        if key is None:
+            continue
+        args = _as_args(call["function"]["arguments"])
+        call["function"]["arguments"] = args
+        overridden[i] = args.get(key)
+        args[key] = parsed.period_days
+    return overridden
+
+
 def _run_tool(fn_name: str, fn_args) -> dict:
     """tool을 안전하게 실행한다. 모르는 tool/인자, 필수 인자 누락, 실행 중 예외도 예외 대신 결과로 돌려준다."""
     fn = AVAILABLE_FUNCTIONS.get(fn_name)
@@ -547,6 +575,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     # 2. 모델이 만든 종목 인자가 깨졌으면 질문 원문에서 회사명을 찾아 보정한 뒤, tool을 실제로 실행하고
     #    결과를 다시 넘겨줌
     repaired = _repair_company_args(tool_calls, question, previous["question"] if previous else None)
+    period_overrides = _apply_period_override(tool_calls, question)
     for idx, call in enumerate(tool_calls):
         fn_name = call["function"]["name"]
         fn_args = _as_args(call["function"]["arguments"])
@@ -559,6 +588,9 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
         if idx in repaired and isinstance(result, dict):
             result.setdefault("corrected_from", repaired[idx])
             result.setdefault("corrected_via", "question_text")
+        if idx in period_overrides and isinstance(result, dict):
+            result.setdefault("period_days_corrected_from", period_overrides[idx])
+            result.setdefault("period_days_corrected_via", "period_parser")
 
         records.append(
             {
