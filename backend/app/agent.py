@@ -18,8 +18,9 @@ from app.period_parser import parse_period
 from app.reports import save_report as save_report_row
 from app.sources import build_sources
 from app.tools.company_resolver import extract_from_text, normalize_name, resolve_company
-from app.routing import needs_fx_tool, needs_market_tool
+from app.routing import needs_discovery_tool, needs_fx_tool, needs_market_tool
 from app.tools.disclosure_tool import disclosure_tool
+from app.tools.discovery_tool import discovery_tool
 from app.tools.fx_tool import fx_tool
 from app.tools.market_tool import market_tool
 from app.tools.news_tool import news_tool
@@ -351,6 +352,42 @@ FX_HINT = (
     "환율 수준이나 최근 추이, 환율 변동이 종목에 미치는 영향을 분석해야 하는 질문에는 fx_tool도 함께 호출하라. "
 )
 
+# discovery_tool도 market_tool/fx_tool과 같은 이유로 기본 TOOLS에 넣지 않는다(상시 노출 시 multi 호출이 깨지는
+# 문제, app/routing.py의 needs_discovery_tool이 종목을 특정하지 않는 탐색 질문일 때만 추가한다).
+DISCOVERY_TOOL_SPEC = {
+    "type": "function",
+    "function": {
+        "name": "discovery_tool",
+        "description": (
+            "DB에 저장된 실제 데이터 기준으로, 특정 종목을 지정하지 않고 시장 전체에서 오늘(최근 거래일) 기준 "
+            "관심 가질 만한 종목을 찾는다. 등락률 상위(급등), 등락률 하위(급락), 거래량이 평소보다 크게 늘어난 "
+            "종목(거래량 급증) 중 하나를 고른다. '요즘 뜨는 종목', '오늘 급등한 종목', '거래량 많이 늘어난 종목', "
+            "'오늘의 관심종목 추천해줘'처럼 종목을 특정하지 않는 질문에서 호출한다. 이미 특정 종목이 언급된 "
+            "질문에는 호출하지 않는다(그때는 stock_tool). 순수 등락률·거래량 수치 기준이라 뉴스·공시 같은 "
+            "질적 이유는 담지 않는다. 주가 데이터가 아직 없으면 found=false와 사유를 담은 message를 반환한다."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "enum": ["gainers", "losers", "volume_surge"],
+                    "description": "gainers=등락률 상위(급등), losers=등락률 하위(급락), volume_surge=거래량 급증. 기본값 gainers.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "조회할 종목 수. 기본값 10.",
+                },
+            },
+            "required": [],
+        },
+    },
+}
+
+DISCOVERY_HINT = (
+    "특정 종목을 지정하지 않고 시장 전체에서 급등/급락/거래량 급증 종목을 찾는 질문에는 discovery_tool을 호출하라. "
+)
+
 AVAILABLE_FUNCTIONS = {
     "stock_tool": stock_tool,
     "news_tool": news_tool,
@@ -358,26 +395,29 @@ AVAILABLE_FUNCTIONS = {
     "rag_search_tool": rag_search_tool,
     "market_tool": market_tool,
     "fx_tool": fx_tool,
+    "discovery_tool": discovery_tool,
 }
+
+# 질문 -> (프롬프트 힌트, tool 스펙)을 주는 게이트들. 전부 기본 TOOLS 상시 노출 시 multi 호출이 깨지는 문제 때문에
+# 코드가 질문 문구로 먼저 판단해서 필요한 요청에만 추가한다(app/routing.py).
+_GATES = [
+    (needs_market_tool, MARKET_HINT, MARKET_TOOL_SPEC),
+    (needs_fx_tool, FX_HINT, FX_TOOL_SPEC),
+    (needs_discovery_tool, DISCOVERY_HINT, DISCOVERY_TOOL_SPEC),
+]
 
 
 def build_request(question: str) -> tuple[str, list[dict]]:
     """질문에 맞는 (시스템 프롬프트, tool 목록)을 만든다. 어느 게이트도 안 걸리면 기본값 그대로(같은 객체)다.
 
-    market_tool/fx_tool 둘 다 기본 TOOLS에는 없고, 각자의 게이트(needs_market_tool/needs_fx_tool)가 True인
-    요청에만 해당 tool과 프롬프트 힌트를 추가한다. 한 질문에서 둘 다 걸리면(예: "환율 때문에 코스피 전체가
-    빠졌어?") 둘 다 추가된다."""
-    hints, extra_tools = [], []
-    if needs_market_tool(question):
-        hints.append(MARKET_HINT)
-        extra_tools.append(MARKET_TOOL_SPEC)
-    if needs_fx_tool(question):
-        hints.append(FX_HINT)
-        extra_tools.append(FX_TOOL_SPEC)
-
-    if not hints:
+    게이트가 걸린 tool들은 기본 TOOLS에는 없고, 각자의 게이트가 True인 요청에만 해당 tool과 프롬프트 힌트를
+    추가한다. 한 질문에서 여러 게이트가 걸리면(예: "환율 때문에 코스피 전체가 빠졌어?") 전부 추가된다."""
+    matched = [(hint, spec) for gate, hint, spec in _GATES if gate(question)]
+    if not matched:
         return SYSTEM_PROMPT, TOOLS
-    prompt = SYSTEM_PROMPT.replace(_MARKET_HINT_ANCHOR, _MARKET_HINT_ANCHOR + "".join(hints), 1)
+    hints = "".join(hint for hint, _ in matched)
+    extra_tools = [spec for _, spec in matched]
+    prompt = SYSTEM_PROMPT.replace(_MARKET_HINT_ANCHOR, _MARKET_HINT_ANCHOR + hints, 1)
     return prompt, [*TOOLS, *extra_tools]
 
 
