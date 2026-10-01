@@ -26,3 +26,19 @@ _MARKET_RE = re.compile("|".join(_MARKET_PATTERNS), re.IGNORECASE)
 def needs_market_tool(question: str) -> bool:
     """질문이 종목을 시장(코스피/코스닥) 지수와 비교하려는 내용이면 True."""
     return bool(_MARKET_RE.search(question or ""))
+
+
+# 환율(원/달러) 수준·추이를 묻는 표현. "환율"이라는 단어 자체가 이미 충분히 구체적이라(일반 뉴스/공시 질문에
+# 섞여 나올 일이 거의 없음) market_tool의 '지수'처럼 뒤 문맥까지 보지 않는다. market_tool의 코스피/코스닥 패턴과
+# 같은 정도의 오탐(예: "환율이 오르면 왜 수출주가 유리해?" 같은 개념 질문에도 True)은 허용한다 - 오탐의 비용은
+# tool 목록이 하나 늘어나는 정도라서(README FR-06 해결 기록 참고) 과도하게 좁히지 않는다.
+_FX_PATTERNS = [
+    r"환율",
+    r"원\s*/?\s*달러|달러\s*/?\s*원|usd\s*/?\s*krw",
+]
+_FX_RE = re.compile("|".join(_FX_PATTERNS), re.IGNORECASE)
+
+
+def needs_fx_tool(question: str) -> bool:
+    """질문이 원/달러 환율 수준·추이를 조회하려는 내용이면 True."""
+    return bool(_FX_RE.search(question or ""))
