@@ -6,9 +6,9 @@
 
 ## 지금 상태 요약 (서윤님 복귀용, 2026-09-28 기준)
 
-**한 줄 요약:** 백엔드(API + 에이전트 + 데이터 수집 + 관심종목/모의투자 + 환율 영향 분석)는 동작하고 테스트가 전부 통과합니다
-(기본 546개 + 실제 Ollama를 부르는 slow 13개 = 559개, `pytest -m "slow or not slow"`로 한 번에). 남은 큰 일은 프론트엔드
-연동입니다. 작업 브랜치는
+**한 줄 요약:** 백엔드(API + 에이전트 + 데이터 수집 + 관심종목/모의투자 + 환율 영향 분석 + 시장 관심 종목 탐색)는 동작하고
+테스트가 전부 통과합니다(기본 594개 + 실제 Ollama를 부르는 slow 14개 = 608개, `pytest -m "slow or not slow"`로 한 번에).
+남은 큰 일은 프론트엔드 연동입니다. 작업 브랜치는
 `feature/backend`이고 원격에 push되어 있습니다.
 
 ### 구현된 API
@@ -26,6 +26,7 @@
 | DELETE | `/api/watchlist/{ticker}` | 관심종목 삭제 |
 | GET | `/api/portfolio` | 모의투자 잔고 + 보유 종목(평가손익 포함). 디바이스ID 첫 호출 시 계좌 자동 생성(초기 잔고 1,000만원) |
 | POST | `/api/portfolio/orders` | 모의투자 매수/매도 주문(현재가로 즉시 체결) |
+| GET | `/api/discovery/trending` | 급등/급락/거래량 급증 종목(FR-13, 질문 없이 바로 호출, `category`/`limit` 쿼리) |
 
 프론트가 관심종목·모의투자 API를 쓰려면 **모든 요청에 `X-Device-Id` 헤더**(프론트가 만들어 localStorage에 저장하는 uuid)를
 실어야 합니다. 로그인이 없어서 이 값 자체가 사용자 구분자이고(인증 아님, 그 값을 그대로 신뢰), 헤더가 없으면 422입니다.
@@ -104,7 +105,7 @@ PRD 원문을 확인해보니 **FR-05는 "주가 변동 원인 분석"이고 `re
 | FR-10 대화형 후속 질문 | `previous_report_id` | 완료(직전 1개까지, 체이닝은 범위 밖) |
 | FR-11 (P1) AI 리서치 보고서 생성 | `agent._answer`(답변 자동 생성, 2026-10-01부터 `ANSWER_STRUCTURE_INSTRUCTION`으로 섹션 구조화 유도) + `reports.save_report` + `sources`(근거 문서). 프론트엔드 없음 | **백엔드 부분 구현 / 프론트 연동 필요**: 자동 생성·근거 포함·섹션 구조화(조회한 tool에 맞는 섹션만)는 됨, 위험요인 판단은 여전히 LLM 서술에 의존하고 전담 검증 로직은 없음(아래 FR-11 상세) |
 | FR-12 (P2) 관심종목 및 리서치 이력 | 리서치 이력: `GET /api/research`, `GET /api/research/{id}`, `DELETE`. 관심종목: `watchlist` 테이블 + `GET`/`POST /api/watchlist`, `DELETE /api/watchlist/{ticker}` | **완료** (2026-10-01, 사용자 구분은 로그인이 아니라 `X-Device-Id` 헤더) |
-| FR-13 (P2) AI 시장 관심 종목 탐색 | 후보 탐색/스크리닝 코드, tool, 엔드포인트가 없음 | **미구현 - 신규 기능** |
+| FR-13 (P2) AI 시장 관심 종목 탐색 | `app/discovery.py`(순수 집계) + `discovery_tool` + `routing.needs_discovery_tool` + `GET /api/discovery/trending`(2026-10-01) | **완료**. "관심"의 기준이 등락률/거래량 수치뿐이라 질적 신호(뉴스·공시)는 반영 안 됨(아래 FR-13 상세) |
 
 #### 인수조건별 검증 (FR-01·05·07·11·12·13, FR-01/07/11/12/13은 2026-09-28, FR-05는 2026-10-01, 코드·측정 기준)
 
@@ -185,9 +186,38 @@ PRD 원문을 확인해보니 **FR-05는 "주가 변동 원인 분석"이고 `re
   관심종목을 볼 수 있다는 한계가 있다(설계상 받아들인 한계, README "DB 스키마 개요" 참고).
   연구 이력(`research_report`)은 이 디바이스ID를 쓰지 않고 여전히 전체 공용이다(이번 작업 범위 밖).
 
-**FR-13 AI 시장 관심 종목 탐색 — 미구현 (신규 기능)** (인수조건 2개 모두 미충족)
-- 후보 탐색·스크리닝·랭킹 코드, tool, 엔드포인트가 없다. `stock_tool`은 종목을 지정해야만 동작해서 "오늘 급등한 종목"을 찾는 질문에 쓸 tool이 없다.
-- 재료는 DB에 있다: `stock_price`에 300종목의 등락률·거래량, `news`에 종목별 뉴스가 있어서 집계 쿼리로 후보를 뽑을 수는 있어 보이지만 아직 코드가 없다.
+**FR-13 AI 시장 관심 종목 탐색 — 완료 (2026-10-01)** (인수조건 2개)
+- *후보 탐색·스크리닝*: 충족. 새 외부 데이터 소스 없이 이미 수집된 `stock_price`(300종목 일별 OHLCV)만으로 `app/discovery.py`가
+  세 가지 집계를 한다 - **gainers**(최근 거래일 등락률 상위 N, 급등), **losers**(등락률 하위 N, 급락), **volume_surge**(당일
+  거래량이 직전 `window_days`거래일(당일 제외) 평균 거래량의 `VOLUME_SURGE_MIN_RATIO`(2.0)배 이상인 종목, 배수 내림차순).
+  복잡한 예측/ML 없이 순수 정렬·필터만 한다(market_tool/fx_tool과 같은 "실용성 우선" 원칙). 당일 데이터가 없는 종목은 집계에서
+  빠진다. 평균 거래량 계산에서 당일을 뺀 이유: 포함하면 급증한 당일 수치가 자기 평균을 끌어올려 배수가 희석된다.
+- *대화형 질문 + REST 엔드포인트 둘 다 지원*: 충족.
+  - 채팅: `discovery_tool(category, limit)`을 `agent.py`에 `market_tool`/`fx_tool`과 같은 패턴으로 연동했다 - 기본 tool
+    목록에는 없고 `app/routing.py`의 `needs_discovery_tool`이 걸린 질문에만 추가한다(상시 노출 시 multi 호출이 깨지는 문제,
+    FR-06/FR-07 해결 기록과 동일한 이유). `build_request`는 이제 market/fx/discovery 세 게이트를 리스트로 처리해서, 한
+    질문에서 여러 개가 걸리면 전부 추가된다(아무 게이트도 안 걸리면 이전처럼 `SYSTEM_PROMPT`/`TOOLS` 객체를 그대로 돌려줌).
+  - REST: `GET /api/discovery/trending?category=gainers&limit=10` - 질문 없이 프론트가 바로 호출할 수 있다. 쿼리 파라미터는
+    `category`(gainers/losers/volume_surge)와 `limit`(1~50)뿐이다.
+  - 게이트 키워드: "급등"/"급락"/"상한가"/"하한가"는 **"종목"과 함께 나올 때만** 인정한다(실측으로 "LG화학 주가 급등한
+    이유가 뭐야?" 같은 **특정 종목** 질문도 bare 단어만 보면 걸려서, multi 그룹 등 다른 질문에 discovery_tool이 섞여 들어가는
+    것을 확인하고 고쳤다 - 아래 회귀 검증). 그 외 "거래량 (급증/증가/늘어)", "요즘/오늘/최근 뜨는/핫한/인기 종목", "오늘의
+    관심종목", "관심종목 추천/탐색", "오늘/최근 많이/크게 오른/내린/떨어진/빠진 종목" 패턴도 더했다.
+- **회귀 검증**: `scripts/benchmark_routing.py --reps 4`로 discovery/discovery_ho를 포함한 15개 그룹 전체(66문항×4회,
+  2026-10-01 측정)를 돌렸다. discovery 88%(21/24, 게이트는 6문항 전부 정확히 잡지만 LLM이 간혹 다른 tool만으로 답함 -
+  multi 그룹과 같은 성격의 노이즈), discovery_ho 80%(16/20, 게이트가 못 잡는 "관심 가질 만한 종목 추천해줘" 1문항에서만
+  실패하고 나머지 4문항은 16/16). 기존 그룹은 전부 과거 기록 범위 안(rag 88%, rag_ho 66%, disc_list/disc_ho 100%, multi
+  75%, stock/news 100%, market/market_ho 100%, fx/fx_ho 100%, no_tool/no_tool_ho 0%). **market_tool/fx_tool/discovery_tool
+  세 tool 모두 자기 그룹 밖 264개 질문에서 오호출 0건**이라, discovery_tool 추가가 다른 모든 그룹의 `build_request` 결과를
+  바이트 단위로 전혀 바꾸지 않았다는 뜻이다(식별자 비교상 완전히 같은 경로).
+- 관련 테스트: `test_discovery.py`(16개, rank_* 순수 로직 + dev DB 통합), `test_routing.py`의 `needs_discovery_tool`/
+  `build_request` 3-게이트 조합 테스트, `test_discovery_api.py`(7개, mock), `test_agent_slow.py`의 slow 테스트 1개.
+- **한계(솔직하게)**: "관심"의 기준이 등락률·거래량 수치뿐이다. 왜 움직였는지(뉴스·공시 같은 질적 신호)는 전혀 반영하지
+  않는다 - 그건 news_tool/disclosure_tool/rag_search_tool의 몫이고, discovery_tool과 자동으로 엮이지 않는다. 거래량 급증
+  임계값(2.0배)과 평균 window(기본 20거래일)는 고정 상수이고 API/tool 모두 바꿀 수 없다(요구사항 범위를 "category와 limit
+  정도만"으로 명시한 데 따름). 키워드 게이트는 "관심 가질 만한 종목 추천해줘"처럼 멀리 떨어진 구어체 표현은 못 잡는다
+  (market_tool의 `KNOWN_MISSES`와 같은 성격의 알려진 한계). 상장폐지·거래정지 등으로 당일 데이터가 없는 종목은 조용히
+  제외된다(안내 메시지 없음).
 
 ### 성능
 
@@ -294,7 +324,7 @@ python scripts/collect_disclosure_content.py --apply   # 공시 원문 수집 (�
 ```bash
 pytest                            # backend/ 에서. 빠른 테스트(단위 + dev DB 통합), slow는 기본 제외
 pytest -m slow                    # 실제 Ollama를 부르는 slow만 (약 30초, dev DB에 리포트를 만들었다가 지움)
-pytest -m "slow or not slow"      # 전부 한 번에 (2026-10-01 기준 559개 통과)
+pytest -m "slow or not slow"      # 전부 한 번에 (2026-10-01 기준 608개 통과)
 ```
 
 구성(단위 / DB 통합 / LLM을 호출하는 slow)과 실행 옵션은 [backend/API.md](backend/API.md)의 "테스트 실행" 절을 참고하세요.
@@ -333,7 +363,9 @@ pytest -m "slow or not slow"      # 전부 한 번에 (2026-10-01 기준 559개 
 - [x] FR-12 관심종목 및 이력: 리서치 이력(기존 완료)에 이어 관심종목 추가. `watchlist` 테이블 + `GET`/`POST /api/watchlist`,
   `DELETE /api/watchlist/{ticker}`(종목 중복 등록 409, 미등록 삭제 404). 로그인이 없어 `X-Device-Id` 헤더(프론트가 만드는
   uuid)로 사용자를 구분(아래 "모의투자 기능"과 같은 방식, 인증 아님)
-- [ ] FR-13 시장 관심 종목 탐색: **미구현 — 신규 기능**
+- [x] FR-13 시장 관심 종목 탐색: `app/discovery.py`(급등/급락/거래량 급증, stock_price만으로 순수 집계) +
+  `discovery_tool`(채팅, market_tool/fx_tool과 같은 키워드 게이트 패턴) + `GET /api/discovery/trending`(REST, 질문 없이
+  바로 호출). "관심" 기준은 등락률/거래량 수치뿐이고 뉴스·공시 같은 질적 신호는 반영하지 않음
 - [x] 종목 실시간 시세: `GET /api/stocks/{ticker}/realtime-price`. 계좌 개설이 필요한 KIS Open API 대신, 네이버 금융
   종목 페이지가 장중에 쓰는 비공식 폴링 API(`polling.finance.naver.com`, 인증 불필요)를 서버가 대신 호출. 종목별
   3~5초 서버 캐싱, 상위 소스 실패·장외 시간에는 예외 대신 DB 최근 종가로 자동 폴백(`is_realtime`/`source`로 구분)
