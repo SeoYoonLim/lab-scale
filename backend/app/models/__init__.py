@@ -1,5 +1,6 @@
 from app.models.company import Company
 from app.models.disclosure import Disclosure
+from app.models.exchange_rate import ExchangeRate
 from app.models.holding import Holding
 from app.models.market_index import MarketIndex
 from app.models.news import News
@@ -16,6 +17,7 @@ __all__ = [
     "News",
     "Disclosure",
     "MarketIndex",
+    "ExchangeRate",
     "ResearchReport",
     "ToolCallLog",
     "Watchlist",
