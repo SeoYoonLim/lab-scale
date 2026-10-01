@@ -6,8 +6,9 @@
 
 ## 지금 상태 요약 (서윤님 복귀용, 2026-09-28 기준)
 
-**한 줄 요약:** 백엔드(API + 에이전트 + 데이터 수집)는 동작하고 테스트가 전부 통과합니다(기본 232개 + 실제 Ollama를 부르는 slow 6개 = 238개,
-`pytest -m "slow or not slow"`로 한 번에). 남은 큰 일은 프론트엔드 연동입니다. 작업 브랜치는 `feature/backend`이고 원격에 push되어 있습니다.
+**한 줄 요약:** 백엔드(API + 에이전트 + 데이터 수집 + 관심종목/모의투자)는 동작하고 테스트가 전부 통과합니다(기본 407개 + 실제
+Ollama를 부르는 slow 9개 = 416개, `pytest -m "slow or not slow"`로 한 번에). 남은 큰 일은 프론트엔드 연동입니다. 작업 브랜치는
+`feature/backend`이고 원격에 push되어 있습니다.
 
 ### 구현된 API
 
@@ -20,13 +21,20 @@
 | GET | `/api/research/{report_id}` | 리포트 한 건(전체 답변, sources, tool 사용 이력) |
 | DELETE | `/api/research/{report_id}` | 리포트 삭제(204, 본문 없음). 후속 리포트는 남고 연결만 끊김 |
 | GET | `/api/stocks/{ticker}/realtime-price` | 종목 현재가(비공식 소스 기반 실시간, 장외/장애 시 DB 최근 종가로 자동 폴백) |
+| GET/POST | `/api/watchlist` | 관심종목 조회/추가 (`X-Device-Id` 헤더로 사용자 구분, 로그인 없음) |
+| DELETE | `/api/watchlist/{ticker}` | 관심종목 삭제 |
+| GET | `/api/portfolio` | 모의투자 잔고 + 보유 종목(평가손익 포함). 디바이스ID 첫 호출 시 계좌 자동 생성(초기 잔고 1,000만원) |
+| POST | `/api/portfolio/orders` | 모의투자 매수/매도 주문(현재가로 즉시 체결) |
+
+프론트가 관심종목·모의투자 API를 쓰려면 **모든 요청에 `X-Device-Id` 헤더**(프론트가 만들어 localStorage에 저장하는 uuid)를
+실어야 합니다. 로그인이 없어서 이 값 자체가 사용자 구분자이고(인증 아님, 그 값을 그대로 신뢰), 헤더가 없으면 422입니다.
 
 프론트에서 특히 챙길 것: POST는 로컬 LLM이라 **2~25초**(로딩 상태와 60초 이상 타임아웃) / 에러 `detail`은 404·502·503에서는 문자열, 422에서는 배열
 / `report_id`는 저장 실패 시 null / 허용 origin은 `localhost:5173`, `localhost:3000` 두 개뿐(다른 포트면 알려주세요).
 
 ### DB 스키마 개요
 
-PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(`backend/alembic/versions/`, 현재 head `0c0a80524432`)입니다.
+PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(`backend/alembic/versions/`, 현재 head `45a92b436bc1`)입니다.
 
 | 테이블 | 내용 | 주요 컬럼 |
 | --- | --- | --- |
@@ -37,6 +45,10 @@ PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(
 | `disclosure` | DART 공시 | `company_id`, `title`, `disclosed_at`, `source_url`, `content`(원문), `embedding vector(1024)` |
 | `research_report` | 질문/답변 보고서 | `question`, `content`(답변), `summary`, `company_id`, `previous_report_id`(직전 리포트, 자기 참조) |
 | `tool_call_log` | 보고서별 tool 호출 이력 | `report_id`(삭제 시 cascade), `tool_name`, `arguments`/`result`(JSONB) |
+| `watchlist` | 관심종목(FR-12) | `device_id`, `company_id` (조합 unique) |
+| `virtual_account` | 모의투자 가상 계좌(디바이스ID당 1개) | `device_id`(PK), `cash_balance`(초기 1,000만원) |
+| `holding` | 모의투자 보유 종목 | `device_id`, `company_id`(조합 unique), `quantity`, `avg_price`(가중평균) |
+| `trade` | 모의투자 체결 내역 | `device_id`, `company_id`, `side`(buy/sell), `quantity`, `price`, `executed_at` |
 
 **서윤님이 설계한 스키마와 실제로 만들어진 스키마를 맞춰봐 주세요.** 최초 설계 스냅샷은 `db/schema.sql`(서윤님 커밋)이고, 임시 DB에 그 파일을 적용해서
 실제 DB와 컬럼·인덱스·FK를 기계적으로 비교했습니다. 컬럼/타입/FK는 모두 같고 **차이는 아래 4가지**입니다(설계와 다른 것이 의도에 맞는지 확인 필요).
@@ -45,6 +57,10 @@ PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(
 2. `research_report.previous_report_id` 컬럼 + 자기 참조 FK(`ON DELETE SET NULL`) 추가(FR-10, 설계에 없던 확장)
 3. `news.embedding`, `disclosure.embedding`에 HNSW 인덱스(코사인, m=16, ef_construction=64) 추가(유사도 검색 성능)
 4. 인덱스 정렬 방향: 설계는 `(company_id, 날짜 DESC)`, 실제는 오름차순. btree는 역방향 스캔이 되므로 조회 기능상 동일
+5. `watchlist`, `virtual_account`, `holding`, `trade` 4개 테이블 추가(FR-12 관심종목 + 모의투자, 설계에 없던 확장).
+   회원가입/로그인이 없는 서비스라 사용자 구분을 프론트가 만드는 디바이스ID(`X-Device-Id` 헤더, uuid)로 했다 -
+   인증이 아니라 단순 구분자이고, `company`처럼 다른 테이블과 달리 `device_id`는 FK가 아니라 프론트가 보낸
+   문자열을 그대로 저장한다. `virtual_account.device_id`를 기본키로 써서 "디바이스ID당 계좌 1개"를 표현했다.
 
 `db/schema.sql`은 갱신하지 않고 상단에 "최초 설계 스냅샷이며 기준은 Alembic"이라는 안내만 달았습니다.
 
@@ -79,7 +95,7 @@ FR-01·07·11·12·13은 원본 PRD의 정의와 인수조건을 확인해서 **
 | FR-09 tool 호출 이력 | `tool_call_log`, 리포트 상세의 `used_tools` | 완료 |
 | FR-10 대화형 후속 질문 | `previous_report_id` | 완료(직전 1개까지, 체이닝은 범위 밖) |
 | FR-11 (P1) AI 리서치 보고서 생성 | `agent._answer`(답변 자동 생성) + `reports.save_report` + `sources`(근거 문서). 프론트엔드 없음 | **백엔드 부분 구현 / 프론트 연동 필요**: 자동 생성·근거 포함은 됨, PRD가 말한 종합 "보고서 형식"(주가 동향·원인·뉴스·공시·시장 상황·위험요인)은 없음 |
-| FR-12 (P2) 관심종목 및 리서치 이력 | 리서치 이력: `GET /api/research`, `GET /api/research/{id}`, `DELETE`. 관심종목: 테이블·API·코드 없음 | **리서치 이력은 완료(백엔드), 관심종목 기능은 미구현(신규 테이블 필요)** |
+| FR-12 (P2) 관심종목 및 리서치 이력 | 리서치 이력: `GET /api/research`, `GET /api/research/{id}`, `DELETE`. 관심종목: `watchlist` 테이블 + `GET`/`POST /api/watchlist`, `DELETE /api/watchlist/{ticker}` | **완료** (2026-10-01, 사용자 구분은 로그인이 아니라 `X-Device-Id` 헤더) |
 | FR-13 (P2) AI 시장 관심 종목 탐색 | 후보 탐색/스크리닝 코드, tool, 엔드포인트가 없음 | **미구현 - 신규 기능** |
 
 #### 인수조건별 검증 (FR-01·07·11·12·13, 2026-09-28, 코드·측정 기준)
@@ -118,11 +134,14 @@ FR-01·07·11·12·13은 원본 PRD의 정의와 인수조건을 확인해서 **
   `tool_call_log`에서 복원된다. 다만 주가·시장 지수 수치는 `sources`에 들어가지 않는다(주가만 쓴 데모 #3, #5는 `sources` 0건, `used_tools`로만 추적).
 - *브라우저에서 보고서 확인*: 프론트엔드가 이 저장소에 없어서 **백엔드 API(`GET /api/research`, `/{id}`)까지만** 되어 있고 화면은 프론트 연동이 필요하다.
 
-**FR-12 관심종목 및 리서치 이력 — 리서치 이력 완료, 관심종목 미구현** (인수조건 3개)
+**FR-12 관심종목 및 리서치 이력 — 완료 (2026-10-01)** (인수조건 3개)
 - *리서치 이력 조회*: 충족. `GET /api/research`(최신순, `limit`/`offset`, `total`), 후속 질문 스레드는 `previous_report_id`.
 - *저장된 결과 재열람*: 충족. `GET /api/research/{id}`가 질문·답변·sources·used_tools를 복원한다(`DELETE`도 있음).
-- *관심 종목 추가/삭제*: **미충족.** watchlist 테이블·API·코드가 전혀 없다(노출된 엔드포인트는 위 4개뿐, 관련 코드 검색 결과 없음). 신규 테이블이 필요하다.
-  주의: 이 서비스에는 사용자/인증 개념이 없어서(API.md "인증 없음") 이력도 전체 공용이다. 관심종목을 만들려면 사용자 식별 방식부터 정해야 한다.
+- *관심 종목 추가/삭제*: 충족. `watchlist` 테이블 + `GET`/`POST /api/watchlist`, `DELETE /api/watchlist/{ticker}`.
+  이 서비스에는 로그인이 없어서(API.md "인증 없음") 사용자 구분을 프론트가 만드는 디바이스ID(`X-Device-Id` 헤더, uuid,
+  localStorage 저장)로 했다 - 인증이 아니라 그 값을 그대로 신뢰하는 구분자라서, 헤더 값을 공유하면 다른 사람의
+  관심종목을 볼 수 있다는 한계가 있다(설계상 받아들인 한계, README "DB 스키마 개요" 참고).
+  연구 이력(`research_report`)은 이 디바이스ID를 쓰지 않고 여전히 전체 공용이다(이번 작업 범위 밖).
 
 **FR-13 AI 시장 관심 종목 탐색 — 미구현 (신규 기능)** (인수조건 2개 모두 미충족)
 - 후보 탐색·스크리닝·랭킹 코드, tool, 엔드포인트가 없다. `stock_tool`은 종목을 지정해야만 동작해서 "오늘 급등한 종목"을 찾는 질문에 쓸 tool이 없다.
@@ -233,7 +252,7 @@ python scripts/collect_disclosure_content.py --apply   # 공시 원문 수집 (�
 ```bash
 pytest                            # backend/ 에서. 빠른 테스트(단위 + dev DB 통합), slow는 기본 제외
 pytest -m slow                    # 실제 Ollama를 부르는 slow만 (약 30초, dev DB에 리포트를 만들었다가 지움)
-pytest -m "slow or not slow"      # 전부 한 번에 (2026-09-28 기준 238개 통과)
+pytest -m "slow or not slow"      # 전부 한 번에 (2026-10-01 기준 416개 통과)
 ```
 
 구성(단위 / DB 통합 / LLM을 호출하는 slow)과 실행 옵션은 [backend/API.md](backend/API.md)의 "테스트 실행" 절을 참고하세요.
@@ -263,7 +282,9 @@ pytest -m "slow or not slow"      # 전부 한 번에 (2026-09-28 기준 238개 
 - [ ] FR-01 자연어 질문 분석: **부분 구현** — 질문 입력·Tool 선택·종목 식별은 됨(통칭은 별칭 사전), 기간 식별은 LLM이 `period_days`로 바꿔 넘기는 수준이고 뉴스/공시/RAG는 기간 무시
 - [ ] FR-07 경제지표(금리/환율) 영향 분석: **미구현 — 신규 기능, 데이터 소스부터 필요**
 - [ ] FR-11 AI 리서치 보고서: **백엔드 부분 구현 / 프론트 연동 필요** — 답변 자동 생성·근거(sources)·저장·조회는 됨, 종합 보고서 형식(원인·시장 상황·위험요인 섹션)은 없음
-- [ ] FR-12 관심종목 및 이력: **리서치 이력은 완료, 관심종목은 미구현(신규 테이블 필요)**
+- [x] FR-12 관심종목 및 이력: 리서치 이력(기존 완료)에 이어 관심종목 추가. `watchlist` 테이블 + `GET`/`POST /api/watchlist`,
+  `DELETE /api/watchlist/{ticker}`(종목 중복 등록 409, 미등록 삭제 404). 로그인이 없어 `X-Device-Id` 헤더(프론트가 만드는
+  uuid)로 사용자를 구분(아래 "모의투자 기능"과 같은 방식, 인증 아님)
 - [ ] FR-13 시장 관심 종목 탐색: **미구현 — 신규 기능**
 - [x] 종목 실시간 시세: `GET /api/stocks/{ticker}/realtime-price`. 계좌 개설이 필요한 KIS Open API 대신, 네이버 금융
   종목 페이지가 장중에 쓰는 비공식 폴링 API(`polling.finance.naver.com`, 인증 불필요)를 서버가 대신 호출. 종목별
@@ -271,7 +292,11 @@ pytest -m "slow or not slow"      # 전부 한 번에 (2026-09-28 기준 238개 
 - [x] REST API(리포트 생성/목록/조회/삭제) + 에러 처리(Ollama/DB 장애 시 502/503) + CORS
 - [x] 자동 테스트(pytest)와 API 문서
 - [ ] 프론트엔드 연동: 서윤님 담당, API 스펙은 확정(API.md), 실제 연동은 진행 필요
-- [ ] 모의투자 기능: 미구현, 범위 논의 필요
+- [x] 모의투자 기능: `GET /api/portfolio`(잔고+보유종목+평가손익), `POST /api/portfolio/orders`(매수/매도, 현재가로 즉시 체결).
+  `virtual_account`/`holding`/`trade` 3개 테이블, 디바이스ID당 계좌 1개(첫 요청에 초기 잔고 1,000만원으로 자동 생성).
+  매수는 가중평균으로 평균단가를 다시 계산하고 매도는 평균단가를 바꾸지 않으며, 전량 매도되면 보유 레코드를 지워서
+  재매수가 과거 평균단가에 영향받지 않게 함. 잔고 부족/수량 초과는 400, 가격 조회 실패(실시간+DB 폴백 둘 다 실패)는 503.
+  호가 단위·장 시간 체크는 범위 밖(장외에도 체결됨, 가격은 `app/realtime_price.py` 폴백 규칙을 그대로 따름)
 - [ ] 데이터 정기 갱신: 지금은 수동 실행이라 자동화 여부 논의 필요
 - [ ] 아래 Known Issues (tool 선택 신뢰도)
 

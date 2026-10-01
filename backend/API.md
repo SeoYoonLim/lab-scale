@@ -4,8 +4,20 @@
 긴 필드(answer, sources)만 잘라서 표기했다.
 
 - Base URL (로컬): `http://localhost:8000`
-- 요청/응답은 모두 JSON(UTF-8). 인증 없음.
+- 요청/응답은 모두 JSON(UTF-8). **인증 없음**(회원가입/로그인 자체가 없다). 관심종목/모의투자만 `X-Device-Id` 헤더로
+  사용자를 구분한다(아래 "디바이스ID" 참고 — 이것도 인증이 아니라 단순 구분자다).
 - 자동 생성 문서: `http://localhost:8000/docs` (Swagger UI)
+
+## 디바이스ID (`X-Device-Id`)
+
+`/api/watchlist*`, `/api/portfolio*`는 모든 요청에 `X-Device-Id` 헤더가 필요하다. 로그인이 없는 서비스라, **프론트가
+생성해 localStorage에 저장하는 uuid 문자열**을 그대로 사용자 구분자로 쓴다(서버는 이 값을 검증 없이 그대로 신뢰한다).
+
+- 헤더가 없거나 빈 문자열이면 **422**(FastAPI 기본 검증 오류 형식).
+- 길이 제한: 1~100자. 그 외 형식 제약은 없다(uuid 포맷 검증도 하지 않는다).
+- **인증이 아니다.** 같은 값을 다른 사람이 보내면 그 사람의 관심종목/모의투자 상태를 그대로 보고 바꿀 수 있다
+  (설계상 받아들인 한계 — 회원가입 없는 MVP 범위). 값을 잃어버리면(localStorage 초기화 등) 그 상태도 못 찾는다.
+- `/api/research*`는 이 헤더와 무관하다(리서치 이력은 지금도 전체 공용).
 
 ## CORS
 
@@ -26,6 +38,11 @@
 | GET | `/api/research/{report_id}` | 저장된 리포트 한 건 조회 |
 | DELETE | `/api/research/{report_id}` | 저장된 리포트 한 건 삭제(tool 호출 이력 포함) |
 | GET | `/api/stocks/{ticker}/realtime-price` | 종목 현재가(비공식 소스 기반 실시간 시세, 장외/장애 시 자동 폴백) |
+| GET | `/api/watchlist` | 관심종목 목록(`X-Device-Id` 필요) |
+| POST | `/api/watchlist` | 관심종목 추가(`X-Device-Id` 필요) |
+| DELETE | `/api/watchlist/{ticker}` | 관심종목 삭제(`X-Device-Id` 필요) |
+| GET | `/api/portfolio` | 모의투자 잔고 + 보유 종목(`X-Device-Id` 필요, 첫 호출 시 계좌 자동 생성) |
+| POST | `/api/portfolio/orders` | 모의투자 매수/매도 주문(`X-Device-Id` 필요) |
 
 ---
 
@@ -366,6 +383,228 @@ curl http://localhost:8000/api/stocks/005930/realtime-price
 | --- | --- | --- |
 | 404 | 종목을 찾지 못함(`company_resolver`가 등록명/티커/별칭/유사명 어디에도 못 맞춘 경우) | `{"detail": "'...' 종목을 찾지 못했습니다. ..."}` |
 | 503 | 네이버 조회도 실패하고 DB에 그 종목의 저장된 주가도 없음(둘 다 없을 때만) | `{"detail": "'...'의 시세를 가져올 수 없습니다. ..."}` |
+| 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
+
+---
+
+## GET /api/watchlist
+
+디바이스ID(`X-Device-Id`)의 관심종목 전체(등록 최신순). 종목별 **최근 종가**(DB에 저장된 일별 종가, 실시간 아님)를 같이 준다 -
+실시간 시세가 필요하면 `GET /api/stocks/{ticker}/realtime-price`를 따로 호출하세요.
+
+```bash
+curl http://localhost:8000/api/watchlist -H "X-Device-Id: 3fa85f64-5717-4562-b3fc-2c963f66afa6"
+```
+
+### 응답 200
+
+```json
+{
+  "items": [
+    {
+      "company_id": 1,
+      "ticker": "005930",
+      "company_name": "삼성전자",
+      "added_at": "2026-10-01T02:29:00.729024+00:00",
+      "latest_close": 286500.0,
+      "latest_close_date": "2026-09-23",
+      "change_pct": 3.24
+    }
+  ]
+}
+```
+
+종목에 저장된 주가가 아직 없으면 `latest_close`/`latest_close_date`/`change_pct`가 `null`이다. 관심종목이 없으면 `items: []`.
+
+### 에러
+
+| 상태 | 언제 | body |
+| --- | --- | --- |
+| 422 | `X-Device-Id` 헤더 없음/빈 문자열/100자 초과 | 검증 오류 형식 |
+| 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
+
+---
+
+## POST /api/watchlist
+
+관심종목에 종목을 추가한다.
+
+### 요청
+
+```json
+{ "ticker": "삼성전자" }
+```
+
+| 필드 | 타입 | 규칙 |
+| --- | --- | --- |
+| `ticker` | string | 필수. 종목코드 또는 종목명(별칭/유사 종목명 포함, `/api/research`와 같은 `company_resolver` 사용). 1~50자 |
+
+```bash
+curl -X POST http://localhost:8000/api/watchlist \
+  -H "X-Device-Id: 3fa85f64-5717-4562-b3fc-2c963f66afa6" \
+  -H "Content-Type: application/json" \
+  -d '{"ticker": "삼성전자"}'
+```
+
+### 응답 201
+
+```json
+{
+  "company_id": 1,
+  "ticker": "005930",
+  "company_name": "삼성전자",
+  "added_at": "2026-10-01T02:29:00.729024+00:00",
+  "latest_close": null,
+  "latest_close_date": null,
+  "change_pct": null
+}
+```
+
+(POST 응답에는 최근 종가를 다시 조회해 채우지 않는다. 바로 보여주려면 GET으로 다시 조회하세요.)
+
+### 에러
+
+| 상태 | 언제 | body |
+| --- | --- | --- |
+| 404 | 종목을 찾지 못함(`company_resolver` 기준) | `{"detail": "'...' 종목을 찾지 못했습니다. ..."}` |
+| 409 | 이미 등록된 종목(디바이스ID+종목 조합 중복) | `{"detail": "'...'는 이미 관심종목에 등록되어 있습니다."}` |
+| 422 | `ticker` 누락/공백/50자 초과, 또는 `X-Device-Id` 문제 | 검증 오류 형식 |
+| 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
+
+---
+
+## DELETE /api/watchlist/{ticker}
+
+관심종목에서 종목을 뺀다. `ticker`는 종목코드 또는 종목명(별칭/유사 종목명 포함).
+
+```bash
+curl -X DELETE http://localhost:8000/api/watchlist/005930 -H "X-Device-Id: 3fa85f64-5717-4562-b3fc-2c963f66afa6" -i
+```
+
+### 응답 204
+
+본문 없음.
+
+### 에러
+
+| 상태 | 언제 | body |
+| --- | --- | --- |
+| 404 | 종목을 찾지 못함, 또는 종목은 있지만 그 디바이스ID의 관심종목에 등록돼 있지 않음 | `{"detail": "'...' 종목을 찾지 못했습니다. ..."}` 또는 `{"detail": "'...'는 관심종목에 등록되어 있지 않습니다."}` |
+| 422 | `X-Device-Id` 문제 | 검증 오류 형식 |
+| 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
+
+---
+
+## GET /api/portfolio
+
+모의투자 잔고 + 보유 종목(현재가·평가손익 포함). **디바이스ID의 첫 호출이면 초기 잔고(1,000만원)로 계좌가 자동 생성된다**
+(별도 "계좌 개설" API 없음). 현재가는 `GET /api/stocks/{ticker}/realtime-price`와 같은 소스(`get_realtime_price_data`)를
+쓰므로 실시간 실패 시 DB 최근 종가로 폴백되는 동작도 동일하다.
+
+```bash
+curl http://localhost:8000/api/portfolio -H "X-Device-Id: 3fa85f64-5717-4562-b3fc-2c963f66afa6"
+```
+
+### 응답 200
+
+```json
+{
+  "cash_balance": 8650000.0,
+  "holdings": [
+    {
+      "ticker": "005930",
+      "company_name": "삼성전자",
+      "quantity": 5,
+      "avg_price": 270000.0,
+      "current_price": 270000.0,
+      "is_realtime": true,
+      "eval_amount": 1350000.0,
+      "profit_loss": 0.0,
+      "profit_loss_pct": 0.0
+    }
+  ],
+  "total_eval_amount": 1350000.0,
+  "total_asset": 10000000.0,
+  "note": null
+}
+```
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `cash_balance` | number | 현금 잔고 |
+| `holdings[].avg_price` | number | 평균 매입 단가(가중평균, 매도로는 바뀌지 않음) |
+| `holdings[].current_price` | number \| null | 현재가. 실시간+DB 폴백 모두 실패하면 `null`(이 종목은 평가손익 계산에서 제외되고 `note`에 안내) |
+| `holdings[].is_realtime` | boolean | `current_price`가 실시간 조회 성공값이면 `true`, DB 폴백이면 `false` |
+| `holdings[].eval_amount` / `profit_loss` / `profit_loss_pct` | number \| null | 평가금액 / 평가손익(금액) / 평가손익률(%). `current_price`가 `null`이면 같이 `null` |
+| `total_eval_amount` | number | 보유 종목 평가금액 합(가격을 못 구한 종목은 0으로 취급돼 빠짐) |
+| `total_asset` | number | `cash_balance + total_eval_amount` |
+| `note` | string \| null | 가격을 못 구한 종목이 있으면 안내 문구, 없으면 `null` |
+
+### 에러
+
+| 상태 | 언제 | body |
+| --- | --- | --- |
+| 422 | `X-Device-Id` 문제 | 검증 오류 형식 |
+| 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
+
+---
+
+## POST /api/portfolio/orders
+
+매수/매도 주문. **현재가로 즉시 체결되는 것으로 단순화**했다 - 호가 단위, 장 시간 체크(장외에도 체결됨), 수수료/세금은
+범위 밖이다. 가격은 `GET /api/stocks/{ticker}/realtime-price`와 같은 소스를 쓴다(실시간 실패 시 DB 최근 종가로 체결).
+
+### 요청
+
+```json
+{ "ticker": "삼성전자", "side": "buy", "quantity": 5 }
+```
+
+| 필드 | 타입 | 규칙 |
+| --- | --- | --- |
+| `ticker` | string | 필수. 종목코드 또는 종목명(별칭/유사 종목명 포함). 1~50자 |
+| `side` | string | 필수. `"buy"` 또는 `"sell"` |
+| `quantity` | int | 필수. 1 이상, **최대 100,000주**(비현실적으로 큰 값으로 평균단가 계산이 깨지는 걸 막는 안전장치일 뿐, 실제 유동성 제한은 아님) |
+
+```bash
+curl -X POST http://localhost:8000/api/portfolio/orders \
+  -H "X-Device-Id: 3fa85f64-5717-4562-b3fc-2c963f66afa6" \
+  -H "Content-Type: application/json" \
+  -d '{"ticker": "삼성전자", "side": "buy", "quantity": 5}'
+```
+
+### 응답 200
+
+```json
+{
+  "ticker": "005930",
+  "company_name": "삼성전자",
+  "side": "buy",
+  "quantity": 5,
+  "price": 270000.0,
+  "executed_at": "2026-10-01T02:29:00.776434+00:00",
+  "cash_balance": 8650000.0,
+  "holding": { "quantity": 5, "avg_price": 270000.0 }
+}
+```
+
+`holding`은 이 주문 체결 뒤의 보유 상태다. **매도로 전량 청산됐으면 `null`.**
+
+#### 평균단가 계산
+
+- **매수**: 기존 보유가 없으면 평균단가 = 체결가. 있으면 가중평균 `(기존수량×기존평균 + 이번수량×체결가) / 합산수량`으로 다시 계산한다.
+- **매도**: 평균단가는 바뀌지 않는다(남은 수량의 매입 단가는 그대로). 전량 매도되면 보유 레코드 자체를 지운다 -
+  그래야 그 종목을 다시 사기 시작할 때 과거 평균단가에 영향받지 않고 새 체결가로 시작한다.
+
+### 에러
+
+| 상태 | 언제 | body |
+| --- | --- | --- |
+| 400 | 매수 시 잔고 부족 | `{"detail": "잔고가 부족합니다(필요 ...원, 보유 ...원)."}` |
+| 400 | 매도 시 보유 수량 초과 | `{"detail": "보유 수량이 부족합니다(매도 요청 ...주, 보유 ...주)."}` |
+| 404 | 종목을 찾지 못함(`company_resolver` 기준) | `{"detail": "'...' 종목을 찾지 못했습니다. ..."}` |
+| 422 | `ticker`/`side`/`quantity` 형식 위반, 또는 `X-Device-Id` 문제 | 검증 오류 형식 |
+| 503 | 실시간 소스와 DB 폴백 모두 가격을 못 구함(둘 다 없을 때만) | `{"detail": "'...'의 가격을 구하지 못해 주문을 체결할 수 없습니다."}` |
 | 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
 
 ---
