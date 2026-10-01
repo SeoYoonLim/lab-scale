@@ -6,8 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError, OperationalError
 
+from app.api.portfolio import router as portfolio_router
 from app.api.research import router as research_router
 from app.api.stocks import router as stocks_router
+from app.api.watchlist import router as watchlist_router
 
 logger = logging.getLogger(__name__)
 
@@ -47,3 +49,5 @@ app.add_middleware(
 
 app.include_router(research_router)
 app.include_router(stocks_router)
+app.include_router(watchlist_router)
+app.include_router(portfolio_router)
