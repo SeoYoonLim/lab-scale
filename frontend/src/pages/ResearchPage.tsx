@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { api } from '../api'
 import SourceFootnotes from '../components/SourceFootnotes'
+import TrendingWidget from '../components/TrendingWidget'
 import type { Source } from '../types'
 import { formatTime } from '../utils/format'
 
@@ -111,6 +112,7 @@ export default function ResearchPage() {
                   </li>
                 ))}
               </ul>
+              <TrendingWidget onPick={(question) => setInput(question)} />
             </div>
           )}
 

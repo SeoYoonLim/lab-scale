@@ -22,6 +22,9 @@ export default function Layout() {
             <NavLink to="/reports" className={navClass}>
               기록
             </NavLink>
+            <NavLink to="/portfolio" className={navClass}>
+              포트폴리오
+            </NavLink>
           </nav>
           {USE_MOCK && (
             <span className="mock-flag" title="백엔드 API 연결 전 화면 개발용 샘플 데이터예요">

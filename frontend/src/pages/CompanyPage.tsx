@@ -1,11 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api'
 import PriceChart from '../components/PriceChart'
 import { useAsync } from '../hooks/useAsync'
+import type { RealtimePrice } from '../types'
 import { formatDate, formatPct, formatPrice, formatVolume, trendClass } from '../utils/format'
 
 const PERIODS = [5, 30, 90]
+// backend/API.md: 서버가 종목별로 3~5초 캐싱하므로 이 주기로 폴링해도 안전하다.
+const REALTIME_POLL_MS = 3000
 
 export default function CompanyPage() {
   const { ticker = '' } = useParams()
@@ -18,6 +21,34 @@ export default function CompanyPage() {
 
   const company = companies.data?.find((c) => c.ticker === ticker)
   const latest = prices.data?.[prices.data.length - 1]
+
+  // 실시간 시세는 과거 주가(mock)와 별도로, 실제 백엔드(/api/stocks/{ticker}/realtime-price)를 짧은 주기로 폴링한다.
+  const [realtime, setRealtime] = useState<RealtimePrice | null>(null)
+  const [realtimeError, setRealtimeError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!ticker) return
+    let cancelled = false
+
+    async function poll() {
+      try {
+        const data = await api.getRealtimePrice(ticker)
+        if (!cancelled) {
+          setRealtime(data)
+          setRealtimeError(null)
+        }
+      } catch (err) {
+        if (!cancelled) setRealtimeError(err instanceof Error ? err.message : '시세를 가져오지 못했어요.')
+      }
+    }
+
+    void poll()
+    const id = setInterval(poll, REALTIME_POLL_MS)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [ticker])
 
   if (companies.data && !company) {
     return (
@@ -41,15 +72,34 @@ export default function CompanyPage() {
             {company?.sector && <span>{company.sector}</span>}
           </div>
         </div>
-        {latest && (
+        {realtime ? (
           <div className="summary-price">
-            <div className="price-big num">{formatPrice(latest.close_price)}원</div>
-            <div className={`meta meta-end ${trendClass(latest.change_pct)}`}>
-              <span className="num">{formatPct(latest.change_pct)}</span>
-              <span className="muted">거래량 {formatVolume(latest.volume)}주</span>
+            <div className="price-big num">{formatPrice(realtime.current_price)}원</div>
+            <div className={`meta meta-end ${trendClass(realtime.change_pct)}`}>
+              <span className="num">{formatPct(realtime.change_pct)}</span>
+              {realtime.change_amount != null && (
+                <span className="num">
+                  {realtime.change_amount > 0 ? '+' : ''}
+                  {formatPrice(realtime.change_amount)}원
+                </span>
+              )}
             </div>
-            <div className="muted small">{formatDate(latest.price_date)} 종가 기준</div>
+            <div className="muted small">
+              {realtime.is_realtime ? '실시간 시세' : `${formatDate(realtime.as_of)} 종가 기준`}
+            </div>
           </div>
+        ) : (
+          realtimeError &&
+          latest && (
+            <div className="summary-price">
+              <div className="price-big num">{formatPrice(latest.close_price)}원</div>
+              <div className={`meta meta-end ${trendClass(latest.change_pct)}`}>
+                <span className="num">{formatPct(latest.change_pct)}</span>
+                <span className="muted">거래량 {formatVolume(latest.volume)}주</span>
+              </div>
+              <div className="muted small">{formatDate(latest.price_date)} 종가 기준(실시간 시세 불러오기 실패)</div>
+            </div>
+          )
         )}
       </section>
 
