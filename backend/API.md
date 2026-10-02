@@ -38,6 +38,7 @@
 | GET | `/api/research/{report_id}` | 저장된 리포트 한 건 조회 |
 | DELETE | `/api/research/{report_id}` | 저장된 리포트 한 건 삭제(tool 호출 이력 포함) |
 | GET | `/api/stocks/{ticker}/realtime-price` | 종목 현재가(비공식 소스 기반 실시간 시세, 장외/장애 시 자동 폴백) |
+| GET | `/api/companies` | 종목 목록/검색(`q`로 종목명·티커 부분 일치, 별칭 포함) + 최근 종가·등락률 |
 | GET | `/api/watchlist` | 관심종목 목록(`X-Device-Id` 필요) |
 | POST | `/api/watchlist` | 관심종목 추가(`X-Device-Id` 필요) |
 | DELETE | `/api/watchlist/{ticker}` | 관심종목 삭제(`X-Device-Id` 필요) |
@@ -383,6 +384,53 @@ curl http://localhost:8000/api/stocks/005930/realtime-price
 | --- | --- | --- |
 | 404 | 종목을 찾지 못함(`company_resolver`가 등록명/티커/별칭/유사명 어디에도 못 맞춘 경우) | `{"detail": "'...' 종목을 찾지 못했습니다. ..."}` |
 | 503 | 네이버 조회도 실패하고 DB에 그 종목의 저장된 주가도 없음(둘 다 없을 때만) | `{"detail": "'...'의 시세를 가져올 수 없습니다. ..."}` |
+| 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
+
+---
+
+## GET /api/companies
+
+새 FR이 아니라, FR-02로 이미 수집된 `company`/`stock_price` 데이터를 프론트 "종목" 페이지가 질문 없이 직접 조회하는
+용도다. `q`로 종목명 또는 티커를 부분 일치 검색한다(대소문자/공백 무시). `app/company_aliases.py` 별칭 사전도 반영돼서
+"네이버"로 검색해도 공식 등록명인 "NAVER"가 나온다. `X-Device-Id` 불필요.
+
+### 쿼리 파라미터
+
+| 필드 | 타입 | 규칙 |
+| --- | --- | --- |
+| `q` | string | 선택. 종목명 또는 티커 부분 일치 검색어. 생략하면 상위 `limit`개 반환. 최대 100자 |
+| `limit` | int | 선택(기본 50). 1~300 |
+
+```bash
+curl "http://localhost:8000/api/companies?q=삼성전자"
+curl "http://localhost:8000/api/companies?q=네이버"   # 별칭 -> NAVER
+curl "http://localhost:8000/api/companies?limit=10"  # q 없이 상위 10개
+```
+
+### 응답 200
+
+```json
+[
+  {
+    "ticker": "005930",
+    "name": "삼성전자",
+    "market": "KOSPI",
+    "sector": null,
+    "latest_close": 286500.0,
+    "change_pct": 3.24
+  }
+]
+```
+
+`latest_close`/`change_pct`는 DB에 저장된 **가장 최근 종가**(일별, 실시간 아님) 기준이다 - 실시간 시세가 필요하면
+`GET /api/stocks/{ticker}/realtime-price`를 따로 호출하세요. 그 종목에 저장된 주가가 아직 없으면 둘 다 `null`.
+검색 결과가 없으면 `[]`(에러 아님).
+
+### 에러
+
+| 상태 | 언제 | body |
+| --- | --- | --- |
+| 422 | `limit`이 1~300 범위 밖, 또는 `q`가 100자 초과 | 검증 오류 형식 |
 | 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
 
 ---

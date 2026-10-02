@@ -22,6 +22,7 @@
 | GET | `/api/research/{report_id}` | 리포트 한 건(전체 답변, sources, tool 사용 이력) |
 | DELETE | `/api/research/{report_id}` | 리포트 삭제(204, 본문 없음). 후속 리포트는 남고 연결만 끊김 |
 | GET | `/api/stocks/{ticker}/realtime-price` | 종목 현재가(비공식 소스 기반 실시간, 장외/장애 시 DB 최근 종가로 자동 폴백) |
+| GET | `/api/companies` | 종목 목록/검색(`q` 종목명·티커 부분 일치, 별칭 포함, `limit` 기본 50) + 최근 종가·등락률. 프론트 "종목" 페이지용 |
 | GET/POST | `/api/watchlist` | 관심종목 조회/추가 (`X-Device-Id` 헤더로 사용자 구분, 로그인 없음) |
 | DELETE | `/api/watchlist/{ticker}` | 관심종목 삭제 |
 | GET | `/api/portfolio` | 모의투자 잔고 + 보유 종목(평가손익 포함). 디바이스ID 첫 호출 시 계좌 자동 생성(초기 잔고 1,000만원) |
