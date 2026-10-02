@@ -11,6 +11,32 @@
 남은 큰 일은 프론트엔드 연동입니다. 작업 브랜치는
 `feature/backend`이고 원격에 push되어 있습니다.
 
+### 프론트엔드 현황 (서윤 작성, 2026-10-02 기준)
+
+작업 브랜치는 `feature/frontend`이고 원격에 push되어 있습니다(`feature/backend`와 별도 브랜치라 이 문서가 자동으로
+반영하지는 않아서 직접 적습니다). React + Vite + TypeScript, `backend/API.md`에 맞춰 실제 백엔드와 바로 연동되도록
+작성했습니다(`VITE_USE_MOCK=false`로 전환하면 mock 대신 `/api` 프록시로 `localhost:8000`을 호출).
+
+- **리서치**(`/`): `POST /api/research` 연동, 후속 질문(`previous_report_id`)을 같은 세션 안에서 자동으로 이어가고,
+  `sources`는 번호 매긴 근거로 보여줍니다. 질문 없이 바로 보여주는 "오늘의 관심 종목"(`GET /api/discovery/trending`)도 포함.
+- **기록**(`/reports`): `GET /api/research`(페이지네이션) + `GET /api/research/{id}`(펼쳐보기) + `DELETE`.
+- **포트폴리오**(`/portfolio`): 관심종목(`GET`/`POST /api/watchlist`, `DELETE`)과 모의투자(`GET /api/portfolio`,
+  `POST /api/portfolio/orders`) 연동. `X-Device-Id`는 프론트가 `crypto.randomUUID()`로 만들어 localStorage에
+  저장합니다(`frontend/src/utils/deviceId.ts`).
+- **종목 상세**(`/companies/{ticker}`): 현재가만 `GET /api/stocks/{ticker}/realtime-price`를 3초 간격으로 폴링해서
+  실제 데이터입니다. 과거 주가·뉴스·공시 목록과 종목 목록(`/companies`)은 **대응하는 조회 API가 없어서 여전히 mock**입니다.
+
+**아직 안 한 것**
+- 위 화면들을 실제로 돌아가는 백엔드(Ollama + 채워진 DB)에 붙여서 end-to-end로 테스트한 적은 없습니다. 지금까지는
+  `API.md`에 적힌 계약과 똑같이 동작하는 mock을 상대로만 검증했습니다. 이 컴퓨터에는 `llama3.1:8b`/`bge-m3` 모델이
+  없고(벤치마크용 `qwen2.5:7b-instruct`만 있음) 로컬 DB도 비어 있어서, 실제로 붙여보려면 모델 설치와 DB 데이터(직접
+  수집하거나 덤프를 받는 것)가 필요합니다.
+- 프론트 자동화 테스트는 아직 없습니다(백엔드 pytest 608개와 대비됩니다).
+- FR-11이 말하는 "종합 보고서 형식"은 백엔드 답변이 마크다운 소제목(`## `)으로 구조화되기 시작했으니(위 FR-11 참고),
+  프론트에서 그 구조를 활용해 섹션별 레이아웃으로 나눠 보여주는 건 다음에 할 수 있습니다. 지금은 통째로 보여줍니다.
+- 종목 목록/상세용 조회 API(과거 주가, 뉴스, 공시)가 계속 필요할지, 아니면 관심종목·모의투자 쪽으로 로드맵이
+  옮겨간 만큼 이 화면 자체를 재설계할지는 아직 팀 논의가 필요합니다.
+
 ### 구현된 API
 
 요청/응답 예시, 에러 형식, CORS는 전부 **[backend/API.md](backend/API.md)** 에 있습니다. 프론트 연동은 이 문서만 보면 됩니다.
@@ -247,7 +273,9 @@ FastAPI  ──  POST /api/research ─▶ 에이전트(app/agent.py)
 - **백엔드:** FastAPI, SQLAlchemy 2, Alembic. 질문/답변/tool 호출 이력은 매 요청마다 DB에 저장되고 `GET /api/research`로 다시 볼 수 있습니다.
 - **모델:** 답변·tool 선택은 `llama3.1:8b`, 임베딩은 `bge-m3`(1024차원, HNSW 인덱스). 모두 로컬 Ollama에서 돌아갑니다.
 - **데이터 소스:** 주가와 시장 지수(코스피 KS11, 코스닥 KQ11)는 FinanceDataReader, 뉴스는 네이버 검색 API, 공시는 DART OpenAPI(목록 + 원문).
-- **프론트엔드:** React + Vite로 서윤님이 진행 중입니다. 이 저장소(`feature/backend` 브랜치)에는 프론트엔드 코드가 아직 없어서 진행 상황은 여기서 확인하지 못했습니다.
+- **프론트엔드:** React + Vite + TypeScript, `feature/frontend` 브랜치(원격에 push됨, `feature/backend`에는 코드가 없음).
+  리서치/기록/관심종목/모의투자/오늘의 관심종목은 API.md 기준으로 연동 완료. 종목 상세의 과거 주가·뉴스·공시, 종목
+  목록은 대응 API가 없어 mock(위 "프론트엔드 현황" 참고).
 
 ## 로컬 실행
 
@@ -371,7 +399,9 @@ pytest -m "slow or not slow"      # 전부 한 번에 (2026-10-01 기준 608개 
   3~5초 서버 캐싱, 상위 소스 실패·장외 시간에는 예외 대신 DB 최근 종가로 자동 폴백(`is_realtime`/`source`로 구분)
 - [x] REST API(리포트 생성/목록/조회/삭제) + 에러 처리(Ollama/DB 장애 시 502/503) + CORS
 - [x] 자동 테스트(pytest)와 API 문서
-- [ ] 프론트엔드 연동: 서윤님 담당, API 스펙은 확정(API.md), 실제 연동은 진행 필요
+- [x] 프론트엔드 연동(2026-10-02): 리서치/기록/관심종목/모의투자/오늘의 관심종목까지 API.md 기준으로 연동 완료
+  (`feature/frontend` 브랜치). 종목 목록·과거 주가/뉴스/공시는 대응 API가 없어 mock 유지. 실제 Ollama+DB로
+  end-to-end 테스트는 아직 안 함(위 "프론트엔드 현황" 참고)
 - [x] 모의투자 기능: `GET /api/portfolio`(잔고+보유종목+평가손익), `POST /api/portfolio/orders`(매수/매도, 현재가로 즉시 체결).
   `virtual_account`/`holding`/`trade` 3개 테이블, 디바이스ID당 계좌 1개(첫 요청에 초기 잔고 1,000만원으로 자동 생성).
   매수는 가중평균으로 평균단가를 다시 계산하고 매도는 평균단가를 바꾸지 않으며, 전량 매도되면 보유 레코드를 지워서
