@@ -14,11 +14,14 @@ from datetime import datetime, timezone
 import ollama
 
 from app.db.session import SessionLocal
+from app.period_parser import parse_period
 from app.reports import save_report as save_report_row
 from app.sources import build_sources
 from app.tools.company_resolver import extract_from_text, normalize_name, resolve_company
-from app.routing import needs_market_tool
+from app.routing import needs_discovery_tool, needs_fx_tool, needs_market_tool
 from app.tools.disclosure_tool import disclosure_tool
+from app.tools.discovery_tool import discovery_tool
+from app.tools.fx_tool import fx_tool
 from app.tools.market_tool import market_tool
 from app.tools.news_tool import news_tool
 from app.tools.rag_search_tool import rag_search_tool
@@ -318,23 +321,125 @@ MARKET_HINT = (
     "비교하는 질문에는 market_tool도 함께 호출하라. "
 )
 
+# fx_tool도 market_tool과 같은 이유로 기본 TOOLS에 넣지 않는다(상시 노출 시 multi 호출이 깨지는 문제,
+# app/routing.py의 needs_fx_tool이 환율 질문일 때만 추가한다).
+FX_TOOL_SPEC = {
+    "type": "function",
+    "function": {
+        "name": "fx_tool",
+        "description": (
+            "DB에 저장된 실제 데이터 기준으로, 최근 N거래일 원/달러(USD/KRW) 환율의 현재가·전일대비 등락률· "
+            "기간 추세를 조회한다. 환율 수준이나 최근 추이를 묻거나, 환율 변동이 종목(특히 수출입 비중이 큰 "
+            "종목)에 미치는 영향을 분석해야 하는 질문에서 호출한다(예: '요즘 환율 어때?', '환율이 많이 올랐는데 "
+            "삼성전자 주가에 영향 있어?'). 특정 수치 조회 없이 환율 관련 개념만 설명하면 되는 질문(예: '환율이 "
+            "오르면 왜 수출주가 유리해?')에는 호출하지 않는다. 종목이 아니라서 ticker 인자가 없다. 환율 데이터가 "
+            "아직 수집되지 않았으면 found=false와 함께 그 사유를 담은 message를 반환한다."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "period_days": {
+                    "type": "integer",
+                    "description": "조회할 기간(거래일 수, 달력 일수가 아님). 기본값 5. 일주일이면 5, 한 달이면 20.",
+                },
+            },
+            "required": [],
+        },
+    },
+}
+
+FX_HINT = (
+    "환율 수준이나 최근 추이, 환율 변동이 종목에 미치는 영향을 분석해야 하는 질문에는 fx_tool도 함께 호출하라. "
+)
+
+# discovery_tool도 market_tool/fx_tool과 같은 이유로 기본 TOOLS에 넣지 않는다(상시 노출 시 multi 호출이 깨지는
+# 문제, app/routing.py의 needs_discovery_tool이 종목을 특정하지 않는 탐색 질문일 때만 추가한다).
+DISCOVERY_TOOL_SPEC = {
+    "type": "function",
+    "function": {
+        "name": "discovery_tool",
+        "description": (
+            "DB에 저장된 실제 데이터 기준으로, 특정 종목을 지정하지 않고 시장 전체에서 오늘(최근 거래일) 기준 "
+            "관심 가질 만한 종목을 찾는다. 등락률 상위(급등), 등락률 하위(급락), 거래량이 평소보다 크게 늘어난 "
+            "종목(거래량 급증) 중 하나를 고른다. '요즘 뜨는 종목', '오늘 급등한 종목', '거래량 많이 늘어난 종목', "
+            "'오늘의 관심종목 추천해줘'처럼 종목을 특정하지 않는 질문에서 호출한다. 이미 특정 종목이 언급된 "
+            "질문에는 호출하지 않는다(그때는 stock_tool). 순수 등락률·거래량 수치 기준이라 뉴스·공시 같은 "
+            "질적 이유는 담지 않는다. 주가 데이터가 아직 없으면 found=false와 사유를 담은 message를 반환한다."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "enum": ["gainers", "losers", "volume_surge"],
+                    "description": "gainers=등락률 상위(급등), losers=등락률 하위(급락), volume_surge=거래량 급증. 기본값 gainers.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "조회할 종목 수. 기본값 10.",
+                },
+            },
+            "required": [],
+        },
+    },
+}
+
+DISCOVERY_HINT = (
+    "특정 종목을 지정하지 않고 시장 전체에서 급등/급락/거래량 급증 종목을 찾는 질문에는 discovery_tool을 호출하라. "
+)
+
 AVAILABLE_FUNCTIONS = {
     "stock_tool": stock_tool,
     "news_tool": news_tool,
     "disclosure_tool": disclosure_tool,
     "rag_search_tool": rag_search_tool,
     "market_tool": market_tool,
+    "fx_tool": fx_tool,
+    "discovery_tool": discovery_tool,
 }
+
+# 질문 -> (프롬프트 힌트, tool 스펙)을 주는 게이트들. 전부 기본 TOOLS 상시 노출 시 multi 호출이 깨지는 문제 때문에
+# 코드가 질문 문구로 먼저 판단해서 필요한 요청에만 추가한다(app/routing.py).
+_GATES = [
+    (needs_market_tool, MARKET_HINT, MARKET_TOOL_SPEC),
+    (needs_fx_tool, FX_HINT, FX_TOOL_SPEC),
+    (needs_discovery_tool, DISCOVERY_HINT, DISCOVERY_TOOL_SPEC),
+]
 
 
 def build_request(question: str) -> tuple[str, list[dict]]:
-    """질문에 맞는 (시스템 프롬프트, tool 목록)을 만든다. 시장 비교 질문이 아니면 기본값 그대로다."""
-    if not needs_market_tool(question):
+    """질문에 맞는 (시스템 프롬프트, tool 목록)을 만든다. 어느 게이트도 안 걸리면 기본값 그대로(같은 객체)다.
+
+    게이트가 걸린 tool들은 기본 TOOLS에는 없고, 각자의 게이트가 True인 요청에만 해당 tool과 프롬프트 힌트를
+    추가한다. 한 질문에서 여러 게이트가 걸리면(예: "환율 때문에 코스피 전체가 빠졌어?") 전부 추가된다."""
+    matched = [(hint, spec) for gate, hint, spec in _GATES if gate(question)]
+    if not matched:
         return SYSTEM_PROMPT, TOOLS
-    return SYSTEM_PROMPT.replace(_MARKET_HINT_ANCHOR, _MARKET_HINT_ANCHOR + MARKET_HINT, 1), [*TOOLS, MARKET_TOOL_SPEC]
+    hints = "".join(hint for hint, _ in matched)
+    extra_tools = [spec for _, spec in matched]
+    prompt = SYSTEM_PROMPT.replace(_MARKET_HINT_ANCHOR, _MARKET_HINT_ANCHOR + hints, 1)
+    return prompt, [*TOOLS, *extra_tools]
 
 
 FALLBACK_ANSWER = "죄송합니다. 요청을 처리하는 중 문제가 발생했습니다. 종목명을 포함해 질문을 조금 더 구체적으로 다시 해주세요."
+
+# FR-11(답변 구조화): tool 결과를 종합하는 최종 답변 생성 단계에만 추가하는 안내. SYSTEM_PROMPT/TOOLS는 건드리지
+# 않으므로 1차 호출(tool 선택)에는 전혀 영향이 없다 - scripts/benchmark_routing.py가 측정하는 경로
+# (build_request + _first_call)는 이 상수를 아예 거치지 않는다.
+ANSWER_STRUCTURE_INSTRUCTION = (
+    "이제 위 조회 결과를 바탕으로 최종 답변을 작성하라. 질문이 여러 tool 결과를 종합해야 하는 질문이면, "
+    "답변을 줄글이나 글머리 기호(-, *) 목록이 아니라 '## 섹션 제목' 형식의 마크다운 소제목으로 된 섹션들로 "
+    "나눠서 작성하라(각 섹션 제목 줄은 반드시 '## '로 시작한다. 예: '## 주가 동향\\n삼성전자는 ...'). "
+    "쓸 수 있는 섹션은 아래 다섯 개뿐이고, 실제로 호출한 tool의 결과가 뒷받침하는 섹션만 쓴다 - 호출하지 "
+    "않은 tool에 해당하는 섹션은 아예 쓰지 말고 데이터 없이 지어내지 마라: "
+    "## 주가 동향(stock_tool 결과가 있을 때), "
+    "## 원인 분석(뉴스·공시·시장 비교 등 변동 원인과 관련된 결과가 있을 때), "
+    "## 뉴스·공시 근거(news_tool/disclosure_tool/rag_search_tool 결과가 있을 때), "
+    "## 시장 상황(market_tool 결과가 있을 때), "
+    "## 위험요인(조회된 데이터에서 실제로 유의할 만한 신호가 보일 때만, 없으면 생략). "
+    "반대로 질문이 단순 수치 하나만 묻는 등 짧은 조회성 질문이면 섹션 제목 없이 자연스러운 한두 문장으로만 "
+    "답하라 - 이 경우에는 섹션을 억지로 만들지 마라."
+)
 
 _TOOL_NAME_RE = re.compile(r'"name"\s*:\s*"(?:%s)"' % "|".join(AVAILABLE_FUNCTIONS))
 
@@ -393,6 +498,9 @@ def _repair_company_args(calls: list[dict], question: str, previous_question: st
     같은 tool로 이미 정상 해석된 회사는 후보에서 빼고, 남은 후보와 실패한 호출이 일대일로 맞을 때만
     (질문 등장 순서대로) 채운다. 임의로 고르지 않으므로 애매하면 그대로 두어 not-found 응답이 나간다.
     후속 질문("그럼 최근 뉴스는?")처럼 이번 질문에 회사명이 하나도 없을 때만 직전 질문(previous_question)에서 찾는다.
+    또 그런 후속 질문에서 직전 질문에 회사가 정확히 하나면, 모델이 채운 회사가 그 종목이 아닐 때 직전 종목으로 바꾼다:
+    모델은 회사명이 없는 질문에 "삼성전자" 같은 유효한 이름을 기본값처럼 채우는데(직전 종목이 카카오/현대차/네이버일 때
+    후속 뉴스 조회의 60~80%가 다른 회사로 갔다), 해석이 되는 이름이라 위 보정이 손대지 못하기 때문이다.
     calls를 직접 수정하고, {호출 인덱스: 모델이 만든 원래 인자}를 돌려준다."""
     targets = []
     for i, call in enumerate(calls):
@@ -409,6 +517,7 @@ def _repair_company_args(calls: list[dict], question: str, previous_question: st
     db = SessionLocal()
     try:
         resolved_names: dict[str, set[str]] = {}
+        resolved = []
         failed = []
         for i, fn_name, key, args in targets:
             raw = args.get(key)
@@ -418,14 +527,18 @@ def _repair_company_args(calls: list[dict], question: str, previous_question: st
             res = resolve_company(db, raw)
             if res.company is not None:
                 resolved_names.setdefault(fn_name, set()).add(res.company.name)
+                resolved.append((i, key, args, raw, res.company))
             else:
                 failed.append((i, fn_name, key, args, raw))
-        if not failed:
+        if not failed and not previous_question:
             return {}
 
         candidates = extract_from_text(db, question)
+        follow_up_subject = None
         if not candidates and previous_question:
             candidates = extract_from_text(db, previous_question)
+            if len(candidates) == 1:
+                follow_up_subject = candidates[0]
         repaired: dict[int, str] = {}
         for fn_name in {f[1] for f in failed}:
             fails = [f for f in failed if f[1] == fn_name]
@@ -435,9 +548,41 @@ def _repair_company_args(calls: list[dict], question: str, previous_question: st
             for (i, _, key, args, raw), company in zip(fails, remaining):
                 args[key] = company.name
                 repaired[i] = "" if raw is None else str(raw)
+        if follow_up_subject is not None:
+            for i, key, args, raw, company in resolved:
+                if company.id != follow_up_subject.id:
+                    args[key] = follow_up_subject.name
+                    repaired[i] = "" if raw is None else str(raw)
         return repaired
     finally:
         db.close()
+
+
+# tool별로 기간(period_days)을 받는 인자 이름. news_tool/disclosure_tool/rag_search_tool은 기간 인자 자체가
+# 없어서(README "FR-01 인수조건별 검증" 참고) 여기 없고, 손대지 않는다.
+_PERIOD_ARG = {"stock_tool": "period_days", "market_tool": "period_days", "fx_tool": "period_days"}
+
+
+def _apply_period_override(calls: list[dict], question: str) -> dict[int, object]:
+    """질문에서 app.period_parser.parse_period가 기간 표현을 인식했으면, 기간 인자를 받는 tool 호출의
+    period_days를 그 값으로 덮어써서 LLM이 추론한(종종 틀리는) 값보다 우선하게 한다.
+
+    인식하지 못하면(parse_period가 None) 아무것도 하지 않는다 - 이전처럼 LLM이 추론한 값을 그대로 쓴다.
+    calls를 직접 수정하고, {호출 인덱스: 덮어쓰기 전 원래 값(없었으면 None)}을 돌려준다."""
+    parsed = parse_period(question)
+    if parsed is None:
+        return {}
+
+    overridden: dict[int, object] = {}
+    for i, call in enumerate(calls):
+        key = _PERIOD_ARG.get(call["function"]["name"])
+        if key is None:
+            continue
+        args = _as_args(call["function"]["arguments"])
+        call["function"]["arguments"] = args
+        overridden[i] = args.get(key)
+        args[key] = parsed.period_days
+    return overridden
 
 
 def _run_tool(fn_name: str, fn_args) -> dict:
@@ -534,6 +679,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     # 2. 모델이 만든 종목 인자가 깨졌으면 질문 원문에서 회사명을 찾아 보정한 뒤, tool을 실제로 실행하고
     #    결과를 다시 넘겨줌
     repaired = _repair_company_args(tool_calls, question, previous["question"] if previous else None)
+    period_overrides = _apply_period_override(tool_calls, question)
     for idx, call in enumerate(tool_calls):
         fn_name = call["function"]["name"]
         fn_args = _as_args(call["function"]["arguments"])
@@ -546,6 +692,9 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
         if idx in repaired and isinstance(result, dict):
             result.setdefault("corrected_from", repaired[idx])
             result.setdefault("corrected_via", "question_text")
+        if idx in period_overrides and isinstance(result, dict):
+            result.setdefault("period_days_corrected_from", period_overrides[idx])
+            result.setdefault("period_days_corrected_via", "period_parser")
 
         records.append(
             {
@@ -563,7 +712,8 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
             }
         )
 
-    # 3. tool 결과를 반영한 최종 답변 생성
+    # 3. tool 결과를 반영한 최종 답변 생성. 구조화 안내(FR-11)는 이 호출 직전에만 추가한다.
+    messages.append({"role": "system", "content": ANSWER_STRUCTURE_INSTRUCTION})
     final = ollama.chat(model=model, messages=messages)
     answer = extract_answer_text(final["message"]["content"])
     if _mentions_tool_call(answer):

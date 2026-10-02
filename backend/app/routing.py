@@ -26,3 +26,50 @@ _MARKET_RE = re.compile("|".join(_MARKET_PATTERNS), re.IGNORECASE)
 def needs_market_tool(question: str) -> bool:
     """질문이 종목을 시장(코스피/코스닥) 지수와 비교하려는 내용이면 True."""
     return bool(_MARKET_RE.search(question or ""))
+
+
+# 환율(원/달러) 수준·추이를 묻는 표현. "환율"이라는 단어 자체가 이미 충분히 구체적이라(일반 뉴스/공시 질문에
+# 섞여 나올 일이 거의 없음) market_tool의 '지수'처럼 뒤 문맥까지 보지 않는다. market_tool의 코스피/코스닥 패턴과
+# 같은 정도의 오탐(예: "환율이 오르면 왜 수출주가 유리해?" 같은 개념 질문에도 True)은 허용한다 - 오탐의 비용은
+# tool 목록이 하나 늘어나는 정도라서(README FR-06 해결 기록 참고) 과도하게 좁히지 않는다.
+_FX_PATTERNS = [
+    r"환율",
+    r"원\s*/?\s*달러|달러\s*/?\s*원|usd\s*/?\s*krw",
+]
+_FX_RE = re.compile("|".join(_FX_PATTERNS), re.IGNORECASE)
+
+
+def needs_fx_tool(question: str) -> bool:
+    """질문이 원/달러 환율 수준·추이를 조회하려는 내용이면 True."""
+    return bool(_FX_RE.search(question or ""))
+
+
+# 특정 종목을 지정하지 않고 시장 전체에서 급등/급락/거래량 급증 종목을 찾으려는 표현.
+# "관심 종목"은 FR-12(watchlist)와 같은 단어를 쓰지만 뜻이 달라서("추천/탐색" 류 동사가 붙을 때만), "~에 추가해줘"
+# 같은 watchlist 조작 표현과는 겹치지 않는다(애초에 이 서비스의 채팅 에이전트는 watchlist를 다루지 않는다).
+# "급등"/"급락"은 "종목" 없이 단독으로 쓰면 "삼성전자 주가 급등한 이유" 같은 특정 종목 질문에도 걸려서(실측으로
+# 확인), 반드시 "종목"과 함께 나올 때만 인정한다 - 그 외(시장 전체 탐색이 아닌) 급등/급락 질문은 news_tool 등
+# 기존 경로로도 답이 된다.
+_DISCOVERY_FIXED_PATTERNS = [
+    r"(?:급등|급락|상한가|하한가).{0,4}종목",
+    r"종목.{0,6}(?:급등|급락)",
+    r"(?:요즘|오늘|최근).{0,6}(?:뜨는|핫한|인기)\s*종목",
+    r"오늘의\s*관심\s*종목",
+    r"관심\s*종목\s*(?:추천|탐색)",
+    r"(?:오늘|최근).{0,10}(?:많이|크게)\s*(?:오른|내린|떨어진|빠진)\s*종목",
+]
+_DISCOVERY_FIXED_RE = re.compile("|".join(_DISCOVERY_FIXED_PATTERNS), re.IGNORECASE)
+_VOLUME_RE = re.compile("거래량")
+_VOLUME_CHANGE_RE = re.compile(r"급증|급등|증가|늘어|폭증")
+
+
+def needs_discovery_tool(question: str) -> bool:
+    """질문이 특정 종목 없이 시장 전체에서 급등/급락/거래량 급증 종목을 찾으려는 내용이면 True.
+
+    "거래량...급증/증가/늘어" 류는 어순이 다양해서("거래량이 평소보다 많이 늘어난 종목") 고정 거리 패턴
+    대신 두 낱말이 질문 어디에든 같이 있으면 True로 본다(시장 전체 탐색이 아닌 "특정 종목 거래량 늘었어?"
+    질문도 걸릴 수 있지만, 다른 게이트들과 같은 수준의 허용 가능한 오탐이다)."""
+    q = question or ""
+    if _DISCOVERY_FIXED_RE.search(q):
+        return True
+    return bool(_VOLUME_RE.search(q) and _VOLUME_CHANGE_RE.search(q))

@@ -24,7 +24,7 @@ from sqlalchemy import or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db.session import SessionLocal
-from app.models import Company, Disclosure, MarketIndex, News, StockPrice
+from app.models import Company, Disclosure, ExchangeRate, MarketIndex, News, StockPrice
 
 load_dotenv()
 
@@ -386,6 +386,64 @@ def fetch_and_save_market_index(index_code: str, days: int = 7, dry_run: bool = 
         stmt = stmt.on_conflict_do_update(
             constraint="uq_market_index_code_date",
             set_={col: stmt.excluded[col] for col in _MARKET_INDEX_COLUMNS},
+        )
+        db.execute(stmt)
+        db.commit()
+        return CollectResult(ok=True, saved=len(new), fetched=len(records))
+    except Exception as e:
+        db.rollback()
+        return CollectResult(ok=False, fetched=len(records), error=_safe_error(e))
+    finally:
+        db.close()
+
+
+# 환율(FR-07, 1차 범위는 환율만 - 금리는 쓸 만한 무료 소스를 찾지 못해 범위 밖). market_index와 달리 FDR이
+# 통화쌍에는 Change 컬럼을 주지 않아서(실제 호출로 확인), 종가의 일별 변화율을 직접 계산한다.
+_EXCHANGE_RATE_COLUMNS = ("close_price", "change_pct")
+
+
+def fetch_and_save_exchange_rate(pair_code: str, days: int = 180, dry_run: bool = False) -> CollectResult:
+    """FinanceDataReader로 환율 일별 종가를 받아 exchange_rate에 upsert한다(멱등). pair_code 예: 'USD/KRW'."""
+    today = datetime.now(KST)
+    start_date = (today - timedelta(days=days)).strftime("%Y-%m-%d")
+    end_date = today.strftime("%Y-%m-%d")
+
+    try:
+        df = fdr.DataReader(pair_code, start_date, end_date)
+    except Exception as e:
+        return CollectResult(ok=False, error=_safe_error(e))
+
+    if df is None or df.empty:
+        return CollectResult(ok=False, error=f"'{pair_code}'의 {start_date}~{end_date} 환율 데이터를 받지 못했습니다.")
+
+    df = df.dropna(subset=["Close"]).sort_index()
+    change_pct = df["Close"].pct_change() * 100
+    records = [
+        {
+            "price_date": idx.date(),
+            "close_price": round(float(close), 2),
+            # 첫 행은 전일 데이터가 없어 NaN(pandas 결측 비교는 자기 자신과도 다름을 이용해 None 처리).
+            "change_pct": None if pct != pct else round(float(pct), 2),
+        }
+        for idx, close, pct in zip(df.index, df["Close"], change_pct)
+    ]
+
+    db = SessionLocal()
+    try:
+        existing = {
+            row.price_date: (float(row.close_price), None if row.change_pct is None else float(row.change_pct))
+            for row in db.query(ExchangeRate).filter(
+                ExchangeRate.pair_code == pair_code, ExchangeRate.price_date >= records[0]["price_date"]
+            )
+        }
+        new = [r for r in records if r["price_date"] not in existing]
+        if dry_run:
+            return CollectResult(ok=True, saved=len(new), fetched=len(records))
+
+        stmt = pg_insert(ExchangeRate).values([{**r, "pair_code": pair_code} for r in records])
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_exchange_rate_pair_date",
+            set_={col: stmt.excluded[col] for col in _EXCHANGE_RATE_COLUMNS},
         )
         db.execute(stmt)
         db.commit()

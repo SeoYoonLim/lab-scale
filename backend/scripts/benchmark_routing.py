@@ -14,6 +14,11 @@
               튜닝됐는지(문구 겹침으로 인한 착시) 확인한다.
 - market/market_ho: 시장 지수 비교 질문 -> market_tool 호출. market_tool은 기본 tool 목록에 없고 app/routing.py의 키워드
               게이트가 True일 때만 추가된다. gate_off/gate_always 변형으로 게이트 유무를 비교한다.
+- fx/fx_ho: 환율(원/달러) 조회 질문 -> fx_tool 호출(FR-07). market_tool과 같은 이유로 기본 tool 목록에 없고
+              app/routing.py의 needs_fx_tool이 True일 때만 추가된다.
+- discovery/discovery_ho: 종목을 특정하지 않는 시장 전체 스크리닝(급등/급락/거래량 급증) 질문 -> discovery_tool
+              호출(FR-13). market_tool/fx_tool과 같은 이유로 기본 tool 목록에 없고 app/routing.py의
+              needs_discovery_tool이 True일 때만 추가된다.
 
 측정 방식이 실제 요청 경로(agent.build_request)를 그대로 쓰므로, 요청 구성이 바뀌는 수정을 하면 반드시 이 스크립트로
 가드레일 그룹(rag, rag_ho, disc_list, disc_ho, stock, news, multi, no_tool, no_tool_ho)의 회귀를 확인한다.
@@ -122,13 +127,52 @@ CASES = {
         "시가총액이랑 주가 차이가 뭐야?",
         "손절매는 언제 하는 게 좋은지 일반적인 원칙만 알려줘.",
     ],
+    # 환율(원/달러) 조회(fx_tool, FR-07). fx_ho는 키워드를 정할 때 보지 않은 hold-out.
+    "fx": [
+        "요즘 환율 어때?",
+        "원달러 환율 최근 추이 알려줘",
+        "환율이 최근 많이 올랐는데 삼성전자 주가에 영향 있어?",
+        "달러 환율 오늘 얼마야?",
+        "최근 일주일 환율 등락 알려줘",
+        "환율이 최근 급등했는데 어느 정도 올랐어?",
+    ],
+    "fx_ho": [
+        "원/달러 환율 지금 수준이 어느 정도야?",
+        "최근 한 달 환율 흐름 알려줘",
+        "환율 변동이 수출 기업 주가에 어떤 영향을 주는지 알려줘",
+        "오늘 원/달러가 얼마나 됐어?",
+        "환율 때문에 수입 원자재 비용 부담이 커졌는지 확인해줘",
+    ],
+    # 종목을 특정하지 않는 시장 전체 스크리닝(discovery_tool, FR-13). discovery_ho는 키워드를 정할 때 보지 않은 hold-out.
+    "discovery": [
+        "요즘 급등하는 종목 뭐 있어?",
+        "오늘 거래량 많이 늘어난 종목 알려줘",
+        "오늘 가장 많이 오른 종목이 뭐야?",
+        "요즘 핫한 종목 추천해줘",
+        "오늘의 관심종목 뭐가 있어?",
+        "급락한 종목 좀 알려줘",
+    ],
+    "discovery_ho": [
+        "거래량이 평소보다 많이 늘어난 종목 뭐 있어?",
+        "오늘 상한가 간 종목 있어?",
+        "요즘 뜨는 종목 좀 찾아줘",
+        "오늘 주가 많이 빠진 종목 알려줘",
+        "관심 가질 만한 종목 추천해줘",
+    ],
 }
 
 
 def judge(group: str, tools: set[str]) -> bool:
-    group = {"rag_ho": "rag", "disc_ho": "disc_list", "no_tool_ho": "no_tool", "market_ho": "market"}.get(group, group)
+    group = {
+        "rag_ho": "rag", "disc_ho": "disc_list", "no_tool_ho": "no_tool", "market_ho": "market", "fx_ho": "fx",
+        "discovery_ho": "discovery",
+    }.get(group, group)
     if group == "market":
         return "market_tool" in tools
+    if group == "fx":
+        return "fx_tool" in tools
+    if group == "discovery":
+        return "discovery_tool" in tools
     if group == "rag":
         return "rag_search_tool" in tools
     if group == "disc_list":
@@ -316,14 +360,19 @@ def summarize(results, variant_names, groups):
             row += f"{ok:>10}/{len(rs):<3} ({100 * ok / len(rs):3.0f}%)  "
         print(row)
 
-    # market_tool이 market 그룹 밖의 질문에서 불필요하게 호출된 비율(추가 호출은 위 성공 판정에는 안 잡힌다)
-    row = f"{'mt 오호출':<11}"
-    for n in variant_names:
-        rs = [r for g in groups if not g.startswith("market") for r in results[n][g]]
-        hit = sum(1 for _, _, tools in rs if "market_tool" in tools)
-        summary.setdefault(n, {})["market_tool_false_calls"] = [hit, len(rs)]
-        row += f"{hit:>10}/{len(rs):<3} ({100 * hit / max(len(rs), 1):3.0f}%)  "
-    print(row)
+    # 게이트가 걸린 tool이 자기 그룹 밖의 질문에서 불필요하게 호출된 비율(추가 호출은 위 성공 판정에는 안 잡힌다)
+    for label, tool_name, own_prefix in [
+        ("mt 오호출", "market_tool", "market"),
+        ("fx 오호출", "fx_tool", "fx"),
+        ("dc 오호출", "discovery_tool", "discovery"),
+    ]:
+        row = f"{label:<11}"
+        for n in variant_names:
+            rs = [r for g in groups if not g.startswith(own_prefix) for r in results[n][g]]
+            hit = sum(1 for _, _, tools in rs if tool_name in tools)
+            summary.setdefault(n, {})[f"{tool_name}_false_calls"] = [hit, len(rs)]
+            row += f"{hit:>10}/{len(rs):<3} ({100 * hit / max(len(rs), 1):3.0f}%)  "
+        print(row)
     return summary
 
 
