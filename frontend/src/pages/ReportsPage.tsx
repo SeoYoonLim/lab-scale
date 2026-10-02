@@ -100,11 +100,15 @@ export default function ReportsPage() {
       {error && <p className="notice notice-error">{error.message}</p>}
       {data && items.length === 0 && <p className="muted">아직 저장된 리포트가 없어요. 리서치 탭에서 질문해보세요.</p>}
 
-      <ul className="ledger">
-        {items.map((item) => (
-          <ReportRow key={item.report_id} item={item} onDeleted={handleDeleted} />
-        ))}
-      </ul>
+      {items.length > 0 && (
+        <div className="card">
+          <ul className="ledger">
+            {items.map((item) => (
+              <ReportRow key={item.report_id} item={item} onDeleted={handleDeleted} />
+            ))}
+          </ul>
+        </div>
+      )}
 
       {data && data.total > 0 && (
         <div className="pagination">

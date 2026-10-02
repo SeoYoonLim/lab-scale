@@ -19,7 +19,7 @@ export default function TrendingWidget({ onPick }: { onPick: (question: string) 
   const { data, error, loading } = useAsync(() => api.getTrending(category, 5), [category])
 
   return (
-    <div className="trending">
+    <div className="trending card">
       <div className="card-head">
         <h2 className="section-title">오늘의 관심 종목</h2>
         <div className="segmented" role="group" aria-label="분류">

@@ -39,9 +39,13 @@ export default function CompanyListPage() {
       {loading && !data && <p className="muted">불러오는 중…</p>}
       {error && <p className="notice notice-error">{error.message}</p>}
       {data && data.length === 0 && <p className="muted">등록된 종목이 없어요.</p>}
-      <div className="company-grid">
-        {data?.map((company) => <CompanyCard key={company.ticker} company={company} />)}
-      </div>
+      {data && data.length > 0 && (
+        <div className="card">
+          <div className="company-grid">
+            {data.map((company) => <CompanyCard key={company.ticker} company={company} />)}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

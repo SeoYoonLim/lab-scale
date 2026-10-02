@@ -1,44 +1,61 @@
 :root {
-  /* "리서치 데스크" 팔레트 — 기록/장부 컨셉. 상승/하락은 신호, accent는 인터랙션 전용으로 서로 분리한다. */
-  --paper: #f1f3f0; /* 배경(페이지·상단바·입력창 모두 동일한 종이 톤) */
-  --paper-2: #e6e9e3; /* 옅은 강조(hover, 펼친 영역) */
-  --ink: #14181a; /* 본문 텍스트 */
-  --ink-muted: #5b655e; /* 보조 텍스트 */
-  --rule: #d3d8cf; /* 괘선(구분선, 테두리) */
-  --up: #c13b33; /* 상승 = 빨강(한국 증권 관례, 인주색) */
-  --down: #35578c; /* 하락 = 파랑 */
-  --accent: #2c5f52; /* 장부초록 — 링크·버튼 등 인터랙션 전용, 상승/하락과 절대 겹치지 않는다 */
-  --accent-soft: #dfe8e2;
-  --accent-text: #f3f6f2;
-  --danger: #a8352d;
-  --radius: 4px;
-  --topbar-h: 56px;
+  /* 대시보드형 팔레트: 남색 사이드바 + 흰 카드 + 파란 포인트.
+     상승/하락은 신호 색이라 accent와 구분되게 따로 둔다. */
+  --bg: #f3f5f9; /* 콘텐츠 영역 배경 */
+  --surface: #ffffff; /* 카드 배경 */
+  --surface-2: #eef1f7; /* 옅은 강조(hover 등) */
+  --rule: #e3e7f0; /* 카드 테두리/구분선 */
+  --ink: #15192e; /* 본문 텍스트 */
+  --ink-muted: #6b7290; /* 보조 텍스트 */
+
+  --sidebar-bg: #10152b; /* 사이드바 배경(남색) */
+  --sidebar-text: #9aa1c4; /* 사이드바 비활성 텍스트 */
+  --sidebar-text-active: #ffffff;
+  --sidebar-active-bg: rgba(255, 255, 255, 0.08);
+
+  --up: #e5484d; /* 상승 = 빨강(한국 증권 관례) */
+  --down: #3d6fb4; /* 하락 = 파랑. accent(아래)보다 차분한 톤으로 구분 */
+  --accent: #2f6feb; /* 버튼·링크·활성 상태 전용. 상승/하락과 겹치지 않게 분리 */
+  --accent-soft: #e8eefe;
+  --accent-text: #ffffff;
+  --danger: #dc2626;
+
+  --radius: 12px;
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --sidebar-w: 240px;
 
   --font-body: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI',
     'Malgun Gothic', sans-serif;
-  --font-display: 'Noto Serif KR', 'Pretendard Variable', serif;
+  --font-display: var(--font-body);
 
   font-family: var(--font-body);
   line-height: 1.5;
   color: var(--ink);
-  background: var(--paper);
+  background: var(--bg);
   color-scheme: light dark;
   -webkit-font-smoothing: antialiased;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #15181a;
-    --paper-2: #1d2123;
-    --ink: #eceee8;
-    --ink-muted: #97a196;
-    --rule: #2b302c;
-    --up: #e2665d;
-    --down: #7fa2d4;
-    --accent: #5b9683;
-    --accent-soft: #223028;
-    --accent-text: #0d120f;
-    --danger: #e2665d;
+    --bg: #0f1320;
+    --surface: #171c2e;
+    --surface-2: #1e243a;
+    --rule: #2a3049;
+    --ink: #e7e9f5;
+    --ink-muted: #9aa1c4;
+
+    --sidebar-bg: #0a0d1c;
+    --sidebar-text: #8890b8;
+    --sidebar-active-bg: rgba(255, 255, 255, 0.07);
+
+    --up: #ff6b6f;
+    --down: #6f9bd8;
+    --accent: #5b8cf2;
+    --accent-soft: #1c2746;
+    --accent-text: #0a0d1c;
+    --danger: #f1605c;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.3);
   }
 }
 
@@ -54,7 +71,7 @@ body,
 }
 
 body {
-  background: var(--paper);
+  background: var(--bg);
 }
 
 a {
@@ -62,7 +79,9 @@ a {
 }
 
 button,
-textarea {
+textarea,
+select,
+input {
   font: inherit;
   color: inherit;
 }
