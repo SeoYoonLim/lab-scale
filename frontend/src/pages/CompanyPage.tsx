@@ -1,44 +1,46 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
-import PriceChart from '../components/PriceChart'
-import { useAsync } from '../hooks/useAsync'
 import type { RealtimePrice } from '../types'
-import { formatDate, formatPct, formatPrice, formatVolume, trendClass } from '../utils/format'
+import { formatDate, formatPct, formatPrice, trendClass } from '../utils/format'
 
-const PERIODS = [5, 30, 90]
 // backend/API.md: 서버가 종목별로 3~5초 캐싱하므로 이 주기로 폴링해도 안전하다.
 const REALTIME_POLL_MS = 3000
 
 export default function CompanyPage() {
   const { ticker = '' } = useParams()
-  const [days, setDays] = useState(30)
+  const navigate = useNavigate()
 
-  const companies = useAsync(() => api.listCompanies(), [])
-  const prices = useAsync(() => api.getPrices(ticker, days), [ticker, days])
-  const news = useAsync(() => api.getNews(ticker), [ticker])
-  const disclosures = useAsync(() => api.getDisclosures(ticker), [ticker])
-
-  const company = companies.data?.find((c) => c.ticker === ticker)
-  const latest = prices.data?.[prices.data.length - 1]
-
-  // 실시간 시세는 과거 주가(mock)와 별도로, 실제 백엔드(/api/stocks/{ticker}/realtime-price)를 짧은 주기로 폴링한다.
+  // 과거 주가 차트·뉴스·공시는 대응하는 백엔드 API가 없어서 mock으로 떠받치고 있었는데,
+  // 포트폴리오 중심으로 가면서 뺐다. 이 화면은 이제 실시간 시세(진짜 데이터)만 보여주고,
+  // 더 알고 싶으면 리서치 챗으로 보낸다.
   const [realtime, setRealtime] = useState<RealtimePrice | null>(null)
-  const [realtimeError, setRealtimeError] = useState<string | null>(null)
+  const [notFound, setNotFound] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!ticker) return
     let cancelled = false
+    setRealtime(null)
+    setNotFound(false)
+    setError(null)
 
     async function poll() {
       try {
         const data = await api.getRealtimePrice(ticker)
         if (!cancelled) {
           setRealtime(data)
-          setRealtimeError(null)
+          setError(null)
         }
       } catch (err) {
-        if (!cancelled) setRealtimeError(err instanceof Error ? err.message : '시세를 가져오지 못했어요.')
+        if (cancelled) return
+        const message = err instanceof Error ? err.message : '시세를 가져오지 못했어요.'
+        // company_resolver가 못 찾은 경우의 메시지 형식("'...' 종목을 찾지 못했습니다...")을 그대로 구분 기준으로 쓴다.
+        if (message.includes('찾지 못했습니다')) {
+          setNotFound(true)
+        } else {
+          setError(message)
+        }
       }
     }
 
@@ -50,7 +52,14 @@ export default function CompanyPage() {
     }
   }, [ticker])
 
-  if (companies.data && !company) {
+  function handleResearch() {
+    const name = realtime?.company_name ?? ticker
+    navigate('/', {
+      state: { prefillQuestion: `${name} 최근 상황을 종합해서 알려줘. 주가, 뉴스, 공시를 같이 확인해줘.` },
+    })
+  }
+
+  if (notFound) {
     return (
       <div className="container page">
         <p className="notice">등록되지 않은 종목이에요.</p>
@@ -65,11 +74,10 @@ export default function CompanyPage() {
 
       <section className="card summary">
         <div>
-          <h1 className="company-title">{company?.name ?? ticker}</h1>
+          <h1 className="company-title">{realtime?.company_name ?? ticker}</h1>
           <div className="meta muted">
             <span>{ticker}</span>
-            {company?.market && <span>{company.market}</span>}
-            {company?.sector && <span>{company.sector}</span>}
+            {realtime?.corrected_from && <span>입력: {realtime.corrected_from}</span>}
           </div>
         </div>
         {realtime ? (
@@ -88,87 +96,21 @@ export default function CompanyPage() {
               {realtime.is_realtime ? '실시간 시세' : `${formatDate(realtime.as_of)} 종가 기준`}
             </div>
           </div>
+        ) : error ? (
+          <p className="notice notice-error">{error}</p>
         ) : (
-          realtimeError &&
-          latest && (
-            <div className="summary-price">
-              <div className="price-big num">{formatPrice(latest.close_price)}원</div>
-              <div className={`meta meta-end ${trendClass(latest.change_pct)}`}>
-                <span className="num">{formatPct(latest.change_pct)}</span>
-                <span className="muted">거래량 {formatVolume(latest.volume)}주</span>
-              </div>
-              <div className="muted small">{formatDate(latest.price_date)} 종가 기준(실시간 시세 불러오기 실패)</div>
-            </div>
-          )
+          <p className="muted">불러오는 중…</p>
         )}
       </section>
 
-      <section className="card">
-        <div className="card-head">
-          <h2>주가</h2>
-          <div className="segmented" role="group" aria-label="조회 기간">
-            {PERIODS.map((period) => (
-              <button
-                key={period}
-                type="button"
-                className={period === days ? 'seg active' : 'seg'}
-                onClick={() => setDays(period)}
-              >
-                {period}일
-              </button>
-            ))}
-          </div>
+      <div className="card research-cta">
+        <div>
+          <h2>더 자세히 알고 싶으신가요?</h2>
+          <p className="muted">주가, 뉴스, 공시를 종합한 AI 리서치를 받아보세요.</p>
         </div>
-        {prices.error && <p className="notice notice-error">{prices.error.message}</p>}
-        {prices.loading && !prices.data && <p className="muted">불러오는 중…</p>}
-        {prices.data && prices.data.length === 0 && (
-          <p className="muted">아직 수집된 주가 데이터가 없어요.</p>
-        )}
-        {prices.data && prices.data.length > 0 && <PriceChart data={prices.data} />}
-      </section>
-
-      <div className="two-col">
-        <section className="card">
-          <h2>최근 뉴스</h2>
-          {news.error && <p className="notice notice-error">{news.error.message}</p>}
-          {news.loading && !news.data && <p className="muted">불러오는 중…</p>}
-          {news.data && news.data.length === 0 && <p className="muted">아직 수집된 뉴스가 없어요.</p>}
-          <ul className="list">
-            {news.data?.map((item, index) => (
-              <li key={index}>
-                <a href={item.url ?? undefined} target="_blank" rel="noreferrer">
-                  {item.title}
-                </a>
-                <div className="meta muted small">
-                  <span>{item.source}</span>
-                  <span>{formatDate(item.published_at)}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="card">
-          <h2>최근 공시</h2>
-          {disclosures.error && <p className="notice notice-error">{disclosures.error.message}</p>}
-          {disclosures.loading && !disclosures.data && <p className="muted">불러오는 중…</p>}
-          {disclosures.data && disclosures.data.length === 0 && (
-            <p className="muted">아직 수집된 공시가 없어요.</p>
-          )}
-          <ul className="list">
-            {disclosures.data?.map((item, index) => (
-              <li key={index}>
-                <a href={item.source_url ?? undefined} target="_blank" rel="noreferrer">
-                  {item.title}
-                </a>
-                <div className="meta muted small">
-                  <span>DART</span>
-                  <span>{formatDate(item.disclosed_at)}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <button type="button" className="send" onClick={handleResearch} disabled={!realtime && !error}>
+          이 종목으로 리서치해줘
+        </button>
       </div>
     </div>
   )

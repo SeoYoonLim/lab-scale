@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import SourceFootnotes from '../components/SourceFootnotes'
 import TrendingWidget from '../components/TrendingWidget'
@@ -37,10 +38,23 @@ export default function ResearchPage() {
   const [threadReportId, setThreadReportId] = useState<number | null>(null)
   const nextId = useRef(1)
   const endRef = useRef<HTMLDivElement>(null)
+  const location = useLocation()
+  const navigate = useNavigate()
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [entries, pending])
+
+  // 종목 상세 화면의 "이 종목으로 리서치해줘" 버튼처럼, 다른 화면에서 질문을 채워 넣고 넘어온 경우.
+  // 한 번 소비하면 라우터 state를 비워서 뒤로/앞으로가기로 다시 채워지지 않게 한다.
+  useEffect(() => {
+    const prefillQuestion = (location.state as { prefillQuestion?: string } | null)?.prefillQuestion
+    if (prefillQuestion) {
+      setInput(prefillQuestion)
+      navigate('.', { replace: true, state: null })
+    }
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function send(text: string) {
     const question = text.trim()
