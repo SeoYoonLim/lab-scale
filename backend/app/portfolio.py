@@ -1,4 +1,4 @@
-"""모의투자(가상 계좌/보유 종목/체결 내역). 로그인이 없어 디바이스ID(X-Device-Id)로 구분한다(app/api/deps.py).
+"""모의투자(가상 계좌/보유 종목/체결 내역). 소유자는 device_id 컬럼의 값으로 구분한다(로그인 사용자는 `user:{id}`, app/api/deps.py get_owner_key).
 
 db/schema.sql 원안에는 없던 확장이다(README "서윤님이 설계한 스키마와..." 참고). 현재가는 app/realtime_price.py의
 get_realtime_price_data를 그대로 재사용한다(실시간 실패 시 DB 최근 종가 폴백도 그대로 적용됨).
@@ -63,7 +63,7 @@ def apply_sell(cash_balance: float, quantity: int, price: float, holding_qty: in
 
 
 def get_or_create_account(db, device_id: str) -> VirtualAccount:
-    """디바이스ID의 첫 요청이면 초기 잔고(INITIAL_BALANCE)로 계좌를 만든다."""
+    """소유자의 첫 요청이면 초기 잔고(INITIAL_BALANCE)로 계좌를 만든다."""
     account = db.get(VirtualAccount, device_id)
     if account is None:
         account = VirtualAccount(device_id=device_id, cash_balance=INITIAL_BALANCE)
@@ -186,3 +186,54 @@ def get_portfolio(db, device_id: str) -> dict:
     if unpriced:
         out["note"] = f"{', '.join(unpriced)}의 현재가를 가져오지 못해 평가손익 계산에서 제외했습니다."
     return out
+
+
+def list_trades(db, device_id: str, limit: int, offset: int, company_id: int | None = None) -> dict:
+    """소유자의 체결 내역(최신순: 체결 시각 desc, 같으면 id desc). company는 join 한 번으로 같이 읽는다(N+1 없음).
+
+    amount는 trade 테이블에 컬럼이 없어서 체결가*수량으로 계산한다(place_order의 잔고 계산과 같은 반올림).
+    company_id를 주면 그 종목의 체결만 대상으로 하고 total도 그 기준이다.
+    """
+    base = db.query(Trade).filter(Trade.device_id == device_id)
+    if company_id is not None:
+        base = base.filter(Trade.company_id == company_id)
+    total = base.count()
+    rows = (
+        base.join(Company, Company.id == Trade.company_id)
+        .with_entities(Trade, Company.ticker, Company.name)
+        .order_by(Trade.executed_at.desc(), Trade.id.desc())
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+    items = [
+        {
+            "id": t.id,
+            "ticker": ticker,
+            "company_name": name,
+            "side": t.side,
+            "quantity": t.quantity,
+            "price": float(t.price),
+            "amount": round(float(t.price) * t.quantity, 2),
+            "executed_at": t.executed_at.isoformat(),
+        }
+        for t, ticker, name in rows
+    ]
+    return {"total": total, "limit": limit, "offset": offset, "items": items}
+
+
+def reset_portfolio(db, device_id: str) -> None:
+    """소유자의 보유 종목과 체결 내역을 지우고 잔고를 초기값(INITIAL_BALANCE)으로 되돌린다.
+
+    삭제와 잔고 복구는 한 트랜잭션이라 중간에 실패하면 전부 롤백된다. 이 소유자의 행만 대상이고
+    관심종목/리서치 기록은 건드리지 않는다. 계좌가 아직 없으면 먼저 만든다(그 생성은 별도 커밋).
+    """
+    account = get_or_create_account(db, device_id)
+    try:
+        db.query(Holding).filter(Holding.device_id == device_id).delete(synchronize_session=False)
+        db.query(Trade).filter(Trade.device_id == device_id).delete(synchronize_session=False)
+        account.cash_balance = INITIAL_BALANCE
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise

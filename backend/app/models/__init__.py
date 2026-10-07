@@ -8,6 +8,7 @@ from app.models.research_report import ResearchReport
 from app.models.stock_price import StockPrice
 from app.models.tool_call_log import ToolCallLog
 from app.models.trade import Trade
+from app.models.user import User
 from app.models.virtual_account import VirtualAccount
 from app.models.watchlist import Watchlist
 
@@ -24,4 +25,5 @@ __all__ = [
     "VirtualAccount",
     "Holding",
     "Trade",
+    "User",
 ]

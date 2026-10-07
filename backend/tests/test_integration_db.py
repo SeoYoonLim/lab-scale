@@ -47,6 +47,7 @@ def test_news_tool_found_shape():
 def test_list_reports_envelope(dev_db):
     from app.reports import list_reports
 
-    total, items = list_reports(limit=1, offset=0)
+    # 소유자 없는(로그인 도입 전) 리포트 범위로 형식만 확인한다.
+    total, items = list_reports(user_id=None, limit=1, offset=0)
     assert isinstance(total, int)
     assert len(items) <= 1

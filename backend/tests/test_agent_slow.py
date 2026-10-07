@@ -94,13 +94,29 @@ def test_simple_quantity_question_is_not_forced_into_unrelated_sections():
 # (삼성전자만으로 검증했을 때 24/24였던 후속 질문이 다른 종목에서는 20~60%만 맞았다). 네이버는 별칭(네이버 -> NAVER) 경로도 같이 본다.
 @pytest.fixture(scope="module", params=[("카카오 최근 주가 어때?", "카카오"), ("네이버 최근 주가 어때?", "NAVER")], ids=["카카오", "네이버"])
 def base_report(request):
-    """직전 보고서를 실제 API로 만들고, 테스트가 만든 보고서를 끝나고 모두 지운다."""
+    """직전 보고서를 실제 API로 만들고, 테스트가 만든 보고서를 끝나고 모두 지운다.
+
+    리서치는 로그인이 필요해서 dev DB에 임시 사용자를 만들고 get_current_user를 그 사용자로 고정한다
+    (module 스코프라 테스트마다 바뀌는 JWT_SECRET과 엮이지 않게 토큰 대신 override를 쓴다).
+    끝나면 사용자를 지우고, 그 사용자의 리포트는 FK ON DELETE CASCADE로 함께 지워진다."""
+    import secrets
+
     from fastapi.testclient import TestClient
 
+    from app.api.deps import get_current_user
+    from app.auth import create_user
+    from app.db.session import SessionLocal
     from app.main import app
+    from app.models import User
     from app.reports import delete_report
 
     question, company = request.param
+    db = SessionLocal()
+    try:
+        user = create_user(db, f"pt_{secrets.token_hex(6)}", secrets.token_urlsafe(12))
+    finally:
+        db.close()
+    app.dependency_overrides[get_current_user] = lambda: user
     client = TestClient(app)
     created = []
     r = client.post("/api/research", json={"question": question})
@@ -110,8 +126,15 @@ def base_report(request):
     try:
         yield {"client": client, "id": base_id, "created": created, "company": company}
     finally:
+        app.dependency_overrides.pop(get_current_user, None)
         for report_id in created:
-            delete_report(report_id)
+            delete_report(report_id, user_id=user.id)
+        db = SessionLocal()
+        try:
+            db.query(User).filter(User.id == user.id).delete()
+            db.commit()
+        finally:
+            db.close()
 
 
 def _tool_company(report_id: int, tool: str):

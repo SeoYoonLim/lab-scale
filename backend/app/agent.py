@@ -727,7 +727,11 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
 
 
 def ask_question(
-    question: str, model: str = MODEL_NAME, save_report: bool = True, previous: dict | None = None
+    question: str,
+    model: str = MODEL_NAME,
+    save_report: bool = True,
+    previous: dict | None = None,
+    user_id: int | None = None,
 ) -> dict:
     """질문을 받아 필요한 tool을 호출하고 최종 답변을 생성한다.
 
@@ -739,7 +743,8 @@ def ask_question(
 
     save_report=True이면 질문/답변을 research_report에, tool 실행 이력을 tool_call_log에 저장한다.
     저장이 실패해도 답변은 정상 반환하고 report_id만 None이 된다. 벤치마크/스모크 스크립트는
-    DB를 오염시키지 않도록 save_report=False로 호출한다.
+    DB를 오염시키지 않도록 save_report=False로 호출한다. user_id는 저장할 리포트의 소유자다.
+    previous가 같은 사용자의 리포트인지는 호출측(라우터)이 확인한다.
 
     Returns:
         {"answer": str, "used_tools": list[str], "sources": list[dict], "report_id": int | None,
@@ -749,7 +754,9 @@ def ask_question(
     previous_id = previous["report_id"] if previous else None
     response, records = _answer(question, model, previous)
     response["report_id"] = (
-        save_report_row(question, response["answer"], records, previous_report_id=previous_id) if save_report else None
+        save_report_row(question, response["answer"], records, previous_report_id=previous_id, user_id=user_id)
+        if save_report
+        else None
     )
     response["previous_report_id"] = previous_id
     return response

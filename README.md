@@ -48,21 +48,30 @@
 
 요청/응답 예시, 에러 형식, CORS는 전부 **[backend/API.md](backend/API.md)** 에 있습니다. 프론트 연동은 이 문서만 보면 됩니다.
 
-| 메서드 | 경로 | 설명 |
-| --- | --- | --- |
-| POST | `/api/research` | 질문 → AI 답변 + 근거 + 리포트 저장. `previous_report_id`로 직전 리포트를 이어서 후속 질문 |
-| GET | `/api/research` | 저장된 리포트 목록(최신순, `limit`/`offset` 페이지네이션, `total` 포함) |
-| GET | `/api/research/{report_id}` | 리포트 한 건(전체 답변, sources, tool 사용 이력) |
-| DELETE | `/api/research/{report_id}` | 리포트 삭제(204, 본문 없음). 후속 리포트는 남고 연결만 끊김 |
-| GET | `/api/stocks/{ticker}/realtime-price` | 종목 현재가(비공식 소스 기반 실시간, 장외/장애 시 DB 최근 종가로 자동 폴백) |
-| GET/POST | `/api/watchlist` | 관심종목 조회/추가 (`X-Device-Id` 헤더로 사용자 구분, 로그인 없음) |
-| DELETE | `/api/watchlist/{ticker}` | 관심종목 삭제 |
-| GET | `/api/portfolio` | 모의투자 잔고 + 보유 종목(평가손익 포함). 디바이스ID 첫 호출 시 계좌 자동 생성(초기 잔고 1,000만원) |
-| POST | `/api/portfolio/orders` | 모의투자 매수/매도 주문(현재가로 즉시 체결) |
-| GET | `/api/discovery/trending` | 급등/급락/거래량 급증 종목(FR-13, 질문 없이 바로 호출, `category`/`limit` 쿼리) |
+| 메서드 | 경로 | 인증 | 설명 |
+| --- | --- | --- | --- |
+| POST | `/api/auth/signup` | 공개 | 회원가입(아이디 3~20자 `[a-z0-9_]`, 대문자는 소문자로 정규화 / 비밀번호 8~128자) → 201 + 토큰. 중복이면 409 |
+| POST | `/api/auth/login` | 공개 | 로그인 → 200 + 토큰. 실패는 아이디 없음/비밀번호 틀림 모두 같은 401 |
+| GET | `/api/auth/me` | 필요 | 토큰의 사용자 `{id, username}` |
+| POST | `/api/research` | 필요 | 질문 → AI 답변 + 근거 + 리포트 저장. `previous_report_id`로 내 직전 리포트를 이어서 후속 질문 |
+| GET | `/api/research` | 필요 | 내 리포트 목록(최신순, `limit`/`offset` 페이지네이션, `total` 포함) |
+| GET | `/api/research/{report_id}` | 필요 | 내 리포트 한 건(전체 답변, sources, tool 사용 이력). 남의 리포트는 404 |
+| DELETE | `/api/research/{report_id}` | 필요 | 내 리포트 삭제(204, 본문 없음). 후속 리포트는 남고 연결만 끊김. 남의 리포트는 404 |
+| GET | `/api/stocks/{ticker}/realtime-price` | 공개 | 종목 현재가(비공식 소스 기반 실시간, 장외/장애 시 DB 최근 종가로 자동 폴백) |
+| GET | `/api/companies` | 공개 | 종목 목록/검색(`q` 종목명·티커 부분 일치, 별칭 포함, `limit` 기본 50) + 최근 종가·등락률. 프론트 "종목" 페이지용 |
+| GET/POST | `/api/watchlist` | 필요 | 내 관심종목 조회/추가 |
+| DELETE | `/api/watchlist/{ticker}` | 필요 | 내 관심종목 삭제 |
+| GET | `/api/portfolio` | 필요 | 내 모의투자 잔고 + 보유 종목(평가손익 포함). 첫 호출 시 계좌 자동 생성(초기 잔고 1,000만원) |
+| POST | `/api/portfolio/orders` | 필요 | 모의투자 매수/매도 주문(현재가로 즉시 체결) |
+| GET | `/api/portfolio/trades` | 필요 | 내 체결 내역(최신순, `limit` 기본 50·최대 200, `offset`, `ticker` 필터, `total` 포함) |
+| POST | `/api/portfolio/reset` | 필요 | 내 모의투자 초기화(보유·체결 내역 삭제 + 잔고 1,000만원 복구). 본문 `{"confirm": true}`가 아니면 400. 관심종목·리서치는 유지 |
+| POST | `/api/portfolio/diagnosis` | 필요 | 내 포트폴리오 AI 진단. 비중·집중도(허핀달)·시장별 비중·손익·20거래일 수익률과 규칙 플래그는 코드가 계산하고, llama3.1:8b가 설명만 생성(검증 실패/Ollama 장애 시 규칙 기반 문장으로 폴백, `source`로 구분). 보유 종목이 없으면 400. 결과 저장 안 함 |
+| GET | `/api/disclaimer` | 공개 | 서비스 면책 문구 `{"text": "..."}`. 같은 문구가 `POST /api/research`·`GET /api/research/{id}` 응답의 `disclaimer` 필드에도 있음(목록에는 없음) |
+| GET | `/api/discovery/trending` | 공개 | 급등/급락/거래량 급증 종목(FR-13, 질문 없이 바로 호출, `category`/`limit` 쿼리) |
 
-프론트가 관심종목·모의투자 API를 쓰려면 **모든 요청에 `X-Device-Id` 헤더**(프론트가 만들어 localStorage에 저장하는 uuid)를
-실어야 합니다. 로그인이 없어서 이 값 자체가 사용자 구분자이고(인증 아님, 그 값을 그대로 신뢰), 헤더가 없으면 422입니다.
+"인증 필요"인 API는 **`Authorization: Bearer <access_token>` 헤더**가 있어야 하고, 없거나 만료·변조됐으면 401입니다
+(로그인/가입 응답의 `access_token`, 만료 24시간). 예전 `X-Device-Id` 헤더는 더 이상 쓰지 않습니다(보내도 무시되고, 토큰이 없으면 401).
+프론트가 할 일(토큰 저장, 401 처리 등)은 [backend/API.md](backend/API.md)의 "인증" 절에 정리돼 있습니다.
 
 프론트에서 특히 챙길 것: POST는 로컬 LLM이라 **2~25초**(로딩 상태와 60초 이상 타임아웃) / 에러 `detail`은 404·502·503에서는 문자열, 422에서는 배열
 / `report_id`는 저장 실패 시 null / 허용 origin은 `localhost:5173`, `localhost:3000` 두 개뿐(다른 포트면 알려주세요).
@@ -78,13 +87,18 @@ PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(
 | `market_index` | 코스피(KS11)/코스닥(KQ11) 일별 종가 | `index_code`, `price_date`, `close_price`, `change_pct` (지수+날짜 unique) |
 | `news` | 네이버 뉴스 | `company_id`, `title`, `url`, `published_at`, `embedding vector(1024)` |
 | `disclosure` | DART 공시 | `company_id`, `title`, `disclosed_at`, `source_url`, `content`(원문), `embedding vector(1024)` |
-| `research_report` | 질문/답변 보고서 | `question`, `content`(답변), `summary`, `company_id`, `previous_report_id`(직전 리포트, 자기 참조) |
+| `users` | 로그인 사용자(`user`는 PostgreSQL 예약어라 피함) | `username`(unique, 소문자만 CHECK), `password_hash`(argon2id), `created_at` |
+| `research_report` | 질문/답변 보고서 | `question`, `content`(답변), `summary`, `company_id`, `previous_report_id`(직전 리포트, 자기 참조), `user_id`(소유자, 사용자 삭제 시 cascade, 로그인 도입 전 리포트는 NULL) |
 | `tool_call_log` | 보고서별 tool 호출 이력 | `report_id`(삭제 시 cascade), `tool_name`, `arguments`/`result`(JSONB) |
-| `watchlist` | 관심종목(FR-12) | `device_id`, `company_id` (조합 unique) |
-| `virtual_account` | 모의투자 가상 계좌(디바이스ID당 1개) | `device_id`(PK), `cash_balance`(초기 1,000만원) |
+| `watchlist` | 관심종목(FR-12) | `device_id`(소유자 키, 아래 참고), `company_id` (조합 unique) |
+| `virtual_account` | 모의투자 가상 계좌(소유자당 1개) | `device_id`(PK, 소유자 키), `cash_balance`(초기 1,000만원) |
 | `holding` | 모의투자 보유 종목 | `device_id`, `company_id`(조합 unique), `quantity`, `avg_price`(가중평균) |
 | `trade` | 모의투자 체결 내역 | `device_id`, `company_id`, `side`(buy/sell), `quantity`, `price`, `executed_at` |
 | `exchange_rate` | 환율(USD/KRW) 일별 종가(FR-07) | `pair_code`, `price_date`, `close_price`, `change_pct` (통화쌍+날짜 unique) |
+
+관심종목/모의투자 테이블(`watchlist`, `virtual_account`, `holding`, `trade`)의 `device_id` 컬럼은 이름과 PK/unique를 그대로 두고,
+로그인 사용자의 소유자 키 `user:{users.id}`를 저장합니다. 로그인 도입 전 `X-Device-Id`로 만든 행은 디바이스ID 값 그대로 남아 있고
+(어떤 사용자에게도 보이지 않음), 사용자를 지워도 이 테이블들의 행은 자동으로 지워지지 않습니다(FK가 아니라 문자열 키이므로).
 
 **서윤님이 설계한 스키마와 실제로 만들어진 스키마를 맞춰봐 주세요.** 최초 설계 스냅샷은 `db/schema.sql`(서윤님 커밋)이고, 임시 DB에 그 파일을 적용해서
 실제 DB와 컬럼·인덱스·FK를 기계적으로 비교했습니다. 컬럼/타입/FK는 모두 같고 **차이는 아래 6가지**입니다(설계와 다른 것이 의도에 맞는지 확인 필요).
@@ -97,8 +111,12 @@ PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(
    회원가입/로그인이 없는 서비스라 사용자 구분을 프론트가 만드는 디바이스ID(`X-Device-Id` 헤더, uuid)로 했다 -
    인증이 아니라 단순 구분자이고, `company`처럼 다른 테이블과 달리 `device_id`는 FK가 아니라 프론트가 보낸
    문자열을 그대로 저장한다. `virtual_account.device_id`를 기본키로 써서 "디바이스ID당 계좌 1개"를 표현했다.
+   (2026-10-07 로그인 도입 후에는 이 컬럼에 `user:{users.id}`를 저장한다. 아래 7번 참고)
 6. `exchange_rate` 테이블 추가(FR-07 경제지표 영향 분석, 1차 범위는 환율만, 설계에 없던 확장). `market_index`와
    같은 구조(통화쌍 코드 + 날짜 + 종가 + 등락률)를 그대로 따랐다.
+7. `users` 테이블 + `research_report.user_id`(FK `users.id`, `ON DELETE CASCADE`, nullable) 추가(2026-10-07, 아이디/비밀번호 로그인).
+   테이블 이름은 PostgreSQL 예약어 `user`를 피해 `users`. 관심종목/모의투자 4개 테이블은 스키마를 바꾸지 않고
+   `device_id` 컬럼에 로그인 사용자의 소유자 키 `user:{id}`를 저장한다. 기존 리포트(`user_id` NULL)와 기존 디바이스 행은 그대로 보존된다.
 
 `db/schema.sql`은 갱신하지 않고 상단에 "최초 설계 스냅샷이며 기준은 Alembic"이라는 안내만 달았습니다.
 
@@ -218,6 +236,8 @@ PRD 원문을 확인해보니 **FR-05는 "주가 변동 원인 분석"이고 `re
   localStorage 저장)로 했다 - 인증이 아니라 그 값을 그대로 신뢰하는 구분자라서, 헤더 값을 공유하면 다른 사람의
   관심종목을 볼 수 있다는 한계가 있다(설계상 받아들인 한계, README "DB 스키마 개요" 참고).
   연구 이력(`research_report`)은 이 디바이스ID를 쓰지 않고 여전히 전체 공용이다(이번 작업 범위 밖).
+  → 2026-10-07: 아이디/비밀번호 로그인(JWT)으로 바뀌었다. 관심종목·모의투자·리서치 이력 모두 로그인 사용자별로 분리되고,
+  남의 리포트는 404다(README "구현된 API", API.md "인증").
 
 **FR-13 AI 시장 관심 종목 탐색 — 완료 (2026-10-01)** (인수조건 2개)
 - *후보 탐색·스크리닝*: 충족. 새 외부 데이터 소스 없이 이미 수집된 `stock_price`(300종목 일별 OHLCV)만으로 `app/discovery.py`가
@@ -301,9 +321,12 @@ DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:15432/ai_investmen
 NAVER_CLIENT_ID=...       # 뉴스 수집에만 필요
 NAVER_CLIENT_SECRET=...   # 뉴스 수집에만 필요
 DART_API_KEY=...          # 공시 수집에만 필요
+JWT_SECRET=...            # 필수. 로그인 토큰 서명 키(32자 이상)
 ```
 
 `DATABASE_URL`을 생략하면 위 값이 기본값으로 쓰입니다. API 서버만 띄우고 이미 채워진 DB를 쓸 때는 네이버/DART 키가 필요 없습니다.
+`JWT_SECRET`은 없거나 32자 미만이면 서버가 기동하지 않습니다. `python -c "import secrets;print(secrets.token_urlsafe(48))"`로
+만든 값을 넣고, 이 값은 공유/커밋하지 않습니다. 형식은 `backend/.env.example`을 참고하세요.
 
 **3. 파이썬 환경과 스키마**
 
@@ -359,7 +382,7 @@ python scripts/collect_disclosure_content.py --apply   # 공시 원문 수집 (�
 ```bash
 pytest                            # backend/ 에서. 빠른 테스트(단위 + dev DB 통합), slow는 기본 제외
 pytest -m slow                    # 실제 Ollama를 부르는 slow만 (약 30초, dev DB에 리포트를 만들었다가 지움)
-pytest -m "slow or not slow"      # 전부 한 번에 (2026-10-01 기준 608개 통과)
+pytest -m "slow or not slow"      # 전부 한 번에 (2026-10-01 기준 608개 통과. 2026-10-07 로그인 추가 후 빠른 테스트 738개 통과)
 ```
 
 구성(단위 / DB 통합 / LLM을 호출하는 slow)과 실행 옵션은 [backend/API.md](backend/API.md)의 "테스트 실행" 절을 참고하세요.
@@ -368,8 +391,8 @@ pytest -m "slow or not slow"      # 전부 한 번에 (2026-10-01 기준 608개 
 
 ## API
 
-엔드포인트(`POST /api/research`, `GET /api/research`, `GET /api/research/{report_id}`, `DELETE /api/research/{report_id}`), 요청/응답 스키마,
-에러 형식, CORS 안내, 성능 실측은 **[backend/API.md](backend/API.md)** 에 있습니다.
+엔드포인트(위 "구현된 API" 표), 인증(가입/로그인/토큰), 요청/응답 스키마, 에러 형식, CORS 안내, 성능 실측은
+**[backend/API.md](backend/API.md)** 에 있습니다.
 
 ## 구현 상태
 
@@ -405,6 +428,9 @@ pytest -m "slow or not slow"      # 전부 한 번에 (2026-10-01 기준 608개 
   종목 페이지가 장중에 쓰는 비공식 폴링 API(`polling.finance.naver.com`, 인증 불필요)를 서버가 대신 호출. 종목별
   3~5초 서버 캐싱, 상위 소스 실패·장외 시간에는 예외 대신 DB 최근 종가로 자동 폴백(`is_realtime`/`source`로 구분)
 - [x] REST API(리포트 생성/목록/조회/삭제) + 에러 처리(Ollama/DB 장애 시 502/503) + CORS
+- [x] 아이디/비밀번호 로그인(2026-10-07): `POST /api/auth/signup`, `POST /api/auth/login`, `GET /api/auth/me`.
+  argon2id 비밀번호 해시 + HS256 JWT(만료 24시간). 리서치/관심종목/모의투자는 `Authorization: Bearer` 필수(없으면 401),
+  `X-Device-Id`는 폐지. 리서치 이력은 사용자별(남의 리포트 404). 로그인 시도 횟수 제한(rate limit)은 아직 없음
 - [x] 자동 테스트(pytest)와 API 문서
 - [x] 프론트엔드 연동(2026-10-08): 로그인/리서치/기록/관심종목/모의투자(체결내역·초기화·AI진단)/종목 검색/
   오늘의 관심종목/면책 문구까지 API.md 기준으로 전부 연동 완료(`feature/frontend` 브랜치), mock 전용 화면 없음.

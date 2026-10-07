@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import pytest
 from fastapi.testclient import TestClient
 
 import app.api.watchlist as watchlist_api
@@ -8,7 +9,9 @@ from app.tools.company_resolver import Resolution
 
 client = TestClient(app, raise_server_exceptions=False)
 
-HEADERS = {"X-Device-Id": "test-device-1"}
+USER_ID = 7
+# 예전에는 X-Device-Id를 보냈다. 이제 인증은 get_current_user가 하고(아래 autouse 픽스처로 가짜 사용자), 헤더는 필요 없다.
+HEADERS = {}
 COMPANY = type("C", (), {"id": 1, "ticker": "005930", "name": "삼성전자"})()
 WATCHLIST_ROW = type("W", (), {"created_at": datetime(2026, 10, 1)})()
 
@@ -23,19 +26,29 @@ ITEM = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _logged_in(login_as):
+    login_as(USER_ID)
+
+
 def mock_resolution(monkeypatch, res):
     monkeypatch.setattr(watchlist_api, "resolve_company", lambda db, ticker: res)
 
 
-class TestDeviceIdHeader:
-    def test_missing_header_is_422_on_every_route(self):
-        assert client.get("/api/watchlist").status_code == 422
-        assert client.post("/api/watchlist", json={"ticker": "005930"}).status_code == 422
-        assert client.delete("/api/watchlist/005930").status_code == 422
+class TestAuthRequired:
+    @pytest.fixture(autouse=True)
+    def _logged_out(self, _logged_in):
+        app.dependency_overrides.clear()
 
-    def test_blank_header_is_422(self):
-        r = client.get("/api/watchlist", headers={"X-Device-Id": ""})
-        assert r.status_code == 422
+    def test_missing_token_is_401_on_every_route(self):
+        assert client.get("/api/watchlist").status_code == 401
+        assert client.post("/api/watchlist", json={"ticker": "005930"}).status_code == 401
+        assert client.delete("/api/watchlist/005930").status_code == 401
+
+    def test_device_id_header_is_no_longer_accepted(self):
+        r = client.get("/api/watchlist", headers={"X-Device-Id": "test-device-1"})
+        assert r.status_code == 401
+        assert r.headers["www-authenticate"] == "Bearer"
 
 
 class TestGetWatchlist:
@@ -45,11 +58,20 @@ class TestGetWatchlist:
         assert r.status_code == 200
         assert r.json() == {"items": [ITEM]}
 
-    def test_passes_through_device_id(self, monkeypatch):
+    def test_passes_user_owner_key(self, monkeypatch):
         seen = {}
         monkeypatch.setattr(watchlist_api, "list_items", lambda db, device_id: seen.setdefault("id", device_id) or [])
-        client.get("/api/watchlist", headers={"X-Device-Id": "device-xyz"})
-        assert seen["id"] == "device-xyz"
+        client.get("/api/watchlist", headers={"X-Device-Id": "device-xyz"})  # 헤더는 무시된다
+        assert seen["id"] == f"user:{USER_ID}"
+
+    def test_add_and_remove_use_user_owner_key(self, monkeypatch):
+        seen = []
+        mock_resolution(monkeypatch, Resolution(company=COMPANY))
+        monkeypatch.setattr(watchlist_api, "add_item", lambda db, key, cid: seen.append(key) or (WATCHLIST_ROW, False))
+        monkeypatch.setattr(watchlist_api, "remove_item", lambda db, key, cid: seen.append(key) or True)
+        client.post("/api/watchlist", json={"ticker": "005930"})
+        client.delete("/api/watchlist/005930")
+        assert seen == [f"user:{USER_ID}", f"user:{USER_ID}"]
 
 
 class TestAddWatchlistItem:
