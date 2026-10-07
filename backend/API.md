@@ -18,7 +18,7 @@ Authorization: Bearer <access_token>
 
 | 구분 | 엔드포인트 |
 | --- | --- |
-| **인증 필요** | `/api/auth/me`, `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/reset`(POST) |
+| **인증 필요** | `/api/auth/me`, `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST) |
 | 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending` |
 
 - 데이터는 **사용자별로 분리**된다. 리서치 리포트 목록/조회/삭제/이어 쓰기(`previous_report_id`)는 본인 것만 대상이고,
@@ -84,6 +84,7 @@ Authorization: Bearer <access_token>
 | POST | `/api/portfolio/orders` | 필요 | 모의투자 매수/매도 주문 |
 | GET | `/api/portfolio/trades` | 필요 | 내 체결 내역(최신순, `limit`/`offset` 페이지네이션, `ticker` 필터) |
 | POST | `/api/portfolio/reset` | 필요 | 내 모의투자 초기화(보유·체결 내역 삭제 + 잔고 초기값). 본문 `{"confirm": true}` 필수 |
+| POST | `/api/portfolio/diagnosis` | 필요 | 내 포트폴리오 AI 진단(지표·플래그는 코드 계산, 설명은 LLM 또는 규칙 기반 폴백) |
 | GET | `/api/disclaimer` | 공개 | 서비스 면책 문구(`{"text": "..."}`) |
 
 아래 각 엔드포인트의 에러 표에는 401을 반복해 적지 않았다. **인증 필요 API는 모두 위 "인증 에러 (401)"가 공통으로 적용된다.**
@@ -899,6 +900,198 @@ curl -X POST http://localhost:8000/api/portfolio/reset   -H "Authorization: Bear
 | 401 | 토큰 없음/만료/변조 | 위 "인증 에러" |
 | 422 | 본문이 JSON이 아님 | 검증 오류 형식 |
 | 503 | DB 연결 불가(이 경우 롤백되어 데이터는 그대로) | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
+
+---
+
+## POST /api/portfolio/diagnosis
+
+내 모의투자 포트폴리오 AI 진단. **숫자와 판단(지표·플래그)은 서버 코드가 계산**하고, LLM(llama3.1:8b)은 그 결과를 한국어로
+설명만 한다. LLM 설명이 검증을 통과하지 못하거나 Ollama가 응답하지 않으면 규칙 기반 문장으로 대신한다(`source`로 구분).
+결과는 저장하지 않는다(호출할 때마다 새로 계산). 본문 없음.
+
+**응답 시간**: LLM 경로 실측 약 5~11초(로컬 Ollama), 폴백 경로 약 3초. LLM 호출 타임아웃은 60초이고, 검증 실패 시 1회 재시도하므로
+최악의 경우 그 이상 걸릴 수 있다 — 프론트는 로딩 상태와 넉넉한 타임아웃(90초 이상)을 두세요.
+
+```bash
+curl -X POST http://localhost:8000/api/portfolio/diagnosis -H "Authorization: Bearer $TOKEN"
+```
+
+### 응답 200 (실제 호출 결과, 2026-10-07, 3종목 매수 직후라 손익이 0)
+
+```json
+{
+  "generated_at": "2026-10-07T06:25:25.650472+00:00",
+  "source": "llm",
+  "model": "llama3.1:8b",
+  "metrics": {
+    "total_asset": 10000000.0,
+    "cash_balance": 4117000.0,
+    "cash_weight_pct": 41.17,
+    "stock_eval_amount": 5883000.0,
+    "holding_count": 3,
+    "priced_holding_count": 3,
+    "top1_weight_pct": 26.95,
+    "top3_weight_pct": 58.83,
+    "herfindahl_index": 0.361,
+    "market_weights_pct": {
+      "KOSDAQ": 31.72,
+      "KOSPI": 68.28
+    },
+    "total_profit_loss": 0.0,
+    "total_profit_loss_pct": 0.0,
+    "best_holding": {
+      "ticker": "005930",
+      "company_name": "삼성전자",
+      "profit_loss_pct": 0.0
+    },
+    "worst_holding": {
+      "ticker": "005930",
+      "company_name": "삼성전자",
+      "profit_loss_pct": 0.0
+    }
+  },
+  "holdings": [
+    {
+      "ticker": "005930",
+      "company_name": "삼성전자",
+      "market": "KOSPI",
+      "quantity": 10,
+      "avg_price": 269500.0,
+      "current_price": 269500.0,
+      "is_realtime": true,
+      "price_unavailable": false,
+      "eval_amount": 2695000.0,
+      "weight_pct": 26.95,
+      "profit_loss": 0.0,
+      "profit_loss_pct": 0.0,
+      "return_20d_pct": 5.97
+    },
+    {
+      "ticker": "035720",
+      "company_name": "카카오",
+      "market": "KOSPI",
+      "quantity": 40,
+      "avg_price": 33050.0,
+      "current_price": 33050.0,
+      "is_realtime": true,
+      "price_unavailable": false,
+      "eval_amount": 1322000.0,
+      "weight_pct": 13.22,
+      "profit_loss": 0.0,
+      "profit_loss_pct": 0.0,
+      "return_20d_pct": -8.29
+    },
+    {
+      "ticker": "247540",
+      "company_name": "에코프로비엠",
+      "market": "KOSDAQ",
+      "quantity": 15,
+      "avg_price": 124400.0,
+      "current_price": 124400.0,
+      "is_realtime": true,
+      "price_unavailable": false,
+      "eval_amount": 1866000.0,
+      "weight_pct": 18.66,
+      "profit_loss": 0.0,
+      "profit_loss_pct": 0.0,
+      "return_20d_pct": 18.58
+    }
+  ],
+  "flags": [],
+  "summary": "현재 포트폴리오의 총자산은 10,000,000원이며, 현금 비중은 41.17%입니다. 주식 평가금액은 5,883,000원입니다. 현재 포트폴리오에는 3종목이 포함되어 있습니다. 비중 상위 1개/3개 종목의 비중은 각각 26.95%/58.83%입니다. 한 종목에 집중하는 정도는 0.361입니다. 시장별 비중은 KOSDAQ 31.72%, KOSPI 68.28%입니다.",
+  "strengths": [
+    "비중 상위 1개/3개 종목의 비중은 각각 26.95%/58.83%입니다.",
+    "한 종목에 집중하는 정도는 0.361입니다."
+  ],
+  "risks": [
+    "규칙 기준으로 확인된 위험 항목은 없습니다."
+  ],
+  "suggestions": [
+    "현재 포트폴리오의 비중 상위 1개/3개 종목의 비중을 확인해 볼 수 있습니다.",
+    "한 종목에 집중하는 정도를 확인해 볼 수 있습니다."
+  ],
+  "notes": [],
+  "disclaimer": "이 서비스는 학습·시연용 모의투자와 AI 리서치입니다. 제공되는 분석과 의견은 투자 권유나 자문이 아니며, 투자 판단과 그에 따른 손익의 책임은 본인에게 있습니다. AI 응답에는 오류가 있을 수 있습니다."
+}
+```
+
+같은 포트폴리오에서 Ollama에 연결하지 못했을 때(폴백)의 설명 부분:
+
+```json
+{
+  "source": "rule_based",
+  "model": null,
+  "summary": "총자산 10,000,000원 중 현금이 4,117,000원(비중 41.17%)이고, 보유 종목은 3개입니다. 총 평가손익은 0원(0.0%)입니다. 규칙 점검에서 특별히 확인된 항목은 없습니다.",
+  "strengths": [
+    "상위 1종목 비중이 26.95%로 한 종목에 크게 쏠려 있지 않습니다.",
+    "3개 종목에 나눠 보유하고 있습니다.",
+    "현금 비중이 41.17%로 규칙 기준 범위 안에 있습니다."
+  ],
+  "risks": [
+    "규칙 기준으로 확인된 위험 항목은 없습니다."
+  ],
+  "suggestions": [
+    "현재 구성을 유지하면서 종목별 뉴스와 공시를 주기적으로 확인해볼 수 있습니다."
+  ],
+  "notes": [
+    "AI 설명을 생성하지 못해 규칙 기반 문장으로 대신했습니다."
+  ]
+}
+```
+
+| 필드 | 설명 |
+| --- | --- |
+| `generated_at` | 진단 시각(ISO 8601, UTC) |
+| `source` | `"llm"`(LLM 설명이 검증을 통과) 또는 `"rule_based"`(폴백 문장) |
+| `model` | `source`가 `llm`이면 모델명, 아니면 `null` |
+| `metrics.total_asset` | 총자산 = 현금 + 현재가를 구한 종목의 평가금액 |
+| `metrics.cash_weight_pct` | 총자산 대비 현금 비중(%) |
+| `metrics.stock_eval_amount` | 주식 평가금액 합계(현재가를 못 구한 종목 제외) |
+| `metrics.holding_count` / `priced_holding_count` | 보유 종목 수 / 그중 현재가를 구한 종목 수 |
+| `metrics.top1_weight_pct` / `top3_weight_pct` | 평가금액 상위 1개 / 3개 종목 합계 비중(총자산 대비 %) |
+| `metrics.herfindahl_index` | 허핀달 지수(0~1). 현재가를 구한 종목끼리의 비중(주식 평가금액 대비)의 제곱합. 1이면 한 종목뿐 |
+| `metrics.market_weights_pct` | 주식 평가금액 대비 시장별 비중(%). `KOSPI` / `KOSDAQ`(KOSDAQ GLOBAL 포함) / `OTHER` |
+| `metrics.total_profit_loss` / `total_profit_loss_pct` | 총 평가손익(원) / 매입금액 합계 대비 손익률(%) |
+| `metrics.best_holding` / `worst_holding` | 손익률 최고/최저 종목. 손익률을 계산할 종목이 없으면 `null` |
+| `holdings[].weight_pct` | 총자산 대비 비중(%) |
+| `holdings[].profit_loss_pct` | 평균 매입가 대비 손익률(%) |
+| `holdings[].return_20d_pct` | 최근 20거래일 등락률(%) = DB 최신 종가 / 20거래일 전 종가 - 1. **실시간이 아니라 저장된 일별 종가 기준**이고, 저장된 주가가 21일치 미만이면 `null` |
+| `holdings[].price_unavailable` | 현재가(실시간+DB 폴백)를 못 구한 종목. 이 경우 `eval_amount`/`weight_pct`/`profit_loss*`가 `null`이고 합계에서 빠지며 `notes`에 안내가 붙는다 |
+| `flags[]` | 규칙 기반 점검 결과. `code`, `message`(그대로 보여줘도 되는 문장), `value`(실제 값), `threshold`(기준값), 종목/시장 관련이면 `ticker`·`company_name` 또는 `market` |
+| `summary` / `strengths` / `risks` / `suggestions` | 설명 문장. `strengths`·`suggestions`는 항상 1개 이상, `risks`는 플래그가 없으면 "규칙 기준으로 확인된 위험 항목은 없습니다." |
+| `notes` | 현재가 조회 실패, DB 종가로 대체, 20거래일 수익률 계산 불가, 폴백 사용 등 안내 문장 |
+| `disclaimer` | 면책 문구(`GET /api/disclaimer`와 같은 값). 진단 화면에 반드시 함께 보여주세요 |
+
+#### 플래그 규칙 (임계값은 `backend/app/diagnosis.py` 상단 상수)
+
+| `code` | 조건 |
+| --- | --- |
+| `CONCENTRATION_HIGH` | 상위 1종목 비중(총자산 대비) ≥ 40% |
+| `FEW_HOLDINGS` | 보유 종목 수 < 3 |
+| `CASH_HIGH` | 현금 비중 ≥ 70% |
+| `CASH_LOW` | 현금 비중 < 5% |
+| `BIG_LOSS` | 종목 손익률 ≤ -10% (해당 종목마다 1개) |
+| `MARKET_SKEW` | 한 시장 비중(주식 평가금액 대비) ≥ 80% |
+
+#### LLM 설명 검증과 폴백
+
+- LLM 입력은 지표·플래그·종목별 숫자뿐이다(아이디, 사용자 ID 등 식별 정보는 넣지 않는다).
+- 출력은 JSON(`summary`, `strengths`, `risks`, `suggestions`)이어야 하고, 아래 중 하나라도 걸리면 **1회 재시도** 후에도 실패하면 폴백한다.
+  - JSON 파싱 실패 / 필수 키 누락·형식 오류 / `strengths`·`suggestions`가 빈 배열 / 플래그가 있는데 `risks`가 빈 배열
+  - **입력에 없는 숫자**: 허용되는 숫자는 입력에 나온 숫자(소수 0~2자리 반올림, 천·만·억 단위 환산 표기 포함)와 1~10 정수뿐
+  - "매수하세요", "매도하세요" 같은 직접 매매 지시
+- Ollama 연결 실패·타임아웃·모델 오류는 **재시도 없이 바로 폴백**한다(503/502가 아니라 200 + `source: "rule_based"`).
+- 숫자 검증은 문장의 의미(예: 용어를 잘못 부르는 것)까지는 잡지 못한다. 수치 자체는 `metrics`/`holdings`/`flags`를 기준으로 보여주세요.
+
+### 에러
+
+| 상태 | 언제 | body |
+| --- | --- | --- |
+| 400 | 보유 종목이 없음(LLM을 호출하지 않음) | `{"detail": "보유 종목이 없습니다. 모의투자 주문 후 진단할 수 있어요."}` |
+| 401 | 토큰 없음/만료/변조 | 위 "인증 에러" |
+| 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
+
+LLM 실패는 에러가 아니라 폴백(200)이다.
 
 ---
 

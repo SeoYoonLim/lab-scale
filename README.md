@@ -32,6 +32,7 @@
 | POST | `/api/portfolio/orders` | 필요 | 모의투자 매수/매도 주문(현재가로 즉시 체결) |
 | GET | `/api/portfolio/trades` | 필요 | 내 체결 내역(최신순, `limit` 기본 50·최대 200, `offset`, `ticker` 필터, `total` 포함) |
 | POST | `/api/portfolio/reset` | 필요 | 내 모의투자 초기화(보유·체결 내역 삭제 + 잔고 1,000만원 복구). 본문 `{"confirm": true}`가 아니면 400. 관심종목·리서치는 유지 |
+| POST | `/api/portfolio/diagnosis` | 필요 | 내 포트폴리오 AI 진단. 비중·집중도(허핀달)·시장별 비중·손익·20거래일 수익률과 규칙 플래그는 코드가 계산하고, llama3.1:8b가 설명만 생성(검증 실패/Ollama 장애 시 규칙 기반 문장으로 폴백, `source`로 구분). 보유 종목이 없으면 400. 결과 저장 안 함 |
 | GET | `/api/disclaimer` | 공개 | 서비스 면책 문구 `{"text": "..."}`. 같은 문구가 `POST /api/research`·`GET /api/research/{id}` 응답의 `disclaimer` 필드에도 있음(목록에는 없음) |
 | GET | `/api/discovery/trending` | 공개 | 급등/급락/거래량 급증 종목(FR-13, 질문 없이 바로 호출, `category`/`limit` 쿼리) |
 
