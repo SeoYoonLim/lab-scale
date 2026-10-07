@@ -7,6 +7,7 @@ from sqlalchemy.exc import OperationalError
 
 import app.api.research as research_api
 from app.api.research import MAX_QUESTION_LEN
+from app.disclaimer import DISCLAIMER
 from app.main import app
 
 client = TestClient(app, raise_server_exceptions=False)
@@ -66,7 +67,8 @@ class TestQuestionValidation:
     def test_question_is_stripped_before_agent(self, calls):
         r = post("  삼성전자 주가  ")
         assert r.status_code == 200
-        assert r.json() == OK_RESULT
+        # 기존 필드는 그대로이고 disclaimer만 추가됐다
+        assert r.json() == {**OK_RESULT, "disclaimer": DISCLAIMER}
         assert calls == ["삼성전자 주가"]
 
 

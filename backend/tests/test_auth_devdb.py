@@ -22,35 +22,6 @@ client = TestClient(app, raise_server_exceptions=False)
 pytestmark = pytest.mark.integration
 
 
-@pytest.fixture
-def signup(dev_db):
-    """실제 /api/auth/signup으로 가입하고 {"id","username","password","headers"}를 돌려준다. 끝나면 정리한다."""
-    created = []
-
-    def _signup(username: str | None = None):
-        username = username or f"pt_{secrets.token_hex(6)}"
-        password = secrets.token_urlsafe(12)
-        r = client.post("/api/auth/signup", json={"username": username, "password": password})
-        assert r.status_code == 201, r.text
-        body = r.json()
-        created.append(body["user"]["id"])
-        return {
-            **body["user"],
-            "password": password,
-            "headers": {"Authorization": f"Bearer {body['access_token']}"},
-        }
-
-    yield _signup
-
-    dev_db.rollback()
-    for user_id in created:
-        key = f"user:{user_id}"
-        dev_db.query(Watchlist).filter(Watchlist.device_id == key).delete()
-        dev_db.query(VirtualAccount).filter(VirtualAccount.device_id == key).delete()
-        dev_db.query(User).filter(User.id == user_id).delete()
-    dev_db.commit()
-
-
 class TestSignupLoginMe:
     def test_signup_then_login_then_me(self, signup):
         raw_name = f"PT_{secrets.token_hex(6).upper()}"

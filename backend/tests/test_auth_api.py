@@ -28,6 +28,8 @@ PROTECTED = [
     ("DELETE", "/api/watchlist/005930"),
     ("GET", "/api/portfolio"),
     ("POST", "/api/portfolio/orders"),
+    ("GET", "/api/portfolio/trades"),
+    ("POST", "/api/portfolio/reset"),
     ("GET", "/api/auth/me"),
 ]
 
@@ -210,6 +212,7 @@ class TestRouteCoverage:
         ("POST", "/api/auth/signup"),
         ("POST", "/api/auth/login"),
         ("GET", "/api/companies"),
+        ("GET", "/api/disclaimer"),
         ("GET", "/api/discovery/trending"),
         ("GET", "/api/stocks/{ticker}/realtime-price"),
     }
@@ -224,6 +227,8 @@ class TestRouteCoverage:
         ("DELETE", "/api/watchlist/{ticker}"),
         ("GET", "/api/portfolio"),
         ("POST", "/api/portfolio/orders"),
+        ("GET", "/api/portfolio/trades"),
+        ("POST", "/api/portfolio/reset"),
     }
 
     def _routes(self):

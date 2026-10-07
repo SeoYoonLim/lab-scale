@@ -31,6 +31,44 @@ def login_as():
 
 
 @pytest.fixture
+def signup(dev_db):
+    """실제 /api/auth/signup으로 가입하고 {"id","username","password","headers"}를 돌려준다. 끝나면 정리한다(통합 테스트용).
+
+    정리: 관심종목/모의투자는 소유자 키(`user:{id}`)로, 리포트는 users FK CASCADE로 지운다.
+    """
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.models import User, VirtualAccount, Watchlist
+
+    client = TestClient(app, raise_server_exceptions=False)
+    created = []
+
+    def _signup(username: str | None = None):
+        username = username or f"pt_{secrets.token_hex(6)}"
+        password = secrets.token_urlsafe(12)
+        r = client.post("/api/auth/signup", json={"username": username, "password": password})
+        assert r.status_code == 201, r.text
+        body = r.json()
+        created.append(body["user"]["id"])
+        return {
+            **body["user"],
+            "password": password,
+            "headers": {"Authorization": f"Bearer {body['access_token']}"},
+        }
+
+    yield _signup
+
+    dev_db.rollback()
+    for user_id in created:
+        key = f"user:{user_id}"
+        dev_db.query(Watchlist).filter(Watchlist.device_id == key).delete()
+        dev_db.query(VirtualAccount).filter(VirtualAccount.device_id == key).delete()
+        dev_db.query(User).filter(User.id == user_id).delete()
+    dev_db.commit()
+
+
+@pytest.fixture
 def make_user(dev_db):
     """dev DB에 테스트용 사용자를 만들고 테스트가 끝나면 지운다(리포트는 FK CASCADE, 관심종목/모의투자는 owner key로 정리).
 
