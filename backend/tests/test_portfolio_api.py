@@ -8,7 +8,9 @@ from app.tools.company_resolver import Resolution
 
 client = TestClient(app, raise_server_exceptions=False)
 
-HEADERS = {"X-Device-Id": "test-device-1"}
+USER_ID = 7
+# 예전에는 X-Device-Id를 보냈다. 이제 인증은 get_current_user가 하고(아래 autouse 픽스처로 가짜 사용자), 헤더는 필요 없다.
+HEADERS = {}
 COMPANY = type("C", (), {"id": 1, "ticker": "005930", "name": "삼성전자"})()
 
 PORTFOLIO = {
@@ -31,14 +33,26 @@ ORDER_RESULT = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _logged_in(login_as):
+    login_as(USER_ID)
+
+
 def mock_resolution(monkeypatch, res):
     monkeypatch.setattr(portfolio_api, "resolve_company", lambda db, ticker: res)
 
 
-class TestDeviceIdHeader:
-    def test_missing_header_is_422(self):
-        assert client.get("/api/portfolio").status_code == 422
-        assert client.post("/api/portfolio/orders", json={"ticker": "005930", "side": "buy", "quantity": 1}).status_code == 422
+class TestAuthRequired:
+    @pytest.fixture(autouse=True)
+    def _logged_out(self, _logged_in):
+        app.dependency_overrides.clear()
+
+    def test_missing_token_is_401(self):
+        assert client.get("/api/portfolio").status_code == 401
+        assert client.post("/api/portfolio/orders", json={"ticker": "005930", "side": "buy", "quantity": 1}).status_code == 401
+
+    def test_device_id_header_is_no_longer_accepted(self):
+        assert client.get("/api/portfolio", headers={"X-Device-Id": "test-device-1"}).status_code == 401
 
 
 class TestGetPortfolio:
@@ -51,14 +65,21 @@ class TestGetPortfolio:
         assert body["holdings"][0]["ticker"] == "005930"
         assert body.get("note") is None
 
-    def test_passes_through_device_id(self, monkeypatch):
+    def test_passes_user_owner_key(self, monkeypatch):
         seen = {}
         monkeypatch.setattr(
             portfolio_api, "get_portfolio",
             lambda db, device_id: seen.setdefault("id", device_id) or {**PORTFOLIO, "holdings": []},
         )
-        client.get("/api/portfolio", headers={"X-Device-Id": "device-xyz"})
-        assert seen["id"] == "device-xyz"
+        client.get("/api/portfolio", headers={"X-Device-Id": "device-xyz"})  # 헤더는 무시된다
+        assert seen["id"] == f"user:{USER_ID}"
+
+    def test_order_uses_user_owner_key(self, monkeypatch):
+        seen = []
+        mock_resolution(monkeypatch, Resolution(company=COMPANY))
+        monkeypatch.setattr(portfolio_api, "place_order", lambda db, key, c, s, q: seen.append(key) or ORDER_RESULT)
+        client.post("/api/portfolio/orders", json={"ticker": "005930", "side": "buy", "quantity": 5})
+        assert seen == [f"user:{USER_ID}"]
 
 
 class TestCreateOrder:

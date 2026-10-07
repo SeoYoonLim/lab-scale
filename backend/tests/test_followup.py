@@ -71,16 +71,19 @@ def test_ask_question_saves_and_returns_previous_report_id(monkeypatch):
         agent, "_answer", lambda q, m, previous=None: ({"answer": "a", "used_tools": [], "sources": []}, [])
     )
 
-    def fake_save(question, answer, records, previous_report_id=None):
+    def fake_save(question, answer, records, previous_report_id=None, user_id=None):
         saved["previous_report_id"] = previous_report_id
+        saved["user_id"] = user_id
         return 9
 
     monkeypatch.setattr(agent, "save_report_row", fake_save)
-    r = agent.ask_question("그럼 뉴스는?", previous=PREV)
+    r = agent.ask_question("그럼 뉴스는?", previous=PREV, user_id=3)
     assert r["report_id"] == 9 and r["previous_report_id"] == 5 and saved["previous_report_id"] == 5
+    assert saved["user_id"] == 3
 
     r = agent.ask_question("삼성전자 뉴스")
     assert r["previous_report_id"] is None and saved["previous_report_id"] is None
+    assert saved["user_id"] is None
 
 
 class TestRepairFromPreviousQuestion:
