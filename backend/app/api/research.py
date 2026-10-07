@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.agent import ask_question
 from app.api.deps import get_current_user
 from app.auth import CurrentUser
+from app.disclaimer import DISCLAIMER
 from app.reports import delete_report, get_report, list_reports
 
 router = APIRouter(prefix="/api", tags=["research"])
@@ -45,6 +46,7 @@ class ResearchResponse(BaseModel):
     report_id: int | None = None
     # 요청에서 이어받은 직전 보고서. 후속 질문이 아니면 None.
     previous_report_id: int | None = None
+    disclaimer: str = DISCLAIMER
 
 
 class ReportDetail(BaseModel):
@@ -58,6 +60,7 @@ class ReportDetail(BaseModel):
     created_at: str
     used_tools: list[str]
     sources: list[Source]
+    disclaimer: str = DISCLAIMER
 
 
 class ReportListItem(BaseModel):

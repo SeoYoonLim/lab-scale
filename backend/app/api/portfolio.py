@@ -1,11 +1,19 @@
-from typing import Literal
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.api.deps import get_owner_key
 from app.db.session import SessionLocal
-from app.portfolio import InsufficientBalance, InsufficientQuantity, PriceUnavailable, get_portfolio, place_order
+from app.portfolio import (
+    InsufficientBalance,
+    InsufficientQuantity,
+    PriceUnavailable,
+    get_portfolio,
+    list_trades,
+    place_order,
+    reset_portfolio,
+)
 from app.tools.company_resolver import resolve_company
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
@@ -60,11 +68,69 @@ class OrderResponse(BaseModel):
     holding: HoldingAfterOrder | None = None
 
 
+class TradeItem(BaseModel):
+    id: int
+    ticker: str
+    company_name: str
+    side: Literal["buy", "sell"]
+    quantity: int
+    price: float
+    # trade 테이블에는 없는 값. 체결가 * 수량으로 계산한다.
+    amount: float
+    executed_at: str
+
+
+class TradeList(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[TradeItem]
+
+
 @router.get("", response_model=PortfolioResponse)
 def get_my_portfolio(owner_key: str = Depends(get_owner_key)) -> PortfolioResponse:
     """잔고 + 보유 종목(현재가/평가손익 포함). 사용자의 첫 호출이면 초기 잔고로 계좌가 자동 생성된다."""
     db = SessionLocal()
     try:
+        return PortfolioResponse(**get_portfolio(db, owner_key))
+    finally:
+        db.close()
+
+
+@router.get("/trades", response_model=TradeList)
+def get_my_trades(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    ticker: str | None = Query(None, min_length=1, max_length=50),
+    owner_key: str = Depends(get_owner_key),
+) -> TradeList:
+    """내 체결 내역(최신순). `ticker`(종목코드 또는 종목명)를 주면 그 종목만. 체결이 없으면 total 0, items []."""
+    db = SessionLocal()
+    try:
+        company_id = None
+        if ticker is not None:
+            res = resolve_company(db, ticker)
+            if res.company is None:
+                raise HTTPException(status_code=404, detail=res.message)
+            company_id = res.company.id
+        return TradeList(**list_trades(db, owner_key, limit, offset, company_id))
+    finally:
+        db.close()
+
+
+@router.post("/reset", response_model=PortfolioResponse)
+def reset_my_portfolio(
+    body: Any = Body(default=None), owner_key: str = Depends(get_owner_key)
+) -> PortfolioResponse:
+    """내 모의투자를 처음 상태로 되돌린다: 보유 종목과 체결 내역 삭제 + 잔고를 초기값으로. **되돌릴 수 없다.**
+
+    본문이 정확히 `{"confirm": true}`가 아니면(본문 없음 포함) 400이다. 관심종목/리서치 기록은 그대로다.
+    """
+    if not (isinstance(body, dict) and body.get("confirm") is True):
+        raise HTTPException(status_code=400, detail='초기화하려면 본문에 {"confirm": true}를 보내야 합니다.')
+    db = SessionLocal()
+    try:
+        reset_portfolio(db, owner_key)
         return PortfolioResponse(**get_portfolio(db, owner_key))
     finally:
         db.close()

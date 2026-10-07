@@ -12,6 +12,7 @@ from sqlalchemy.exc import DBAPIError, OperationalError
 
 from app.api.auth import router as auth_router
 from app.api.companies import router as companies_router
+from app.api.disclaimer import router as disclaimer_router
 from app.api.discovery import router as discovery_router
 from app.api.portfolio import router as portfolio_router
 from app.api.research import router as research_router
@@ -73,6 +74,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(disclaimer_router)
 app.include_router(research_router)
 app.include_router(stocks_router)
 app.include_router(companies_router)
