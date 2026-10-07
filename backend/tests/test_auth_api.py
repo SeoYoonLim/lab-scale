@@ -30,6 +30,7 @@ PROTECTED = [
     ("POST", "/api/portfolio/orders"),
     ("GET", "/api/portfolio/trades"),
     ("POST", "/api/portfolio/reset"),
+    ("POST", "/api/portfolio/diagnosis"),
     ("GET", "/api/auth/me"),
 ]
 
@@ -229,6 +230,7 @@ class TestRouteCoverage:
         ("POST", "/api/portfolio/orders"),
         ("GET", "/api/portfolio/trades"),
         ("POST", "/api/portfolio/reset"),
+        ("POST", "/api/portfolio/diagnosis"),
     }
 
     def _routes(self):
