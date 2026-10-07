@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import get_owner_key
 from app.db.session import SessionLocal
+from app.diagnosis import NoHoldings, diagnose
 from app.portfolio import (
     InsufficientBalance,
     InsufficientQuantity,
@@ -132,6 +133,86 @@ def reset_my_portfolio(
     try:
         reset_portfolio(db, owner_key)
         return PortfolioResponse(**get_portfolio(db, owner_key))
+    finally:
+        db.close()
+
+
+class DiagnosisHolding(BaseModel):
+    ticker: str
+    company_name: str
+    market: str
+    quantity: int
+    avg_price: float
+    current_price: float | None = None
+    is_realtime: bool
+    # 현재가를 못 구한 종목. 평가금액/비중/손익이 null이고 합계에서 빠진다.
+    price_unavailable: bool
+    eval_amount: float | None = None
+    weight_pct: float | None = None
+    profit_loss: float | None = None
+    profit_loss_pct: float | None = None
+    return_20d_pct: float | None = None
+
+
+class HoldingBrief(BaseModel):
+    ticker: str
+    company_name: str
+    profit_loss_pct: float | None = None
+
+
+class DiagnosisMetrics(BaseModel):
+    total_asset: float
+    cash_balance: float
+    cash_weight_pct: float | None = None
+    stock_eval_amount: float
+    holding_count: int
+    priced_holding_count: int
+    top1_weight_pct: float | None = None
+    top3_weight_pct: float | None = None
+    herfindahl_index: float | None = None
+    market_weights_pct: dict[str, float | None]
+    total_profit_loss: float
+    total_profit_loss_pct: float | None = None
+    best_holding: HoldingBrief | None = None
+    worst_holding: HoldingBrief | None = None
+
+
+class DiagnosisFlag(BaseModel):
+    code: str
+    message: str
+    value: float
+    threshold: float
+    ticker: str | None = None
+    company_name: str | None = None
+    market: str | None = None
+
+
+class DiagnosisResponse(BaseModel):
+    generated_at: str
+    source: Literal["llm", "rule_based"]
+    model: str | None = None
+    metrics: DiagnosisMetrics
+    holdings: list[DiagnosisHolding]
+    flags: list[DiagnosisFlag]
+    summary: str
+    strengths: list[str]
+    risks: list[str]
+    suggestions: list[str]
+    notes: list[str]
+    disclaimer: str
+
+
+@router.post("/diagnosis", response_model=DiagnosisResponse, response_model_exclude_none=False)
+def diagnose_my_portfolio(owner_key: str = Depends(get_owner_key)) -> DiagnosisResponse:
+    """내 포트폴리오 AI 진단. 지표와 플래그는 코드가 계산하고 LLM은 설명만 한다(실패 시 규칙 기반 문장).
+
+    보유 종목이 없으면 400(LLM 호출 없음). 결과는 저장하지 않는다. LLM을 쓰면 수 초~수십 초 걸린다.
+    """
+    db = SessionLocal()
+    try:
+        return DiagnosisResponse(**diagnose(db, owner_key))
+    except NoHoldings as e:
+        raise HTTPException(status_code=400, detail=str(e))
     finally:
         db.close()
 
