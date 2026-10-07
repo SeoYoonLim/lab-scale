@@ -3,7 +3,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.api.deps import get_device_id
+from app.api.deps import get_owner_key
 from app.db.session import SessionLocal
 from app.portfolio import InsufficientBalance, InsufficientQuantity, PriceUnavailable, get_portfolio, place_order
 from app.tools.company_resolver import resolve_company
@@ -61,17 +61,17 @@ class OrderResponse(BaseModel):
 
 
 @router.get("", response_model=PortfolioResponse)
-def get_my_portfolio(device_id: str = Depends(get_device_id)) -> PortfolioResponse:
-    """잔고 + 보유 종목(현재가/평가손익 포함). 디바이스ID의 첫 호출이면 초기 잔고로 계좌가 자동 생성된다."""
+def get_my_portfolio(owner_key: str = Depends(get_owner_key)) -> PortfolioResponse:
+    """잔고 + 보유 종목(현재가/평가손익 포함). 사용자의 첫 호출이면 초기 잔고로 계좌가 자동 생성된다."""
     db = SessionLocal()
     try:
-        return PortfolioResponse(**get_portfolio(db, device_id))
+        return PortfolioResponse(**get_portfolio(db, owner_key))
     finally:
         db.close()
 
 
 @router.post("/orders", response_model=OrderResponse)
-def create_order(request: OrderRequest, device_id: str = Depends(get_device_id)) -> OrderResponse:
+def create_order(request: OrderRequest, owner_key: str = Depends(get_owner_key)) -> OrderResponse:
     """현재가로 즉시 체결되는 매수/매도 주문(호가 단위·장 시간 체크는 범위 밖)."""
     db = SessionLocal()
     try:
@@ -80,7 +80,7 @@ def create_order(request: OrderRequest, device_id: str = Depends(get_device_id))
             raise HTTPException(status_code=404, detail=res.message)
 
         try:
-            result = place_order(db, device_id, res.company, request.side, request.quantity)
+            result = place_order(db, owner_key, res.company, request.side, request.quantity)
         except PriceUnavailable as e:
             raise HTTPException(status_code=503, detail=str(e))
         except (InsufficientBalance, InsufficientQuantity) as e:

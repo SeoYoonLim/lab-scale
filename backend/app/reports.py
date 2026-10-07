@@ -6,6 +6,8 @@
   종목 상세는 tool_call_log에 남는다.
 - tool_call_log.arguments/result = 실제로 실행한 인자(보정 후)와 tool 결과 전체. sources는 이 result에서
   복원하므로 research_report에 별도 컬럼이 필요 없다. 소요시간은 result의 `_elapsed_ms` 메타 키에 넣는다.
+- research_report.user_id = 리포트 소유자. 조회/목록/삭제는 user_id가 정확히 일치하는 행만 대상으로 한다
+  (user_id=None이면 소유자 없는 행, 즉 로그인 도입 전 리포트만). 기본값을 두지 않아 소유자 조건을 빠뜨릴 수 없게 했다.
 """
 
 import json
@@ -32,12 +34,21 @@ def _summary(answer: str) -> str:
     return s if len(s) <= SUMMARY_LEN else s[: SUMMARY_LEN - 1] + "…"
 
 
+def _owned_by(user_id: int | None):
+    return ResearchReport.user_id.is_(None) if user_id is None else ResearchReport.user_id == user_id
+
+
 def save_report(
-    question: str, answer: str, tool_records: list[dict], previous_report_id: int | None = None
+    question: str,
+    answer: str,
+    tool_records: list[dict],
+    previous_report_id: int | None = None,
+    user_id: int | None = None,
 ) -> int | None:
     """질문/답변과 tool 실행 이력을 한 트랜잭션으로 저장하고 report_id를 돌려준다.
 
-    previous_report_id는 후속 질문이 이어받은 직전 보고서다(없으면 None).
+    previous_report_id는 후속 질문이 이어받은 직전 보고서다(없으면 None). 같은 사용자의 리포트인지는
+    호출측(라우터)이 get_report(..., user_id=...)로 먼저 확인한다. user_id는 리포트 소유자(없으면 None).
     저장 중 어떤 오류가 나도 예외를 밖으로 내지 않는다(답변 생성 흐름을 막지 않기 위해).
     실패하면 로그만 남기고 None을 돌려준다."""
     try:
@@ -54,6 +65,7 @@ def save_report(
             report = ResearchReport(
                 company_id=company_id,
                 previous_report_id=previous_report_id,
+                user_id=user_id,
                 question=question,
                 summary=_summary(answer),
                 content=answer,
@@ -87,11 +99,15 @@ def save_report(
         return None
 
 
-def get_report(report_id: int) -> dict | None:
-    """저장된 리포트 한 건. 없으면 None. sources는 저장된 tool 결과에서 복원한다."""
+def _find_owned(db, report_id: int, user_id: int | None) -> ResearchReport | None:
+    return db.query(ResearchReport).filter(ResearchReport.id == report_id, _owned_by(user_id)).one_or_none()
+
+
+def get_report(report_id: int, *, user_id: int | None) -> dict | None:
+    """user_id 소유의 리포트 한 건. 없거나 남의 것이면 None(둘을 구분하지 않는다). sources는 저장된 tool 결과에서 복원한다."""
     db = SessionLocal()
     try:
-        report = db.get(ResearchReport, report_id)
+        report = _find_owned(db, report_id, user_id)
         if report is None:
             return None
         logs = (
@@ -115,11 +131,12 @@ def get_report(report_id: int) -> dict | None:
         db.close()
 
 
-def delete_report(report_id: int) -> bool:
-    """리포트 한 건을 삭제한다. 없으면 False. tool_call_log는 FK ON DELETE CASCADE(및 ORM cascade)로 함께 지워진다."""
+def delete_report(report_id: int, *, user_id: int | None) -> bool:
+    """user_id 소유의 리포트 한 건을 삭제한다. 없거나 남의 것이면 False.
+    tool_call_log는 FK ON DELETE CASCADE(및 ORM cascade)로 함께 지워진다."""
     db = SessionLocal()
     try:
-        report = db.get(ResearchReport, report_id)
+        report = _find_owned(db, report_id, user_id)
         if report is None:
             return False
         db.delete(report)
@@ -132,14 +149,15 @@ def delete_report(report_id: int) -> bool:
         db.close()
 
 
-def list_reports(limit: int = 20, offset: int = 0) -> tuple[int, list[dict]]:
-    """(전체 리포트 수, 최근 리포트 목록(최신순)). 목록에는 sources를 빼고 미리보기(summary)만 담는다."""
+def list_reports(*, user_id: int | None, limit: int = 20, offset: int = 0) -> tuple[int, list[dict]]:
+    """(user_id의 전체 리포트 수, 최근 리포트 목록(최신순)). 목록에는 sources를 빼고 미리보기(summary)만 담는다."""
     db = SessionLocal()
     try:
-        total = db.query(func.count(ResearchReport.id)).scalar()
+        total = db.query(func.count(ResearchReport.id)).filter(_owned_by(user_id)).scalar()
         rows = (
             db.query(ResearchReport, Company.name)
             .outerjoin(Company, Company.id == ResearchReport.company_id)
+            .filter(_owned_by(user_id))
             .order_by(ResearchReport.created_at.desc(), ResearchReport.id.desc())
             .limit(limit)
             .offset(offset)

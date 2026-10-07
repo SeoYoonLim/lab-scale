@@ -1,4 +1,4 @@
-"""모의투자(가상 계좌/보유 종목/체결 내역). 로그인이 없어 디바이스ID(X-Device-Id)로 구분한다(app/api/deps.py).
+"""모의투자(가상 계좌/보유 종목/체결 내역). 소유자는 device_id 컬럼의 값으로 구분한다(로그인 사용자는 `user:{id}`, app/api/deps.py get_owner_key).
 
 db/schema.sql 원안에는 없던 확장이다(README "서윤님이 설계한 스키마와..." 참고). 현재가는 app/realtime_price.py의
 get_realtime_price_data를 그대로 재사용한다(실시간 실패 시 DB 최근 종가 폴백도 그대로 적용됨).
@@ -63,7 +63,7 @@ def apply_sell(cash_balance: float, quantity: int, price: float, holding_qty: in
 
 
 def get_or_create_account(db, device_id: str) -> VirtualAccount:
-    """디바이스ID의 첫 요청이면 초기 잔고(INITIAL_BALANCE)로 계좌를 만든다."""
+    """소유자의 첫 요청이면 초기 잔고(INITIAL_BALANCE)로 계좌를 만든다."""
     account = db.get(VirtualAccount, device_id)
     if account is None:
         account = VirtualAccount(device_id=device_id, cash_balance=INITIAL_BALANCE)

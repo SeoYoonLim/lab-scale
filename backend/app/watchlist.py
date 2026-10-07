@@ -1,4 +1,4 @@
-"""관심종목(watchlist). FR-12. 로그인이 없어 프론트의 디바이스ID(X-Device-Id)로 구분한다(app/api/deps.py).
+"""관심종목(watchlist). FR-12. 소유자는 device_id 컬럼의 값으로 구분한다(로그인 사용자는 `user:{id}`, app/api/deps.py get_owner_key).
 
 db/schema.sql 원안에는 없던 확장이다(README "서윤님이 설계한 스키마와..." 참고).
 """
@@ -62,7 +62,7 @@ def _latest_prices(db, company_ids: list[int]) -> dict[int, StockPrice]:
 
 
 def list_items(db, device_id: str) -> list[dict]:
-    """디바이스ID의 관심종목 전체(등록 최신순) + 종목별 최근 종가(실시간 아님, 프론트가 바로 쓸 수 있는 최소 정보)."""
+    """소유자의 관심종목 전체(등록 최신순) + 종목별 최근 종가(실시간 아님, 프론트가 바로 쓸 수 있는 최소 정보)."""
     rows = (
         db.query(Watchlist, Company)
         .join(Company, Company.id == Watchlist.company_id)

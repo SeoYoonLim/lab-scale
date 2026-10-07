@@ -5,7 +5,8 @@ from app.db.base import Base
 
 
 class Watchlist(Base):
-    """디바이스ID(로그인 없이 프론트가 만들어 localStorage에 저장하는 식별자)별 관심종목.
+    """소유자별 관심종목. device_id 컬럼에는 로그인 사용자의 소유자 키 `user:{id}`가 들어간다
+    (로그인 도입 전 X-Device-Id로 만든 행은 디바이스ID 그대로 남아 있다).
 
     FR-12. db/schema.sql 원안에는 없던 확장이다(README "서윤님이 설계한 스키마와..." 참고).
     """

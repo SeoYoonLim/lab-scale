@@ -5,7 +5,7 @@ from app.db.base import Base
 
 
 class Holding(Base):
-    """디바이스ID별 보유 종목(수량, 평균 매입 단가). 전량 매도되면 row를 지운다(portfolio.py 참고)."""
+    """소유자(device_id)별 보유 종목(수량, 평균 매입 단가). 전량 매도되면 row를 지운다(portfolio.py 참고)."""
 
     __tablename__ = "holding"
     __table_args__ = (UniqueConstraint("device_id", "company_id", name="uq_holding_device_company"),)

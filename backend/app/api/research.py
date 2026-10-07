@@ -1,9 +1,11 @@
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Path, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
 from pydantic import BaseModel, Field, field_validator
 
 from app.agent import ask_question
+from app.api.deps import get_current_user
+from app.auth import CurrentUser
 from app.reports import delete_report, get_report, list_reports
 
 router = APIRouter(prefix="/api", tags=["research"])
@@ -74,18 +76,20 @@ class ReportList(BaseModel):
 
 
 def _report_not_found(report_id: int) -> HTTPException:
+    # 남의 리포트도 "없음"과 똑같이 404로 응답한다(403이면 그 id가 존재한다는 사실이 드러난다).
     return HTTPException(status_code=404, detail=f"report_id={report_id} 리포트를 찾을 수 없습니다.")
 
 
 @router.post("/research", response_model=ResearchResponse)
-def research(request: ResearchRequest) -> ResearchResponse:
+def research(request: ResearchRequest, user: CurrentUser = Depends(get_current_user)) -> ResearchResponse:
     if request.previous_report_id is None:
-        result = ask_question(request.question)
+        result = ask_question(request.question, user_id=user.id)
     else:
-        previous = get_report(request.previous_report_id)
+        # 이어 쓰기도 본인 리포트만. 남의 리포트 id면 없는 것과 같은 404다.
+        previous = get_report(request.previous_report_id, user_id=user.id)
         if previous is None:
             raise _report_not_found(request.previous_report_id)
-        result = ask_question(request.question, previous=previous)
+        result = ask_question(request.question, previous=previous, user_id=user.id)
     return ResearchResponse(**result)
 
 
@@ -93,24 +97,29 @@ def research(request: ResearchRequest) -> ResearchResponse:
 def list_research(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    user: CurrentUser = Depends(get_current_user),
 ) -> ReportList:
-    """최근 리포트 목록(최신순). total은 전체 리포트 수(페이지네이션용)."""
-    total, items = list_reports(limit=limit, offset=offset)
+    """내 최근 리포트 목록(최신순). total은 내 전체 리포트 수(페이지네이션용)."""
+    total, items = list_reports(user_id=user.id, limit=limit, offset=offset)
     return ReportList(total=total, items=[ReportListItem(**r) for r in items])
 
 
 @router.get("/research/{report_id}", response_model=ReportDetail)
-def get_research(report_id: int = Path(ge=1, le=BIGINT_MAX)) -> ReportDetail:
-    """저장된 리포트 한 건(질문/답변/sources)."""
-    report = get_report(report_id)
+def get_research(
+    report_id: int = Path(ge=1, le=BIGINT_MAX), user: CurrentUser = Depends(get_current_user)
+) -> ReportDetail:
+    """내 리포트 한 건(질문/답변/sources)."""
+    report = get_report(report_id, user_id=user.id)
     if report is None:
         raise _report_not_found(report_id)
     return ReportDetail(**report)
 
 
 @router.delete("/research/{report_id}", status_code=204)
-def delete_research(report_id: int = Path(ge=1, le=BIGINT_MAX)) -> Response:
-    """리포트 한 건과 딸린 tool 호출 이력을 삭제한다."""
-    if not delete_report(report_id):
+def delete_research(
+    report_id: int = Path(ge=1, le=BIGINT_MAX), user: CurrentUser = Depends(get_current_user)
+) -> Response:
+    """내 리포트 한 건과 딸린 tool 호출 이력을 삭제한다."""
+    if not delete_report(report_id, user_id=user.id):
         raise _report_not_found(report_id)
     return Response(status_code=204)
