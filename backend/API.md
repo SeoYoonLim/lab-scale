@@ -4,20 +4,54 @@
 긴 필드(answer, sources)만 잘라서 표기했다.
 
 - Base URL (로컬): `http://localhost:8000`
-- 요청/응답은 모두 JSON(UTF-8). **인증 없음**(회원가입/로그인 자체가 없다). 관심종목/모의투자만 `X-Device-Id` 헤더로
-  사용자를 구분한다(아래 "디바이스ID" 참고 — 이것도 인증이 아니라 단순 구분자다).
+- 요청/응답은 모두 JSON(UTF-8). 리서치/관심종목/모의투자는 **로그인(Bearer 토큰)이 필요**하다(아래 "인증").
 - 자동 생성 문서: `http://localhost:8000/docs` (Swagger UI)
 
-## 디바이스ID (`X-Device-Id`)
+## 인증 (2026-10-07부터)
 
-`/api/watchlist*`, `/api/portfolio*`는 모든 요청에 `X-Device-Id` 헤더가 필요하다. 로그인이 없는 서비스라, **프론트가
-생성해 localStorage에 저장하는 uuid 문자열**을 그대로 사용자 구분자로 쓴다(서버는 이 값을 검증 없이 그대로 신뢰한다).
+아이디/비밀번호로 가입·로그인하면 **access token(JWT, HS256, 만료 24시간)** 을 받는다. 인증이 필요한 API는
+모든 요청에 이 토큰을 `Authorization` 헤더로 보낸다.
 
-- 헤더가 없거나 빈 문자열이면 **422**(FastAPI 기본 검증 오류 형식).
-- 길이 제한: 1~100자. 그 외 형식 제약은 없다(uuid 포맷 검증도 하지 않는다).
-- **인증이 아니다.** 같은 값을 다른 사람이 보내면 그 사람의 관심종목/모의투자 상태를 그대로 보고 바꿀 수 있다
-  (설계상 받아들인 한계 — 회원가입 없는 MVP 범위). 값을 잃어버리면(localStorage 초기화 등) 그 상태도 못 찾는다.
-- `/api/research*`는 이 헤더와 무관하다(리서치 이력은 지금도 전체 공용).
+```
+Authorization: Bearer <access_token>
+```
+
+| 구분 | 엔드포인트 |
+| --- | --- |
+| **인증 필요** | `/api/auth/me`, `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST) |
+| 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending` |
+
+- 데이터는 **사용자별로 분리**된다. 리서치 리포트 목록/조회/삭제/이어 쓰기(`previous_report_id`)는 본인 것만 대상이고,
+  **남의 리포트 ID는 없는 리포트와 똑같이 404**다(403이 아니다 — 그 ID가 존재하는지 드러내지 않기 위해).
+  관심종목/모의투자도 사용자마다 따로다.
+- 로그인 도입 전에 만들어진 리포트(소유자 없음)와 `X-Device-Id`로 만든 관심종목/모의투자 데이터는 DB에 남아 있지만
+  어떤 사용자에게도 보이지 않는다(새 계정으로 이전되지 않음).
+- 서버는 세션/쿠키를 쓰지 않는다. 로그아웃은 프론트가 저장한 토큰을 지우는 것으로 끝난다(서버 측 토큰 폐기 없음, 아래 "한계").
+
+### 인증 에러 (401)
+
+토큰이 없거나, `Bearer` 형식이 아니거나, 서명이 틀리거나(변조/다른 서버 키), 만료됐거나, 토큰의 사용자가 삭제됐으면
+**전부 같은 401**이다(사유를 구분해 알려주지 않는다). 응답 헤더에 `WWW-Authenticate: Bearer`가 붙는다.
+
+```json
+{ "detail": "인증이 필요합니다. 다시 로그인해주세요." }
+```
+
+예전처럼 `X-Device-Id`만 보내면 이제 **422가 아니라 401**이다(헤더는 무시된다).
+
+### 프론트가 할 일
+
+1. **`X-Device-Id` 제거**: 헤더 생성/전송 코드와 localStorage의 디바이스ID를 지운다. 서버는 더 이상 읽지 않는다.
+2. **가입/로그인 화면**: `POST /api/auth/signup`(201) 또는 `POST /api/auth/login`(200) 응답의 `access_token`을 저장한다.
+   두 응답 형식은 같다(`{user: {id, username}, access_token, token_type: "bearer"}`).
+3. **토큰 저장**: localStorage 또는 메모리. localStorage는 새로고침 후에도 유지되지만 XSS가 있으면 탈취될 수 있다
+   (쿠키 기반 세션은 이번 범위 밖). 만료 시각은 토큰의 `exp`(초 단위 UNIX time)로 알 수 있지만, 서버가 401을 주면 그게 최종 판단이다.
+4. **Authorization 헤더**: 인증 필요 API를 부를 때 모든 요청에 `Authorization: Bearer <access_token>`을 붙인다
+   (공개 API에는 붙여도 무시된다).
+5. **401 처리**: 어떤 API에서든 401을 받으면 저장된 토큰을 지우고 로그인 화면으로 보낸다. 재시도해도 같은 결과다.
+   (로그인 API의 401은 "아이디 또는 비밀번호가 올바르지 않습니다" — 로그인 화면에서 그대로 보여주면 된다.)
+6. **앱 시작 시**: 저장된 토큰이 있으면 `GET /api/auth/me`로 유효한지 확인하고 사용자 이름을 표시한다(401이면 5번).
+7. **CORS**: `Authorization` 헤더를 보내면 브라우저가 preflight(OPTIONS)를 먼저 보낸다. 허용 origin(아래)에서는 그대로 통과한다.
 
 ## CORS
 
@@ -31,19 +65,110 @@
 
 ## 엔드포인트 요약
 
-| 메서드 | 경로 | 설명 |
+| 메서드 | 경로 | 인증 | 설명 |
+| --- | --- | --- | --- |
+| POST | `/api/auth/signup` | 공개 | 회원가입 → 201 + access token |
+| POST | `/api/auth/login` | 공개 | 로그인 → 200 + access token |
+| GET | `/api/auth/me` | 필요 | 토큰의 사용자 정보 |
+| POST | `/api/research` | 필요 | 질문을 보내 AI 답변 생성(+리포트 저장). `previous_report_id`로 내 직전 보고서를 이어서 후속 질문 가능 |
+| GET | `/api/research` | 필요 | 내 리포트 목록(최신순, 페이지네이션) |
+| GET | `/api/research/{report_id}` | 필요 | 내 리포트 한 건 조회 |
+| DELETE | `/api/research/{report_id}` | 필요 | 내 리포트 한 건 삭제(tool 호출 이력 포함) |
+| GET | `/api/stocks/{ticker}/realtime-price` | 공개 | 종목 현재가(비공식 소스 기반 실시간 시세, 장외/장애 시 자동 폴백) |
+| GET | `/api/companies` | 공개 | 종목 목록/검색(`q`로 종목명·티커 부분 일치, 별칭 포함) + 최근 종가·등락률 |
+| GET | `/api/discovery/trending` | 공개 | 급등/급락/거래량 급증 종목 |
+| GET | `/api/watchlist` | 필요 | 내 관심종목 목록 |
+| POST | `/api/watchlist` | 필요 | 관심종목 추가 |
+| DELETE | `/api/watchlist/{ticker}` | 필요 | 관심종목 삭제 |
+| GET | `/api/portfolio` | 필요 | 내 모의투자 잔고 + 보유 종목(첫 호출 시 계좌 자동 생성) |
+| POST | `/api/portfolio/orders` | 필요 | 모의투자 매수/매도 주문 |
+
+아래 각 엔드포인트의 에러 표에는 401을 반복해 적지 않았다. **인증 필요 API는 모두 위 "인증 에러 (401)"가 공통으로 적용된다.**
+
+---
+
+## POST /api/auth/signup
+
+회원가입. 성공하면 바로 로그인된 상태(토큰)를 돌려준다.
+
+### 요청
+
+```json
+{ "username": "alice_01", "password": "correct-horse-battery" }
+```
+
+| 필드 | 타입 | 규칙 |
 | --- | --- | --- |
-| POST | `/api/research` | 질문을 보내 AI 답변 생성(+리포트 저장). `previous_report_id`로 직전 보고서를 이어서 후속 질문 가능 |
-| GET | `/api/research` | 저장된 리포트 목록(최신순, 페이지네이션) |
-| GET | `/api/research/{report_id}` | 저장된 리포트 한 건 조회 |
-| DELETE | `/api/research/{report_id}` | 저장된 리포트 한 건 삭제(tool 호출 이력 포함) |
-| GET | `/api/stocks/{ticker}/realtime-price` | 종목 현재가(비공식 소스 기반 실시간 시세, 장외/장애 시 자동 폴백) |
-| GET | `/api/companies` | 종목 목록/검색(`q`로 종목명·티커 부분 일치, 별칭 포함) + 최근 종가·등락률 |
-| GET | `/api/watchlist` | 관심종목 목록(`X-Device-Id` 필요) |
-| POST | `/api/watchlist` | 관심종목 추가(`X-Device-Id` 필요) |
-| DELETE | `/api/watchlist/{ticker}` | 관심종목 삭제(`X-Device-Id` 필요) |
-| GET | `/api/portfolio` | 모의투자 잔고 + 보유 종목(`X-Device-Id` 필요, 첫 호출 시 계좌 자동 생성) |
-| POST | `/api/portfolio/orders` | 모의투자 매수/매도 주문(`X-Device-Id` 필요) |
+| `username` | string | 필수. **3~20자, 영문 소문자/숫자/밑줄(`[a-z0-9_]`)**. 대문자는 소문자로 바꿔 저장한다(`Alice`로 가입하면 `alice`). 위반 시 422 |
+| `password` | string | 필수. **8~128자**(문자 종류 제한 없음). 위반 시 422 |
+
+```bash
+curl -X POST http://localhost:8000/api/auth/signup \
+  -H "Content-Type: application/json" \
+  -d '{"username": "alice_01", "password": "correct-horse-battery"}'
+```
+
+### 응답 201
+
+```json
+{
+  "user": { "id": 1, "username": "alice_01" },
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9....",
+  "token_type": "bearer"
+}
+```
+
+### 에러
+
+| 상태 | 언제 | body |
+| --- | --- | --- |
+| 409 | 이미 있는 아이디(대소문자 무시) | `{"detail": "이미 사용 중인 아이디입니다."}` |
+| 422 | 아이디/비밀번호 규칙 위반, 필드 누락, 잘못된 JSON | 검증 오류 형식. 단 `/api/auth/*`의 422에는 **`input` 키가 없다**(입력한 비밀번호를 되돌려주지 않기 위해) |
+| 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
+
+---
+
+## POST /api/auth/login
+
+### 요청
+
+```json
+{ "username": "alice_01", "password": "correct-horse-battery" }
+```
+
+`username`은 대소문자를 구분하지 않는다(가입 때처럼 소문자로 바꿔서 찾는다). 길이 상한(아이디 100자, 비밀번호 128자)을 넘으면 422.
+
+### 응답 200
+
+`POST /api/auth/signup`의 201 응답과 같은 형식(`user`, `access_token`, `token_type`).
+
+### 에러
+
+| 상태 | 언제 | body |
+| --- | --- | --- |
+| 401 | 아이디가 없거나 비밀번호가 틀림(**두 경우 응답이 완전히 같다**) | `{"detail": "아이디 또는 비밀번호가 올바르지 않습니다"}` |
+| 422 | 필드 누락/빈 문자열/길이 상한 초과 | 검증 오류 형식(`input` 없음) |
+| 503 | DB 연결 불가 | 위와 같음 |
+
+아이디가 없을 때도 서버가 비밀번호 해시 검증을 한 번 수행하므로, 응답 시간으로도 아이디 존재 여부를 구분하기 어렵다.
+
+---
+
+## GET /api/auth/me
+
+```bash
+curl http://localhost:8000/api/auth/me -H "Authorization: Bearer $TOKEN"
+```
+
+### 응답 200
+
+```json
+{ "id": 1, "username": "alice_01" }
+```
+
+### 에러
+
+401(토큰 없음/만료/변조/삭제된 사용자, 위 "인증 에러" 참고).
 
 ---
 
@@ -61,7 +186,7 @@
 | 필드 | 타입 | 규칙 |
 | --- | --- | --- |
 | `question` | string | 필수. 앞뒤 공백 제거 후 1자 이상, **최대 1000자**. 위반 시 422 |
-| `previous_report_id` | int 또는 null | 선택. 이어서 물을 **바로 직전 보고서**의 ID(1 이상). 생략하거나 null이면 독립 질문. 없는 ID면 404, 정수가 아니거나 1 미만이면 422 |
+| `previous_report_id` | int 또는 null | 선택. 이어서 물을 **바로 직전 보고서**의 ID(1 이상, **내 리포트만**). 생략하거나 null이면 독립 질문. 없는 ID나 남의 리포트 ID면 404, 정수가 아니거나 1 미만이면 422 |
 
 #### 후속 질문 (`previous_report_id`)
 
@@ -119,6 +244,7 @@
 
 ```bash
 curl -X POST http://localhost:8000/api/research \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"question": "삼성전자 최근 3일 등락률이랑 거래량 알려줘."}'
 ```
@@ -127,6 +253,7 @@ curl -X POST http://localhost:8000/api/research \
 
 ```bash
 curl -X POST http://localhost:8000/api/research \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"question": "그럼 최근 뉴스는?", "previous_report_id": 48}'
 ```
@@ -154,7 +281,8 @@ curl -X POST http://localhost:8000/api/research \
 
 | 상태 | 언제 | body |
 | --- | --- | --- |
-| 404 | `previous_report_id`에 해당하는 리포트가 없음(이 경우 LLM은 호출하지 않음) | `{"detail": "report_id=999999 리포트를 찾을 수 없습니다."}` (`GET /api/research/{report_id}`의 404와 같은 형식) |
+| 401 | 토큰 없음/만료/변조 | 위 "인증 에러" |
+| 404 | `previous_report_id`에 해당하는 리포트가 없거나 남의 리포트(이 경우 LLM은 호출하지 않음) | `{"detail": "report_id=999999 리포트를 찾을 수 없습니다."}` (`GET /api/research/{report_id}`의 404와 같은 형식) |
 | 422 | `question` 누락 / 공백뿐 / 1000자 초과 / `previous_report_id`가 정수가 아니거나 1 미만·BIGINT 초과 / 잘못된 JSON | 아래 "검증 오류(422)" 형식 |
 | 502 | Ollama가 응답은 했으나 오류 반환(모델 미설치 등) | `{"detail": "AI 모델 서버가 오류를 반환했습니다. 잠시 후 다시 시도해주세요."}` |
 | 503 | Ollama 서버에 연결 불가 | `{"detail": "AI 모델 서버(Ollama)에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
@@ -165,7 +293,7 @@ curl -X POST http://localhost:8000/api/research \
 
 ## GET /api/research
 
-저장된 리포트 목록(최신순).
+내 리포트 목록(최신순). `total`도 내 리포트 수다.
 
 > **Breaking change:** 응답이 배열이 아니라 `{"total": int, "items": [...]}` envelope이다.
 > 예전처럼 응답을 바로 배열로 다루던 코드는 `response.items`로 바꿔야 한다.
@@ -218,6 +346,7 @@ curl "http://localhost:8000/api/research?limit=2&offset=1"
 
 ### 에러
 
+- 401: 토큰 없음/만료/변조 (위 "인증 에러")
 - 422: `limit`/`offset`이 범위 밖이거나 정수가 아님 (검증 오류 형식)
 - 503: DB 연결 불가 (위와 동일한 body)
 
@@ -225,7 +354,7 @@ curl "http://localhost:8000/api/research?limit=2&offset=1"
 
 ## GET /api/research/{report_id}
 
-저장된 리포트 한 건(전체 답변 + sources).
+내 리포트 한 건(전체 답변 + sources).
 
 ### 응답 200
 
@@ -262,7 +391,8 @@ curl http://localhost:8000/api/research/18
 
 | 상태 | 언제 | body |
 | --- | --- | --- |
-| 404 | 해당 ID의 리포트가 없음 | `{"detail": "report_id=999999 리포트를 찾을 수 없습니다."}` |
+| 401 | 토큰 없음/만료/변조 | 위 "인증 에러" |
+| 404 | 해당 ID의 리포트가 없거나 남의 리포트(둘을 구분하지 않음) | `{"detail": "report_id=999999 리포트를 찾을 수 없습니다."}` |
 | 422 | ID가 정수가 아니거나 1 미만/BIGINT 초과 | 검증 오류 형식 |
 | 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
 
@@ -278,7 +408,7 @@ curl http://localhost:8000/api/research/18
 본문 없음.
 
 ```bash
-curl -X DELETE http://localhost:8000/api/research/18 -i
+curl -X DELETE http://localhost:8000/api/research/18 -H "Authorization: Bearer $TOKEN" -i
 ```
 
 ### 응답 204
@@ -293,7 +423,8 @@ HTTP/1.1 204 No Content
 
 | 상태 | 언제 | body |
 | --- | --- | --- |
-| 404 | 해당 ID의 리포트가 없음(이미 삭제된 경우 포함) | `{"detail": "report_id=999999 리포트를 찾을 수 없습니다."}` |
+| 401 | 토큰 없음/만료/변조 | 위 "인증 에러" |
+| 404 | 해당 ID의 리포트가 없거나(이미 삭제된 경우 포함) 남의 리포트. 남의 리포트는 삭제되지 않는다 | `{"detail": "report_id=999999 리포트를 찾을 수 없습니다."}` |
 | 422 | ID가 정수가 아니거나 1 미만/BIGINT 초과 | 검증 오류 형식 |
 | 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
 
@@ -392,7 +523,7 @@ curl http://localhost:8000/api/stocks/005930/realtime-price
 
 새 FR이 아니라, FR-02로 이미 수집된 `company`/`stock_price` 데이터를 프론트 "종목" 페이지가 질문 없이 직접 조회하는
 용도다. `q`로 종목명 또는 티커를 부분 일치 검색한다(대소문자/공백 무시). `app/company_aliases.py` 별칭 사전도 반영돼서
-"네이버"로 검색해도 공식 등록명인 "NAVER"가 나온다. `X-Device-Id` 불필요.
+"네이버"로 검색해도 공식 등록명인 "NAVER"가 나온다. 로그인 불필요(공개).
 
 ### 쿼리 파라미터
 
@@ -437,11 +568,11 @@ curl "http://localhost:8000/api/companies?limit=10"  # q 없이 상위 10개
 
 ## GET /api/watchlist
 
-디바이스ID(`X-Device-Id`)의 관심종목 전체(등록 최신순). 종목별 **최근 종가**(DB에 저장된 일별 종가, 실시간 아님)를 같이 준다 -
+로그인 사용자의 관심종목 전체(등록 최신순). 종목별 **최근 종가**(DB에 저장된 일별 종가, 실시간 아님)를 같이 준다 -
 실시간 시세가 필요하면 `GET /api/stocks/{ticker}/realtime-price`를 따로 호출하세요.
 
 ```bash
-curl http://localhost:8000/api/watchlist -H "X-Device-Id: 3fa85f64-5717-4562-b3fc-2c963f66afa6"
+curl http://localhost:8000/api/watchlist -H "Authorization: Bearer $TOKEN"
 ```
 
 ### 응답 200
@@ -468,7 +599,7 @@ curl http://localhost:8000/api/watchlist -H "X-Device-Id: 3fa85f64-5717-4562-b3f
 
 | 상태 | 언제 | body |
 | --- | --- | --- |
-| 422 | `X-Device-Id` 헤더 없음/빈 문자열/100자 초과 | 검증 오류 형식 |
+| 401 | 토큰 없음/만료/변조 | 위 "인증 에러" |
 | 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
 
 ---
@@ -489,7 +620,7 @@ curl http://localhost:8000/api/watchlist -H "X-Device-Id: 3fa85f64-5717-4562-b3f
 
 ```bash
 curl -X POST http://localhost:8000/api/watchlist \
-  -H "X-Device-Id: 3fa85f64-5717-4562-b3fc-2c963f66afa6" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"ticker": "삼성전자"}'
 ```
@@ -515,8 +646,9 @@ curl -X POST http://localhost:8000/api/watchlist \
 | 상태 | 언제 | body |
 | --- | --- | --- |
 | 404 | 종목을 찾지 못함(`company_resolver` 기준) | `{"detail": "'...' 종목을 찾지 못했습니다. ..."}` |
-| 409 | 이미 등록된 종목(디바이스ID+종목 조합 중복) | `{"detail": "'...'는 이미 관심종목에 등록되어 있습니다."}` |
-| 422 | `ticker` 누락/공백/50자 초과, 또는 `X-Device-Id` 문제 | 검증 오류 형식 |
+| 409 | 이미 등록된 종목(사용자+종목 조합 중복) | `{"detail": "'...'는 이미 관심종목에 등록되어 있습니다."}` |
+| 401 | 토큰 없음/만료/변조 | 위 "인증 에러" |
+| 422 | `ticker` 누락/공백/50자 초과 | 검증 오류 형식 |
 | 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
 
 ---
@@ -526,7 +658,7 @@ curl -X POST http://localhost:8000/api/watchlist \
 관심종목에서 종목을 뺀다. `ticker`는 종목코드 또는 종목명(별칭/유사 종목명 포함).
 
 ```bash
-curl -X DELETE http://localhost:8000/api/watchlist/005930 -H "X-Device-Id: 3fa85f64-5717-4562-b3fc-2c963f66afa6" -i
+curl -X DELETE http://localhost:8000/api/watchlist/005930 -H "Authorization: Bearer $TOKEN" -i
 ```
 
 ### 응답 204
@@ -537,20 +669,20 @@ curl -X DELETE http://localhost:8000/api/watchlist/005930 -H "X-Device-Id: 3fa85
 
 | 상태 | 언제 | body |
 | --- | --- | --- |
-| 404 | 종목을 찾지 못함, 또는 종목은 있지만 그 디바이스ID의 관심종목에 등록돼 있지 않음 | `{"detail": "'...' 종목을 찾지 못했습니다. ..."}` 또는 `{"detail": "'...'는 관심종목에 등록되어 있지 않습니다."}` |
-| 422 | `X-Device-Id` 문제 | 검증 오류 형식 |
+| 404 | 종목을 찾지 못함, 또는 종목은 있지만 내 관심종목에 등록돼 있지 않음 | `{"detail": "'...' 종목을 찾지 못했습니다. ..."}` 또는 `{"detail": "'...'는 관심종목에 등록되어 있지 않습니다."}` |
+| 401 | 토큰 없음/만료/변조 | 위 "인증 에러" |
 | 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
 
 ---
 
 ## GET /api/portfolio
 
-모의투자 잔고 + 보유 종목(현재가·평가손익 포함). **디바이스ID의 첫 호출이면 초기 잔고(1,000만원)로 계좌가 자동 생성된다**
+모의투자 잔고 + 보유 종목(현재가·평가손익 포함). **사용자의 첫 호출이면 초기 잔고(1,000만원)로 계좌가 자동 생성된다**
 (별도 "계좌 개설" API 없음). 현재가는 `GET /api/stocks/{ticker}/realtime-price`와 같은 소스(`get_realtime_price_data`)를
 쓰므로 실시간 실패 시 DB 최근 종가로 폴백되는 동작도 동일하다.
 
 ```bash
-curl http://localhost:8000/api/portfolio -H "X-Device-Id: 3fa85f64-5717-4562-b3fc-2c963f66afa6"
+curl http://localhost:8000/api/portfolio -H "Authorization: Bearer $TOKEN"
 ```
 
 ### 응답 200
@@ -592,7 +724,7 @@ curl http://localhost:8000/api/portfolio -H "X-Device-Id: 3fa85f64-5717-4562-b3f
 
 | 상태 | 언제 | body |
 | --- | --- | --- |
-| 422 | `X-Device-Id` 문제 | 검증 오류 형식 |
+| 401 | 토큰 없음/만료/변조 | 위 "인증 에러" |
 | 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
 
 ---
@@ -616,7 +748,7 @@ curl http://localhost:8000/api/portfolio -H "X-Device-Id: 3fa85f64-5717-4562-b3f
 
 ```bash
 curl -X POST http://localhost:8000/api/portfolio/orders \
-  -H "X-Device-Id: 3fa85f64-5717-4562-b3fc-2c963f66afa6" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"ticker": "삼성전자", "side": "buy", "quantity": 5}'
 ```
@@ -651,7 +783,8 @@ curl -X POST http://localhost:8000/api/portfolio/orders \
 | 400 | 매수 시 잔고 부족 | `{"detail": "잔고가 부족합니다(필요 ...원, 보유 ...원)."}` |
 | 400 | 매도 시 보유 수량 초과 | `{"detail": "보유 수량이 부족합니다(매도 요청 ...주, 보유 ...주)."}` |
 | 404 | 종목을 찾지 못함(`company_resolver` 기준) | `{"detail": "'...' 종목을 찾지 못했습니다. ..."}` |
-| 422 | `ticker`/`side`/`quantity` 형식 위반, 또는 `X-Device-Id` 문제 | 검증 오류 형식 |
+| 401 | 토큰 없음/만료/변조 | 위 "인증 에러" |
+| 422 | `ticker`/`side`/`quantity` 형식 위반 | 검증 오류 형식 |
 | 503 | 실시간 소스와 DB 폴백 모두 가격을 못 구함(둘 다 없을 때만) | `{"detail": "'...'의 가격을 구하지 못해 주문을 체결할 수 없습니다."}` |
 | 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
 
@@ -659,9 +792,9 @@ curl -X POST http://localhost:8000/api/portfolio/orders \
 
 ## 에러 응답 형식
 
-### 일반 오류 (404 / 502 / 503)
+### 일반 오류 (400 / 401 / 404 / 409 / 502 / 503)
 
-항상 `detail`이 **문자열**이다. 사용자에게 그대로 보여줘도 되는 한국어 메시지.
+항상 `detail`이 **문자열**이다. 사용자에게 그대로 보여줘도 되는 한국어 메시지. 401에는 `WWW-Authenticate: Bearer` 헤더가 붙는다.
 
 ```json
 { "detail": "..." }
@@ -688,6 +821,17 @@ FastAPI 기본 형식으로 `detail`이 **배열**이다. 필드별 위치는 `l
 
 길이 초과는 `"type": "string_too_long"`, `"msg": "String should have at most 1000 characters"`.
 필수 필드 누락은 `"type": "missing"`.
+`/api/auth/*`의 422에는 `input` 키가 빠진다(입력한 비밀번호가 응답에 되돌아오지 않게). 나머지 경로는 위 형식 그대로다.
+
+## 인증 관련 한계 (2026-10-07 기준)
+
+- **로그인 시도 횟수 제한(rate limit)이 없다.** 같은 아이디에 비밀번호를 무한히 대입해볼 수 있다. 외부에 공개하기 전에
+  IP/아이디 기준 제한(또는 리버스 프록시 단의 제한)을 넣어야 한다.
+- **토큰 폐기(로그아웃/비밀번호 변경 시 무효화)가 없다.** 발급된 토큰은 만료(24시간)까지 유효하다. 서버의 `JWT_SECRET`을
+  바꾸면 모든 토큰이 한꺼번에 무효가 된다.
+- refresh token이 없다. 24시간이 지나면 다시 로그인해야 한다.
+- 비밀번호 변경/재설정, 회원 탈퇴 API는 없다.
+- HTTPS는 배포 환경(리버스 프록시)에서 처리해야 한다. 로컬 개발 서버는 HTTP라 토큰이 평문으로 오간다.
 
 ## 알아둘 점
 
@@ -732,3 +876,6 @@ PRD 비기능 요구사항은 일반 API P95 500ms 이내다(`POST /api/research
 ## 테스트 실행 (백엔드)
 
 `cd backend && pytest` — 단위 테스트 + dev DB 통합 테스트(DB가 꺼져 있으면 자동 skip). LLM을 실제로 호출하는 느린 테스트는 기본 제외이며 `pytest -m slow`로 따로 돌린다(dev DB에 리포트를 만들었다가 지운다). 전부 한 번에: `pytest -m "slow or not slow"`. DB 없이 단위 테스트만: `pytest -m "not integration"`.
+인증 테스트는 `tests/conftest.py`가 테스트마다 임의 `JWT_SECRET`을 주입하므로 `.env`의 실제 키를 쓰지 않는다. 라우터 테스트는
+`login_as` 픽스처로 `get_current_user`를 가짜 사용자로 바꾸고, dev DB 통합 테스트(`tests/test_auth_devdb.py`)는 실제 가입/토큰으로
+돌린 뒤 만든 사용자를 지운다(`pt_` 접두어).
