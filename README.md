@@ -30,6 +30,9 @@
 | DELETE | `/api/watchlist/{ticker}` | 필요 | 내 관심종목 삭제 |
 | GET | `/api/portfolio` | 필요 | 내 모의투자 잔고 + 보유 종목(평가손익 포함). 첫 호출 시 계좌 자동 생성(초기 잔고 1,000만원) |
 | POST | `/api/portfolio/orders` | 필요 | 모의투자 매수/매도 주문(현재가로 즉시 체결) |
+| GET | `/api/portfolio/trades` | 필요 | 내 체결 내역(최신순, `limit` 기본 50·최대 200, `offset`, `ticker` 필터, `total` 포함) |
+| POST | `/api/portfolio/reset` | 필요 | 내 모의투자 초기화(보유·체결 내역 삭제 + 잔고 1,000만원 복구). 본문 `{"confirm": true}`가 아니면 400. 관심종목·리서치는 유지 |
+| GET | `/api/disclaimer` | 공개 | 서비스 면책 문구 `{"text": "..."}`. 같은 문구가 `POST /api/research`·`GET /api/research/{id}` 응답의 `disclaimer` 필드에도 있음(목록에는 없음) |
 | GET | `/api/discovery/trending` | 공개 | 급등/급락/거래량 급증 종목(FR-13, 질문 없이 바로 호출, `category`/`limit` 쿼리) |
 
 "인증 필요"인 API는 **`Authorization: Bearer <access_token>` 헤더**가 있어야 하고, 없거나 만료·변조됐으면 401입니다

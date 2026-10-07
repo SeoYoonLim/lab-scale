@@ -18,8 +18,8 @@ Authorization: Bearer <access_token>
 
 | 구분 | 엔드포인트 |
 | --- | --- |
-| **인증 필요** | `/api/auth/me`, `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST) |
-| 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending` |
+| **인증 필요** | `/api/auth/me`, `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/reset`(POST) |
+| 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending` |
 
 - 데이터는 **사용자별로 분리**된다. 리서치 리포트 목록/조회/삭제/이어 쓰기(`previous_report_id`)는 본인 것만 대상이고,
   **남의 리포트 ID는 없는 리포트와 똑같이 404**다(403이 아니다 — 그 ID가 존재하는지 드러내지 않기 위해).
@@ -82,6 +82,9 @@ Authorization: Bearer <access_token>
 | DELETE | `/api/watchlist/{ticker}` | 필요 | 관심종목 삭제 |
 | GET | `/api/portfolio` | 필요 | 내 모의투자 잔고 + 보유 종목(첫 호출 시 계좌 자동 생성) |
 | POST | `/api/portfolio/orders` | 필요 | 모의투자 매수/매도 주문 |
+| GET | `/api/portfolio/trades` | 필요 | 내 체결 내역(최신순, `limit`/`offset` 페이지네이션, `ticker` 필터) |
+| POST | `/api/portfolio/reset` | 필요 | 내 모의투자 초기화(보유·체결 내역 삭제 + 잔고 초기값). 본문 `{"confirm": true}` 필수 |
+| GET | `/api/disclaimer` | 공개 | 서비스 면책 문구(`{"text": "..."}`) |
 
 아래 각 엔드포인트의 에러 표에는 401을 반복해 적지 않았다. **인증 필요 API는 모두 위 "인증 에러 (401)"가 공통으로 적용된다.**
 
@@ -237,6 +240,7 @@ curl http://localhost:8000/api/auth/me -H "Authorization: Bearer $TOKEN"
 | `sources[].url` | string \| null | 원문 링크. 없으면 null |
 | `report_id` | int \| null | 저장된 리포트 ID. `GET /api/research/{report_id}`로 다시 조회 가능. **저장에 실패하면 null**(답변 자체는 정상 반환) |
 | `previous_report_id` | int 또는 null | 요청으로 이어받은 직전 보고서 ID. 후속 질문이 아니면 null |
+| `disclaimer` | string | 면책 문구(`GET /api/disclaimer`의 `text`와 같은 값). 답변과 함께 화면에 보여주면 된다. **2026-10-07 추가된 필드**로, 위 예시 JSON에는 생략했다 |
 
 참고: 종목이 DB에 없으면 오류가 아니라 200 응답의 `answer`에 "찾지 못했다"는 안내가 담긴다.
 
@@ -337,7 +341,7 @@ curl -X POST http://localhost:8000/api/research \
 | `items[].created_at` | ISO 8601(UTC, `+00:00`) |
 | `items[].used_tools` | 사용한 tool 이름 목록 |
 
-목록에는 `answer`와 `sources`가 없다(상세 조회에서 제공). 다음 페이지: `offset += limit`, `offset >= total`이면 끝.
+목록에는 `answer`와 `sources`가 없고 `disclaimer`도 없다(상세 조회에서 제공). 다음 페이지: `offset += limit`, `offset >= total`이면 끝.
 `offset`이 `total` 이상이면 `items`가 빈 배열인 200이다.
 
 ```bash
@@ -787,6 +791,133 @@ curl -X POST http://localhost:8000/api/portfolio/orders \
 | 422 | `ticker`/`side`/`quantity` 형식 위반 | 검증 오류 형식 |
 | 503 | 실시간 소스와 DB 폴백 모두 가격을 못 구함(둘 다 없을 때만) | `{"detail": "'...'의 가격을 구하지 못해 주문을 체결할 수 없습니다."}` |
 | 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
+
+---
+
+## GET /api/portfolio/trades
+
+내 모의투자 체결 내역(최신순: 체결 시각 내림차순, 같으면 id 내림차순). 로그인한 사용자 본인 것만 나온다.
+
+| 쿼리 | 기본값 | 규칙 |
+| --- | --- | --- |
+| `limit` | 50 | 1~200. 범위를 벗어나면 422 |
+| `offset` | 0 | 0 이상. 벗어나면 422 |
+| `ticker` | 없음 | 선택. 종목코드 또는 종목명(별칭 포함)으로 그 종목의 체결만. 종목을 못 찾으면 404, 빈 문자열이면 422 |
+
+```bash
+curl "http://localhost:8000/api/portfolio/trades?limit=20&ticker=005930" -H "Authorization: Bearer $TOKEN"
+```
+
+### 응답 200
+
+```json
+{
+  "total": 2,
+  "limit": 50,
+  "offset": 0,
+  "items": [
+    {
+      "id": 12,
+      "ticker": "005930",
+      "company_name": "삼성전자",
+      "side": "sell",
+      "quantity": 1,
+      "price": 1000.0,
+      "amount": 1000.0,
+      "executed_at": "2026-10-07T06:10:11.123456+00:00"
+    },
+    {
+      "id": 11,
+      "ticker": "005930",
+      "company_name": "삼성전자",
+      "side": "buy",
+      "quantity": 3,
+      "price": 1000.0,
+      "amount": 3000.0,
+      "executed_at": "2026-10-07T06:10:09.987654+00:00"
+    }
+  ]
+}
+```
+
+| 필드 | 설명 |
+| --- | --- |
+| `total` | 조건(`ticker` 포함)에 맞는 전체 체결 수(`limit`/`offset`과 무관). 페이지 수 계산용 |
+| `limit` / `offset` | 요청에 쓰인 값(기본값 포함) |
+| `items[].side` | `"buy"` 또는 `"sell"` |
+| `items[].price` | 체결가 |
+| `items[].amount` | 체결 금액 = `price × quantity`(서버가 계산, trade 테이블에는 없는 값) |
+| `items[].executed_at` | ISO 8601(UTC, `+00:00`) |
+
+체결이 없으면 오류가 아니라 `{"total": 0, "limit": 50, "offset": 0, "items": []}`인 200이다. 다음 페이지는 `offset += limit`,
+`offset >= total`이면 끝이다.
+
+### 에러
+
+| 상태 | 언제 | body |
+| --- | --- | --- |
+| 401 | 토큰 없음/만료/변조 | 위 "인증 에러" |
+| 404 | `ticker`로 종목을 찾지 못함 | `{"detail": "'...' 종목을 찾지 못했습니다. ..."}` |
+| 422 | `limit`/`offset` 범위 밖이거나 정수가 아님, `ticker`가 빈 문자열/50자 초과 | 검증 오류 형식 |
+| 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
+
+---
+
+## POST /api/portfolio/reset
+
+내 모의투자를 처음 상태로 되돌린다: **보유 종목과 체결 내역을 모두 삭제하고 잔고를 초기값(1,000만원)으로 복구**한다.
+**되돌릴 수 없다.** 한 트랜잭션으로 처리되어 중간에 실패하면 아무것도 바뀌지 않는다. 관심종목과 리서치 기록은 그대로 두고,
+다른 사용자의 데이터에는 영향이 없다.
+
+### 요청
+
+실수로 호출하는 것을 막기 위해 본문이 정확히 `{"confirm": true}`여야 한다(불리언 `true`만 인정, `"true"`나 `1`은 안 됨).
+
+```bash
+curl -X POST http://localhost:8000/api/portfolio/reset   -H "Authorization: Bearer $TOKEN"   -H "Content-Type: application/json"   -d '{"confirm": true}'
+```
+
+### 응답 200
+
+초기화된 포트폴리오 상태로, `GET /api/portfolio`와 같은 형태다.
+
+```json
+{
+  "cash_balance": 10000000.0,
+  "holdings": [],
+  "total_eval_amount": 0.0,
+  "total_asset": 10000000.0,
+  "note": null
+}
+```
+
+### 에러
+
+| 상태 | 언제 | body |
+| --- | --- | --- |
+| 400 | 본문이 없거나 `{"confirm": true}`가 아님(`false`, 문자열, 다른 키 등). 아무것도 바뀌지 않는다 | `{"detail": "초기화하려면 본문에 {\"confirm\": true}를 보내야 합니다."}` |
+| 401 | 토큰 없음/만료/변조 | 위 "인증 에러" |
+| 422 | 본문이 JSON이 아님 | 검증 오류 형식 |
+| 503 | DB 연결 불가(이 경우 롤백되어 데이터는 그대로) | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
+
+---
+
+## GET /api/disclaimer
+
+서비스 면책 문구. 로그인 없이 호출할 수 있다. 앱 하단/푸터나 약관 화면에 그대로 보여주면 된다.
+
+```bash
+curl http://localhost:8000/api/disclaimer
+```
+
+```json
+{
+  "text": "이 서비스는 학습·시연용 모의투자와 AI 리서치입니다. 제공되는 분석과 의견은 투자 권유나 자문이 아니며, 투자 판단과 그에 따른 손익의 책임은 본인에게 있습니다. AI 응답에는 오류가 있을 수 있습니다."
+}
+```
+
+같은 문구가 `POST /api/research`와 `GET /api/research/{report_id}` 응답의 `disclaimer` 필드에도 들어간다(목록 응답에는 없음).
+기존 필드는 그대로이고 `disclaimer`만 추가됐다.
 
 ---
 
