@@ -1,6 +1,19 @@
 // backend/API.md 기준 타입. 필드 이름은 백엔드 응답 그대로 따른다.
 
-// ---------- 리서치(/api/research) : 실제 백엔드 연동 대상 ----------
+// ---------- 인증(/api/auth) ----------
+
+export interface User {
+  id: number
+  username: string
+}
+
+export interface AuthResponse {
+  user: User
+  access_token: string
+  token_type: string
+}
+
+// ---------- 리서치(/api/research) : 로그인 필요 ----------
 
 export interface Source {
   tool: string
@@ -19,6 +32,7 @@ export interface ResearchResponse {
   // 저장 실패 시 null (답변 자체는 정상). previous_report_id로 이어서 조회 가능.
   report_id: number | null
   previous_report_id: number | null
+  disclaimer: string
 }
 
 // GET /api/research 목록 항목
@@ -49,9 +63,10 @@ export interface ReportDetail {
   created_at: string
   used_tools: string[]
   sources: Source[]
+  disclaimer: string
 }
 
-// ---------- 실시간 시세(/api/stocks/{ticker}/realtime-price) ----------
+// ---------- 실시간 시세(/api/stocks/{ticker}/realtime-price) : 공개 ----------
 
 export interface RealtimePrice {
   ticker: string
@@ -67,7 +82,19 @@ export interface RealtimePrice {
   corrected_from: string | null
 }
 
-// ---------- 오늘의 관심 종목(/api/discovery/trending) ----------
+// ---------- 종목 검색(/api/companies) : 공개 ----------
+
+export interface Company {
+  ticker: string
+  name: string
+  market: string | null
+  sector: string | null
+  // DB에 저장된 가장 최근 종가(일별, 실시간 아님)
+  latest_close: number | null
+  change_pct: number | null
+}
+
+// ---------- 오늘의 관심 종목(/api/discovery/trending) : 공개 ----------
 
 export type TrendingCategory = 'gainers' | 'losers' | 'volume_surge'
 
@@ -88,7 +115,7 @@ export interface TrendingResponse {
   items: TrendingItem[]
 }
 
-// ---------- 관심종목(/api/watchlist, X-Device-Id로 구분 — 로그인 아님) ----------
+// ---------- 관심종목(/api/watchlist) : 로그인 필요 ----------
 
 export interface WatchlistItem {
   company_id: number
@@ -101,7 +128,7 @@ export interface WatchlistItem {
   change_pct: number | null
 }
 
-// ---------- 모의투자(/api/portfolio) ----------
+// ---------- 모의투자(/api/portfolio) : 로그인 필요 ----------
 
 export interface Holding {
   ticker: string
@@ -134,33 +161,86 @@ export interface OrderResult {
   holding: { quantity: number; avg_price: number } | null // 매도로 전량 청산되면 null
 }
 
-// ---------- 종목 조회 : 아직 대응하는 백엔드 API가 없어 항상 mock ----------
-
-export interface Company {
+export interface Trade {
+  id: number
   ticker: string
-  name: string
+  company_name: string
+  side: 'buy' | 'sell'
+  quantity: number
+  price: number
+  amount: number // price * quantity, 서버가 계산
+  executed_at: string
+}
+
+export interface TradeList {
+  total: number
+  limit: number
+  offset: number
+  items: Trade[]
+}
+
+// ---------- 포트폴리오 AI 진단(/api/portfolio/diagnosis) : 로그인 필요 ----------
+
+export interface DiagnosisHolding {
+  ticker: string
+  company_name: string
+  market: string
+  quantity: number
+  avg_price: number
+  current_price: number | null
+  is_realtime: boolean
+  price_unavailable: boolean
+  eval_amount: number | null
+  weight_pct: number | null
+  profit_loss: number | null
+  profit_loss_pct: number | null
+  return_20d_pct: number | null
+}
+
+export interface HoldingBrief {
+  ticker: string
+  company_name: string
+  profit_loss_pct: number | null
+}
+
+export interface DiagnosisMetrics {
+  total_asset: number
+  cash_balance: number
+  cash_weight_pct: number | null
+  stock_eval_amount: number
+  holding_count: number
+  priced_holding_count: number
+  top1_weight_pct: number | null
+  top3_weight_pct: number | null
+  herfindahl_index: number | null
+  market_weights_pct: Record<string, number | null>
+  total_profit_loss: number
+  total_profit_loss_pct: number | null
+  best_holding: HoldingBrief | null
+  worst_holding: HoldingBrief | null
+}
+
+export interface DiagnosisFlag {
+  code: string
+  message: string
+  value: number
+  threshold: number
+  ticker: string | null
+  company_name: string | null
   market: string | null
-  sector: string | null
 }
 
-export interface PricePoint {
-  price_date: string // YYYY-MM-DD
-  close_price: number
-  volume: number | null
-  change_pct: number | null
-}
-
-export interface NewsItem {
-  title: string
-  source: string | null
-  published_at: string | null
-  url: string | null
-  content: string | null
-}
-
-export interface DisclosureItem {
-  title: string
-  disclosure_type: string | null
-  disclosed_at: string | null
-  source_url: string | null
+export interface DiagnosisResponse {
+  generated_at: string
+  source: 'llm' | 'rule_based'
+  model: string | null
+  metrics: DiagnosisMetrics
+  holdings: DiagnosisHolding[]
+  flags: DiagnosisFlag[]
+  summary: string
+  strengths: string[]
+  risks: string[]
+  suggestions: string[]
+  notes: string[]
+  disclaimer: string
 }

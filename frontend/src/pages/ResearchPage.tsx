@@ -19,6 +19,7 @@ interface Entry {
   answer?: string
   usedTools?: string[]
   sources?: Source[]
+  disclaimer?: string
   errorMessage?: string
 }
 
@@ -82,6 +83,7 @@ export default function ResearchPage() {
                 answer: res.answer,
                 usedTools: res.used_tools,
                 sources: res.sources,
+                disclaimer: res.disclaimer,
               }
             : e,
         ),
@@ -159,6 +161,7 @@ export default function ResearchPage() {
                   <>
                     <p className="entry-answer">{entry.answer}</p>
                     <SourceFootnotes usedTools={entry.usedTools ?? []} sources={entry.sources ?? []} />
+                    {entry.disclaimer && <p className="disclaimer-note muted small">{entry.disclaimer}</p>}
                   </>
                 )}
               </article>

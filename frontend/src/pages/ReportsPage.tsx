@@ -70,6 +70,7 @@ function ReportRow({ item, onDeleted }: { item: ReportListItem; onDeleted: (repo
             <>
               <p className="ledger-answer">{detail.answer}</p>
               <SourceFootnotes usedTools={detail.used_tools} sources={detail.sources} />
+              <p className="disclaimer-note muted small">{detail.disclaimer}</p>
             </>
           )}
           <button type="button" className="delete-report" onClick={() => void handleDelete()} disabled={deleting}>
