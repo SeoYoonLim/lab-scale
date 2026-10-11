@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import get_owner_key
 from app.db.session import SessionLocal
 from app.tools.company_resolver import resolve_company
-from app.watchlist import add_item, list_items, remove_item
+from app.watchlist import add_item, added_item, list_items, remove_item
 
 router = APIRouter(prefix="/api/watchlist", tags=["watchlist"])
 
@@ -43,7 +43,7 @@ def get_watchlist(owner_key: str = Depends(get_owner_key)) -> WatchlistList:
 
 @router.post("", response_model=WatchlistItem, status_code=201)
 def add_watchlist_item(request: WatchlistCreate, owner_key: str = Depends(get_owner_key)) -> WatchlistItem:
-    """관심종목에 종목을 추가한다. 이미 등록돼 있으면 409."""
+    """관심종목에 종목을 추가한다. 이미 등록돼 있으면 409. 응답은 목록 항목과 같은 형식·값이다."""
     db = SessionLocal()
     try:
         res = resolve_company(db, request.ticker)
@@ -54,12 +54,8 @@ def add_watchlist_item(request: WatchlistCreate, owner_key: str = Depends(get_ow
         if already_existed:
             raise HTTPException(status_code=409, detail=f"'{res.company.name}'는 이미 관심종목에 등록되어 있습니다.")
 
-        return WatchlistItem(
-            company_id=res.company.id,
-            ticker=res.company.ticker,
-            company_name=res.company.name,
-            added_at=item.created_at.isoformat(),
-        )
+        # 목록(GET) 항목과 같은 값으로 채운다(최근 종가 포함). 프론트가 응답을 목록에 바로 끼워 넣을 수 있다.
+        return WatchlistItem(**added_item(db, item, res.company))
     finally:
         db.close()
 

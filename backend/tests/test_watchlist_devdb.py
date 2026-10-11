@@ -5,7 +5,7 @@ import pytest
 from app.db.session import SessionLocal
 from app.models import Watchlist
 from app.tools.company_resolver import resolve_company
-from app.watchlist import add_item, list_items, remove_item
+from app.watchlist import add_item, added_item, list_items, remove_item
 
 TEST_DEVICE = "pytest-watchlist-devdb"
 
@@ -40,6 +40,17 @@ class TestWatchlistDevDB:
 
         assert remove_item(watch_db, TEST_DEVICE, company.id) is True
         assert list_items(watch_db, TEST_DEVICE) == []
+
+    def test_added_item_equals_the_list_item(self, watch_db):
+        """POST 응답에 쓰는 added_item이 GET 목록의 같은 항목과 완전히 같은 값(최근 종가 포함)인지 확인한다."""
+        company = resolve_company(watch_db, "삼성전자").company
+        item, _ = add_item(watch_db, TEST_DEVICE, company.id)
+
+        added = added_item(watch_db, item, company)
+
+        assert added == list_items(watch_db, TEST_DEVICE)[0]
+        assert added["latest_close"] is not None
+        assert added["latest_close_date"] is not None
 
     def test_adding_twice_reports_already_existed_without_duplicating(self, watch_db):
         company = resolve_company(watch_db, "삼성전자").company
