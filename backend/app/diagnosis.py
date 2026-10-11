@@ -1,14 +1,19 @@
 """내 포트폴리오 AI 진단.
 
 원칙: 숫자와 판단(지표·플래그)은 이 모듈의 코드가 결정적으로 계산하고, LLM은 그 결과를 한국어로 설명만 한다.
-LLM 출력은 검증(JSON 형식, 필수 키, 허용 숫자, 직접 매매 지시 금지)을 통과해야 쓰고, 통과하지 못하면 한 번만
-재시도한 뒤 규칙 기반 문장(폴백)으로 대신한다. Ollama 연결 실패/타임아웃은 재시도 없이 바로 폴백이다(시연 중 멈추지 않게).
+종목명과 숫자가 짝을 이루는 사실 문장(강점 strengths, 위험 요인 risks)도 코드가 템플릿으로 만든다. LLM에게 맡겼을 때
+숫자도 종목명도 입력에 있는 값인데 짝이 틀린 문장("비중 상위 1개 종목은 삼성전자로 6.33%" - 실제 1위는 다른 종목)이
+3회 호출 중 3회 나왔고, 이런 오류는 숫자 검증으로도 종목명 대조로도 잡히지 않기 때문이다.
+LLM은 전체 요약(summary)과 제안(suggestions)만 쓴다. 그 출력은 검증(JSON 형식, 필수 키, 허용 숫자, 종목명-숫자 짝,
+보유하지 않은 종목명, 직접 매매 지시 금지)을 통과해야 쓰고, 통과하지 못하면 한 번만 재시도한 뒤 규칙 기반 문장(폴백)으로
+대신한다. Ollama 연결 실패/타임아웃은 재시도 없이 바로 폴백이다(시연 중 멈추지 않게).
 
 구성(위에서부터 DB 없는 순수 함수 → LLM → DB 오케스트레이션):
 - compute_portfolio: 종목별 숫자 + 포트폴리오 지표
 - compute_flags: 임계값(아래 상수) 기반 플래그
-- allowed_numbers / find_disallowed_numbers / validate_llm_output: LLM 출력 검증
-- rule_based_text: 폴백 문장 템플릿
+- allowed_numbers / find_disallowed_numbers / holding_numbers / find_mismatched_numbers / find_unknown_companies /
+  validate_llm_output: LLM 출력 검증
+- rule_based_text: 폴백 문장 템플릿 / fact_sentences: LLM 설명일 때의 강점·위험 문장 템플릿
 - explain_with_llm: Ollama 호출(재시도 1회) → 검증 → 실패 시 None
 - load_inputs: 보유 종목/잔고/현재가/20거래일 수익률 조회(DB)
 - build_diagnosis: 위 함수들을 조합해 응답을 만든다(DB 없음) / diagnose = load_inputs + build_diagnosis
@@ -25,6 +30,7 @@ import ollama
 from sqlalchemy import func, select
 
 from app.agent import MODEL_NAME
+from app.company_aliases import COMPANY_ALIASES
 from app.disclaimer import DISCLAIMER
 from app.models import Company, Holding, StockPrice
 from app.portfolio import get_or_create_account
@@ -43,11 +49,14 @@ MARKET_SKEW_PCT = 80.0  # 한 시장 비중(주식 평가금액 대비) >= 이 �
 RETURN_WINDOW_DAYS = 20  # 최근 N거래일 수익률(stock_price 종가 기준)
 LLM_TIMEOUT_SECONDS = 60
 LLM_MAX_ATTEMPTS = 2  # 첫 시도 + 재시도 1회(검증 실패일 때만 재시도)
+MAX_HOLDING_FACTS = 3  # 강점/위험 요인 각각에 넣는 종목별 사실 문장 수(20거래일 등락률의 절댓값이 큰 순)
 
 NO_HOLDINGS_MESSAGE = "보유 종목이 없습니다. 모의투자 주문 후 진단할 수 있어요."
 
 # 투자 권유로 읽힐 수 있는 직접 지시. 출력에 있으면 검증 실패로 본다.
 FORBIDDEN_PHRASES = ("매수하세요", "매도하세요", "매수하십시오", "매도하십시오", "사세요", "파세요", "매수해야", "매도해야")
+# 입력에 없는 지표 이름. 모델이 20거래일 등락률(return_20d_pct)을 "20일 이동평균"이라고 부르는 일이 잦다(8회 중 3회).
+UNSUPPORTED_TERMS = ("이동평균", "이동 평균")
 
 
 class NoHoldings(Exception):
@@ -272,11 +281,115 @@ def find_disallowed_numbers(text: str, allowed: set[Decimal]) -> list[str]:
 NO_RISK_SENTENCE = "규칙 기준으로 확인된 위험 항목은 없습니다."
 
 
-def validate_llm_output(content: str, allowed: set[Decimal], flag_count: int = 0) -> tuple[dict | None, str | None]:
-    """(검증 통과한 결과, None) 또는 (None, 실패 사유).
+def holding_numbers(payload: dict) -> dict[str, set[Decimal]]:
+    """종목명 -> 그 종목을 말하는 문장에 쓸 수 있는 숫자.
 
-    strengths/suggestions는 비어 있으면 실패. risks는 플래그가 있는데 비어 있으면 실패이고, 플래그가 없어서
-    비어 있으면 NO_RISK_SENTENCE(코드가 정한 고정 문장)로 채운다.
+    그 종목의 holdings 항목에 있는 숫자, 그 종목에 붙은 플래그(BIG_LOSS)의 값·기준, 수익률 기간(return_window_days)과
+    그 표기 변형이다(allowed_numbers와 같은 규칙). 포트폴리오 전체 숫자(metrics)나 다른 종목의 숫자는 들어가지 않는다."""
+    flags = payload.get("flags", [])
+    out = {}
+    for h in payload.get("holdings", []):
+        name = h.get("company_name")
+        if not name:
+            continue
+        own_flags = [f for f in flags if f.get("company_name") == name]
+        out[name] = allowed_numbers([h, own_flags, payload.get("return_window_days")])
+    return out
+
+
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
+
+
+def find_mismatched_numbers(text: str, per_holding: dict[str, set[Decimal]]) -> list[str]:
+    """보유 종목명이 나온 문장에서, 그 문장에 나온 종목(들)의 숫자가 아닌 숫자(원문 표기 그대로).
+
+    "삼성전자의 비중은 6.33%입니다"(6.33은 다른 종목의 비중)처럼 숫자도 종목도 입력에 있지만 짝이 틀린 문장을
+    잡는다. 종목명이 없는 문장은 검사하지 않는다(그 숫자는 allowed_numbers 검사가 본다). 이름이 겹치는 종목
+    (카카오/카카오뱅크)은 긴 이름부터 찾아 지운 뒤 짧은 이름을 찾는다. 종목명과 포트폴리오 전체 숫자를 한 문장에
+    쓴 정상 문장("삼성전자 등을 보유하고 현금 비중은 87.44%")도 걸리지만, 그때는 재시도·폴백으로 갈 뿐이라 안전한 쪽이다."""
+    names = sorted(per_holding, key=len, reverse=True)
+    bad = []
+    for sentence in _SENTENCE_SPLIT_RE.split(text):
+        rest, allowed = sentence, set()
+        for name in names:
+            if name in rest:
+                rest = rest.replace(name, " ")
+                allowed |= per_holding[name]
+        if allowed:
+            bad.extend(find_disallowed_numbers(rest, allowed))
+    return bad
+
+
+def _has_hangul(s: str) -> bool:
+    return any("가" <= ch <= "힣" for ch in s)
+
+
+# 보유하지 않은 종목명을 찾을 때 쓰는 이름 사전: {표기: company.name}. COMPANY_ALIASES의 통칭과 등록명이다.
+# 'SM', 'NC', 'KAI'처럼 짧은 영문 이름은 다른 낱말(플래그 코드 CONCENTRATION 등)의 일부로 걸려서 뺀다.
+_KNOWN_COMPANY_NAMES = {
+    name: registered
+    for alias, registered in COMPANY_ALIASES.items()
+    for name in (alias, registered)
+    if _has_hangul(name) or len(name) >= 5
+}
+
+
+def find_unknown_companies(text: str, held_names) -> list[str]:
+    """text에 나온 종목명 중 보유 종목이 아닌 것(표기 그대로, 정렬). 보유 종목의 통칭("삼전")은 보유 종목으로 본다.
+
+    이름 사전이 COMPANY_ALIASES(대표 종목의 통칭·등록명 약 100개)라서 그 밖의 종목명은 잡지 못한다.
+    모델이 지어낼 가능성이 높은 대형주 이름을 막는 용도다."""
+    held = set(held_names)
+    rest = text
+    for name in sorted(held, key=len, reverse=True):
+        rest = rest.replace(name, " ")
+    found = []
+    # 긴 이름부터 찾아 지운다: "SK하이닉스"를 찾았으면 그 안의 통칭 "하이닉스"를 또 세지 않는다.
+    for name in sorted(_KNOWN_COMPANY_NAMES, key=len, reverse=True):
+        if _KNOWN_COMPANY_NAMES[name] not in held and name in rest:
+            found.append(name)
+            rest = rest.replace(name, " ")
+    return sorted(found)
+
+
+# 비중 1위를 가리키는 표현. 숫자가 없어서 숫자 검사로는 못 잡는 "비중 상위 1개 종목인 삼성전자"(실제 1위는 다른 종목)
+# 같은 문장을 잡는다. 모델이 holdings의 첫 항목을 1위로 가정해서 6회 중 3회 나왔다.
+_TOP_WEIGHT_RE = re.compile(r"상위\s*1\s*(?:개|종목|위)|비중\s*1\s*위|비중이\s*가장\s*(?:큰|높은)|가장\s*(?:큰|높은)\s*비중")
+
+
+def top_weight_names(payload: dict) -> set[str]:
+    """비중(weight_pct)이 가장 큰 보유 종목의 이름(동률이면 모두). 비중을 구한 종목이 없으면 빈 집합."""
+    weighted = [h for h in payload.get("holdings", []) if h.get("weight_pct") is not None]
+    if not weighted:
+        return set()
+    top = max(h["weight_pct"] for h in weighted)
+    return {h["company_name"] for h in weighted if h["weight_pct"] == top}
+
+
+def find_wrong_top_claims(text: str, held_names, top_names: set[str]) -> list[str]:
+    """비중 1위를 말하면서 보유 종목을 거론했는데 실제 1위 종목은 빠져 있는 문장들.
+
+    "비중 상위 1개/3개 종목은 A, B, C입니다"처럼 1위 종목이 같이 나오면 통과시킨다(누가 1위인지까지는 따지지 않는다)."""
+    if not top_names:
+        return []
+    wrong = []
+    for sentence in _SENTENCE_SPLIT_RE.split(text):
+        if not _TOP_WEIGHT_RE.search(sentence):
+            continue
+        mentioned = {name for name in held_names if name in sentence}
+        if mentioned and not mentioned & top_names:
+            wrong.append(sentence.strip())
+    return wrong
+
+
+def validate_llm_output(
+    content: str, allowed: set[Decimal], payload: dict | None = None
+) -> tuple[dict | None, str | None]:
+    """({"summary", "suggestions"}, None) 또는 (None, 실패 사유).
+
+    LLM은 summary와 suggestions만 쓴다(강점·위험 문장은 코드가 만든다, fact_sentences). 출력에 다른 키가 있어도
+    무시한다. 숫자가 든 제안 문장은 실패로 치지 않고 버리므로 suggestions가 빈 리스트로 돌아올 수 있다. payload(build_llm_payload의 결과)를 주면 보유 종목 기준 검사(보유하지 않은 종목명, 종목명-숫자 짝,
+    비중 1위 종목)도 한다.
     """
     try:
         data = json.loads(content)
@@ -288,29 +401,40 @@ def validate_llm_output(content: str, allowed: set[Decimal], flag_count: int = 0
     summary = data.get("summary")
     if not isinstance(summary, str) or not summary.strip():
         return None, "summary 누락"
-    out = {"summary": summary.strip()}
-    for key in ("strengths", "risks", "suggestions"):
-        value = data.get(key)
-        if not isinstance(value, list) or not all(isinstance(s, str) for s in value):
-            return None, f"{key} 누락 또는 형식 오류"
-        # 같은 문장이 반복되면 한 번만 남긴다(순서 유지)
-        out[key] = list(dict.fromkeys(s.strip() for s in value if s.strip()))
-    for key in ("strengths", "suggestions"):
-        if not out[key]:
-            return None, f"{key}가 비어 있음"
-    if not out["risks"]:
-        if flag_count:
-            return None, "flags가 있는데 risks가 비어 있음"
-        out["risks"] = [NO_RISK_SENTENCE]
+    suggestions = data.get("suggestions")
+    if not isinstance(suggestions, list) or not all(isinstance(s, str) for s in suggestions):
+        return None, "suggestions 누락 또는 형식 오류"
+    # 같은 문장이 반복되면 한 번만 남긴다(순서 유지)
+    out = {"summary": summary.strip(), "suggestions": list(dict.fromkeys(s.strip() for s in suggestions if s.strip()))}
+    if not out["suggestions"]:
+        return None, "suggestions가 비어 있음"
+    # 제안은 '무엇을 점검해볼지'만 남긴다. 숫자가 든 제안은 지표를 다시 읊거나("상위 3개 종목 합계 비중은 12.56%입니다")
+    # 없는 기준을 지어낸("집중도는 0.4352로 기준 이상입니다") 문장이라서 버린다. 숫자는 summary와 코드가 만든
+    # 강점/위험 문장에 이미 있다. 검증 실패로 처리하면 모델이 재시도에서도 숫자를 빼지 못해 거의 매번 폴백이 됐다
+    # (13회 중 12회). 전부 걸러져 빈 리스트가 되면 build_diagnosis가 규칙 기반 제안으로 채운다.
+    out["suggestions"] = [s for s in out["suggestions"] if not _NUMBER_RE.search(s)]
 
-    texts = [out["summary"], *out["strengths"], *out["risks"], *out["suggestions"]]
-    joined = "\n".join(texts)
+    joined = "\n".join([out["summary"], *out["suggestions"]])
     bad = find_disallowed_numbers(joined, allowed)
     if bad:
         return None, f"입력에 없는 숫자 {bad[:5]}"
     hit = [p for p in FORBIDDEN_PHRASES if p in joined]
     if hit:
         return None, f"직접 매매 지시 표현 {hit}"
+    hit = [t for t in UNSUPPORTED_TERMS if t in joined]
+    if hit:
+        return None, f"입력에 없는 지표 {hit}(return_20d_pct는 최근 20거래일 주가 등락률이다)"
+    per_holding = holding_numbers(payload) if payload else {}
+    if per_holding:
+        unknown = find_unknown_companies(joined, per_holding)
+        if unknown:
+            return None, f"보유하지 않은 종목명 {unknown[:5]}"
+        mismatched = find_mismatched_numbers(joined, per_holding)
+        if mismatched:
+            return None, f"종목명과 맞지 않는 숫자 {mismatched[:5]}(종목명을 쓴 문장에는 그 종목의 숫자만 쓴다)"
+        top = top_weight_names(payload)
+        if find_wrong_top_claims(joined, per_holding, top):
+            return None, f"비중 1위 종목이 틀림(비중이 가장 큰 종목은 {', '.join(sorted(top))})"
     return out, None
 
 
@@ -367,26 +491,62 @@ def rule_based_text(items: list[dict], metrics: dict, flags: list[dict]) -> dict
     return {"summary": summary, "strengths": strengths, "risks": risks, "suggestions": suggestions}
 
 
+def _topic_particle(word: str) -> str:
+    """보조사 '은/는'. 마지막 글자가 받침 있는 한글이면 '은', 그 외(받침 없음, 영문·숫자로 끝남)는 '는'."""
+    last = word[-1:]
+    if "가" <= last <= "힣" and (ord(last) - ord("가")) % 28:
+        return "은"
+    return "는"
+
+
+def holding_fact(item: dict) -> str:
+    """한 종목의 사실 문장: 총자산 대비 비중과 최근 20거래일 주가 등락률. 한 문장의 숫자는 모두 그 종목(item)의 값이다."""
+    name = item["company_name"]
+    head = f"{name}{_topic_particle(name)} "
+    tail = f"최근 {RETURN_WINDOW_DAYS}거래일 주가 등락률은 {item['return_20d_pct']:+}%입니다."
+    if item["weight_pct"] is None:
+        return head + tail
+    return head + f"총자산의 {item['weight_pct']}%이고, " + tail
+
+
+def fact_sentences(items: list[dict], metrics: dict, flags: list[dict]) -> dict:
+    """LLM 설명(source="llm")일 때의 강점·위험 요인 문장. 전부 코드 템플릿이라 종목명과 숫자의 짝이 틀릴 수 없다.
+
+    - strengths: 포트폴리오 사실(rule_based_text와 같은 문장) + 최근 20거래일 주가가 오른 종목의 사실 문장
+    - risks: 플래그 문장(rule_based_text와 같은 문장) + 최근 20거래일 주가가 내린 종목의 사실 문장
+    종목 문장은 등락률 절댓값이 큰 순으로 각각 MAX_HOLDING_FACTS개까지. 등락률이 없거나 0인 종목은 넣지 않는다.
+    """
+    base = rule_based_text(items, metrics, flags)
+    moved = sorted((i for i in items if i["return_20d_pct"]), key=lambda i: abs(i["return_20d_pct"]), reverse=True)
+    up = [holding_fact(i) for i in moved if i["return_20d_pct"] > 0][:MAX_HOLDING_FACTS]
+    down = [holding_fact(i) for i in moved if i["return_20d_pct"] < 0][:MAX_HOLDING_FACTS]
+    return {"strengths": base["strengths"] + up, "risks": base["risks"] + down}
+
+
 # ---------- LLM ----------
 
 SYSTEM_PROMPT = """너는 모의투자 포트폴리오 진단 결과를 한국어로 설명하는 도우미다.
 입력 JSON의 지표(metrics), 플래그(flags), 종목별 숫자(holdings)는 이미 코드가 계산한 값이다. 너는 설명만 한다.
+holdings는 비중(weight_pct)이 큰 순서로 정렬돼 있다(첫 항목이 비중 1위 종목이다).
+강점과 위험 요인 목록은 코드가 따로 만들어 보여준다. 너는 전체 요약(summary)과 제안(suggestions)만 쓴다.
 
 규칙:
 1. 입력에 있는 숫자와 종목만 쓴다. 숫자는 입력 값을 그대로 옮긴다(새로 더하거나 빼거나 평균 내지 않는다).
 2. 입력에 없는 수치, 종목, 뉴스, 업종, 전망을 만들지 않는다.
 3. "매수하세요", "매도하세요" 같은 직접 지시를 쓰지 않는다. "~를 검토해볼 수 있습니다"처럼 쓴다.
-4. risks와 suggestions는 flags를 근거로만 설명하고, flags에 없는 위험은 새로 만들지 않는다.
-   flags가 비어 있으면 risks는 빈 배열 []로 둔다.
-5. 각 항목은 1~2문장. strengths와 suggestions는 각각 1~4개, risks는 flags 개수만큼(최대 4개).
+4. 종목명을 쓰는 문장에는 holdings에서 그 종목 항목에 있는 숫자만 쓴다. 다른 종목의 숫자나 metrics의 숫자를
+   같은 문장에 섞지 않는다.
+5. summary는 포트폴리오 전체 상태를 1~2문장으로 요약한다. suggestions는 flags를 근거로 무엇을 점검해볼지 1~3개,
+   각 1문장으로 쓴다(숫자는 summary에만 쓴다). flags에 없는 위험은 새로 만들지 않는다. flags가 비어 있으면 지금
+   구성을 점검해보라는 제안 1개만 쓴다.
 6. 출력은 아래 JSON 하나만. 다른 텍스트는 쓰지 않는다.
 
 필드 뜻(%는 모두 퍼센트):
 - weight_pct: 총자산(현금+주식) 대비 그 종목 비중. cash_weight_pct: 총자산 대비 현금 비중
-- profit_loss_pct: 평균 매입가 대비 손익률. return_20d_pct: 최근 20거래일 동안의 주가 등락률(이동평균이 아님), null이면 데이터 부족
+- profit_loss_pct: 평균 매입가 대비 손익률. return_20d_pct: 최근 20거래일 동안 주가가 오르내린 비율(등락률), null이면 데이터 부족
 - top1_weight_pct/top3_weight_pct: 비중 상위 1개/3개 종목 합계 비중. herfindahl_index: 0~1, 1에 가까울수록 한 종목에 집중
 - market_weights_pct: 주식 평가금액 대비 시장별 비중. flags[].threshold: 그 플래그의 기준값
-{"summary": "...", "strengths": ["..."], "risks": ["..."], "suggestions": ["..."]}"""
+{"summary": "...", "suggestions": ["..."]}"""
 
 _client: ollama.Client | None = None
 
@@ -401,7 +561,11 @@ def _chat(messages: list[dict]) -> str:
 
 
 def build_llm_payload(items: list[dict], metrics: dict, flags: list[dict]) -> dict:
-    """LLM에 넘기는 입력. 사용자 식별 정보(username, user id, owner key)는 넣지 않는다."""
+    """LLM에 넘기는 입력. 사용자 식별 정보(username, user id, owner key)는 넣지 않는다.
+
+    holdings는 비중이 큰 순으로 넣는다(비중이 없는 종목은 뒤). 모델이 목록의 첫 종목을 '비중 1위'로 읽기 때문이다
+    (매수 순서대로 넣었을 때 "비중 상위 1개 종목은 삼성전자" 같은 틀린 문장이 반복됐다). 응답의 holdings 순서와는 무관하다."""
+    by_weight = sorted(items, key=lambda i: i["weight_pct"] if i["weight_pct"] is not None else -1.0, reverse=True)
     return {
         "metrics": metrics,
         "flags": [{k: v for k, v in f.items()} for f in flags],
@@ -409,14 +573,16 @@ def build_llm_payload(items: list[dict], metrics: dict, flags: list[dict]) -> di
             {k: i[k] for k in ("company_name", "ticker", "market", "quantity", "avg_price", "current_price",
                                 "eval_amount", "weight_pct", "profit_loss", "profit_loss_pct", "return_20d_pct",
                                 "price_unavailable")}
-            for i in items
+            for i in by_weight
         ],
         "return_window_days": RETURN_WINDOW_DAYS,
     }
 
 
 def explain_with_llm(payload: dict) -> tuple[dict | None, str | None]:
-    """(검증 통과한 설명, None) 또는 (None, 실패 사유). 검증 실패면 한 번 재시도, 연결 실패/타임아웃은 바로 포기."""
+    """(검증 통과한 {"summary", "suggestions"}, None) 또는 (None, 실패 사유).
+
+    검증 실패면 한 번 재시도, 연결 실패/타임아웃은 바로 포기."""
     allowed = allowed_numbers(payload)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -429,7 +595,7 @@ def explain_with_llm(payload: dict) -> tuple[dict | None, str | None]:
         except Exception as e:  # 연결 실패, 타임아웃, 모델 없음(ResponseError) 등
             logger.warning("진단 LLM 호출 실패(%s), 규칙 기반으로 대체", type(e).__name__)
             return None, f"LLM 호출 실패({type(e).__name__})"
-        result, reason = validate_llm_output(content, allowed, len(payload.get("flags", [])))
+        result, reason = validate_llm_output(content, allowed, payload)
         if result is not None:
             return result, None
         logger.info("진단 LLM 출력 검증 실패(%d회차): %s", attempt + 1, reason)
@@ -524,6 +690,15 @@ def build_diagnosis(cash_balance: float, inputs: list[HoldingInput]) -> dict:
         logger.info("진단 폴백 사유: %s", reason)
         source, model = "rule_based", None
     else:
+        # LLM이 쓴 것은 summary와 suggestions뿐이다. 종목명·숫자가 들어가는 강점/위험 문장은 코드 템플릿을 쓴다.
+        facts = fact_sentences(items, metrics, flags)
+        explanation = {
+            "summary": explanation["summary"],
+            "strengths": facts["strengths"],
+            "risks": facts["risks"],
+            # 숫자가 든 제안이 전부 걸러졌으면 규칙 기반 제안을 쓴다
+            "suggestions": explanation["suggestions"] or rule_based_text(items, metrics, flags)["suggestions"],
+        }
         source, model = "llm", MODEL_NAME
 
     return {
