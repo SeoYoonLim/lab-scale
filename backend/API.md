@@ -245,6 +245,23 @@ curl http://localhost:8000/api/auth/me -H "Authorization: Bearer $TOKEN"
 
 참고: 종목이 DB에 없으면 오류가 아니라 200 응답의 `answer`에 "찾지 못했다"는 안내가 담긴다.
 
+#### 답변 품질 보정 (2026-10-11, 응답 필드는 그대로)
+
+LLM이 tool을 고른 뒤 서버 코드가 아래 세 가지를 보정한다. 요청/응답 형식은 바뀌지 않았다.
+
+- **역할 접두어 제거**: `answer`가 `assistant\n\n`으로 시작하던 문제(모델의 역할 헤더가 본문으로 샌 것)를 서버에서
+  떼어낸다. 프론트에서 따로 처리할 필요 없다. 이미 저장된 예전 리포트의 `answer`는 그대로다.
+- **흐름 질문의 기본 기간**: 기간을 말하지 않고 주가의 흐름/추이/추세/동향/움직임 또는 "최근(요즘) 주가·상황"을
+  묻는 질문은 최근 **20거래일**을 조회한다(예: "삼성전자 최근 주가 흐름 알려줘"). 질문에 기간이 있으면
+  ("지난주", "최근 3일", "한 달", "5거래일") 기본값을 쓰지 않고 그 기간을 따른다("지난주"·"최근 3일"처럼 서버가
+  인식하는 표현은 서버가 계산한 거래일 수, "한 달"처럼 인식하지 못하는 표현은 모델이 추론한 값 — "한 달"은 보통
+  30거래일로 조회된다). 여러 거래일을 조회한 답변에는 기간 등락률
+  (구간 직전 거래일 종가 대비)과 마지막 하루 등락률이 구분되어 나온다.
+- **이름으로 요청한 정보**: 질문이 주가·뉴스·공시 중 둘 이상을 이름으로 요청하면(종목 상세 화면의 [리서치하기]
+  버튼 질문 "… 주가, 뉴스, 공시를 같이 확인해줘.") 모델이 일부만 호출했더라도 빠진 tool을 서버가 덧붙여 실행한다.
+  그래서 이런 질문의 `used_tools`에는 `stock_tool`, `news_tool`, `disclosure_tool`이 모두 들어가고 `sources`가
+  채워진다. "뉴스 말고 주가만"처럼 일부를 빼달라는 질문, 종목이 둘 이상인 질문에는 덧붙이지 않는다.
+
 ### 예시 curl
 
 ```bash
@@ -637,14 +654,16 @@ curl -X POST http://localhost:8000/api/watchlist \
   "company_id": 1,
   "ticker": "005930",
   "company_name": "삼성전자",
-  "added_at": "2026-10-01T02:29:00.729024+00:00",
-  "latest_close": null,
-  "latest_close_date": null,
-  "change_pct": null
+  "added_at": "2026-10-11T08:36:47.116856+00:00",
+  "latest_close": 263000.0,
+  "latest_close_date": "2026-10-08",
+  "change_pct": -2.23
 }
 ```
 
-(POST 응답에는 최근 종가를 다시 조회해 채우지 않는다. 바로 보여주려면 GET으로 다시 조회하세요.)
+응답은 `GET /api/watchlist`의 `items[]` 항목과 **같은 형식, 같은 값**이다(2026-10-11부터 최근 종가 3개 필드도 채운다.
+그 전에는 항상 `null`이었다). 추가 직후 GET을 다시 부르지 않고 응답을 목록에 바로 넣어도 된다. 저장된 주가가 아직
+없는 종목이면 세 필드는 `null`이다.
 
 ### 에러
 
@@ -905,37 +924,39 @@ curl -X POST http://localhost:8000/api/portfolio/reset   -H "Authorization: Bear
 
 ## POST /api/portfolio/diagnosis
 
-내 모의투자 포트폴리오 AI 진단. **숫자와 판단(지표·플래그)은 서버 코드가 계산**하고, LLM(llama3.1:8b)은 그 결과를 한국어로
-설명만 한다. LLM 설명이 검증을 통과하지 못하거나 Ollama가 응답하지 않으면 규칙 기반 문장으로 대신한다(`source`로 구분).
-결과는 저장하지 않는다(호출할 때마다 새로 계산). 본문 없음.
+내 모의투자 포트폴리오 AI 진단. **숫자와 판단(지표·플래그)은 서버 코드가 계산**하고, 종목명과 숫자가 들어가는
+**강점(`strengths`)·위험 요인(`risks`) 문장도 서버 코드가 템플릿으로 만든다**. LLM(llama3.1:8b)은 전체 요약(`summary`)과
+제안(`suggestions`)만 쓴다. LLM 설명이 검증을 통과하지 못하거나 Ollama가 응답하지 않으면 네 필드 모두 규칙 기반 문장으로
+대신한다(`source`로 구분). 결과는 저장하지 않는다(호출할 때마다 새로 계산). 본문 없음.
 
-**응답 시간**: LLM 경로 실측 약 5~11초(로컬 Ollama), 폴백 경로 약 3초. LLM 호출 타임아웃은 60초이고, 검증 실패 시 1회 재시도하므로
-최악의 경우 그 이상 걸릴 수 있다 — 프론트는 로딩 상태와 넉넉한 타임아웃(90초 이상)을 두세요.
+**응답 시간**: LLM 경로 실측 약 4~6초(로컬 Ollama, 모델이 메모리에 올라와 있을 때. 첫 호출은 모델 로딩 때문에 30초 이상
+걸린 적이 있다 — 2026-10-11 실측 35.9초). 검증에 걸려 재시도하면 7~8초다. LLM 호출 타임아웃은 60초이고, 검증 실패 시
+1회 재시도하므로 최악의 경우 그 이상 걸릴 수 있다 — 프론트는 로딩 상태와 넉넉한 타임아웃(90초 이상)을 두세요.
 
 ```bash
 curl -X POST http://localhost:8000/api/portfolio/diagnosis -H "Authorization: Bearer $TOKEN"
 ```
 
-### 응답 200 (실제 호출 결과, 2026-10-07, 3종목 매수 직후라 손익이 0)
+### 응답 200 (실제 호출 결과, 2026-10-11, 삼성전자 2주·카카오 3주·에코프로비엠 5주 매수 직후라 손익이 0)
 
 ```json
 {
-  "generated_at": "2026-10-07T06:25:25.650472+00:00",
+  "generated_at": "2026-10-11T08:36:37.023809+00:00",
   "source": "llm",
   "model": "llama3.1:8b",
   "metrics": {
     "total_asset": 10000000.0,
-    "cash_balance": 4117000.0,
-    "cash_weight_pct": 41.17,
-    "stock_eval_amount": 5883000.0,
+    "cash_balance": 8744300.0,
+    "cash_weight_pct": 87.44,
+    "stock_eval_amount": 1255700.0,
     "holding_count": 3,
     "priced_holding_count": 3,
-    "top1_weight_pct": 26.95,
-    "top3_weight_pct": 58.83,
-    "herfindahl_index": 0.361,
+    "top1_weight_pct": 6.33,
+    "top3_weight_pct": 12.56,
+    "herfindahl_index": 0.4352,
     "market_weights_pct": {
-      "KOSDAQ": 31.72,
-      "KOSPI": 68.28
+      "KOSDAQ": 50.37,
+      "KOSPI": 49.63
     },
     "total_profit_loss": 0.0,
     "total_profit_loss_pct": 0.0,
@@ -955,85 +976,99 @@ curl -X POST http://localhost:8000/api/portfolio/diagnosis -H "Authorization: Be
       "ticker": "005930",
       "company_name": "삼성전자",
       "market": "KOSPI",
-      "quantity": 10,
-      "avg_price": 269500.0,
-      "current_price": 269500.0,
-      "is_realtime": true,
+      "quantity": 2,
+      "avg_price": 263000.0,
+      "current_price": 263000.0,
+      "is_realtime": false,
       "price_unavailable": false,
-      "eval_amount": 2695000.0,
-      "weight_pct": 26.95,
+      "eval_amount": 526000.0,
+      "weight_pct": 5.26,
       "profit_loss": 0.0,
       "profit_loss_pct": 0.0,
-      "return_20d_pct": 5.97
+      "return_20d_pct": -2.59
     },
     {
       "ticker": "035720",
       "company_name": "카카오",
       "market": "KOSPI",
-      "quantity": 40,
-      "avg_price": 33050.0,
-      "current_price": 33050.0,
-      "is_realtime": true,
+      "quantity": 3,
+      "avg_price": 32400.0,
+      "current_price": 32400.0,
+      "is_realtime": false,
       "price_unavailable": false,
-      "eval_amount": 1322000.0,
-      "weight_pct": 13.22,
+      "eval_amount": 97200.0,
+      "weight_pct": 0.97,
       "profit_loss": 0.0,
       "profit_loss_pct": 0.0,
-      "return_20d_pct": -8.29
+      "return_20d_pct": -11.35
     },
     {
       "ticker": "247540",
       "company_name": "에코프로비엠",
       "market": "KOSDAQ",
-      "quantity": 15,
-      "avg_price": 124400.0,
-      "current_price": 124400.0,
-      "is_realtime": true,
+      "quantity": 5,
+      "avg_price": 126500.0,
+      "current_price": 126500.0,
+      "is_realtime": false,
       "price_unavailable": false,
-      "eval_amount": 1866000.0,
-      "weight_pct": 18.66,
+      "eval_amount": 632500.0,
+      "weight_pct": 6.33,
       "profit_loss": 0.0,
       "profit_loss_pct": 0.0,
-      "return_20d_pct": 18.58
+      "return_20d_pct": 18.56
     }
   ],
-  "flags": [],
-  "summary": "현재 포트폴리오의 총자산은 10,000,000원이며, 현금 비중은 41.17%입니다. 주식 평가금액은 5,883,000원입니다. 현재 포트폴리오에는 3종목이 포함되어 있습니다. 비중 상위 1개/3개 종목의 비중은 각각 26.95%/58.83%입니다. 한 종목에 집중하는 정도는 0.361입니다. 시장별 비중은 KOSDAQ 31.72%, KOSPI 68.28%입니다.",
+  "flags": [
+    {
+      "code": "CASH_HIGH",
+      "message": "현금 비중이 87.44%로 기준(70%) 이상입니다.",
+      "value": 87.44,
+      "threshold": 70.0,
+      "ticker": null,
+      "company_name": null,
+      "market": null
+    }
+  ],
+  "summary": "포트폴리오의 총자산은 10,000,000원이며, 현금 비중은 87.44%로 기준(70%) 이상입니다.",
   "strengths": [
-    "비중 상위 1개/3개 종목의 비중은 각각 26.95%/58.83%입니다.",
-    "한 종목에 집중하는 정도는 0.361입니다."
+    "상위 1종목 비중이 6.33%로 한 종목에 크게 쏠려 있지 않습니다.",
+    "3개 종목에 나눠 보유하고 있습니다.",
+    "에코프로비엠은 총자산의 6.33%이고, 최근 20거래일 주가 등락률은 +18.56%입니다."
   ],
   "risks": [
-    "규칙 기준으로 확인된 위험 항목은 없습니다."
+    "현금 비중이 87.44%로 기준(70%) 이상입니다.",
+    "카카오는 총자산의 0.97%이고, 최근 20거래일 주가 등락률은 -11.35%입니다.",
+    "삼성전자는 총자산의 5.26%이고, 최근 20거래일 주가 등락률은 -2.59%입니다."
   ],
   "suggestions": [
-    "현재 포트폴리오의 비중 상위 1개/3개 종목의 비중을 확인해 볼 수 있습니다.",
-    "한 종목에 집중하는 정도를 확인해 볼 수 있습니다."
+    "현금 비중이 기준 이상인 점을 검토해볼 수 있습니다."
   ],
-  "notes": [],
+  "notes": [
+    "삼성전자, 카카오, 에코프로비엠는 실시간 시세 대신 DB에 저장된 최근 종가로 계산했습니다."
+  ],
   "disclaimer": "이 서비스는 학습·시연용 모의투자와 AI 리서치입니다. 제공되는 분석과 의견은 투자 권유나 자문이 아니며, 투자 판단과 그에 따른 손익의 책임은 본인에게 있습니다. AI 응답에는 오류가 있을 수 있습니다."
 }
 ```
 
-같은 포트폴리오에서 Ollama에 연결하지 못했을 때(폴백)의 설명 부분:
+같은 포트폴리오에서 LLM 설명을 쓰지 못했을 때(폴백)의 설명 부분. 폴백에는 종목별 문장이 붙지 않는다:
 
 ```json
 {
   "source": "rule_based",
   "model": null,
-  "summary": "총자산 10,000,000원 중 현금이 4,117,000원(비중 41.17%)이고, 보유 종목은 3개입니다. 총 평가손익은 0원(0.0%)입니다. 규칙 점검에서 특별히 확인된 항목은 없습니다.",
+  "summary": "총자산 10,000,000원 중 현금이 8,744,300원(비중 87.44%)이고, 보유 종목은 3개입니다. 총 평가손익은 0원(0.0%)입니다. 규칙 점검에서 1개 항목이 확인됐습니다.",
   "strengths": [
-    "상위 1종목 비중이 26.95%로 한 종목에 크게 쏠려 있지 않습니다.",
-    "3개 종목에 나눠 보유하고 있습니다.",
-    "현금 비중이 41.17%로 규칙 기준 범위 안에 있습니다."
+    "상위 1종목 비중이 6.33%로 한 종목에 크게 쏠려 있지 않습니다.",
+    "3개 종목에 나눠 보유하고 있습니다."
   ],
   "risks": [
-    "규칙 기준으로 확인된 위험 항목은 없습니다."
+    "현금 비중이 87.44%로 기준(70%) 이상입니다."
   ],
   "suggestions": [
-    "현재 구성을 유지하면서 종목별 뉴스와 공시를 주기적으로 확인해볼 수 있습니다."
+    "현금 비중이 높은 이유와 투자 계획을 점검해볼 수 있습니다."
   ],
   "notes": [
+    "삼성전자, 카카오, 에코프로비엠는 실시간 시세 대신 DB에 저장된 최근 종가로 계산했습니다.",
     "AI 설명을 생성하지 못해 규칙 기반 문장으로 대신했습니다."
   ]
 }
@@ -1042,7 +1077,7 @@ curl -X POST http://localhost:8000/api/portfolio/diagnosis -H "Authorization: Be
 | 필드 | 설명 |
 | --- | --- |
 | `generated_at` | 진단 시각(ISO 8601, UTC) |
-| `source` | `"llm"`(LLM 설명이 검증을 통과) 또는 `"rule_based"`(폴백 문장) |
+| `source` | `"llm"`(`summary`·`suggestions`를 LLM이 썼고 검증을 통과) 또는 `"rule_based"`(네 필드 모두 폴백 문장) |
 | `model` | `source`가 `llm`이면 모델명, 아니면 `null` |
 | `metrics.total_asset` | 총자산 = 현금 + 현재가를 구한 종목의 평가금액 |
 | `metrics.cash_weight_pct` | 총자산 대비 현금 비중(%) |
@@ -1058,7 +1093,10 @@ curl -X POST http://localhost:8000/api/portfolio/diagnosis -H "Authorization: Be
 | `holdings[].return_20d_pct` | 최근 20거래일 등락률(%) = DB 최신 종가 / 20거래일 전 종가 - 1. **실시간이 아니라 저장된 일별 종가 기준**이고, 저장된 주가가 21일치 미만이면 `null` |
 | `holdings[].price_unavailable` | 현재가(실시간+DB 폴백)를 못 구한 종목. 이 경우 `eval_amount`/`weight_pct`/`profit_loss*`가 `null`이고 합계에서 빠지며 `notes`에 안내가 붙는다 |
 | `flags[]` | 규칙 기반 점검 결과. `code`, `message`(그대로 보여줘도 되는 문장), `value`(실제 값), `threshold`(기준값), 종목/시장 관련이면 `ticker`·`company_name` 또는 `market` |
-| `summary` / `strengths` / `risks` / `suggestions` | 설명 문장. `strengths`·`suggestions`는 항상 1개 이상, `risks`는 플래그가 없으면 "규칙 기준으로 확인된 위험 항목은 없습니다." |
+| `summary` | 전체 요약 문장. `source`가 `llm`이면 LLM이 쓴 문장 |
+| `strengths` | 강점 문장(항상 1개 이상, **항상 서버 코드가 만든다**). 포트폴리오 문장(상위 1종목 비중, 보유 종목 수, 손익률 최고 종목, 현금 비중) + `source`가 `llm`이면 최근 20거래일 주가가 **오른** 종목의 문장(등락률이 큰 순, 최대 3개) |
+| `risks` | 위험 요인 문장(항상 1개 이상, **항상 서버 코드가 만든다**). 플래그의 `message`(플래그가 없으면 "규칙 기준으로 확인된 위험 항목은 없습니다.") + `source`가 `llm`이면 최근 20거래일 주가가 **내린** 종목의 문장(하락 폭이 큰 순, 최대 3개) |
+| `suggestions` | 제안 문장(항상 1개 이상). `source`가 `llm`이면 LLM이 쓴 문장 중 숫자가 없는 것만 남긴다(전부 걸러지면 규칙 기반 제안) |
 | `notes` | 현재가 조회 실패, DB 종가로 대체, 20거래일 수익률 계산 불가, 폴백 사용 등 안내 문장 |
 | `disclaimer` | 면책 문구(`GET /api/disclaimer`와 같은 값). 진단 화면에 반드시 함께 보여주세요 |
 
@@ -1073,15 +1111,27 @@ curl -X POST http://localhost:8000/api/portfolio/diagnosis -H "Authorization: Be
 | `BIG_LOSS` | 종목 손익률 ≤ -10% (해당 종목마다 1개) |
 | `MARKET_SKEW` | 한 시장 비중(주식 평가금액 대비) ≥ 80% |
 
+#### 종목 문장 템플릿 (`strengths`/`risks`의 종목별 문장)
+
+`{종목명}은/는 총자산의 {weight_pct}%이고, 최근 20거래일 주가 등락률은 {return_20d_pct}%입니다.` 한 문장의 숫자는 모두 그
+종목의 `holdings[]` 값이다(등락률은 부호를 붙인다: `+18.56%`, `-11.35%`). 등락률이 `null`이거나 0인 종목은 나오지 않고,
+현재가를 못 구한 종목은 비중 부분이 빠진다. 2026-10-11 전에는 이 두 목록도 LLM이 썼는데, 숫자도 종목명도 입력에 있는 값인데
+짝이 틀린 문장("비중 상위 1개 종목은 삼성전자로 6.33%입니다" — 실제 1위는 에코프로비엠)이 3회 호출 중 3회 나와서 바꿨다.
+
 #### LLM 설명 검증과 폴백
 
-- LLM 입력은 지표·플래그·종목별 숫자뿐이다(아이디, 사용자 ID 등 식별 정보는 넣지 않는다).
-- 출력은 JSON(`summary`, `strengths`, `risks`, `suggestions`)이어야 하고, 아래 중 하나라도 걸리면 **1회 재시도** 후에도 실패하면 폴백한다.
-  - JSON 파싱 실패 / 필수 키 누락·형식 오류 / `strengths`·`suggestions`가 빈 배열 / 플래그가 있는데 `risks`가 빈 배열
+- LLM 입력은 지표·플래그·종목별 숫자뿐이다(아이디, 사용자 ID 등 식별 정보는 넣지 않는다). 종목은 비중이 큰 순으로 넣는다.
+- 출력은 JSON(`summary`, `suggestions`)이어야 하고(다른 키는 무시한다), 아래 중 하나라도 걸리면 **1회 재시도** 후에도 실패하면 폴백한다.
+  - JSON 파싱 실패 / `summary`·`suggestions` 누락·형식 오류 / `suggestions`가 빈 배열
   - **입력에 없는 숫자**: 허용되는 숫자는 입력에 나온 숫자(소수 0~2자리 반올림, 천·만·억 단위 환산 표기 포함)와 1~10 정수뿐
-  - "매수하세요", "매도하세요" 같은 직접 매매 지시
+  - **종목명과 맞지 않는 숫자**: 보유 종목명이 나온 문장의 숫자는 그 종목의 숫자(`holdings[]` 항목, 그 종목의 플래그 값·기준, 기간 20)여야 한다.
+    다른 종목의 숫자나 포트폴리오 전체 숫자를 같은 문장에 쓰면 실패다
+  - **보유하지 않은 종목명**(대표 종목의 통칭·등록명 약 100개 사전 기준) / **비중 1위 종목을 틀리게 말한 문장**("상위 1개 종목", "비중이 가장 큰" 등)
+  - "매수하세요", "매도하세요" 같은 직접 매매 지시 / 입력에 없는 지표 이름("이동평균")
+- 숫자가 들어간 제안 문장은 실패로 치지 않고 **버린다**(지표를 다시 읊거나 없는 기준을 지어낸 문장이라서). 전부 버려지면 규칙 기반 제안을 쓴다.
 - Ollama 연결 실패·타임아웃·모델 오류는 **재시도 없이 바로 폴백**한다(503/502가 아니라 200 + `source: "rule_based"`).
-- 숫자 검증은 문장의 의미(예: 용어를 잘못 부르는 것)까지는 잡지 못한다. 수치 자체는 `metrics`/`holdings`/`flags`를 기준으로 보여주세요.
+- 검증은 LLM이 쓴 `summary`·`suggestions`의 의미까지는 잡지 못한다(예: 숫자 없이 사실과 다른 평가를 하는 문장).
+  수치 자체는 `metrics`/`holdings`/`flags`와 코드가 만든 `strengths`/`risks`를 기준으로 보여주세요.
 
 ### 에러
 
