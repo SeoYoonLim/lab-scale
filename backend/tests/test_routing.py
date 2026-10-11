@@ -1,7 +1,13 @@
 import pytest
 
 import app.agent as agent
-from app.routing import needs_discovery_tool, needs_fx_tool, needs_market_tool
+from app.routing import (
+    explicitly_requested_tools,
+    is_trend_question,
+    needs_discovery_tool,
+    needs_fx_tool,
+    needs_market_tool,
+)
 from scripts.benchmark_routing import CASES
 
 BASE_TOOLS = ["stock_tool", "news_tool", "disclosure_tool", "rag_search_tool"]
@@ -276,3 +282,75 @@ class TestBuildRequest:
         for hint in (agent.MARKET_HINT, agent.FX_HINT, agent.DISCOVERY_HINT):
             stripped = stripped.replace(hint, "", 1)
         assert stripped == agent.SYSTEM_PROMPT
+
+
+# ---- 흐름 질문 판단(is_trend_question)과 이름으로 요청한 tool(explicitly_requested_tools) ----
+# 둘 다 build_request(1차 호출의 프롬프트/tool 목록)에는 쓰이지 않고, 1차 호출이 끝난 뒤의 보정에만 쓰인다.
+
+BUTTON_QUESTION = "삼성전자 최근 상황을 종합해서 알려줘. 주가, 뉴스, 공시를 같이 확인해줘."
+
+
+@pytest.mark.parametrize(
+    "q",
+    [
+        "삼성전자 최근 주가 흐름 알려줘", "현대차 주가 추이 좀 보여줘", "SK하이닉스 주가 추세가 어때?",
+        "카카오 주가 동향 알려줘", "LG화학 주가 움직임 어때?", "카카오 요즘 주가 어때?", "한화오션 최근 주가랑 등락률 알려줘.",
+        "네이버 요새 시세 알려줘", BUTTON_QUESTION, "현대차 요즘 왜 이렇게 빠져? 주가 흐름이랑 뉴스 같이 봐줘",
+    ],
+)
+def test_trend_questions(q):
+    assert is_trend_question(q)
+
+
+@pytest.mark.parametrize(
+    "q",
+    [
+        "삼성전자 주가 알려줘", "삼성전자 거래량 얼마야?", "삼성전자 최근 뉴스 알려줘", "삼성전자 최근 공시 뭐 있어?",
+        "삼성전자 최근 왜 올랐어? 뉴스도 같이 확인해줘", "카카오는 왜 떨어졌어?", "PER이 뭐야?", "", None,
+    ],
+)
+def test_non_trend_questions(q):
+    assert not is_trend_question(q)
+
+
+def test_trend_judgement_does_not_change_the_first_call_request():
+    """흐름 질문이어도 1차 호출의 프롬프트와 tool 목록은 기본값 그대로다(같은 객체)."""
+    prompt, tools = agent.build_request("삼성전자 최근 주가 흐름 알려줘")
+    assert prompt is agent.SYSTEM_PROMPT and tools is agent.TOOLS
+    prompt, tools = agent.build_request(BUTTON_QUESTION)
+    assert prompt is agent.SYSTEM_PROMPT and tools is agent.TOOLS
+
+
+@pytest.mark.parametrize(
+    "q, expected",
+    [
+        (BUTTON_QUESTION, ["stock_tool", "news_tool", "disclosure_tool"]),
+        ("카카오 주가랑 뉴스 같이 봐줘", ["stock_tool", "news_tool"]),
+        ("에코프로비엠 뉴스하고 공시 확인해줘", ["news_tool", "disclosure_tool"]),
+        ("공시랑 주가 같이 알려줘", ["stock_tool", "disclosure_tool"]),  # 순서는 질문이 아니라 고정 순서
+        # 하나만 요청한 질문은 모델 판단에 맡긴다
+        ("삼성전자 최근 공시 뭐 있어?", []),
+        ("삼성전자 주가 알려줘", []),
+        ("삼성전자 최근 뉴스 알려줘", []),
+        ("삼성전자 반도체 업황 관련 공시 내용 자세히 알려줘", []),
+        # 일부를 빼달라는 질문은 낱말만으로 판단할 수 없어 손대지 않는다
+        ("삼성전자 뉴스 말고 주가만 알려줘", []),
+        ("주가랑 뉴스만, 공시는 빼고", []),
+        ("공시 제외하고 주가, 뉴스 알려줘", []),
+        ("뉴스 없이 주가랑 공시만", []),
+        ("", []),
+        (None, []),
+    ],
+)
+def test_explicitly_requested_tools(q, expected):
+    assert explicitly_requested_tools(q) == expected
+
+
+def test_requested_tools_fire_only_on_the_multi_benchmark_group():
+    """벤치마크 질문 중 둘 이상을 이름으로 요청한 것은 multi 그룹뿐이다. 그 그룹은 원래 두 tool을 함께 불러야 정답이다."""
+    hit = {(group, q) for group, qs in CASES.items() for q in qs if explicitly_requested_tools(q)}
+    assert {g for g, _ in hit} == {"multi"}
+    assert all(explicitly_requested_tools(q) == ["stock_tool", "news_tool"] for _, q in hit)
+    # 공시 목록/공시 내용(rag)/개념 질문에는 하나도 걸리지 않는다
+    for group in ("rag", "rag_ho", "disc_list", "disc_ho", "no_tool", "no_tool_ho", "stock", "news"):
+        assert not any(explicitly_requested_tools(q) for q in CASES[group]), group
