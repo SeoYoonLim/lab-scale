@@ -110,3 +110,24 @@ def explicitly_requested_tools(question: str) -> list[str]:
         return []
     wanted = [name for name, pattern in _REQUESTED_TOOLS if pattern.search(q)]
     return wanted if len(wanted) >= 2 else []
+
+
+# 주가가 오르내린 "원인"을 묻는 질문: 원인 표현과 등락 표현이 함께 있어야 한다.
+# 시스템 프롬프트가 "'왜 올랐는지/내렸는지' 같이 뉴스가 필요한 질문에는 news_tool"이라고 안내해서 모델은 이런 질문에
+# news_tool만 부른다(5개 질문 x 5회 = 25회 중 25회, stock_tool 0회). 그러면 실제 주가가 어떻게 움직였는지 모르는 채로
+# 질문의 전제를 그대로 받아 "삼성전자 왜 올랐어?"에 오른 이유를 지어내거나(실제로는 20거래일 -2.59%) 주가와 무관한
+# 최신 기사를 원인이라고 답한다. 프롬프트는 그대로 두고, 1차 호출 뒤에 주가 조회를 코드가 덧붙인다
+# (app/agent.py의 _add_requested_tools).
+# "올라온 공시"(게시됐다는 뜻)는 등락 표현이 아니라서 '올라' 뒤에 온/왔/오가 오면 제외한다.
+_CAUSE_RE = re.compile(r"왜|이유|원인|때문|까닭")
+_PRICE_MOVE_RE = re.compile(
+    r"올랐|올라(?![온왔오])|오르|오른|상승|급등|폭등"
+    r"|떨어졌|떨어지|떨어진|떨어져|하락|급락|폭락|내렸|내린|내려가|빠졌|빠져|빠진|빠지"
+)
+
+
+def is_cause_question(question: str) -> bool:
+    """질문이 등락의 원인을 묻는 내용이면 True. 원인 표현만 있거나("PER이 왜 중요해?") 등락 표현만 있으면
+    ("오늘 많이 오른 종목 알려줘") False다. 종목이 특정됐는지는 여기서 보지 않는다(호출측이 tool 호출 인자로 본다)."""
+    q = question or ""
+    return bool(_CAUSE_RE.search(q) and _PRICE_MOVE_RE.search(q))

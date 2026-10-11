@@ -213,3 +213,26 @@ def test_stated_but_unparsed_period_is_not_replaced_by_the_default():
     stock_calls = [r for r in records if r["tool_name"] == "stock_tool"]
     assert stock_calls
     assert stock_calls[0]["result"].get("period_days_corrected_via") != "default_trend_period"
+
+
+def test_cause_question_gets_stock_data_alongside_news():
+    """등락 원인 질문: 모델은 news_tool만 부르지만(25/25) 실제 주가 조회(20거래일)가 함께 실행돼야 한다."""
+    from app.agent import DEFAULT_TREND_PERIOD_DAYS, _answer
+
+    response, records = _answer("카카오는 왜 떨어졌어?", "llama3.1:8b")
+    detail = f"used_tools={response['used_tools']} 답변={response['answer'][:200]!r}"
+    stock_calls = [r for r in records if r["tool_name"] == "stock_tool"]
+    assert stock_calls, detail
+    assert stock_calls[0]["arguments"]["period_days"] == DEFAULT_TREND_PERIOD_DAYS, detail
+    assert stock_calls[0]["result"]["company_name"] == "카카오", detail
+    assert "news_tool" in response["used_tools"], detail
+    assert not response["answer"].lstrip().lower().startswith("assistant"), detail
+    assert not any(s in response["answer"] for s in FEWSHOT_LEAKS)
+
+
+def test_non_cause_question_is_not_given_extra_tools():
+    """등락 표현만 있는 탐색 질문에는 stock_tool/market_tool을 덧붙이지 않는다."""
+    r = ask_question("오늘 많이 오른 종목 알려줘", save_report=False)
+    detail = f"used_tools={r['used_tools']} 답변={r['answer'][:200]!r}"
+    assert "discovery_tool" in r["used_tools"], detail
+    assert "market_tool" not in r["used_tools"], detail

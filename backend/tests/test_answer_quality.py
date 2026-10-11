@@ -3,6 +3,7 @@
 1. strip_role_prefix: 답변 앞에 새어 나온 역할 접두어('assistant' + 줄바꿈) 제거
 2. _apply_default_period: 기간을 말하지 않은 흐름 질문의 stock_tool 기본 기간(20거래일)
 3. _add_requested_tools: 질문이 이름으로 요청한 주가·뉴스·공시 tool 중 빠진 것 덧붙이기
+4. 등락 원인 질문("왜 떨어졌어?"): 3과 같은 자리에서 stock_tool(+ 지수가 최신이면 market_tool) 덧붙이기
 
 순수 함수 → _answer() 실행 경로(LLM/tool/DB mock) → /api/research 라우트(LLM mock) 순서로 검증한다.
 """
@@ -21,6 +22,15 @@ from tests.test_period_override import SYNTHETIC_NO_PERIOD_QUESTIONS
 Q_TREND = "삼성전자 최근 주가 흐름 알려줘"
 Q_BUTTON = "삼성전자 최근 상황을 종합해서 알려줘. 주가, 뉴스, 공시를 같이 확인해줘."  # 종목 상세 [리서치하기] 버튼
 ALL_BENCHMARK_QUESTIONS = [q for qs in CASES.values() for q in qs]
+
+
+@pytest.fixture(autouse=True)
+def market_index_is_stale(monkeypatch):
+    """시장 지수 최신 여부 확인(DB 조회)을 가짜로 바꾼다. 기본은 '뒤처져 있음'(=market_tool을 덧붙이지 않음)이고,
+    최신인 경우를 보는 테스트가 돌려받은 dict의 current를 True로 바꾼다. 조회한 종목은 asked에 쌓인다."""
+    state = {"current": False, "asked": []}
+    monkeypatch.setattr(agent, "market_data_is_current", lambda company: state["asked"].append(company) or state["current"])
+    return state
 
 
 def call(name, **arguments):
@@ -127,8 +137,13 @@ class TestApplyDefaultPeriod:
             "삼성전자 주가 알려줘",
             "삼성전자 최근 뉴스 알려줘",
             "삼성전자 최근 공시 뭐 있어?",
-            "삼성전자 최근 왜 올랐어? 뉴스도 같이 확인해줘",
             "삼성전자 거래량 얼마야?",
+            "오늘 많이 오른 종목 알려줘",  # 등락 표현만 있고 원인 표현이 없다
+            "PER이 왜 중요해?",  # 원인 표현만 있다
+            # 원인 질문이어도 기간을 말했으면 기본 기간을 쓰지 않는다
+            "삼성전자 오늘 왜 올랐어?",
+            "삼성전자 지난주에 왜 떨어졌어?",
+            "카카오 한 달 동안 하락한 이유가 뭐야?",
         ],
     )
     def test_stated_period_or_non_trend_question_is_left_alone(self, question):
@@ -162,12 +177,22 @@ class TestApplyDefaultPeriod:
             assert not (overridden and defaulted), q
 
     def test_synthetic_non_trend_corpus_is_untouched(self):
-        """기간도 흐름 표현도 없는 합성 질문 528개(test_period_override와 같은 말뭉치)는 전부 무변경이다."""
+        """기간도 흐름 표현도 없는 합성 질문(test_period_override와 같은 말뭉치)은 전부 무변경이다.
+        말뭉치의 12개 템플릿 중 원인 질문("{종목} 최근 왜 올랐어? 뉴스도 같이 확인해줘") 하나만 기본 기간 대상이다."""
+        from app.routing import is_cause_question
+
         assert len(SYNTHETIC_NO_PERIOD_QUESTIONS) >= 500
+        cause = [q for q in SYNTHETIC_NO_PERIOD_QUESTIONS if is_cause_question(q)]
+        assert len(cause) * 12 == len(SYNTHETIC_NO_PERIOD_QUESTIONS)
+        assert all(q.endswith("최근 왜 올랐어? 뉴스도 같이 확인해줘") for q in cause)
         for q in SYNTHETIC_NO_PERIOD_QUESTIONS:
             calls = [stock_call(period_days=1)]
-            assert agent._apply_default_period(calls, q) == {}, q
-            assert calls == [stock_call(period_days=1)], q
+            if q in cause:
+                assert agent._apply_default_period(calls, q) == {0: 1}, q
+                assert calls == [stock_call(period_days=20)], q
+            else:
+                assert agent._apply_default_period(calls, q) == {}, q
+                assert calls == [stock_call(period_days=1)], q
 
 
 # ---------------------------------------------------------------- 3. 이름으로 요청한 tool 덧붙이기
@@ -246,6 +271,162 @@ class TestAddRequestedTools:
         assert hit == {"multi"}
         for q in CASES["multi"]:
             assert explicitly_requested_tools(q) in ([], ["stock_tool", "news_tool"])
+
+
+# ---------------------------------------------------------------- 4. 등락 원인 질문의 주가·시장 비교 덧붙이기
+
+CAUSE_QUESTIONS = [
+    "카카오는 왜 떨어졌어?",
+    "삼성전자 왜 올랐어?",
+    "SK하이닉스 하락 이유가 뭐야?",
+    "에코프로비엠 급등한 원인 알려줘",
+    "삼성전자 최근 주가 하락 원인 알려줘",
+]
+
+
+def news_call(company="카카오", **extra):
+    return call("news_tool", company_name=company, **extra)
+
+
+class TestCauseQuestionTools:
+    """실측: 위 5개 질문 x 5회 = 25회 모두 모델은 news_tool만 불렀다(stock_tool 0회)."""
+
+    @pytest.mark.parametrize("question", CAUSE_QUESTIONS)
+    def test_news_only_gets_stock_tool(self, question, market_index_is_stale):
+        calls = [news_call(limit=5)]
+        assert agent._add_requested_tools(calls, question) == [1]
+        assert calls == [news_call(limit=5), call("stock_tool", ticker="카카오")]
+        assert market_index_is_stale["asked"] == ["카카오"]  # 지수가 뒤처져 있어 market_tool은 붙지 않았다
+
+    @pytest.mark.parametrize("question", CAUSE_QUESTIONS)
+    def test_current_market_index_also_adds_market_tool(self, question, market_index_is_stale):
+        market_index_is_stale["current"] = True
+        calls = [news_call()]
+        assert agent._add_requested_tools(calls, question) == [1, 2]
+        assert calls == [news_call(), call("stock_tool", ticker="카카오"), call("market_tool", ticker="카카오")]
+
+    def test_stale_market_index_never_adds_market_tool(self, market_index_is_stale):
+        calls = [news_call()]
+        agent._add_requested_tools(calls, "카카오는 왜 떨어졌어?")
+        assert "market_tool" not in names(calls)
+
+    def test_market_check_error_means_no_market_tool_but_stock_tool_is_still_added(self, monkeypatch):
+        def boom(company):
+            raise RuntimeError("db down")
+
+        monkeypatch.setattr(agent, "market_data_is_current", boom)
+        calls = [news_call()]
+        assert agent._add_requested_tools(calls, "카카오는 왜 떨어졌어?") == [1]
+        assert names(calls) == ["news_tool", "stock_tool"]
+
+    def test_model_already_called_stock_tool(self, market_index_is_stale):
+        calls = [news_call(), stock_call(ticker="카카오")]
+        before = copy.deepcopy(calls)
+        assert agent._add_requested_tools(calls, "카카오는 왜 떨어졌어?") == []
+        assert calls == before
+        market_index_is_stale["current"] = True
+        assert agent._add_requested_tools(calls, "카카오는 왜 떨어졌어?") == [2]
+        assert calls[2] == call("market_tool", ticker="카카오")
+
+    def test_model_already_called_market_tool(self, market_index_is_stale):
+        """시장 비교를 이미 불렀으면(그 결과에 종목 등락률이 있다) 아무것도 덧붙이지 않고, 지수 확인도 하지 않는다."""
+        market_index_is_stale["current"] = True
+        calls = [news_call(), call("market_tool", ticker="카카오")]
+        assert agent._add_requested_tools(calls, "카카오 하락이 시장 전체 때문이야?") == []
+        assert market_index_is_stale["asked"] == []
+
+    @pytest.mark.parametrize(
+        "question",
+        [
+            # 원인 표현만 있다
+            "PER이 왜 중요해?", "카카오 관련 소식 이유가 뭐야?", "삼성전자 공시가 왜 이렇게 많아?",
+            "삼성전자 최근 올라온 공시가 왜 이렇게 많아?",  # '올라온'은 게시됐다는 뜻
+            # 등락 표현만 있다
+            "오늘 많이 오른 종목 알려줘", "카카오 많이 떨어졌어?", "삼성전자 급등했어?", "카카오 하락 뉴스 알려줘",
+            # 둘 다 없다
+            "카카오 최근 뉴스 알려줘", "삼성전자 지난주 주가 알려줘",
+        ],
+    )
+    def test_not_a_cause_question_adds_nothing(self, question, market_index_is_stale):
+        market_index_is_stale["current"] = True
+        calls = [news_call()]
+        assert agent._add_requested_tools(calls, question) == []
+        assert calls == [news_call()]
+        assert market_index_is_stale["asked"] == []
+
+    def test_no_company_in_the_calls_means_nothing_is_added(self, market_index_is_stale):
+        """종목을 특정하지 않은 원인 질문: 모델이 종목 인자가 없는 tool만 불렀으면 어느 종목의 주가인지 정할 수 없다."""
+        market_index_is_stale["current"] = True
+        for calls in ([call("discovery_tool", category="gainers")], [call("fx_tool", period_days=5)], []):
+            before = copy.deepcopy(calls)
+            assert agent._add_requested_tools(calls, "요즘 왜 이렇게 급등하는 종목이 많아?") == []
+            assert calls == before
+        assert market_index_is_stale["asked"] == []
+
+    def test_two_companies_means_nothing_is_added(self, market_index_is_stale):
+        market_index_is_stale["current"] = True
+        calls = [news_call("현대차"), news_call("카카오")]
+        assert agent._add_requested_tools(calls, "현대차랑 카카오는 왜 떨어졌어?") == []
+        assert len(calls) == 2
+
+    def test_cause_and_named_request_are_combined_without_duplicates(self, market_index_is_stale):
+        """"주가랑 뉴스 둘 다"(이름 요청) + "급등한 이유"(원인): stock_tool은 한 번만 덧붙는다."""
+        market_index_is_stale["current"] = True
+        calls = [news_call("LG화학")]
+        agent._add_requested_tools(calls, "LG화학 주가 급등한 이유가 뭐야? 주가랑 뉴스 둘 다 확인해줘")
+        assert names(calls) == ["news_tool", "stock_tool", "market_tool"]
+
+    def test_wanted_tools(self):
+        assert agent._wanted_tools("카카오는 왜 떨어졌어?") == ["stock_tool", "market_tool"]
+        assert agent._wanted_tools(Q_BUTTON) == ["stock_tool", "news_tool", "disclosure_tool"]
+        assert agent._wanted_tools("카카오 최근 뉴스 알려줘") == []
+
+    def test_other_kinds_of_questions_want_exactly_what_they_wanted_before(self):
+        """원인 질문이 아닌 질문은 덧붙일 tool 목록이 이전(이름 요청만 보던 때)과 같다: 벤치마크 질문과 합성 말뭉치 전체."""
+        from app.routing import explicitly_requested_tools, is_cause_question
+
+        others = [q for q in ALL_BENCHMARK_QUESTIONS + SYNTHETIC_NO_PERIOD_QUESTIONS if not is_cause_question(q)]
+        assert len(others) >= 500
+        for q in others + ["오늘 많이 오른 종목 알려줘", "삼성전자 지난주 주가 알려줘", "삼성전자 최근 3일 등락률 알려줘"]:
+            assert agent._wanted_tools(q) == explicitly_requested_tools(q), q
+
+
+class TestCauseQuestionPeriod:
+    @pytest.mark.parametrize("question", CAUSE_QUESTIONS)
+    def test_added_stock_tool_gets_twenty_trading_days(self, question):
+        calls = [news_call()]
+        agent._add_requested_tools(calls, question)
+        assert agent._apply_default_period(calls, question) == {1: None}
+        assert calls[1] == call("stock_tool", ticker="카카오", period_days=DEFAULT_TREND_PERIOD_DAYS)
+
+    def test_market_tool_uses_the_same_window_as_stock_tool(self, market_index_is_stale):
+        """종목 등락과 시장 대비의 구간이 다르면 '시장 때문인지'를 비교할 수 없다. 원인 질문에서는 둘 다 20거래일."""
+        market_index_is_stale["current"] = True
+        calls = [news_call()]
+        agent._add_requested_tools(calls, "카카오는 왜 떨어졌어?")
+        assert agent._apply_default_period(calls, "카카오는 왜 떨어졌어?") == {1: None, 2: None}
+        assert [c["function"]["arguments"].get("period_days") for c in calls] == [None, 20, 20]
+
+    def test_model_called_tools_are_aligned_too(self):
+        calls = [stock_call(period_days=1, ticker="카카오"), call("market_tool", ticker="카카오", period_days=5)]
+        assert agent._apply_default_period(calls, "카카오 하락이 시장 전체 때문이야?") == {0: 1, 1: 5}
+        assert [c["function"]["arguments"]["period_days"] for c in calls] == [20, 20]
+
+    def test_trend_question_that_is_not_a_cause_question_still_leaves_market_tool_alone(self):
+        calls = [stock_call(period_days=1), call("market_tool", ticker="삼성전자", period_days=5)]
+        assert agent._apply_default_period(calls, "삼성전자 최근 주가 흐름을 코스피랑 비교해줘") == {0: 1}
+        assert calls[1]["function"]["arguments"]["period_days"] == 5
+
+    @pytest.mark.parametrize(
+        "question, expected",
+        [("삼성전자 오늘 왜 올랐어?", 1), ("삼성전자 지난주에 왜 떨어졌어?", 5)],
+    )
+    def test_stated_period_is_used_instead_of_the_default(self, question, expected):
+        calls = [news_call("삼성전자")]
+        agent._add_requested_tools(calls, question)
+        assert agent._apply_default_period(calls, question) == {}
+        agent._apply_period_override(calls, question)
+        assert calls[1] == call("stock_tool", ticker="삼성전자", period_days=expected)
 
 
 # ---------------------------------------------------------------- _answer() 실행 경로
@@ -340,6 +521,44 @@ class TestAnswerPath:
         assert names(assistant["tool_calls"]) == ["stock_tool", "news_tool", "disclosure_tool"]
         assert [m["role"] for m in tail] == ["tool", "tool", "tool", "system"]
 
+    def test_cause_question_runs_news_then_stock_with_twenty_days(self, monkeypatch):
+        llm = FakeLLM(monkeypatch, [news_call(limit=5)])
+        response, records = agent._answer("카카오는 왜 떨어졌어?", "m")
+        assert llm.ran == [("news_tool", {"company_name": "카카오", "limit": 5}),
+                           ("stock_tool", {"ticker": "카카오", "period_days": 20})]
+        assert response["used_tools"] == ["news_tool", "stock_tool"]
+        assert len(response["sources"]) == 1  # 근거 문서는 뉴스에서만 나온다
+        assert "called_via" not in records[0]["result"]
+        assert records[1]["result"]["called_via"] == "question_keywords"
+        assert records[1]["result"]["period_days_corrected_via"] == "default_trend_period"
+        assert set(response) == {"answer", "used_tools", "sources"}
+
+    def test_cause_question_with_current_index_also_runs_market_tool(self, monkeypatch, market_index_is_stale):
+        market_index_is_stale["current"] = True
+        llm = FakeLLM(monkeypatch, [news_call()])
+        response, _ = agent._answer("카카오는 왜 떨어졌어?", "m")
+        assert llm.ran[1:] == [("stock_tool", {"ticker": "카카오", "period_days": 20}),
+                               ("market_tool", {"ticker": "카카오", "period_days": 20})]
+        assert response["used_tools"] == ["news_tool", "stock_tool", "market_tool"]
+
+    def test_cause_question_with_stated_period(self, monkeypatch):
+        llm = FakeLLM(monkeypatch, [news_call("삼성전자")])
+        agent._answer("삼성전자 오늘 왜 올랐어?", "m")
+        assert llm.ran[1] == ("stock_tool", {"ticker": "삼성전자", "period_days": 1})
+
+    @pytest.mark.parametrize("question", ["오늘 많이 오른 종목 알려줘", "삼성전자 지난주 주가 알려줘", "카카오 최근 뉴스 알려줘"])
+    def test_other_questions_run_exactly_what_the_model_called(self, monkeypatch, question, market_index_is_stale):
+        market_index_is_stale["current"] = True
+        llm = FakeLLM(monkeypatch, [news_call(limit=5)])
+        agent._answer(question, "m")
+        assert llm.ran == [("news_tool", {"company_name": "카카오", "limit": 5})]
+
+    def test_concept_question_with_cause_and_move_words_but_no_tool_call(self, monkeypatch, market_index_is_stale):
+        """모델이 tool 없이 답한 개념 질문에는 아무것도 덧붙이지 않는다(덧붙일 종목이 없다)."""
+        llm = FakeLLM(monkeypatch, None, final="환율이 오르면 수출 기업의 원화 환산 매출이 늘기 때문입니다.")
+        response, records = agent._answer("환율이 오르면 왜 수출주가 유리해?", "m")
+        assert llm.ran == [] and records == [] and response["used_tools"] == []
+
     def test_response_keys_are_unchanged(self, monkeypatch):
         FakeLLM(monkeypatch, [stock_call()])
         response, _ = agent._answer(Q_BUTTON, "m")
@@ -381,3 +600,14 @@ class TestResearchRoute:
         FakeLLM(monkeypatch, None, final="assistant\n\nPER은 주가수익비율입니다.")
         body = client.post("/api/research", json={"question": "PER이 뭐야?"}).json()
         assert body["answer"] == "PER은 주가수익비율입니다." and body["used_tools"] == [] and body["sources"] == []
+
+    def test_cause_question_response(self, monkeypatch, client):
+        """원인 질문: 모델이 news_tool만 불러도 응답의 used_tools에 stock_tool이 붙고, 응답 필드는 그대로다."""
+        FakeLLM(monkeypatch, [news_call(limit=5)], final="## 주가 동향\n카카오는 20거래일간 -11.35%입니다.")
+        r = client.post("/api/research", json={"question": "카카오는 왜 떨어졌어?"})
+        assert r.status_code == 200
+        body = r.json()
+        assert set(body) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer"}
+        assert body["used_tools"] == ["news_tool", "stock_tool"]
+        assert [s["type"] for s in body["sources"]] == ["news"]
+        assert self.saved[0]["tools"] == ["news_tool", "stock_tool"]

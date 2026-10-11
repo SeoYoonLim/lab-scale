@@ -3,6 +3,7 @@ import pytest
 import app.agent as agent
 from app.routing import (
     explicitly_requested_tools,
+    is_cause_question,
     is_trend_question,
     needs_discovery_tool,
     needs_fx_tool,
@@ -354,3 +355,56 @@ def test_requested_tools_fire_only_on_the_multi_benchmark_group():
     # 공시 목록/공시 내용(rag)/개념 질문에는 하나도 걸리지 않는다
     for group in ("rag", "rag_ho", "disc_list", "disc_ho", "no_tool", "no_tool_ho", "stock", "news"):
         assert not any(explicitly_requested_tools(q) for q in CASES[group]), group
+
+
+# ---- 등락 원인 질문 판단(is_cause_question): 원인 표현과 등락 표현이 함께 있어야 한다 ----
+
+
+@pytest.mark.parametrize(
+    "q",
+    [
+        "카카오는 왜 떨어졌어?", "삼성전자 왜 올랐어?", "SK하이닉스 하락 이유가 뭐야?", "에코프로비엠 급등한 원인 알려줘",
+        "삼성전자 최근 주가 하락 원인 알려줘", "현대차 요즘 왜 이렇게 빠져?", "LG화학 주가 급등한 이유가 뭐야?",
+        "카카오 급락 때문에 걱정인데 이유가 뭐야?", "네이버 주가 왜 이렇게 올라?", "셀트리온 폭락 원인", "한화오션 상승 이유",
+        "삼성전자가 오른 까닭이 뭐야?", "카카오 주가가 떨어지는 이유", "삼성전자 주가 왜 내렸어?",
+        "카카오 요즘 주가 하락이 시장 전체 흐름 때문인지 궁금해",
+    ],
+)
+def test_cause_questions(q):
+    assert is_cause_question(q)
+
+
+@pytest.mark.parametrize(
+    "q",
+    [
+        # 원인 표현만
+        "PER이 왜 중요해?", "삼성전자 공시가 왜 이렇게 많아?", "배당을 하는 이유가 뭐야?", "카카오 실적 부진 원인",
+        "삼성전자 최근 올라온 공시가 왜 이렇게 많아?", "어제 올라왔던 공시 때문에 물어봐",
+        # 등락 표현만
+        "오늘 많이 오른 종목 알려줘", "요즘 급등하는 종목 뭐 있어?", "카카오 많이 떨어졌어?", "삼성전자 최근 3일 등락률 알려줘",
+        "현대차가 코스피보다 더 올랐어?", "삼성전자 상승률 알려줘",
+        # 둘 다 없음
+        "삼성전자 주가 알려줘", "삼성전자 최근 뉴스 알려줘", "삼성전자 지난주 주가 알려줘", "", None,
+    ],
+)
+def test_non_cause_questions(q):
+    assert not is_cause_question(q)
+
+
+def test_cause_judgement_does_not_change_the_first_call_request():
+    """원인 질문이어도 1차 호출(모델의 tool 선택)에 넘기는 프롬프트와 tool 목록은 기본값 그대로다(같은 객체).
+    market_tool은 여전히 시장 비교 표현이 있는 질문에만 모델에게 보인다."""
+    for q in ("카카오는 왜 떨어졌어?", "삼성전자 왜 올랐어?", "에코프로비엠 급등한 원인 알려줘"):
+        prompt, tools = agent.build_request(q)
+        assert prompt is agent.SYSTEM_PROMPT and tools is agent.TOOLS
+        assert not needs_market_tool(q) and not needs_discovery_tool(q) and not needs_fx_tool(q)
+
+
+def test_cause_questions_in_the_benchmark_are_only_in_multi_and_market_groups():
+    """벤치마크 질문 중 원인 질문은 주가+뉴스(multi)와 시장 비교(market) 그룹에만 있다. 공시 목록/내용(rag)/개념/
+    환율/탐색 질문에는 하나도 없어서, 그 그룹들의 tool 호출은 이번 보완의 영향을 받지 않는다."""
+    hit = {group for group, qs in CASES.items() for q in qs if is_cause_question(q)}
+    assert hit == {"multi", "market"}
+    for group in ("rag", "rag_ho", "disc_list", "disc_ho", "no_tool", "no_tool_ho", "stock", "news", "fx", "fx_ho",
+                  "discovery", "discovery_ho", "market_ho"):
+        assert not any(is_cause_question(q) for q in CASES[group]), group

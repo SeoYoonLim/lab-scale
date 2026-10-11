@@ -20,6 +20,7 @@ from app.sources import build_sources
 from app.tools.company_resolver import extract_from_text, normalize_name, resolve_company
 from app.routing import (
     explicitly_requested_tools,
+    is_cause_question,
     is_trend_question,
     needs_discovery_tool,
     needs_fx_tool,
@@ -28,7 +29,7 @@ from app.routing import (
 from app.tools.disclosure_tool import disclosure_tool
 from app.tools.discovery_tool import discovery_tool
 from app.tools.fx_tool import fx_tool
-from app.tools.market_tool import market_tool
+from app.tools.market_tool import market_data_is_current, market_tool
 from app.tools.news_tool import news_tool
 from app.tools.rag_search_tool import rag_search_tool
 from app.tools.stock_tool import stock_tool
@@ -597,20 +598,29 @@ DEFAULT_TREND_PERIOD_DAYS = 20
 
 
 def _apply_default_period(calls: list[dict], question: str) -> dict[int, object]:
-    """기간을 말하지 않고 주가의 흐름/추이(또는 '최근 주가')를 묻는 질문이면 stock_tool의 period_days를
-    DEFAULT_TREND_PERIOD_DAYS로 맞춘다.
+    """기간을 말하지 않고 주가의 흐름/추이(또는 '최근 주가')나 등락의 원인을 묻는 질문이면 stock_tool의
+    period_days를 DEFAULT_TREND_PERIOD_DAYS로 맞춘다.
 
     모델은 이런 질문에 period_days를 1로 채우거나(→ "최근 1일 동안 -2.23%" 같은 답) 호출마다 다른 값을 추측한다.
-    사용자가 기간을 말한 질문(app.period_parser.mentions_period)과 흐름 질문이 아닌 질문(app.routing.
-    is_trend_question)은 건드리지 않는다 - 그때는 이전처럼 파서가 인식한 값 또는 LLM이 추론한 값이 쓰인다.
-    market_tool/fx_tool은 기본값이 이미 5거래일이라 대상이 아니다.
+    사용자가 기간을 말한 질문(app.period_parser.mentions_period)과 흐름·원인 질문이 아닌 질문(app.routing.
+    is_trend_question, is_cause_question)은 건드리지 않는다 - 그때는 이전처럼 파서가 인식한 값 또는 LLM이 추론한
+    값이 쓰인다.
+    market_tool/fx_tool은 기본값이 이미 5거래일이라 흐름 질문에서는 대상이 아니다. 다만 원인 질문("왜 떨어졌어?")
+    에서는 market_tool도 같은 기간으로 맞춘다: 한 답변 안에서 종목 등락(20거래일)과 시장 대비(5거래일)의 구간이
+    다르면 "떨어진 게 시장 때문인지"를 비교할 수 없다.
     calls를 직접 수정하고, {호출 인덱스: 바꾸기 전 원래 값(없었으면 None)}을 돌려준다."""
-    if not is_trend_question(question) or mentions_period(question):
+    if mentions_period(question):
+        return {}
+    if is_cause_question(question):
+        targets = {"stock_tool", "market_tool"}
+    elif is_trend_question(question):
+        targets = {"stock_tool"}
+    else:
         return {}
 
     changed: dict[int, object] = {}
     for i, call in enumerate(calls):
-        if call["function"]["name"] != "stock_tool":
+        if call["function"]["name"] not in targets:
             continue
         args = _as_args(call["function"]["arguments"])
         call["function"]["arguments"] = args
@@ -627,17 +637,42 @@ _SATISFIED_BY = {
     "stock_tool": {"stock_tool", "market_tool"},
     "news_tool": {"news_tool", "rag_search_tool"},
     "disclosure_tool": {"disclosure_tool", "rag_search_tool"},
+    "market_tool": {"market_tool"},
 }
+
+# 등락의 원인을 묻는 질문(app.routing.is_cause_question)에서 뉴스와 함께 봐야 하는 tool. 모델은 이런 질문에 news_tool만
+# 부르는데(25/25), 주가가 실제로 어떻게 움직였는지와 시장 전체가 같이 움직였는지를 모르면 원인을 가릴 수 없다.
+_CAUSE_QUESTION_TOOLS = ["stock_tool", "market_tool"]
+
+
+def _wanted_tools(question: str) -> list[str]:
+    """이 질문에 있어야 하는 tool: 이름으로 요청한 것 + 원인 질문이면 주가·시장 비교."""
+    wanted = list(explicitly_requested_tools(question))
+    if is_cause_question(question):
+        wanted += [name for name in _CAUSE_QUESTION_TOOLS if name not in wanted]
+    return wanted
+
+
+def _market_comparison_available(company: str) -> bool:
+    """market_tool을 코드가 덧붙여도 되는지(그 종목 시장의 지수가 최신 주가 날짜까지 수집돼 있는지).
+    확인 중 오류가 나면(DB 문제 등) 덧붙이지 않는 쪽으로 처리한다 - 없어도 답변은 만들 수 있다."""
+    try:
+        return market_data_is_current(company)
+    except Exception:
+        return False
 
 
 def _add_requested_tools(calls: list[dict], question: str) -> list[int]:
-    """질문이 주가·뉴스·공시 중 둘 이상을 이름으로 요청했는데 모델이 일부만 호출했으면, 빠진 tool 호출을 덧붙인다.
+    """질문에 있어야 하는 tool(_wanted_tools)을 모델이 일부만 호출했으면, 빠진 tool 호출을 덧붙인다.
 
-    "삼성전자 최근 상황을 종합해서 알려줘. 주가, 뉴스, 공시를 같이 확인해줘."에 모델이 stock_tool만 부르는
-    경우(10번에 1~2번)를 메우기 위한 것이다. 모델이 이미 부른 호출들의 종목이 정확히 하나일 때만 그 종목으로
-    덧붙이고, 종목이 없거나 둘 이상이면(어느 종목의 뉴스인지 코드가 정할 수 없다) 아무것도 하지 않는다.
+    두 경우를 메운다. (1) 주가·뉴스·공시 중 둘 이상을 이름으로 요청한 질문: "삼성전자 최근 상황을 종합해서 알려줘.
+    주가, 뉴스, 공시를 같이 확인해줘."에 모델이 stock_tool만 부르는 경우(10번에 1~2번). (2) 등락의 원인을 묻는
+    질문: "카카오는 왜 떨어졌어?"에 모델이 news_tool만 부르는 경우(25번 중 25번) - stock_tool을 덧붙이고, 시장 지수가
+    최신이면 market_tool도 덧붙인다(지수가 뒤처져 있거나 코스피/코스닥 종목이 아니면 붙이지 않는다).
+    모델이 이미 부른 호출들의 종목이 정확히 하나일 때만 그 종목으로 덧붙이고, 종목이 없거나 둘 이상이면(어느 종목의
+    뉴스인지 코드가 정할 수 없다) 아무것도 하지 않는다.
     기존 호출은 건드리지 않고 calls 끝에만 추가한다. 추가한 호출의 인덱스 목록을 돌려준다."""
-    wanted = explicitly_requested_tools(question)
+    wanted = _wanted_tools(question)
     if not wanted:
         return []
     called = {call["function"]["name"] for call in calls}
@@ -654,6 +689,9 @@ def _add_requested_tools(calls: list[dict], question: str) -> list[int]:
     if len(companies) != 1:
         return []
     company = companies.pop()
+
+    if "market_tool" in missing and not _market_comparison_available(company):
+        missing.remove("market_tool")
 
     added = []
     for name in missing:
