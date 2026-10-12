@@ -61,6 +61,24 @@ def _latest_prices(db, company_ids: list[int]) -> dict[int, StockPrice]:
     return {row.company_id: row for row in rows}
 
 
+def item_dict(w: Watchlist, c: Company, price: StockPrice | None) -> dict:
+    """관심종목 한 건의 응답 항목. 목록(GET)과 추가(POST) 응답이 같은 모양·같은 값이 되도록 한곳에서 만든다."""
+    return {
+        "company_id": c.id,
+        "ticker": c.ticker,
+        "company_name": c.name,
+        "added_at": w.created_at.isoformat(),
+        "latest_close": float(price.close_price) if price else None,
+        "latest_close_date": price.price_date.isoformat() if price else None,
+        "change_pct": float(price.change_pct) if (price and price.change_pct is not None) else None,
+    }
+
+
+def added_item(db, w: Watchlist, c: Company) -> dict:
+    """방금 추가한 관심종목의 응답 항목(목록 항목과 같은 값: 최근 종가 포함)."""
+    return item_dict(w, c, _latest_prices(db, [c.id]).get(c.id))
+
+
 def list_items(db, device_id: str) -> list[dict]:
     """소유자의 관심종목 전체(등록 최신순) + 종목별 최근 종가(실시간 아님, 프론트가 바로 쓸 수 있는 최소 정보)."""
     rows = (
@@ -71,19 +89,4 @@ def list_items(db, device_id: str) -> list[dict]:
         .all()
     )
     prices = _latest_prices(db, [c.id for _, c in rows])
-
-    out = []
-    for w, c in rows:
-        p = prices.get(c.id)
-        out.append(
-            {
-                "company_id": c.id,
-                "ticker": c.ticker,
-                "company_name": c.name,
-                "added_at": w.created_at.isoformat(),
-                "latest_close": float(p.close_price) if p else None,
-                "latest_close_date": p.price_date.isoformat() if p else None,
-                "change_pct": float(p.change_pct) if (p and p.change_pct is not None) else None,
-            }
-        )
-    return out
+    return [item_dict(w, c, prices.get(c.id)) for w, c in rows]

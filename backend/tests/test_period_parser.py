@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from app.period_parser import _business_days_between, parse_period
+from app.period_parser import _business_days_between, mentions_period, parse_period
 
 KST = ZoneInfo("Asia/Seoul")
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=KST)  # 목요일, 또한 월의 첫째 날
@@ -139,3 +139,44 @@ class TestFirstMatchWins:
     def test_order_reversed_picks_the_other_one(self):
         r = parse("최근 3일이랑 지난주를 비교해줘")
         assert r.matched_text == "3일"
+
+
+class TestMentionsPeriod:
+    """기본 기간을 채워도 되는지 판단하는 용도: 사용자가 기간(또는 시점)을 말했으면 True."""
+
+    @pytest.mark.parametrize(
+        "question",
+        [
+            # parse_period가 인식하는 표현
+            "삼성전자 지난주 주가 흐름", "삼성전자 오늘 주가", "삼성전자 최근 3일 등락률", "삼성전자 3개월 주가 흐름", "올해 흐름",
+            # parse_period는 None이지만(값으로 못 바꿈) 기간을 말한 표현
+            "SK하이닉스 지난 한 달 주가 어땠어?", "한달 동안 흐름", "일주일 동안 흐름", "두 달 추이", "석 달 흐름",
+            "삼성전자 하루 주가 움직임", "며칠간 흐름", "보름 동안 추이", "반년 흐름", "최근 분기 주가 흐름", "주간 흐름",
+            "한 주 동안 흐름", "삼성전자 당일 주가 흐름", "장중 흐름",
+            # 숫자가 들어간 표현은 기간일 수 있다
+            "삼성전자 최근 5거래일 주가 흐름", "10년 전 주가 흐름", "2024년 주가 추이",
+        ],
+    )
+    def test_true(self, question):
+        assert mentions_period(question) is True
+
+    @pytest.mark.parametrize(
+        "question",
+        [
+            "삼성전자 최근 주가 흐름 알려줘",
+            "삼성전자 최근 상황을 종합해서 알려줘. 주가, 뉴스, 공시를 같이 확인해줘.",
+            "현대차 주가 추이 좀 보여줘",
+            "카카오 요즘 주가 어때?",
+            "005930 주가 흐름 알려줘",  # 6자리 종목코드는 숫자로 치지 않는다
+            "신한 주가 흐름", "대한 주식 흐름",  # '한 주'가 아니라 '...한 주가/주식'
+            "한 달러에 얼마야?",  # '한 달'이 아니다
+            "", None,
+        ],
+    )
+    def test_false(self, question):
+        assert mentions_period(question) is False
+
+    def test_unparsed_expressions_are_still_none_for_parse_period(self):
+        """mentions_period가 True여도 parse_period의 지원 범위는 그대로다(값으로 바꾸지 않는다)."""
+        for q in ("한 달 동안 흐름", "일주일 동안 흐름", "삼성전자 하루 주가 움직임"):
+            assert parse(q) is None and mentions_period(q) is True

@@ -4,7 +4,14 @@ import pytest
 
 import app.tools.market_tool as mt
 from app.models import Company
-from app.tools.market_tool import IN_LINE_PP, compare_returns, index_code_for_market, market_tool
+from app.tools.market_tool import (
+    IN_LINE_PP,
+    compare_returns,
+    index_code_for_market,
+    is_index_current,
+    market_data_is_current,
+    market_tool,
+)
 
 
 def series(start: date, closes: list[float]) -> list[tuple[date, float]]:
@@ -236,3 +243,97 @@ class TestCollect:
         nan = _index_row(ts, pd.Series({"Close": 100.0, "Change": float("nan")}))
         assert nan["change_pct"] is None
         assert _index_row(ts, pd.Series({"Close": 100.0}))["change_pct"] is None
+
+
+class TestIsIndexCurrent:
+    """코드가 market_tool을 스스로 덧붙여도 되는지: 지수가 종목의 최신 주가 날짜까지 있어야 한다."""
+
+    @pytest.mark.parametrize(
+        "stock, index, expected",
+        [
+            (date(2026, 10, 8), date(2026, 10, 8), True),
+            (date(2026, 10, 8), date(2026, 10, 9), True),   # 지수가 더 최근이어도 된다
+            (date(2026, 10, 8), date(2026, 10, 7), False),  # 하루만 뒤처져도 덧붙이지 않는다
+            (date(2026, 10, 8), date(2026, 9, 17), False),  # 2026-10-11 dev DB 상태(지수 원천이 9/17에서 멈춤)
+            (None, date(2026, 10, 8), False),
+            (date(2026, 10, 8), None, False),
+            (None, None, False),
+        ],
+    )
+    def test_cases(self, stock, index, expected):
+        assert is_index_current(stock, index) is expected
+
+
+class _Scalar:
+    def __init__(self, value):
+        self.value = value
+
+    def filter(self, *a, **k):
+        return self
+
+    def scalar(self):
+        return self.value
+
+
+class _DatesDB:
+    """market_data_is_current가 하는 두 번의 max(price_date) 조회에 차례로(주가, 지수) 값을 돌려준다."""
+
+    def __init__(self, stock_date, index_date):
+        self.values = [stock_date, index_date]
+        self.closed = False
+
+    def query(self, *a, **k):
+        return _Scalar(self.values.pop(0))
+
+    def close(self):
+        self.closed = True
+
+
+class TestMarketDataIsCurrent:
+    def _setup(self, monkeypatch, market, stock_date, index_date):
+        company = None if market == "unknown" else Company(id=1, ticker="005930", name="삼성전자", market=market)
+        db = _DatesDB(stock_date, index_date)
+        monkeypatch.setattr(mt, "SessionLocal", lambda: db)
+        monkeypatch.setattr(mt, "resolve_company", lambda db, ticker: type("R", (), {"company": company})())
+        return db
+
+    def test_current(self, monkeypatch):
+        db = self._setup(monkeypatch, "KOSPI", date(2026, 10, 8), date(2026, 10, 8))
+        assert market_data_is_current("삼성전자") is True
+        assert db.closed
+
+    def test_stale_index(self, monkeypatch):
+        self._setup(monkeypatch, "KOSPI", date(2026, 10, 8), date(2026, 9, 17))
+        assert market_data_is_current("삼성전자") is False
+
+    def test_no_index_rows(self, monkeypatch):
+        self._setup(monkeypatch, "KOSDAQ", date(2026, 10, 8), None)
+        assert market_data_is_current("삼성전자") is False
+
+    @pytest.mark.parametrize("market", ["KONEX", None, ""])
+    def test_market_without_a_supported_index(self, monkeypatch, market):
+        """코스피/코스닥이 아니면 market_tool이 비교를 지원하지 않는다. 날짜 조회까지 가지 않는다."""
+        db = self._setup(monkeypatch, market, date(2026, 10, 8), date(2026, 10, 8))
+        assert market_data_is_current("삼성전자") is False
+        assert len(db.values) == 2 and db.closed
+
+    def test_unknown_company(self, monkeypatch):
+        db = self._setup(monkeypatch, "unknown", date(2026, 10, 8), date(2026, 10, 8))
+        assert market_data_is_current("없는종목") is False
+        assert db.closed
+
+
+@pytest.mark.integration
+class TestMarketDataIsCurrentDevDB:
+    def test_matches_the_stored_dates(self, dev_db):
+        """실제 dev DB: 저장된 주가/지수의 최신 날짜를 직접 조회한 것과 같은 판단이어야 한다."""
+        from sqlalchemy import func
+
+        from app.models import MarketIndex, StockPrice
+
+        company = dev_db.query(Company).filter(Company.name == "삼성전자").one()
+        latest_stock = dev_db.query(func.max(StockPrice.price_date)).filter(StockPrice.company_id == company.id).scalar()
+        latest_index = dev_db.query(func.max(MarketIndex.price_date)).filter(MarketIndex.index_code == "KS11").scalar()
+        assert market_data_is_current("삼성전자") is (latest_index is not None and latest_index >= latest_stock)
+        assert market_data_is_current("005930") is market_data_is_current("삼성전자")
+        assert market_data_is_current("세상에없는종목XYZ") is False

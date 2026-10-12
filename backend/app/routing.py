@@ -73,3 +73,61 @@ def needs_discovery_tool(question: str) -> bool:
     if _DISCOVERY_FIXED_RE.search(q):
         return True
     return bool(_VOLUME_RE.search(q) and _VOLUME_CHANGE_RE.search(q))
+
+
+# 하루치 수치가 아니라 주가의 "흐름"을 묻는 표현. 모델은 이런 질문에도 stock_tool의 period_days를 기본값 1로
+# 채우거나("삼성전자 최근 주가 흐름 알려줘" 10/10) 호출마다 1/10/30으로 다르게 추측해서("현대차 주가 추이 좀 보여줘"),
+# 기간을 말하지 않은 흐름 질문은 코드가 기본 기간을 정한다(app/agent.py의 _apply_default_period).
+# "최근/요즘"은 바로 뒤에 주가·시세·상황이 올 때만 인정한다("최근 뉴스", "최근 공시"는 흐름 질문이 아니다).
+_TREND_RE = re.compile(r"흐름|추이|추세|동향|움직임|(?:최근|요즘|요새)\s*(?:주가|시세|상황|근황)")
+
+
+def is_trend_question(question: str) -> bool:
+    """질문이 주가의 흐름/추이(또는 '최근 주가/상황')를 묻는 내용이면 True. 기간 표현이 있는지는 보지 않는다."""
+    return bool(_TREND_RE.search(question or ""))
+
+
+# 질문이 "주가, 뉴스, 공시를 같이 확인해줘"처럼 정보 종류를 이름으로 직접 요청한 경우에 대응하는 tool.
+# 모델은 이런 질문에서도 10번에 1~2번은 stock_tool만 부른다(종목 상세 화면의 [리서치하기] 버튼 질문, 삼성전자 8/10,
+# 카카오 9/10). 프롬프트를 고치면 다른 라우팅이 흔들리므로(README FR-06 기록) 프롬프트는 그대로 두고, 1차 호출이
+# 끝난 뒤 빠진 tool만 코드가 덧붙인다(app/agent.py의 _add_requested_tools).
+_REQUESTED_TOOLS = [
+    ("stock_tool", re.compile(r"주가")),
+    ("news_tool", re.compile(r"뉴스")),
+    ("disclosure_tool", re.compile(r"공시")),
+]
+# "뉴스 말고 주가만"처럼 일부를 빼달라는 질문은 낱말만으로 판단할 수 없어서 아예 손대지 않는다.
+_REQUEST_EXCLUSION_RE = re.compile(r"말고|빼고|제외|없이")
+
+
+def explicitly_requested_tools(question: str) -> list[str]:
+    """질문이 주가·뉴스·공시 중 둘 이상을 이름으로 요청하면 해당 tool 이름 목록, 아니면 빈 리스트.
+
+    하나만 나온 질문("삼성전자 최근 공시 뭐 있어?")은 모델의 판단이 이미 안정적이고 rag_search_tool과의 구분
+    (목록 vs 내용)이 걸려 있어서 건드리지 않는다."""
+    q = question or ""
+    if _REQUEST_EXCLUSION_RE.search(q):
+        return []
+    wanted = [name for name, pattern in _REQUESTED_TOOLS if pattern.search(q)]
+    return wanted if len(wanted) >= 2 else []
+
+
+# 주가가 오르내린 "원인"을 묻는 질문: 원인 표현과 등락 표현이 함께 있어야 한다.
+# 시스템 프롬프트가 "'왜 올랐는지/내렸는지' 같이 뉴스가 필요한 질문에는 news_tool"이라고 안내해서 모델은 이런 질문에
+# news_tool만 부른다(5개 질문 x 5회 = 25회 중 25회, stock_tool 0회). 그러면 실제 주가가 어떻게 움직였는지 모르는 채로
+# 질문의 전제를 그대로 받아 "삼성전자 왜 올랐어?"에 오른 이유를 지어내거나(실제로는 20거래일 -2.59%) 주가와 무관한
+# 최신 기사를 원인이라고 답한다. 프롬프트는 그대로 두고, 1차 호출 뒤에 주가 조회를 코드가 덧붙인다
+# (app/agent.py의 _add_requested_tools).
+# "올라온 공시"(게시됐다는 뜻)는 등락 표현이 아니라서 '올라' 뒤에 온/왔/오가 오면 제외한다.
+_CAUSE_RE = re.compile(r"왜|이유|원인|때문|까닭")
+_PRICE_MOVE_RE = re.compile(
+    r"올랐|올라(?![온왔오])|오르|오른|상승|급등|폭등"
+    r"|떨어졌|떨어지|떨어진|떨어져|하락|급락|폭락|내렸|내린|내려가|빠졌|빠져|빠진|빠지"
+)
+
+
+def is_cause_question(question: str) -> bool:
+    """질문이 등락의 원인을 묻는 내용이면 True. 원인 표현만 있거나("PER이 왜 중요해?") 등락 표현만 있으면
+    ("오늘 많이 오른 종목 알려줘") False다. 종목이 특정됐는지는 여기서 보지 않는다(호출측이 tool 호출 인자로 본다)."""
+    q = question or ""
+    return bool(_CAUSE_RE.search(q) and _PRICE_MOVE_RE.search(q))

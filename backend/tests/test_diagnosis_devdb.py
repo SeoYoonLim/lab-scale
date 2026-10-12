@@ -83,6 +83,31 @@ class TestDiagnosisDevDB:
             assert by_ticker[t]["return_20d_pct"] == _expected_20d(t)
         assert {f["code"] for f in body["flags"]} == {"FEW_HOLDINGS", "CASH_HIGH"}
 
+    def test_strengths_and_risks_pair_each_company_with_its_own_numbers(self, signup, fixed_price_and_llm):
+        """LLM 설명(source=llm)이어도 강점·위험 문장은 코드가 만든다: 종목 문장의 숫자가 그 종목의 실제 값과 같다."""
+        user = signup()
+        _buy(user, "005930", 2)   # 삼성전자
+        _buy(user, "035720", 3)   # 카카오
+        _buy(user, "247540", 5)   # 에코프로비엠(가격을 고정해서 비중 1위)
+        body = _diagnose(user).json()
+        assert body["source"] == "llm"
+        assert body["summary"] == LLM_OK["summary"] and body["suggestions"] == LLM_OK["suggestions"]
+        assert LLM_OK["strengths"][0] not in body["strengths"] and LLM_OK["risks"][0] not in body["risks"]
+
+        facts = d.fact_sentences(body["holdings"], body["metrics"], body["flags"])
+        assert body["strengths"] == facts["strengths"] and body["risks"] == facts["risks"]
+        moved = [h for h in body["holdings"] if h["return_20d_pct"]]
+        assert moved, "dev DB에 20거래일 주가가 있어야 한다"
+        for h in moved:
+            sentence = d.holding_fact(h)
+            assert h["company_name"] in sentence and f"{h['return_20d_pct']:+}%" in sentence and f"{h['weight_pct']}%" in sentence
+            assert h["return_20d_pct"] == _expected_20d(h["ticker"])
+            assert sentence in (body["strengths"] if h["return_20d_pct"] > 0 else body["risks"])
+        payload = d.build_llm_payload(body["holdings"], body["metrics"], body["flags"])
+        joined = "\n".join(body["strengths"] + body["risks"])
+        assert d.find_mismatched_numbers(joined, d.holding_numbers(payload)) == []
+        assert d.find_disallowed_numbers(joined, d.allowed_numbers(payload)) == []
+
     def test_no_holdings_is_400_without_llm(self, signup, fixed_price_and_llm):
         user = signup()
         r = _diagnose(user)

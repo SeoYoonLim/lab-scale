@@ -2,6 +2,7 @@
 
 실행: pytest -m slow tests/test_diagnosis_slow.py
 LLM 출력이 검증에 걸리면 규칙 기반으로 폴백하는 것도 정상 동작이므로 source는 둘 중 하나면 된다.
+문장 내용은 LLM이 쓴 부분(summary, suggestions)이 아니라 코드가 만든 부분(strengths, risks)만 정확성을 본다.
 """
 
 import pytest
@@ -37,3 +38,31 @@ def test_real_ollama_call_returns_valid_structure(monkeypatch):
         joined = "\n".join([out["summary"], *out["strengths"], *out["risks"], *out["suggestions"]])
         payload = d.build_llm_payload(out["holdings"], out["metrics"], out["flags"])
         assert d.find_disallowed_numbers(joined, d.allowed_numbers(payload)) == []
+
+
+def test_real_ollama_call_never_mispairs_company_and_number():
+    """재현 조건(삼성전자 2주, 카카오 3주, 에코프로비엠 5주)에서 종목명과 숫자의 짝이 틀린 문장이 없어야 한다.
+
+    고치기 전에는 3회 중 3회 "비중 상위 1개 종목은 삼성전자"(실제 1위는 에코프로비엠) 같은 문장이 나왔다."""
+    out = build_diagnosis(
+        8_744_300.0,
+        [
+            HoldingInput("005930", "삼성전자", "KOSPI", 2, 263000.0, 263000.0, False, -2.59),
+            HoldingInput("035720", "카카오", "KOSPI", 3, 32400.0, 32400.0, False, -11.35),
+            HoldingInput("247540", "에코프로비엠", "KOSDAQ GLOBAL", 5, 126500.0, 126500.0, False, 18.56),
+        ],
+    )
+    payload = d.build_llm_payload(out["holdings"], out["metrics"], out["flags"])
+    per_holding = d.holding_numbers(payload)
+    texts = [out["summary"], *out["strengths"], *out["risks"], *out["suggestions"]]
+    joined = "\n".join(texts)
+    detail = f"source={out['source']} texts={texts}"
+    assert d.find_mismatched_numbers(joined, per_holding) == [], detail
+    assert d.find_wrong_top_claims(joined, per_holding, d.top_weight_names(payload)) == [], detail
+    assert d.find_unknown_companies(joined, per_holding) == [], detail
+    assert d.find_disallowed_numbers(joined, d.allowed_numbers(payload)) == [], detail
+    if out["source"] == "llm":
+        facts = d.fact_sentences(out["holdings"], out["metrics"], out["flags"])
+        assert out["strengths"] == facts["strengths"] and out["risks"] == facts["risks"], detail
+        assert "에코프로비엠은 총자산의 6.33%이고, 최근 20거래일 주가 등락률은 +18.56%입니다." in out["strengths"]
+        assert "카카오는 총자산의 0.97%이고, 최근 20거래일 주가 등락률은 -11.35%입니다." in out["risks"]

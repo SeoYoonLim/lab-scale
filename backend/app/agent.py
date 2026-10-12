@@ -14,15 +14,22 @@ from datetime import datetime, timezone
 import ollama
 
 from app.db.session import SessionLocal
-from app.period_parser import parse_period
+from app.period_parser import mentions_period, parse_period
 from app.reports import save_report as save_report_row
 from app.sources import build_sources
 from app.tools.company_resolver import extract_from_text, normalize_name, resolve_company
-from app.routing import needs_discovery_tool, needs_fx_tool, needs_market_tool
+from app.routing import (
+    explicitly_requested_tools,
+    is_cause_question,
+    is_trend_question,
+    needs_discovery_tool,
+    needs_fx_tool,
+    needs_market_tool,
+)
 from app.tools.disclosure_tool import disclosure_tool
 from app.tools.discovery_tool import discovery_tool
 from app.tools.fx_tool import fx_tool
-from app.tools.market_tool import market_tool
+from app.tools.market_tool import market_data_is_current, market_tool
 from app.tools.news_tool import news_tool
 from app.tools.rag_search_tool import rag_search_tool
 from app.tools.stock_tool import stock_tool
@@ -585,6 +592,135 @@ def _apply_period_override(calls: list[dict], question: str) -> dict[int, object
     return overridden
 
 
+# 기간을 말하지 않은 흐름 질문에서 stock_tool에 채우는 기본 기간(거래일 수). 진단의 20거래일 수익률,
+# market_tool 설명의 "한 달이면 20"과 같은 약 한 달이다.
+DEFAULT_TREND_PERIOD_DAYS = 20
+
+
+def _apply_default_period(calls: list[dict], question: str) -> dict[int, object]:
+    """기간을 말하지 않고 주가의 흐름/추이(또는 '최근 주가')나 등락의 원인을 묻는 질문이면 stock_tool의
+    period_days를 DEFAULT_TREND_PERIOD_DAYS로 맞춘다.
+
+    모델은 이런 질문에 period_days를 1로 채우거나(→ "최근 1일 동안 -2.23%" 같은 답) 호출마다 다른 값을 추측한다.
+    사용자가 기간을 말한 질문(app.period_parser.mentions_period)과 흐름·원인 질문이 아닌 질문(app.routing.
+    is_trend_question, is_cause_question)은 건드리지 않는다 - 그때는 이전처럼 파서가 인식한 값 또는 LLM이 추론한
+    값이 쓰인다.
+    market_tool/fx_tool은 기본값이 이미 5거래일이라 흐름 질문에서는 대상이 아니다. 다만 원인 질문("왜 떨어졌어?")
+    에서는 market_tool도 같은 기간으로 맞춘다: 한 답변 안에서 종목 등락(20거래일)과 시장 대비(5거래일)의 구간이
+    다르면 "떨어진 게 시장 때문인지"를 비교할 수 없다.
+    calls를 직접 수정하고, {호출 인덱스: 바꾸기 전 원래 값(없었으면 None)}을 돌려준다."""
+    if mentions_period(question):
+        return {}
+    if is_cause_question(question):
+        targets = {"stock_tool", "market_tool"}
+    elif is_trend_question(question):
+        targets = {"stock_tool"}
+    else:
+        return {}
+
+    changed: dict[int, object] = {}
+    for i, call in enumerate(calls):
+        if call["function"]["name"] not in targets:
+            continue
+        args = _as_args(call["function"]["arguments"])
+        call["function"]["arguments"] = args
+        if args.get("period_days") == DEFAULT_TREND_PERIOD_DAYS:
+            continue
+        changed[i] = args.get("period_days")
+        args["period_days"] = DEFAULT_TREND_PERIOD_DAYS
+    return changed
+
+
+# 질문이 이름으로 요청한 정보(app.routing.explicitly_requested_tools)를 이미 채워주는 tool들. 공시/뉴스는
+# rag_search_tool(내용 검색)로도, 주가는 market_tool(시장 비교)로도 답이 되므로 그 경우에는 덧붙이지 않는다.
+_SATISFIED_BY = {
+    "stock_tool": {"stock_tool", "market_tool"},
+    "news_tool": {"news_tool", "rag_search_tool"},
+    "disclosure_tool": {"disclosure_tool", "rag_search_tool"},
+    "market_tool": {"market_tool"},
+}
+
+# 등락의 원인을 묻는 질문(app.routing.is_cause_question)에서 뉴스와 함께 봐야 하는 tool. 모델은 이런 질문에 news_tool만
+# 부르는데(25/25), 주가가 실제로 어떻게 움직였는지와 시장 전체가 같이 움직였는지를 모르면 원인을 가릴 수 없다.
+_CAUSE_QUESTION_TOOLS = ["stock_tool", "market_tool"]
+
+
+def _wanted_tools(question: str) -> list[str]:
+    """이 질문에 있어야 하는 tool: 이름으로 요청한 것 + 원인 질문이면 주가·시장 비교."""
+    wanted = list(explicitly_requested_tools(question))
+    if is_cause_question(question):
+        wanted += [name for name in _CAUSE_QUESTION_TOOLS if name not in wanted]
+    return wanted
+
+
+def _market_comparison_available(company: str) -> bool:
+    """market_tool을 코드가 덧붙여도 되는지(그 종목 시장의 지수가 최신 주가 날짜까지 수집돼 있는지).
+    확인 중 오류가 나면(DB 문제 등) 덧붙이지 않는 쪽으로 처리한다 - 없어도 답변은 만들 수 있다."""
+    try:
+        return market_data_is_current(company)
+    except Exception:
+        return False
+
+
+def _add_requested_tools(calls: list[dict], question: str) -> list[int]:
+    """질문에 있어야 하는 tool(_wanted_tools)을 모델이 일부만 호출했으면, 빠진 tool 호출을 덧붙인다.
+
+    두 경우를 메운다. (1) 주가·뉴스·공시 중 둘 이상을 이름으로 요청한 질문: "삼성전자 최근 상황을 종합해서 알려줘.
+    주가, 뉴스, 공시를 같이 확인해줘."에 모델이 stock_tool만 부르는 경우(10번에 1~2번). (2) 등락의 원인을 묻는
+    질문: "카카오는 왜 떨어졌어?"에 모델이 news_tool만 부르는 경우(25번 중 25번) - stock_tool을 덧붙이고, 시장 지수가
+    최신이면 market_tool도 덧붙인다(지수가 뒤처져 있거나 코스피/코스닥 종목이 아니면 붙이지 않는다).
+    모델이 이미 부른 호출들의 종목이 정확히 하나일 때만 그 종목으로 덧붙이고, 종목이 없거나 둘 이상이면(어느 종목의
+    뉴스인지 코드가 정할 수 없다) 아무것도 하지 않는다.
+    기존 호출은 건드리지 않고 calls 끝에만 추가한다. 추가한 호출의 인덱스 목록을 돌려준다."""
+    wanted = _wanted_tools(question)
+    if not wanted:
+        return []
+    called = {call["function"]["name"] for call in calls}
+    missing = [name for name in wanted if not called & _SATISFIED_BY[name]]
+    if not missing:
+        return []
+
+    companies = set()
+    for call in calls:
+        key = _COMPANY_ARG.get(call["function"]["name"])
+        value = normalize_name(_as_args(call["function"]["arguments"]).get(key)) if key else None
+        if value:
+            companies.add(value)
+    if len(companies) != 1:
+        return []
+    company = companies.pop()
+
+    if "market_tool" in missing and not _market_comparison_available(company):
+        missing.remove("market_tool")
+
+    added = []
+    for name in missing:
+        added.append(len(calls))
+        calls.append({"function": {"name": name, "arguments": {_COMPANY_ARG[name]: company}}})
+    return added
+
+
+# llama3.1 채팅 템플릿의 역할 헤더("<|start_header_id|>assistant<|end_header_id|>\n\n")가 본문으로 새어 나온 것.
+# 특수 토큰은 Ollama가 지우고 "assistant\n\n"만 남는다. 뒤에 줄바꿈이 올 때만(또는 특수 토큰이 그대로 남은 경우만)
+# 접두어로 본다 - "assistant는 ..."처럼 같은 줄에서 문장이 이어지는 정상 본문은 건드리지 않는다.
+_ROLE_PREFIX_RE = re.compile(
+    r"\A\s*(?:<\|start_header_id\|>\s*assistant\s*<\|end_header_id\|>\s*|assistant[ \t]*:?[ \t]*\r?\n\s*)",
+    re.IGNORECASE,
+)
+
+
+def strip_role_prefix(content):
+    """답변 맨 앞에 붙은 역할 접두어('assistant' + 줄바꿈)를 떼어낸다. 그 외 본문은 그대로 돌려준다.
+
+    원인: _answer()는 최종 답변 호출 직전에 구조화 안내(ANSWER_STRUCTURE_INSTRUCTION)를 system 메시지로 덧붙이는데,
+    llama3.1 템플릿은 마지막 메시지가 user/tool일 때만 assistant 헤더를 붙여준다. 마지막이 system이면 헤더가 없어서
+    모델이 헤더를 직접 생성하고, 그 글자가 답변 앞에 남는다(실측 5/5). 메시지 구성을 바꾸면 최종 답변 프롬프트가
+    달라지므로 여기서는 출력만 정리한다. 문자열이 아니면(extract_answer_text가 다른 타입을 돌려준 경우) 그대로 둔다."""
+    if not isinstance(content, str):
+        return content
+    return _ROLE_PREFIX_RE.sub("", content, count=1)
+
+
 def _run_tool(fn_name: str, fn_args) -> dict:
     """tool을 안전하게 실행한다. 모르는 tool/인자, 필수 인자 누락, 실행 중 예외도 예외 대신 결과로 돌려준다."""
     fn = AVAILABLE_FUNCTIONS.get(fn_name)
@@ -671,15 +807,18 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
 
     if not tool_calls:
         # 모델이 tool 없이 바로 답한 경우
-        return {"answer": extract_answer_text(msg["content"]), "used_tools": [], "sources": []}, []
+        return {"answer": strip_role_prefix(extract_answer_text(msg["content"])), "used_tools": [], "sources": []}, []
 
     messages.append(msg)
     records = []
 
     # 2. 모델이 만든 종목 인자가 깨졌으면 질문 원문에서 회사명을 찾아 보정한 뒤, tool을 실제로 실행하고
-    #    결과를 다시 넘겨줌
+    #    결과를 다시 넘겨줌. 질문이 이름으로 요청한 tool이 빠졌으면 덧붙이고(보정된 종목 인자를 쓰도록 보정 뒤에),
+    #    기간은 질문에서 인식한 값 > 흐름 질문의 기본 기간 > LLM 추론값 순으로 정한다.
     repaired = _repair_company_args(tool_calls, question, previous["question"] if previous else None)
+    added = set(_add_requested_tools(tool_calls, question))
     period_overrides = _apply_period_override(tool_calls, question)
+    period_defaults = _apply_default_period(tool_calls, question)
     for idx, call in enumerate(tool_calls):
         fn_name = call["function"]["name"]
         fn_args = _as_args(call["function"]["arguments"])
@@ -695,6 +834,11 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
         if idx in period_overrides and isinstance(result, dict):
             result.setdefault("period_days_corrected_from", period_overrides[idx])
             result.setdefault("period_days_corrected_via", "period_parser")
+        if idx in period_defaults and isinstance(result, dict):
+            result.setdefault("period_days_corrected_from", period_defaults[idx])
+            result.setdefault("period_days_corrected_via", "default_trend_period")
+        if idx in added and isinstance(result, dict):
+            result.setdefault("called_via", "question_keywords")
 
         records.append(
             {
@@ -715,7 +859,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     # 3. tool 결과를 반영한 최종 답변 생성. 구조화 안내(FR-11)는 이 호출 직전에만 추가한다.
     messages.append({"role": "system", "content": ANSWER_STRUCTURE_INSTRUCTION})
     final = ollama.chat(model=model, messages=messages)
-    answer = extract_answer_text(final["message"]["content"])
+    answer = strip_role_prefix(extract_answer_text(final["message"]["content"]))
     if _mentions_tool_call(answer):
         answer = FALLBACK_ANSWER
     response = {

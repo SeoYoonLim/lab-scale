@@ -68,6 +68,7 @@ class TestGetWatchlist:
         seen = []
         mock_resolution(monkeypatch, Resolution(company=COMPANY))
         monkeypatch.setattr(watchlist_api, "add_item", lambda db, key, cid: seen.append(key) or (WATCHLIST_ROW, False))
+        monkeypatch.setattr(watchlist_api, "added_item", lambda db, w, c: ITEM)
         monkeypatch.setattr(watchlist_api, "remove_item", lambda db, key, cid: seen.append(key) or True)
         client.post("/api/watchlist", json={"ticker": "005930"})
         client.delete("/api/watchlist/005930")
@@ -78,6 +79,7 @@ class TestAddWatchlistItem:
     def test_success_is_201(self, monkeypatch):
         mock_resolution(monkeypatch, Resolution(company=COMPANY))
         monkeypatch.setattr(watchlist_api, "add_item", lambda db, device_id, company_id: (WATCHLIST_ROW, False))
+        monkeypatch.setattr(watchlist_api, "added_item", lambda db, w, c: ITEM)
 
         r = client.post("/api/watchlist", json={"ticker": "삼성전자"}, headers=HEADERS)
 
@@ -87,13 +89,45 @@ class TestAddWatchlistItem:
         assert body["ticker"] == "005930"
         assert body["company_name"] == "삼성전자"
 
+    def test_response_is_the_same_item_the_list_returns(self, monkeypatch):
+        """추가 응답도 목록 항목과 같은 값(최근 종가 포함)이어야 한다. 예전에는 종가 3개 필드가 항상 null이었다."""
+        seen = {}
+        mock_resolution(monkeypatch, Resolution(company=COMPANY))
+        monkeypatch.setattr(watchlist_api, "add_item", lambda db, device_id, company_id: (WATCHLIST_ROW, False))
+        monkeypatch.setattr(watchlist_api, "added_item", lambda db, w, c: seen.update(row=w, company=c) or ITEM)
+        monkeypatch.setattr(watchlist_api, "list_items", lambda db, device_id: [ITEM])
+
+        added = client.post("/api/watchlist", json={"ticker": "삼성전자"}, headers=HEADERS)
+        listed = client.get("/api/watchlist", headers=HEADERS)
+
+        assert added.status_code == 201
+        assert added.json() == ITEM == listed.json()["items"][0]
+        assert added.json()["latest_close"] == 71000.0
+        # 방금 추가한 행과 해석된 종목을 그대로 넘긴다
+        assert seen == {"row": WATCHLIST_ROW, "company": COMPANY}
+
+    def test_response_keeps_null_prices_when_no_price_is_stored(self, monkeypatch):
+        """주가가 아직 없는 종목은 필드는 그대로 있고 값만 null이다(필드명·타입 유지)."""
+        no_price = {**ITEM, "latest_close": None, "latest_close_date": None, "change_pct": None}
+        mock_resolution(monkeypatch, Resolution(company=COMPANY))
+        monkeypatch.setattr(watchlist_api, "add_item", lambda db, device_id, company_id: (WATCHLIST_ROW, False))
+        monkeypatch.setattr(watchlist_api, "added_item", lambda db, w, c: no_price)
+
+        r = client.post("/api/watchlist", json={"ticker": "삼성전자"}, headers=HEADERS)
+
+        assert r.status_code == 201
+        assert r.json() == no_price
+
     def test_duplicate_is_409(self, monkeypatch):
         mock_resolution(monkeypatch, Resolution(company=COMPANY))
         monkeypatch.setattr(watchlist_api, "add_item", lambda db, device_id, company_id: (COMPANY, True))
+        called = []
+        monkeypatch.setattr(watchlist_api, "added_item", lambda *a: called.append(1))
 
         r = client.post("/api/watchlist", json={"ticker": "005930"}, headers=HEADERS)
 
         assert r.status_code == 409
+        assert called == []  # 중복이면 종가 조회까지 가지 않는다
         assert "삼성전자" in r.json()["detail"]
 
     def test_unknown_company_is_404_and_add_item_not_called(self, monkeypatch):

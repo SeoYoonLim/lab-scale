@@ -64,6 +64,34 @@ def _summary(company_name: str, index_name: str, cmp: dict) -> str:
     return head + f" 시장 대비 {abs(diff):.2f}%p {word} 흐름입니다."
 
 
+def is_index_current(latest_stock_date: date | None, latest_index_date: date | None) -> bool:
+    """지수가 종목의 가장 최근 주가 날짜까지 수집돼 있으면 True(둘 중 하나라도 없으면 False)."""
+    return latest_stock_date is not None and latest_index_date is not None and latest_index_date >= latest_stock_date
+
+
+def market_data_is_current(ticker: str) -> bool:
+    """이 종목을 지금 시장 지수와 비교해도 되는지: 상장 시장의 지수가 있고, 그 지수가 종목의 최신 주가 날짜까지
+    수집돼 있으면 True.
+
+    market_tool 자체는 지수가 뒤처져 있어도 지수의 마지막 날짜까지만 비교하고 note로 알려준다. 이 함수는 사용자가
+    시장 비교를 요청하지 않았는데 코드가 market_tool을 덧붙여도 되는지 판단하는 용도라서(app/agent.py의
+    _add_requested_tools) 더 엄격하다: 지수가 하루라도 뒤처져 있으면 "최근 하락"을 옛 구간의 시장 대비로 설명하게
+    되므로 False다. 등록되지 않은 종목, 코스피/코스닥이 아닌 종목, 주가나 지수가 없는 경우도 False다."""
+    db = SessionLocal()
+    try:
+        company = resolve_company(db, ticker).company
+        if company is None:
+            return False
+        index_code = index_code_for_market(company.market)
+        if index_code is None:
+            return False
+        latest_stock = db.query(func.max(StockPrice.price_date)).filter(StockPrice.company_id == company.id).scalar()
+        latest_index = db.query(func.max(MarketIndex.price_date)).filter(MarketIndex.index_code == index_code).scalar()
+        return is_index_current(latest_stock, latest_index)
+    finally:
+        db.close()
+
+
 def market_tool(ticker: str, period_days: int = 5) -> dict:
     """종목의 최근 N거래일 등락률을 그 종목이 상장된 시장(코스피/코스닥) 지수의 같은 기간 등락률과 비교한다."""
     period_days = to_int(period_days, default=5, hi=60)

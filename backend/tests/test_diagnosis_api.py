@@ -83,7 +83,13 @@ class TestLlmPaths:
         body = r.json()
         assert set(body) == TOP_KEYS
         assert body["source"] == "llm" and body["model"] == MODEL_NAME
-        assert {k: body[k] for k in ("summary", "strengths", "risks", "suggestions")} == GOOD
+        # LLM이 쓴 것은 summary와 suggestions뿐이고, strengths/risks는 코드가 만든 사실 문장이다
+        assert body["summary"] == GOOD["summary"] and body["suggestions"] == GOOD["suggestions"]
+        facts = d.fact_sentences(body["holdings"], body["metrics"], body["flags"])
+        assert body["strengths"] == facts["strengths"] and body["risks"] == facts["risks"]
+        assert body["risks"][:3] == [f["message"] for f in body["flags"]]
+        assert body["risks"][3:] == ["삼성전자는 총자산의 36.3%이고, 최근 20거래일 주가 등락률은 -2.31%입니다."]
+        assert GOOD["strengths"][0] not in body["strengths"]
         assert body["disclaimer"] == DISCLAIMER
         assert body["metrics"]["total_asset"] == 7_472_500 and body["metrics"]["holding_count"] == 2
         assert [h["ticker"] for h in body["holdings"]] == ["005930", "035720"]
@@ -112,9 +118,40 @@ class TestLlmPaths:
         assert "7,500,000" not in json.dumps(body, ensure_ascii=False)
 
     def test_missing_key_falls_back(self, monkeypatch):
-        bad = {k: v for k, v in GOOD.items() if k != "risks"}
+        bad = {k: v for k, v in GOOD.items() if k != "suggestions"}
         llm(monkeypatch, bad, bad)
         assert post().json()["source"] == "rule_based"
+
+    def test_summary_and_suggestions_alone_are_enough(self, monkeypatch):
+        """새 출력 형식(summary, suggestions만). 예전 형식에서 strengths/risks가 빠져도 폴백하지 않는다."""
+        calls = llm(monkeypatch, {"summary": GOOD["summary"], "suggestions": GOOD["suggestions"]})
+        body = post().json()
+        assert body["source"] == "llm" and len(calls) == 1
+        assert body["strengths"] and body["risks"] and set(body) == TOP_KEYS
+
+    @pytest.mark.parametrize(
+        "field, text",
+        [
+            ("summary", "카카오 비중은 36.3%입니다."),  # 36.3은 삼성전자의 비중
+            ("summary", "삼성전자의 손익률이 -15.56%입니다."),  # -15.56은 카카오의 손익률
+            ("suggestions", ["SK하이닉스를 함께 살펴볼 수 있습니다."]),  # 보유하지 않은 종목
+            ("suggestions", ["비중이 가장 큰 종목은 카카오이니 점검해볼 수 있습니다."]),  # 1위는 삼성전자
+        ],
+        ids=["other_holdings_weight", "other_holdings_loss", "unknown_company", "wrong_top_holding"],
+    )
+    def test_wrong_company_and_number_combination_falls_back(self, monkeypatch, field, text):
+        bad = {**GOOD, field: text}
+        calls = llm(monkeypatch, bad, bad)
+        body = post().json()
+        assert body["source"] == "rule_based" and len(calls) == 2
+        wrong = text if isinstance(text, str) else text[0]
+        assert wrong not in json.dumps(body, ensure_ascii=False)
+
+    def test_wrong_combination_then_valid_uses_llm(self, monkeypatch):
+        calls = llm(monkeypatch, {**GOOD, "summary": "카카오 비중은 36.3%입니다."}, GOOD)
+        body = post().json()
+        assert body["source"] == "llm" and body["summary"] == GOOD["summary"] and len(calls) == 2
+        assert "종목명과 맞지 않는 숫자" in calls[1][-1]["content"]
 
     def test_direct_trade_instruction_falls_back(self, monkeypatch):
         bad = {**GOOD, "suggestions": ["카카오를 매도하세요."]}
@@ -171,6 +208,7 @@ class TestIsolationAndPrompt:
         assert "secret_name" not in sent and "user:7" not in sent
         payload = json.loads(calls[0][1]["content"])
         assert set(payload) == {"metrics", "flags", "holdings", "return_window_days"}
+        assert [h["company_name"] for h in payload["holdings"]] == ["삼성전자", "카카오"]  # 비중 큰 순(36.3%, 10.17%)
         assert payload["metrics"]["total_asset"] == 7_472_500
 
     def test_price_unavailable_is_reported(self, monkeypatch):

@@ -180,3 +180,28 @@ def parse_period(question: str, now: datetime | None = None) -> ParsedPeriod | N
     _, matched_text, (start, end) = found[0]
     period_days = max(1, _business_days_between(start, end))
     return ParsedPeriod(start_date=start, end_date=end, period_days=period_days, matched_text=matched_text)
+
+
+# --- "기간을 말했는가"만 판단 ---------------------------------------------------
+
+# parse_period가 값으로 바꾸지는 못하지만(위 "지원 범위" 참고) 사용자가 기간을 말한 것으로 봐야 하는 표현.
+# "한 주"는 "신한 주가"처럼 뒤에 '가/식'이 붙는 경우를, "한 달"은 "한 달러"를 제외한다.
+_INFORMAL_PERIOD_RE = re.compile(
+    r"하루|이틀|사흘|나흘|닷새|열흘|보름|며칠|일주일|당일|금일|전일|장중|주간|월간|연간|분기|반\s?년|한\s?해"
+    r"|[한두세네]\s?주(?![가식])|[한두세석넉]\s?달(?!러)"
+)
+_TICKER_CODE_RE = re.compile(r"(?<!\d)\d{6}(?!\d)")
+
+
+def mentions_period(question: str) -> bool:
+    """질문에 기간(또는 특정 시점)으로 볼 만한 표현이 하나라도 있으면 True.
+
+    기본 기간을 코드가 채워도 되는지 판단하는 용도다(`app/agent.py`의 `_apply_default_period`): True면 사용자가
+    기간을 말한 것이므로 기본값으로 덮어쓰지 않는다. parse_period가 인식하는 표현, 인식하지 못하는 구어 표현
+    ("한 달", "일주일", "하루"), 그리고 숫자가 들어간 표현("5거래일", "3분기")을 모두 True로 본다 - 틀리게 True가
+    나와도 이전처럼 LLM이 추론한 값을 그대로 쓸 뿐이라 안전한 쪽이다. 6자리 종목코드("005930")는 숫자로 치지 않는다."""
+    if not question:
+        return False
+    if parse_period(question) is not None or _INFORMAL_PERIOD_RE.search(question):
+        return True
+    return bool(re.search(r"\d", _TICKER_CODE_RE.sub("", question)))
