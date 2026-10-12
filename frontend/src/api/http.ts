@@ -1,3 +1,4 @@
+import { ApiError } from './errors'
 import { AUTH_EXPIRED_EVENT, clearToken, getToken } from '../utils/token'
 import type {
   AuthResponse,
@@ -54,7 +55,7 @@ async function request<T>(path: string, init: RequestInit = {}, auth = false): P
     window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
   }
   if (!res.ok) {
-    throw new Error(await readErrorMessage(res, `요청에 실패했어요. (${res.status})`))
+    throw new ApiError(await readErrorMessage(res, `요청에 실패했어요. (${res.status})`), res.status)
   }
   return res.json() as Promise<T>
 }
@@ -70,7 +71,7 @@ async function requestVoid(path: string, init: RequestInit, fallback: string, au
   }
   // 204 No Content: 본문이 없어서 res.json()을 호출하면 안 된다.
   if (!res.ok) {
-    throw new Error(await readErrorMessage(res, fallback))
+    throw new ApiError(await readErrorMessage(res, fallback), res.status)
   }
 }
 

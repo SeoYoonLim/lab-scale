@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
+import { ApiError } from '../api/errors'
 import type { RealtimePrice } from '../types'
 import { formatDate, formatPct, formatPrice, trendClass } from '../utils/format'
 
@@ -9,6 +10,14 @@ const REALTIME_POLL_MS = 3000
 
 export default function CompanyPage() {
   const { ticker = '' } = useParams()
+  // ticker가 바뀔 때 CompanyPageContent를 통째로 새로 마운트해서 realtime/notFound/error 등
+  // 이전 종목의 상태가 리셋되게 한다 - effect 안에서 수동으로 setState(null/false) 하는 대신.
+  return <CompanyPageContent key={ticker} ticker={ticker} />
+}
+
+type WatchlistState = 'idle' | 'adding' | 'added' | 'already' | 'error'
+
+function CompanyPageContent({ ticker }: { ticker: string }) {
   const navigate = useNavigate()
 
   // 과거 주가 차트·뉴스·공시는 대응하는 백엔드 API가 없어서 mock으로 떠받치고 있었는데,
@@ -18,12 +27,12 @@ export default function CompanyPage() {
   const [notFound, setNotFound] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const [watchlistState, setWatchlistState] = useState<WatchlistState>('idle')
+  const [watchlistError, setWatchlistError] = useState<string | null>(null)
+
   useEffect(() => {
     if (!ticker) return
     let cancelled = false
-    setRealtime(null)
-    setNotFound(false)
-    setError(null)
 
     async function poll() {
       try {
@@ -59,6 +68,23 @@ export default function CompanyPage() {
     })
   }
 
+  async function handleAddWatchlist() {
+    setWatchlistState('adding')
+    setWatchlistError(null)
+    try {
+      await api.addWatchlistItem(ticker)
+      setWatchlistState('added')
+    } catch (err) {
+      // 서버는 이미 등록된 종목이면 409를 준다 - 에러로 보여주지 않고 "이미 관심종목이에요"로 안내한다.
+      if (err instanceof ApiError && err.status === 409) {
+        setWatchlistState('already')
+        return
+      }
+      setWatchlistState('error')
+      setWatchlistError(err instanceof Error ? err.message : '관심종목 추가에 실패했어요.')
+    }
+  }
+
   if (notFound) {
     return (
       <div className="container page">
@@ -78,6 +104,25 @@ export default function CompanyPage() {
           <div className="meta muted">
             <span>{ticker}</span>
             {realtime?.corrected_from && <span>입력: {realtime.corrected_from}</span>}
+          </div>
+          <div className="watchlist-row">
+            <button
+              type="button"
+              className="watchlist-button"
+              onClick={handleAddWatchlist}
+              disabled={watchlistState === 'adding' || watchlistState === 'added' || watchlistState === 'already'}
+            >
+              {watchlistState === 'added'
+                ? '관심종목에 추가했어요'
+                : watchlistState === 'already'
+                  ? '이미 관심종목이에요'
+                  : watchlistState === 'adding'
+                    ? '추가 중…'
+                    : '관심종목 추가'}
+            </button>
+            {watchlistState === 'error' && watchlistError && (
+              <span className="notice-error small">{watchlistError}</span>
+            )}
           </div>
         </div>
         {realtime ? (

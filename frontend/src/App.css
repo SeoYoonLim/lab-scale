@@ -552,6 +552,28 @@
   font-size: 24px;
 }
 
+.watchlist-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.watchlist-button {
+  padding: 6px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.watchlist-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .summary-price {
   text-align: right;
 }

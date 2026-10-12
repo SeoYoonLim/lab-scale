@@ -1,6 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { USE_MOCK } from '../api'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/useAuth'
 import DisclaimerFooter from './DisclaimerFooter'
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>

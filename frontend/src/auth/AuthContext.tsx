@@ -1,20 +1,12 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { api } from '../api'
 import type { User } from '../types'
 import { AUTH_EXPIRED_EVENT, clearToken, getToken, setToken } from '../utils/token'
+import { AuthContext } from './context'
 
-interface AuthContextValue {
-  user: User | null
-  // 앱이 막 떴을 때, 저장된 토큰이 유효한지 GET /api/auth/me로 확인하는 동안 true.
-  loading: boolean
-  login: (username: string, password: string) => Promise<void>
-  signup: (username: string, password: string) => Promise<void>
-  logout: () => void
-}
-
-const AuthContext = createContext<AuthContextValue | null>(null)
-
+// Context 객체 자체는 ./context로 분리했다(이 파일이 컴포넌트가 아닌 것도 같이 export하면
+// react-refresh/only-export-components가 걸린다). useAuth 훅은 ./useAuth에 있다.
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
@@ -72,10 +64,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return <AuthContext.Provider value={{ user, loading, login, signup, logout }}>{children}</AuthContext.Provider>
-}
-
-export function useAuth(): AuthContextValue {
-  const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('useAuth는 AuthProvider 안에서만 쓸 수 있어요.')
-  return ctx
 }
