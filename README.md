@@ -11,7 +11,7 @@
 남은 큰 일은 프론트엔드 연동입니다. 작업 브랜치는
 `feature/backend`이고 원격에 push되어 있습니다.
 
-### 프론트엔드 현황 (서윤 작성, 2026-10-08 기준)
+### 프론트엔드 현황 (서윤 작성, 2026-10-12 기준)
 
 작업 브랜치는 `feature/frontend`이고 원격에 push되어 있습니다(`feature/backend`와 별도 브랜치라 이 문서가 자동으로
 반영하지는 않아서 직접 적습니다). React + Vite + TypeScript, `backend/API.md`에 맞춰 실제 백엔드와 바로 연동되도록
@@ -28,9 +28,11 @@
   플래그·강점/위험/제안·source(llm/rule_based)·notes·disclaimer까지 전부 렌더링)까지 다 붙였습니다.
 - **종목**(`/companies`): 예전엔 mock 3종목을 그냥 나열했는데, `GET /api/companies?q=`가 생겨서 실제 검색으로
   바꿨습니다(디바운스). **종목 상세**(`/companies/{ticker}`)도 과거 주가 차트·뉴스·공시(전부 mock이었음)를 빼고
-  실시간 시세(`GET /api/stocks/{ticker}/realtime-price`, 3초 폴링, 장외엔 `change_amount` null 처리)만 남긴 뒤
-  "이 종목으로 리서치해줘" 버튼으로 리서치 화면에 넘깁니다. **이제 mock으로만 존재하는 화면이 하나도 없습니다** —
-  `VITE_USE_MOCK` 하나로 앱 전체가 토글돼요.
+  실시간 시세(`GET /api/stocks/{ticker}/realtime-price`, 3초 폴링, 장외엔 `change_amount` null 처리) +
+  "관심종목 추가" 버튼 + "이 종목으로 리서치해줘" 버튼만 남겼습니다. 관심종목 추가가 이미 등록된 종목(409)이면
+  에러로 보여주지 않고 "이미 관심종목이에요"로 안내합니다(상태 코드를 구분하려고 `src/api/errors.ts`에
+  `ApiError`를 추가해서 http.ts/mock.ts 둘 다 상태 코드를 싣게 했습니다). **이제 mock으로만 존재하는 화면이
+  하나도 없습니다** — `VITE_USE_MOCK` 하나로 앱 전체가 토글돼요.
 - **면책 문구**: 리서치 답변/진단 결과 아래 + 앱 하단 푸터(`GET /api/disclaimer`)에 전부 표시합니다.
 
 **아직 안 한 것**
