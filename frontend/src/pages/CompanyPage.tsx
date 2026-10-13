@@ -36,6 +36,9 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
     if (!ticker) return
     let cancelled = false
     let timeoutId: ReturnType<typeof setTimeout> | undefined
+    // 탭이 백그라운드에 있는 동안 멈춰 있다가 다시 보이면 재개했는지 추적한다. current_price는
+    // 비공식 소스(네이버)에서 긁어오므로, 안 보는 탭에서 3초마다 계속 부르는 건 낭비다.
+    let paused = false
 
     // setInterval 대신 "끝나면 다음 걸 예약"하는 방식으로 돈다 - 응답이 3초보다 느려지면
     // setInterval은 요청이 겹쳐서 나중에 도착한 응답이 먼저 온 응답을 덮어쓸 수 있는데,
@@ -55,14 +58,30 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
           setError(err instanceof Error ? err.message : '시세를 가져오지 못했어요.')
         }
       } finally {
-        if (!cancelled) timeoutId = setTimeout(poll, REALTIME_POLL_MS)
+        if (!cancelled) {
+          if (document.visibilityState === 'visible') {
+            timeoutId = setTimeout(poll, REALTIME_POLL_MS)
+          } else {
+            // 다음 폴링을 예약하지 않고 쉰다 - handleVisibilityChange가 다시 보일 때 즉시 재개한다.
+            paused = true
+          }
+        }
       }
     }
 
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible' && paused) {
+        paused = false
+        void poll()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
     void poll()
     return () => {
       cancelled = true
       if (timeoutId) clearTimeout(timeoutId)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [ticker])
 

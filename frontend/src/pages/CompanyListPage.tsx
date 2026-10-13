@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAsync } from '../hooks/useAsync'
 import { formatPct, formatPrice, trendClass } from '../utils/format'
@@ -9,13 +9,21 @@ import { formatPct, formatPrice, trendClass } from '../utils/format'
 const SEARCH_DEBOUNCE_MS = 300
 
 export default function CompanyListPage() {
-  const [q, setQ] = useState('')
-  const [debouncedQ, setDebouncedQ] = useState('')
+  const [searchParams, setSearchParams] = useSearchParams()
+  // ?q= 로 들어오면(공유한 링크, 종목 상세에서 뒤로가기) 검색어를 복원한다.
+  const [q, setQ] = useState(() => searchParams.get('q') ?? '')
+  const [debouncedQ, setDebouncedQ] = useState(q)
 
   useEffect(() => {
     const id = setTimeout(() => setDebouncedQ(q), SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(id)
   }, [q])
+
+  // 디바운스가 끝난 뒤에만 URL에 반영한다(replace라 history를 안 쌓는다) - 입력할 때마다 반영하면
+  // 글자 하나 지울 때마다 URL이 바뀌어서 오히려 지저분해진다.
+  useEffect(() => {
+    setSearchParams(debouncedQ ? { q: debouncedQ } : {}, { replace: true })
+  }, [debouncedQ, setSearchParams])
 
   const { data, error, loading, refetching } = useAsync(
     () => api.searchCompanies(debouncedQ || undefined, 50),

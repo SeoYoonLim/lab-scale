@@ -94,4 +94,35 @@ describe('CompanyPage 실시간 시세 폴링', () => {
     await act(() => vi.advanceTimersByTimeAsync(3000))
     expect(queryByText(/최신 시세를 불러오지 못했어요/)).toBeNull()
   })
+
+  it('탭이 백그라운드로 가면 폴링을 멈추고, 다시 보이면 즉시 재개한다', async () => {
+    mockGetPrice.mockResolvedValue(price())
+
+    renderCompanyPage()
+    await act(() => vi.advanceTimersByTimeAsync(0))
+    expect(mockGetPrice).toHaveBeenCalledTimes(1)
+
+    await act(() => vi.advanceTimersByTimeAsync(3000))
+    expect(mockGetPrice).toHaveBeenCalledTimes(2)
+
+    // 탭이 백그라운드로 감: 이미 예약돼 있던 타이머는 그대로 한 번 더 울리지만(브라우저도 즉시 멈추지는
+    // 않는다), 그 폴링이 끝나면 숨겨진 동안은 다음 폴링을 더 예약하지 않는다.
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+    document.dispatchEvent(new Event('visibilitychange'))
+
+    await act(() => vi.advanceTimersByTimeAsync(3000))
+    expect(mockGetPrice).toHaveBeenCalledTimes(3)
+
+    // 숨겨진 동안 아무리 시간이 지나도 더 호출되지 않는다.
+    await act(() => vi.advanceTimersByTimeAsync(30_000))
+    expect(mockGetPrice).toHaveBeenCalledTimes(3)
+
+    // 다시 보이면 타이머를 기다리지 않고 바로 한 번 더 불러온다.
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(mockGetPrice).toHaveBeenCalledTimes(4)
+  })
 })
