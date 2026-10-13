@@ -1,7 +1,8 @@
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../api'
+import { queryKeys } from '../api/queryKeys'
 import SourceFootnotes from '../components/SourceFootnotes'
-import { useAsync } from '../hooks/useAsync'
 import type { ReportDetail, ReportListItem } from '../types'
 import { formatDate } from '../utils/format'
 import { TOOL_LABELS } from '../utils/toolLabels'
@@ -85,7 +86,13 @@ function ReportRow({ item, onDeleted }: { item: ReportListItem; onDeleted: (repo
 export default function ReportsPage() {
   const [offset, setOffset] = useState(0)
   const [removedIds, setRemovedIds] = useState<Set<number>>(new Set())
-  const { data, error, loading } = useAsync(() => api.listReports(PAGE_SIZE, offset), [offset])
+  // placeholderData: keepPreviousData - 페이지를 넘길 때 목록이 잠깐 비는 대신 이전 페이지를 보여주면서
+  // 새 페이지를 불러온다.
+  const { data, error, isPending } = useQuery({
+    queryKey: queryKeys.reports(PAGE_SIZE, offset),
+    queryFn: () => api.listReports(PAGE_SIZE, offset),
+    placeholderData: keepPreviousData,
+  })
 
   const items = data?.items.filter((item) => !removedIds.has(item.report_id)) ?? []
 
@@ -97,7 +104,7 @@ export default function ReportsPage() {
     <div className="container page">
       <h1 className="page-title">리포트 기록</h1>
 
-      {loading && !data && <p className="muted">불러오는 중…</p>}
+      {isPending && <p className="muted">불러오는 중…</p>}
       {error && <p className="notice notice-error">{error.message}</p>}
       {data && items.length === 0 && <p className="muted">아직 저장된 리포트가 없어요. 리서치 탭에서 질문해보세요.</p>}
 

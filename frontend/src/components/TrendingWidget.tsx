@@ -1,6 +1,7 @@
+import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../api'
-import { useAsync } from '../hooks/useAsync'
+import { queryKeys } from '../api/queryKeys'
 import type { TrendingCategory } from '../types'
 import { formatPct, formatPrice, trendClass } from '../utils/format'
 
@@ -16,7 +17,10 @@ const CATEGORIES: TrendingCategory[] = ['gainers', 'losers', 'volume_surge']
 // 그 종목에 대한 질문을 입력창에 채워준다(바로 보내지는 않음).
 export default function TrendingWidget({ onPick }: { onPick: (question: string) => void }) {
   const [category, setCategory] = useState<TrendingCategory>('gainers')
-  const { data, error, loading } = useAsync(() => api.getTrending(category, 5), [category])
+  const { data, error, isPending } = useQuery({
+    queryKey: queryKeys.trending(category),
+    queryFn: () => api.getTrending(category, 5),
+  })
 
   return (
     <div className="trending card">
@@ -36,7 +40,7 @@ export default function TrendingWidget({ onPick }: { onPick: (question: string) 
         </div>
       </div>
 
-      {loading && !data && <p className="muted small">불러오는 중…</p>}
+      {isPending && <p className="muted small">불러오는 중…</p>}
       {error && <p className="notice notice-error small">{error.message}</p>}
       {data && data.items.length === 0 && <p className="muted small">조건에 맞는 종목이 없어요.</p>}
 

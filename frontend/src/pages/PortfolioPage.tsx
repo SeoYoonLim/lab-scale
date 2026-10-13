@@ -1,34 +1,40 @@
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from '../api'
 import { ApiError } from '../api/errors'
-import { useAsync } from '../hooks/useAsync'
-import type { DiagnosisResponse, OrderResult, Portfolio, WatchlistItem } from '../types'
+import { queryKeys } from '../api/queryKeys'
+import type { Portfolio, WatchlistItem } from '../types'
 import { formatDate, formatPct, formatPrice, trendClass } from '../utils/format'
 
 const ORDER_PREVIEW_DEBOUNCE_MS = 400
-
 const TRADES_PAGE_SIZE = 20
 const MAX_ORDER_QUANTITY = 100_000 // backend/API.md: 주문 수량은 1~100,000주(정수)
 
 function WatchlistSection() {
-  const [reloadKey, setReloadKey] = useState(0)
-  const { data, error, loading } = useAsync(() => api.listWatchlist(), [reloadKey])
+  const queryClient = useQueryClient()
+  const { data, error, isPending } = useQuery({ queryKey: queryKeys.watchlist, queryFn: () => api.listWatchlist() })
   const [ticker, setTicker] = useState('')
-  const [adding, setAdding] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [formNotice, setFormNotice] = useState<string | null>(null)
 
+  const addMutation = useMutation({
+    mutationFn: (t: string) => api.addWatchlistItem(t),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.watchlist }),
+  })
+  const removeMutation = useMutation({
+    mutationFn: (t: string) => api.removeWatchlistItem(t),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.watchlist }),
+  })
+
   async function handleAdd(e: FormEvent) {
     e.preventDefault()
-    if (!ticker.trim() || adding) return
-    setAdding(true)
+    if (!ticker.trim() || addMutation.isPending) return
     setFormError(null)
     setFormNotice(null)
     try {
-      await api.addWatchlistItem(ticker.trim())
+      await addMutation.mutateAsync(ticker.trim())
       setTicker('')
-      setReloadKey((k) => k + 1)
     } catch (err) {
       // CompanyPage의 "이미 관심종목이에요"와 똑같이, 이미 등록된 종목(409)은 에러가 아니라
       // 안내로 보여준다 - 메시지 자체는 서버/mock이 주는 문구를 그대로 쓴다.
@@ -37,15 +43,12 @@ function WatchlistSection() {
       } else {
         setFormError(err instanceof Error ? err.message : '추가하지 못했어요.')
       }
-    } finally {
-      setAdding(false)
     }
   }
 
   async function handleRemove(item: WatchlistItem) {
     try {
-      await api.removeWatchlistItem(item.ticker)
-      setReloadKey((k) => k + 1)
+      await removeMutation.mutateAsync(item.ticker)
     } catch (err) {
       setFormError(err instanceof Error ? err.message : '삭제하지 못했어요.')
     }
@@ -62,14 +65,14 @@ function WatchlistSection() {
             placeholder="종목명 또는 종목코드 (예: 삼성전자)"
             aria-label="관심종목에 추가할 종목"
           />
-          <button type="submit" disabled={adding || !ticker.trim()}>
+          <button type="submit" disabled={addMutation.isPending || !ticker.trim()}>
             추가
           </button>
         </form>
         {formError && <p className="notice notice-error">{formError}</p>}
         {formNotice && <p className="muted small">{formNotice}</p>}
 
-        {loading && !data && <p className="muted">불러오는 중…</p>}
+        {isPending && <p className="muted">불러오는 중…</p>}
         {error && <p className="notice notice-error">{error.message}</p>}
         {data && data.length === 0 && <p className="muted">아직 등록한 관심종목이 없어요.</p>}
 
@@ -104,40 +107,60 @@ function WatchlistSection() {
   )
 }
 
-function HoldingsSection({ portfolio, onChange }: { portfolio: Portfolio; onChange: () => void }) {
+function HoldingsSection({ portfolio, onMutated }: { portfolio: Portfolio; onMutated: () => void }) {
+  const queryClient = useQueryClient()
   const [ticker, setTicker] = useState('')
   const [side, setSide] = useState<'buy' | 'sell'>('buy')
   const [quantity, setQuantity] = useState('1')
-  // 주문과 초기화가 동시에 들어가면 보유 종목이 꼬일 수 있어서(초기화 중에 주문이 체결되는 등),
-  // 둘 중 하나가 진행 중이면 다른 쪽도 같이 막는다 - "어떤 작업이 진행 중인가"를 하나로 합쳤다.
-  const [mutating, setMutating] = useState<'order' | 'reset' | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
-  const [preview, setPreview] = useState<{ companyName: string; price: number } | null>(null)
-  const [lastOrder, setLastOrder] = useState<OrderResult | null>(null)
+  const [debouncedTicker, setDebouncedTicker] = useState('')
 
-  // 입력한 종목의 실시간 시세로 "예상 금액"을 미리 보여준다 - 실제 체결가는 주문 시점 시세라 다를 수 있다.
-  // company_resolver가 별칭/종목명도 받으므로 그대로 getRealtimePrice에 넘긴다.
+  function invalidatePortfolioQueries() {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.portfolio })
+    // 부분 키라서 오프셋·필터가 다른 모든 trades 쿼리가 한꺼번에 무효화된다.
+    void queryClient.invalidateQueries({ queryKey: ['trades'] })
+  }
+
+  const orderMutation = useMutation({
+    mutationFn: ({ t, s, qty }: { t: string; s: 'buy' | 'sell'; qty: number }) => api.placeOrder(t, s, qty),
+    onSuccess: () => {
+      invalidatePortfolioQueries()
+      onMutated()
+    },
+  })
+  const resetMutation = useMutation({
+    mutationFn: () => api.resetPortfolio(),
+    onSuccess: () => {
+      invalidatePortfolioQueries()
+      onMutated()
+      // 초기화되면 holding 참조가 더 이상 유효하지 않으니, 이전 주문의 체결 결과 안내도 지운다 -
+      // orderMutation.data는 초기화와 별개라서 그냥 두면 리셋 후에도 옛 체결 결과가 그대로 남는다.
+      orderMutation.reset()
+    },
+  })
+  // 주문과 초기화가 동시에 들어가면 보유 종목이 꼬일 수 있어서(초기화 중에 주문이 체결되는 등),
+  // 둘 중 하나가 진행 중이면 다른 쪽도 같이 막는다.
+  const mutating = orderMutation.isPending ? 'order' : resetMutation.isPending ? 'reset' : null
+
+  // 입력한 종목의 실시간 시세로 "예상 금액"을 미리 보여준다(디바운스 400ms) - 실제 체결가는 주문
+  // 시점 시세라 다를 수 있다. enabled가 false면 요청이 안 나가고, 실패(모르는 종목 등)는 error만
+  // 세팅될 뿐 조용히 무시된다(타이핑 중일 수 있으니 여기서 에러로 보여주지 않는다 - 실제 검증은
+  // 제출 시 placeOrder가 한다).
+  const { data: previewPrice } = useQuery({
+    queryKey: queryKeys.realtimePrice(debouncedTicker),
+    queryFn: () => api.getRealtimePrice(debouncedTicker),
+    enabled: debouncedTicker.length > 0,
+    retry: false,
+    staleTime: 3000,
+  })
+  const preview =
+    previewPrice && debouncedTicker
+      ? { companyName: previewPrice.company_name, price: previewPrice.current_price }
+      : null
+
   useEffect(() => {
-    const trimmed = ticker.trim()
-    // ticker가 비면 아무것도 예약하지 않는다 - preview는 그대로 둬도 아래 렌더링이 ticker.trim()을
-    // 같이 확인하므로 화면에는 안 보인다(effect 안에서 수동 setState(null) 하는 대신).
-    if (!trimmed) return
-    let cancelled = false
-    const id = setTimeout(() => {
-      api.getRealtimePrice(trimmed).then(
-        (data) => {
-          if (!cancelled) setPreview({ companyName: data.company_name, price: data.current_price })
-        },
-        () => {
-          // 타이핑 중이거나 모르는 종목일 수 있다 - 미리보기는 조용히 숨기고, 실제 오류는 제출 시 보여준다.
-          if (!cancelled) setPreview(null)
-        },
-      )
-    }, ORDER_PREVIEW_DEBOUNCE_MS)
-    return () => {
-      cancelled = true
-      clearTimeout(id)
-    }
+    const id = setTimeout(() => setDebouncedTicker(ticker.trim()), ORDER_PREVIEW_DEBOUNCE_MS)
+    return () => clearTimeout(id)
   }, [ticker])
 
   async function handleOrder(e: FormEvent) {
@@ -148,19 +171,14 @@ function HoldingsSection({ portfolio, onChange }: { portfolio: Portfolio; onChan
       setFormError(`수량은 1~${MAX_ORDER_QUANTITY.toLocaleString('ko-KR')} 사이의 정수여야 해요.`)
       return
     }
-    setMutating('order')
     setFormError(null)
     try {
-      const result = await api.placeOrder(ticker.trim(), side, qty)
-      setLastOrder(result)
+      await orderMutation.mutateAsync({ t: ticker.trim(), s: side, qty })
       setTicker('')
       setQuantity('1')
-      onChange()
+      setDebouncedTicker('')
     } catch (err) {
-      setLastOrder(null)
       setFormError(err instanceof Error ? err.message : '주문에 실패했어요.')
-    } finally {
-      setMutating(null)
     }
   }
 
@@ -174,16 +192,11 @@ function HoldingsSection({ portfolio, onChange }: { portfolio: Portfolio; onChan
     ) {
       return
     }
-    setMutating('reset')
     setFormError(null)
     try {
-      await api.resetPortfolio()
-      setLastOrder(null) // 초기화되면 holding 참조가 더 이상 유효하지 않으니 이전 체결 결과는 지운다.
-      onChange()
+      await resetMutation.mutateAsync()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : '초기화하지 못했어요.')
-    } finally {
-      setMutating(null)
     }
   }
 
@@ -243,12 +256,13 @@ function HoldingsSection({ portfolio, onChange }: { portfolio: Portfolio; onChan
           </p>
         )}
         {formError && <p className="notice notice-error">{formError}</p>}
-        {lastOrder && (
+        {orderMutation.data && (
           <p className="notice order-result">
-            {lastOrder.side === 'buy' ? '매수' : '매도'} 체결: {lastOrder.company_name} {lastOrder.quantity}주 @{' '}
-            {formatPrice(lastOrder.price)}원 (잔액 {formatPrice(lastOrder.cash_balance)}원
-            {lastOrder.holding
-              ? `, 보유 ${lastOrder.holding.quantity}주 · 평균 ${formatPrice(lastOrder.holding.avg_price)}원`
+            {orderMutation.data.side === 'buy' ? '매수' : '매도'} 체결: {orderMutation.data.company_name}{' '}
+            {orderMutation.data.quantity}주 @ {formatPrice(orderMutation.data.price)}원 (잔액{' '}
+            {formatPrice(orderMutation.data.cash_balance)}원
+            {orderMutation.data.holding
+              ? `, 보유 ${orderMutation.data.holding.quantity}주 · 평균 ${formatPrice(orderMutation.data.holding.avg_price)}원`
               : ' · 전량 매도로 보유 종목 없음'}
             )
           </p>
@@ -284,22 +298,12 @@ function HoldingsSection({ portfolio, onChange }: { portfolio: Portfolio; onChan
   )
 }
 
+// 진단은 "항상 새로 계산"이고 결과를 캐시해서 재사용할 이유가 없다(backend/API.md) - 쿼리가 아니라
+// 뮤테이션(버튼을 누르는 행동)으로 다룬다. 보유 종목이 바뀌면 부모가 key를 바꿔 이 컴포넌트를
+// 통째로 리마운트시켜서 지난 결과를 지운다.
 function DiagnosisSection() {
-  const [result, setResult] = useState<DiagnosisResponse | null>(null)
-  const [pending, setPending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function handleDiagnose() {
-    setPending(true)
-    setError(null)
-    try {
-      setResult(await api.getDiagnosis())
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '진단에 실패했어요.')
-    } finally {
-      setPending(false)
-    }
-  }
+  const diagnosisMutation = useMutation({ mutationFn: () => api.getDiagnosis() })
+  const result = diagnosisMutation.data
 
   return (
     <section>
@@ -307,12 +311,17 @@ function DiagnosisSection() {
       <div className="card">
         <div className="card-head">
           <p className="muted">보유 종목을 바탕으로 비중·손익·위험 요인을 진단해드려요.</p>
-          <button type="button" className="send" onClick={() => void handleDiagnose()} disabled={pending}>
-            {pending ? '진단 중…' : 'AI 진단 받기'}
+          <button
+            type="button"
+            className="send"
+            onClick={() => diagnosisMutation.mutate()}
+            disabled={diagnosisMutation.isPending}
+          >
+            {diagnosisMutation.isPending ? '진단 중…' : 'AI 진단 받기'}
           </button>
         </div>
 
-        {pending && (
+        {diagnosisMutation.isPending && (
           <p className="entry-pending muted">
             <span className="dots" aria-hidden="true">
               <i />
@@ -322,7 +331,11 @@ function DiagnosisSection() {
             보유 종목을 분석하고 있어요. 1분 정도 걸릴 수 있어요.
           </p>
         )}
-        {error && <p className="notice notice-error">{error}</p>}
+        {diagnosisMutation.error && (
+          <p className="notice notice-error">
+            {diagnosisMutation.error instanceof Error ? diagnosisMutation.error.message : '진단에 실패했어요.'}
+          </p>
+        )}
 
         {result && (
           <div className="diagnosis-result">
@@ -418,14 +431,17 @@ function DiagnosisSection() {
   )
 }
 
-function TradesSection({ reloadKey }: { reloadKey: number }) {
+function TradesSection() {
   const [offset, setOffset] = useState(0)
   const [tickerFilter, setTickerFilter] = useState('')
   const [appliedFilter, setAppliedFilter] = useState('')
-  const { data, error, loading } = useAsync(
-    () => api.getTrades(TRADES_PAGE_SIZE, offset, appliedFilter || undefined),
-    [offset, appliedFilter, reloadKey],
-  )
+  // placeOrder/resetPortfolio 뮤테이션이 ['trades']를 무효화하면(쿼리 키 접두어 일치) 이 쿼리도
+  // 자동으로 다시 불러온다 - reloadKey를 prop으로 내려받지 않아도 된다.
+  const { data, error, isPending } = useQuery({
+    queryKey: queryKeys.trades(TRADES_PAGE_SIZE, offset, appliedFilter || undefined),
+    queryFn: () => api.getTrades(TRADES_PAGE_SIZE, offset, appliedFilter || undefined),
+    placeholderData: keepPreviousData,
+  })
 
   function handleFilterSubmit(e: FormEvent) {
     e.preventDefault()
@@ -447,7 +463,7 @@ function TradesSection({ reloadKey }: { reloadKey: number }) {
           <button type="submit">필터</button>
         </form>
 
-        {loading && !data && <p className="muted">불러오는 중…</p>}
+        {isPending && <p className="muted">불러오는 중…</p>}
         {error && <p className="notice notice-error">{error.message}</p>}
         {data && data.items.length === 0 && <p className="muted">체결 내역이 없어요.</p>}
 
@@ -499,21 +515,19 @@ function TradesSection({ reloadKey }: { reloadKey: number }) {
 }
 
 export default function PortfolioPage() {
-  const [reloadKey, setReloadKey] = useState(0)
-  const { data, error, loading } = useAsync(() => api.getPortfolio(), [reloadKey])
+  const [resetSignal, setResetSignal] = useState(0)
+  const { data, error, isPending } = useQuery({ queryKey: queryKeys.portfolio, queryFn: () => api.getPortfolio() })
 
   return (
     <div className="container page portfolio-page">
       <h1 className="page-title">포트폴리오</h1>
 
-      {loading && !data && <p className="muted">불러오는 중…</p>}
+      {isPending && <p className="muted">불러오는 중…</p>}
       {error && <p className="notice notice-error">{error.message}</p>}
-      {data && <HoldingsSection portfolio={data} onChange={() => setReloadKey((k) => k + 1)} />}
+      {data && <HoldingsSection portfolio={data} onMutated={() => setResetSignal((k) => k + 1)} />}
 
-      {/* reloadKey가 바뀌면(주문/초기화) 통째로 리마운트해서 진단 결과를 지운다 - 주문 전에 받은 진단이
-          그대로 남아있으면 바뀐 보유 종목과 안 맞는 설명을 보여주게 된다. */}
-      <DiagnosisSection key={reloadKey} />
-      <TradesSection reloadKey={reloadKey} />
+      <DiagnosisSection key={resetSignal} />
+      <TradesSection />
       <WatchlistSection />
     </div>
   )

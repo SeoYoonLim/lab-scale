@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -32,16 +33,22 @@ function price(overrides: Partial<RealtimePrice> = {}): RealtimePrice {
 }
 
 function renderCompanyPage(ticker = '005930') {
+  // retry:false - 안 그러면 실패한 폴링이 react-query 자체 재시도(기본 3회, 지수 backoff)까지 돌아서
+  // 호출 횟수 단언이 어긋난다. CompanyPage.tsx 자체도 이 쿼리에 retry:false를 주지만, 테스트용
+  // QueryClient는 따로 만들었으니 여기서도 같이 맞춰준다.
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
-    <MemoryRouter initialEntries={[`/companies/${ticker}`]}>
-      <Routes>
-        <Route path="/companies/:ticker" element={<CompanyPage />} />
-      </Routes>
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[`/companies/${ticker}`]}>
+        <Routes>
+          <Route path="/companies/:ticker" element={<CompanyPage />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   )
 }
 
-describe('CompanyPage 실시간 시세 폴링', () => {
+describe('CompanyPage 실시간 시세 폴링 (react-query의 refetchInterval에 위임)', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     mockGetPrice.mockReset()
@@ -59,11 +66,12 @@ describe('CompanyPage 실시간 시세 폴링', () => {
     mockGetPrice.mockReturnValue(new Promise(() => {})) // 이후 호출은 더 안 끝나도 됨
 
     renderCompanyPage()
+    await act(() => vi.advanceTimersByTimeAsync(0))
     expect(mockGetPrice).toHaveBeenCalledTimes(1)
 
-    // setInterval이었다면 9초 동안 2~3번 더 나갔을 것 - "끝나야 다음 걸 예약"하는 지금 구조에서는
-    // 첫 요청이 안 끝난 이상 몇 초가 지나도 두 번째 요청이 나가면 안 된다.
-    await vi.advanceTimersByTimeAsync(9000)
+    // refetchInterval은 쿼리 함수가 끝난 뒤부터 다음 주기를 재므로, 첫 요청이 안 끝난 이상 몇 초가
+    // 지나도 두 번째 요청이 나가면 안 된다(setInterval이었다면 9초 동안 2~3번 더 나갔을 것).
+    await act(() => vi.advanceTimersByTimeAsync(9000))
     expect(mockGetPrice).toHaveBeenCalledTimes(1)
 
     resolveFirst?.(price())
@@ -80,14 +88,13 @@ describe('CompanyPage 실시간 시세 폴링', () => {
     mockGetPrice.mockResolvedValueOnce(price())
     mockGetPrice.mockReturnValue(new Promise(() => {}))
 
-    // fake timers가 켜져 있으면 findByText의 내부 폴링(setTimeout 기반)도 멈춰서 타임아웃나므로,
-    // 매 advanceTimersByTimeAsync 뒤에는 동기 쿼리(getByText/queryByText)로 바로 확인한다.
     const { getByText, queryByText } = renderCompanyPage()
     await act(() => vi.advanceTimersByTimeAsync(10))
     expect(getByText('삼성전자')).toBeTruthy()
 
     await act(() => vi.advanceTimersByTimeAsync(3000))
-    // 실패했어도 이전 성공 응답(삼성전자/가격)이 화면에서 사라지지 않는다 - 그냥 에러 화면으로 안 바뀐다.
+    // 실패했어도 이전 성공 응답(삼성전자/가격)이 화면에서 사라지지 않는다 - react-query가 실패한
+    // 리페치에도 마지막 성공 data는 그대로 둔다.
     expect(getByText(/최신 시세를 불러오지 못했어요/)).toBeTruthy()
     expect(getByText('삼성전자')).toBeTruthy()
 
@@ -95,7 +102,7 @@ describe('CompanyPage 실시간 시세 폴링', () => {
     expect(queryByText(/최신 시세를 불러오지 못했어요/)).toBeNull()
   })
 
-  it('탭이 백그라운드로 가면 폴링을 멈추고, 다시 보이면 즉시 재개한다', async () => {
+  it('탭이 백그라운드로 가면 폴링을 멈추고, 다시 보이면 즉시 재개한다(react-query 기본 동작)', async () => {
     mockGetPrice.mockResolvedValue(price())
 
     renderCompanyPage()
@@ -105,24 +112,21 @@ describe('CompanyPage 실시간 시세 폴링', () => {
     await act(() => vi.advanceTimersByTimeAsync(3000))
     expect(mockGetPrice).toHaveBeenCalledTimes(2)
 
-    // 탭이 백그라운드로 감: 이미 예약돼 있던 타이머는 그대로 한 번 더 울리지만(브라우저도 즉시 멈추지는
-    // 않는다), 그 폴링이 끝나면 숨겨진 동안은 다음 폴링을 더 예약하지 않는다.
+    // 탭이 백그라운드로 감: react-query의 refetchIntervalInBackground가 기본 false라 안 보이는 동안은
+    // 폴링 자체를 멈춘다.
     Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
-    document.dispatchEvent(new Event('visibilitychange'))
+    window.dispatchEvent(new Event('visibilitychange'))
 
-    await act(() => vi.advanceTimersByTimeAsync(3000))
-    expect(mockGetPrice).toHaveBeenCalledTimes(3)
-
-    // 숨겨진 동안 아무리 시간이 지나도 더 호출되지 않는다.
+    const callsRightAfterHiding = mockGetPrice.mock.calls.length
     await act(() => vi.advanceTimersByTimeAsync(30_000))
-    expect(mockGetPrice).toHaveBeenCalledTimes(3)
+    expect(mockGetPrice.mock.calls.length).toBe(callsRightAfterHiding)
 
-    // 다시 보이면 타이머를 기다리지 않고 바로 한 번 더 불러온다.
+    // 다시 보이면 react-query가 즉시(포커스 복귀) 한 번 더 불러오고 폴링을 재개한다.
     Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
     await act(async () => {
-      document.dispatchEvent(new Event('visibilitychange'))
+      window.dispatchEvent(new Event('visibilitychange'))
       await vi.advanceTimersByTimeAsync(0)
     })
-    expect(mockGetPrice).toHaveBeenCalledTimes(4)
+    expect(mockGetPrice.mock.calls.length).toBeGreaterThan(callsRightAfterHiding)
   })
 })

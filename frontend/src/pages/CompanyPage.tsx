@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { ApiError } from '../api/errors'
+import { queryKeys } from '../api/queryKeys'
 import { useAuth } from '../auth/useAuth'
-import type { RealtimePrice } from '../types'
 import { formatDate, formatPct, formatPrice, trendClass } from '../utils/format'
 
 // backend/API.md: 서버가 종목별로 3~5초 캐싱하므로 이 주기로 폴링해도 안전하다.
@@ -11,79 +12,48 @@ const REALTIME_POLL_MS = 3000
 
 export default function CompanyPage() {
   const { ticker = '' } = useParams()
-  // ticker가 바뀔 때 CompanyPageContent를 통째로 새로 마운트해서 realtime/notFound/error 등
-  // 이전 종목의 상태가 리셋되게 한다 - effect 안에서 수동으로 setState(null/false) 하는 대신.
+  // ticker가 바뀔 때 CompanyPageContent를 통째로 새로 마운트해서 관심종목 버튼 상태 등 이전 종목의
+  // 로컬 상태가 리셋되게 한다(시세 자체는 queryKey가 ticker별로 다르니 react-query가 알아서 구분한다).
   return <CompanyPageContent key={ticker} ticker={ticker} />
 }
 
-type WatchlistState = 'idle' | 'adding' | 'added' | 'already' | 'error'
+type WatchlistState = 'idle' | 'added' | 'already' | 'error'
 
 function CompanyPageContent({ ticker }: { ticker: string }) {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const queryClient = useQueryClient()
 
   // 과거 주가 차트·뉴스·공시는 대응하는 백엔드 API가 없어서 mock으로 떠받치고 있었는데,
   // 포트폴리오 중심으로 가면서 뺐다. 이 화면은 이제 실시간 시세(진짜 데이터)만 보여주고,
   // 더 알고 싶으면 리서치 챗으로 보낸다.
-  const [realtime, setRealtime] = useState<RealtimePrice | null>(null)
-  const [notFound, setNotFound] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  //
+  // react-query의 refetchInterval이 직접 짰던 폴링 로직(겹침 방지·탭 비활성 정지·실패해도 이전 값
+  // 유지)을 전부 대신한다: refetchInterval은 쿼리 함수가 끝난 뒤부터 다음 주기를 재는 방식이라 느린
+  // 응답이 겹치지 않고, refetchIntervalInBackground(기본 false)가 탭이 안 보이면 자동으로 쉬고, 실패한
+  // 리페치는 error만 세팅하고 마지막 성공값(data)은 그대로 둔다.
+  const {
+    data: realtime,
+    error,
+    isPending,
+  } = useQuery({
+    queryKey: queryKeys.realtimePrice(ticker),
+    queryFn: () => api.getRealtimePrice(ticker),
+    refetchInterval: REALTIME_POLL_MS,
+    retry: false, // 한 번 실패해도 다음 폴링이 3초 뒤 또 온다 - react-query 자체 재시도는 필요 없다.
+  })
+  const notFound = error instanceof ApiError && error.status === 404
 
   const [watchlistState, setWatchlistState] = useState<WatchlistState>('idle')
   const [watchlistError, setWatchlistError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (!ticker) return
-    let cancelled = false
-    let timeoutId: ReturnType<typeof setTimeout> | undefined
-    // 탭이 백그라운드에 있는 동안 멈춰 있다가 다시 보이면 재개했는지 추적한다. current_price는
-    // 비공식 소스(네이버)에서 긁어오므로, 안 보는 탭에서 3초마다 계속 부르는 건 낭비다.
-    let paused = false
-
-    // setInterval 대신 "끝나면 다음 걸 예약"하는 방식으로 돈다 - 응답이 3초보다 느려지면
-    // setInterval은 요청이 겹쳐서 나중에 도착한 응답이 먼저 온 응답을 덮어쓸 수 있는데,
-    // 이렇게 하면 항상 한 번에 하나의 요청만 떠 있다.
-    async function poll() {
-      try {
-        const data = await api.getRealtimePrice(ticker)
-        if (cancelled) return
-        setRealtime(data)
-        setError(null)
-        setNotFound(false)
-      } catch (err) {
-        if (cancelled) return
-        if (err instanceof ApiError && err.status === 404) {
-          setNotFound(true)
-        } else {
-          setError(err instanceof Error ? err.message : '시세를 가져오지 못했어요.')
-        }
-      } finally {
-        if (!cancelled) {
-          if (document.visibilityState === 'visible') {
-            timeoutId = setTimeout(poll, REALTIME_POLL_MS)
-          } else {
-            // 다음 폴링을 예약하지 않고 쉰다 - handleVisibilityChange가 다시 보일 때 즉시 재개한다.
-            paused = true
-          }
-        }
-      }
-    }
-
-    function handleVisibilityChange() {
-      if (document.visibilityState === 'visible' && paused) {
-        paused = false
-        void poll()
-      }
-    }
-
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    void poll()
-    return () => {
-      cancelled = true
-      if (timeoutId) clearTimeout(timeoutId)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-  }, [ticker])
+  const addWatchlistMutation = useMutation({
+    mutationFn: () => api.addWatchlistItem(ticker),
+    onSuccess: () => {
+      // 포트폴리오 화면의 관심종목 목록도 다음에 보면 최신 상태이게 한다.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.watchlist })
+    },
+  })
 
   function handleResearch() {
     const name = realtime?.company_name ?? ticker
@@ -93,10 +63,9 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
   }
 
   async function handleAddWatchlist() {
-    setWatchlistState('adding')
     setWatchlistError(null)
     try {
-      await api.addWatchlistItem(ticker)
+      await addWatchlistMutation.mutateAsync()
       setWatchlistState('added')
     } catch (err) {
       // 서버는 이미 등록된 종목이면 409를 준다 - 에러로 보여주지 않고 "이미 관심종목이에요"로 안내한다.
@@ -136,13 +105,13 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
                   type="button"
                   className="watchlist-button"
                   onClick={handleAddWatchlist}
-                  disabled={watchlistState === 'adding' || watchlistState === 'added' || watchlistState === 'already'}
+                  disabled={addWatchlistMutation.isPending || watchlistState === 'added' || watchlistState === 'already'}
                 >
                   {watchlistState === 'added'
                     ? '관심종목에 추가했어요'
                     : watchlistState === 'already'
                       ? '이미 관심종목이에요'
-                      : watchlistState === 'adding'
+                      : addWatchlistMutation.isPending
                         ? '추가 중…'
                         : '관심종목 추가'}
                 </button>
@@ -179,9 +148,9 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
             {error && <p className="muted small">최신 시세를 불러오지 못했어요. 이전 값을 보여드려요.</p>}
           </div>
         ) : error ? (
-          <p className="notice notice-error">{error}</p>
+          <p className="notice notice-error">{error.message}</p>
         ) : (
-          <p className="muted">불러오는 중…</p>
+          <p className="muted">{isPending ? '불러오는 중…' : ''}</p>
         )}
       </section>
 
