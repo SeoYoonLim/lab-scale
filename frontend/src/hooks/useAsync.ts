@@ -6,8 +6,12 @@ interface AsyncState<T> {
   loading: boolean
 }
 
+// 이전 데이터가 있는 상태에서 다시 불러오는 중인지 - 호출하는 쪽에서 "검색 중…" 같은 가벼운 표시를
+// 내려면 이게 있어야 한다. loading만으로는 첫 로딩인지 재조회인지 구분이 안 된다.
+export type AsyncResult<T> = AsyncState<T> & { refetching: boolean }
+
 // deps 가 바뀔 때마다 fn 을 다시 실행한다. 이전 요청의 늦은 응답은 무시한다.
-export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): AsyncState<T> {
+export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): AsyncResult<T> {
   const [state, setState] = useState<AsyncState<T>>({
     data: undefined,
     error: undefined,
@@ -35,5 +39,5 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): AsyncState<T
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, deps)
 
-  return state
+  return { ...state, refetching: state.loading && state.data !== undefined }
 }

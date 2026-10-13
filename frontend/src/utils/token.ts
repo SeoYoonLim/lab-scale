@@ -7,23 +7,29 @@ const KEY = 'access_token'
 // AuthContext가 이걸 듣고 로그인 상태를 비워서, 보호된 화면이 로그인 화면으로 돌려보낸다.
 export const AUTH_EXPIRED_EVENT = 'auth:expired'
 
+// localStorage가 막혀 있으면(프라이빗 모드 등) 저장은 못 해도 이 메모리 값으로 최소한 이번 탭 세션
+// 동안은 로그인 상태가 유지된다 - 안 그러면 로그인은 성공한 것처럼 보이고 바로 다음 요청에서 401이 난다.
+let memoryToken: string | null = null
+
 export function getToken(): string | null {
   try {
-    return localStorage.getItem(KEY)
+    return localStorage.getItem(KEY) ?? memoryToken
   } catch {
-    return null
+    return memoryToken
   }
 }
 
 export function setToken(token: string): void {
+  memoryToken = token
   try {
     localStorage.setItem(KEY, token)
   } catch {
-    // 프라이빗 모드 등으로 저장을 못 해도 이번 세션 메모리 값(React state)으로는 동작한다.
+    // no-op - 위 memoryToken으로 이번 세션은 동작한다.
   }
 }
 
 export function clearToken(): void {
+  memoryToken = null
   try {
     localStorage.removeItem(KEY)
   } catch {

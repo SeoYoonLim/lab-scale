@@ -54,6 +54,11 @@ export type Api = AuthApi & ResearchApi & AccountApi & PublicApi
 
 // 2026-10-07: 로그인 도입으로 모든 데이터가 실제 백엔드로 연동 가능해져서, mock 여부는
 // 더 이상 기능별로 나뉘지 않고 이 플래그 하나로 앱 전체가 토글된다.
-export const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false'
+const rawUseMock = import.meta.env.VITE_USE_MOCK
+if (rawUseMock !== undefined && rawUseMock !== 'true' && rawUseMock !== 'false') {
+  // 오타(예: "False", "0")는 조용히 mock으로 빠지면 실제 API를 쓰려던 게 안 쓰여서 못 알아차리기 쉽다.
+  console.warn(`VITE_USE_MOCK 값("${rawUseMock}")을 알 수 없어서 mock 모드로 동작해요. "true" 또는 "false"만 유효해요.`)
+}
+export const USE_MOCK = rawUseMock !== 'false'
 
 export const api: Api = USE_MOCK ? mockApi : httpApi

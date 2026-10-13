@@ -17,7 +17,10 @@ export default function CompanyListPage() {
     return () => clearTimeout(id)
   }, [q])
 
-  const { data, error, loading } = useAsync(() => api.searchCompanies(debouncedQ || undefined, 50), [debouncedQ])
+  const { data, error, loading, refetching } = useAsync(
+    () => api.searchCompanies(debouncedQ || undefined, 50),
+    [debouncedQ],
+  )
 
   return (
     <div className="container page">
@@ -32,6 +35,9 @@ export default function CompanyListPage() {
       />
 
       {loading && !data && <p className="muted">불러오는 중…</p>}
+      {/* 검색어를 바꾸는 중에는 이전 결과를 그대로 보여주면서(깜빡임 없이) 이 표시만 띄운다 -
+          안 그러면 느린 검색일 때 이전 검색어의 결과가 새 검색어 결과처럼 잠깐 보일 수 있다. */}
+      {refetching && <p className="muted small">검색 중…</p>}
       {error && <p className="notice notice-error">{error.message}</p>}
       {data && data.length === 0 && <p className="muted">검색 결과가 없어요.</p>}
 

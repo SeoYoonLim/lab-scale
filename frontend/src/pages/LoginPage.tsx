@@ -19,8 +19,10 @@ export default function LoginPage() {
     setError(null)
     try {
       await login(username, password)
-      const from = (location.state as { from?: string } | null)?.from ?? '/'
-      navigate(from, { replace: true })
+      // RequireAuth가 쫓아낼 때 넘긴 { from, state } - 원래 가려던 경로와 그 경로의 state(예: CompanyPage가
+      // 넘긴 리서치 prefill)를 그대로 복원한다. 직접 /login으로 왔으면 이 state가 없다.
+      const nav = location.state as { from?: string; state?: unknown } | null
+      navigate(nav?.from ?? '/', { replace: true, state: nav?.state ?? null })
     } catch (err) {
       setError(err instanceof Error ? err.message : '로그인에 실패했어요.')
     } finally {

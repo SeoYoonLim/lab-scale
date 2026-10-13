@@ -223,24 +223,29 @@ function validatePassword(password: string): void {
   }
 }
 
-// 토큰 자체에 사용자 id를 인코딩한다(서명 없는 가짜 JWT). 그러면 토큰↔사용자 매핑을 따로 된
-// 메모리에 저장할 필요가 없어서, 새로고침으로 모듈이 다시 로드돼도(= 그 매핑이 사라져도) 깨지지 않는다.
+// 토큰 자체에 사용자 id와 발급 시각을 인코딩한다(서명 없는 가짜 JWT). 그러면 토큰↔사용자 매핑을
+// 따로 된 메모리에 저장할 필요가 없어서, 새로고침으로 모듈이 다시 로드돼도(= 그 매핑이 사라져도)
+// 깨지지 않는다. 발급 시각은 실제 JWT처럼 24시간 만료를 흉내 내는 데 쓴다.
+const TOKEN_TTL_MS = 24 * 60 * 60 * 1000 // backend/API.md: access token은 24시간 만료
+
 function issueToken(userId: number): string {
-  return `mock.${userId}.${Math.random().toString(36).slice(2)}`
+  return `mock.${userId}.${Date.now()}.${Math.random().toString(36).slice(2)}`
 }
 
 function toUserOut(user: MockUser): User {
   return { id: user.id, username: user.username }
 }
 
-// 보호된 API 진입점마다 호출한다. 토큰이 없거나 모르는 형식이면 실제 401과 같은 흐름(토큰 삭제 +
-// AUTH_EXPIRED_EVENT)을 그대로 흉내 낸다 — mock이어도 AuthContext/RequireAuth 동작을 그대로 검증할 수 있다.
-// (실제 토큰처럼 24시간 뒤 만료되는 건 흉내 내지 않는다.)
+// 보호된 API 진입점마다 호출한다. 토큰이 없거나 모르는 형식이거나 발급 24시간이 지났으면 실제
+// 401과 같은 흐름(토큰 삭제 + AUTH_EXPIRED_EVENT)을 그대로 흉내 낸다 — mock이어도 AuthContext/
+// RequireAuth 동작을 그대로 검증할 수 있다.
 function currentUserId(): number {
   const token = getToken()
-  const match = token?.match(/^mock\.(\d+)\./)
+  const match = token?.match(/^mock\.(\d+)\.(\d+)\./)
   const userId = match ? Number(match[1]) : undefined
-  if (userId == null) {
+  const issuedAt = match ? Number(match[2]) : undefined
+  const expired = issuedAt != null && Date.now() - issuedAt > TOKEN_TTL_MS
+  if (userId == null || expired) {
     clearToken()
     window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
     throw unauthorized()
@@ -612,6 +617,10 @@ async function getPortfolio(): Promise<Portfolio> {
 async function placeOrder(ticker: string, side: 'buy' | 'sell', quantity: number): Promise<OrderResult> {
   await delay(300)
   const store = storeFor(currentUserId())
+  // backend/API.md: quantity는 1 이상, 최대 100,000주인 정수여야 한다(422).
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100_000) {
+    throw new ApiError('수량은 1~100,000 사이의 정수여야 해요.', 422)
+  }
   const meta = findCompanyMeta(ticker)
   if (!meta) throw companyNotFound(ticker)
 

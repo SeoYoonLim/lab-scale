@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { ApiError } from '../api/errors'
+import { useAuth } from '../auth/useAuth'
 import type { RealtimePrice } from '../types'
 import { formatDate, formatPct, formatPrice, trendClass } from '../utils/format'
 
@@ -19,6 +20,7 @@ type WatchlistState = 'idle' | 'adding' | 'added' | 'already' | 'error'
 
 function CompanyPageContent({ ticker }: { ticker: string }) {
   const navigate = useNavigate()
+  const { user } = useAuth()
 
   // 과거 주가 차트·뉴스·공시는 대응하는 백엔드 API가 없어서 mock으로 떠받치고 있었는데,
   // 포트폴리오 중심으로 가면서 뺐다. 이 화면은 이제 실시간 시세(진짜 데이터)만 보여주고,
@@ -33,31 +35,34 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
   useEffect(() => {
     if (!ticker) return
     let cancelled = false
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
 
+    // setInterval 대신 "끝나면 다음 걸 예약"하는 방식으로 돈다 - 응답이 3초보다 느려지면
+    // setInterval은 요청이 겹쳐서 나중에 도착한 응답이 먼저 온 응답을 덮어쓸 수 있는데,
+    // 이렇게 하면 항상 한 번에 하나의 요청만 떠 있다.
     async function poll() {
       try {
         const data = await api.getRealtimePrice(ticker)
-        if (!cancelled) {
-          setRealtime(data)
-          setError(null)
-        }
+        if (cancelled) return
+        setRealtime(data)
+        setError(null)
+        setNotFound(false)
       } catch (err) {
         if (cancelled) return
-        const message = err instanceof Error ? err.message : '시세를 가져오지 못했어요.'
-        // company_resolver가 못 찾은 경우의 메시지 형식("'...' 종목을 찾지 못했습니다...")을 그대로 구분 기준으로 쓴다.
-        if (message.includes('찾지 못했습니다')) {
+        if (err instanceof ApiError && err.status === 404) {
           setNotFound(true)
         } else {
-          setError(message)
+          setError(err instanceof Error ? err.message : '시세를 가져오지 못했어요.')
         }
+      } finally {
+        if (!cancelled) timeoutId = setTimeout(poll, REALTIME_POLL_MS)
       }
     }
 
     void poll()
-    const id = setInterval(poll, REALTIME_POLL_MS)
     return () => {
       cancelled = true
-      clearInterval(id)
+      if (timeoutId) clearTimeout(timeoutId)
     }
   }, [ticker])
 
@@ -106,22 +111,32 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
             {realtime?.corrected_from && <span>입력: {realtime.corrected_from}</span>}
           </div>
           <div className="watchlist-row">
-            <button
-              type="button"
-              className="watchlist-button"
-              onClick={handleAddWatchlist}
-              disabled={watchlistState === 'adding' || watchlistState === 'added' || watchlistState === 'already'}
-            >
-              {watchlistState === 'added'
-                ? '관심종목에 추가했어요'
-                : watchlistState === 'already'
-                  ? '이미 관심종목이에요'
-                  : watchlistState === 'adding'
-                    ? '추가 중…'
-                    : '관심종목 추가'}
-            </button>
-            {watchlistState === 'error' && watchlistError && (
-              <span className="notice-error small">{watchlistError}</span>
+            {user ? (
+              <>
+                <button
+                  type="button"
+                  className="watchlist-button"
+                  onClick={handleAddWatchlist}
+                  disabled={watchlistState === 'adding' || watchlistState === 'added' || watchlistState === 'already'}
+                >
+                  {watchlistState === 'added'
+                    ? '관심종목에 추가했어요'
+                    : watchlistState === 'already'
+                      ? '이미 관심종목이에요'
+                      : watchlistState === 'adding'
+                        ? '추가 중…'
+                        : '관심종목 추가'}
+                </button>
+                {watchlistState === 'error' && watchlistError && (
+                  <span className="notice-error small">{watchlistError}</span>
+                )}
+              </>
+            ) : (
+              // 관심종목은 로그인이 필요하다(backend/API.md "인증"). 비로그인 사용자에게 버튼을 눌러보고
+              // 401을 에러로 받게 하는 대신, 로그인부터 하라고 바로 안내한다.
+              <Link to="/login" state={{ from: `/companies/${ticker}` }} className="muted small">
+                로그인하면 관심종목에 추가할 수 있어요
+              </Link>
             )}
           </div>
         </div>
@@ -140,6 +155,9 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
             <div className="muted small">
               {realtime.is_realtime ? '실시간 시세' : `${formatDate(realtime.as_of)} 종가 기준`}
             </div>
+            {/* 한 번 성공한 뒤 폴링이 실패해도 마지막으로 받은 가격은 그대로 보여준다 - 대신 최신화가
+                안 되고 있다는 걸 조용히 숨기지 않고 알려준다. */}
+            {error && <p className="muted small">최신 시세를 불러오지 못했어요. 이전 값을 보여드려요.</p>}
           </div>
         ) : error ? (
           <p className="notice notice-error">{error}</p>

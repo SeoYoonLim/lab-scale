@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from '../api'
+import { ApiError } from '../api/errors'
 import { useAsync } from '../hooks/useAsync'
 import type { DiagnosisResponse, Portfolio, WatchlistItem } from '../types'
 import { formatDate, formatPct, formatPrice, trendClass } from '../utils/format'
 
 const TRADES_PAGE_SIZE = 20
+const MAX_ORDER_QUANTITY = 100_000 // backend/API.md: 주문 수량은 1~100,000주(정수)
 
 function WatchlistSection() {
   const [reloadKey, setReloadKey] = useState(0)
@@ -13,18 +15,26 @@ function WatchlistSection() {
   const [ticker, setTicker] = useState('')
   const [adding, setAdding] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [formNotice, setFormNotice] = useState<string | null>(null)
 
   async function handleAdd(e: FormEvent) {
     e.preventDefault()
     if (!ticker.trim() || adding) return
     setAdding(true)
     setFormError(null)
+    setFormNotice(null)
     try {
       await api.addWatchlistItem(ticker.trim())
       setTicker('')
       setReloadKey((k) => k + 1)
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : '추가하지 못했어요.')
+      // CompanyPage의 "이미 관심종목이에요"와 똑같이, 이미 등록된 종목(409)은 에러가 아니라
+      // 안내로 보여준다 - 메시지 자체는 서버/mock이 주는 문구를 그대로 쓴다.
+      if (err instanceof ApiError && err.status === 409) {
+        setFormNotice(err.message)
+      } else {
+        setFormError(err instanceof Error ? err.message : '추가하지 못했어요.')
+      }
     } finally {
       setAdding(false)
     }
@@ -55,6 +65,7 @@ function WatchlistSection() {
           </button>
         </form>
         {formError && <p className="notice notice-error">{formError}</p>}
+        {formNotice && <p className="muted small">{formNotice}</p>}
 
         {loading && !data && <p className="muted">불러오는 중…</p>}
         {error && <p className="notice notice-error">{error.message}</p>}
@@ -95,15 +106,20 @@ function HoldingsSection({ portfolio, onChange }: { portfolio: Portfolio; onChan
   const [ticker, setTicker] = useState('')
   const [side, setSide] = useState<'buy' | 'sell'>('buy')
   const [quantity, setQuantity] = useState('1')
-  const [pending, setPending] = useState(false)
-  const [resetting, setResetting] = useState(false)
+  // 주문과 초기화가 동시에 들어가면 보유 종목이 꼬일 수 있어서(초기화 중에 주문이 체결되는 등),
+  // 둘 중 하나가 진행 중이면 다른 쪽도 같이 막는다 - "어떤 작업이 진행 중인가"를 하나로 합쳤다.
+  const [mutating, setMutating] = useState<'order' | 'reset' | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
 
   async function handleOrder(e: FormEvent) {
     e.preventDefault()
     const qty = Number(quantity)
-    if (!ticker.trim() || !qty || qty <= 0 || pending) return
-    setPending(true)
+    if (!ticker.trim() || mutating) return
+    if (!Number.isInteger(qty) || qty < 1 || qty > MAX_ORDER_QUANTITY) {
+      setFormError(`수량은 1~${MAX_ORDER_QUANTITY.toLocaleString('ko-KR')} 사이의 정수여야 해요.`)
+      return
+    }
+    setMutating('order')
     setFormError(null)
     try {
       await api.placeOrder(ticker.trim(), side, qty)
@@ -113,11 +129,12 @@ function HoldingsSection({ portfolio, onChange }: { portfolio: Portfolio; onChan
     } catch (err) {
       setFormError(err instanceof Error ? err.message : '주문에 실패했어요.')
     } finally {
-      setPending(false)
+      setMutating(null)
     }
   }
 
   async function handleReset() {
+    if (mutating) return
     if (
       !confirm(
         '모의투자를 초기화할까요? 보유 종목과 체결 내역이 모두 삭제되고 잔고가 1,000만원으로 돌아가요. ' +
@@ -126,7 +143,7 @@ function HoldingsSection({ portfolio, onChange }: { portfolio: Portfolio; onChan
     ) {
       return
     }
-    setResetting(true)
+    setMutating('reset')
     setFormError(null)
     try {
       await api.resetPortfolio()
@@ -134,7 +151,7 @@ function HoldingsSection({ portfolio, onChange }: { portfolio: Portfolio; onChan
     } catch (err) {
       setFormError(err instanceof Error ? err.message : '초기화하지 못했어요.')
     } finally {
-      setResetting(false)
+      setMutating(null)
     }
   }
 
@@ -158,8 +175,8 @@ function HoldingsSection({ portfolio, onChange }: { portfolio: Portfolio; onChan
         </div>
 
         <div className="portfolio-actions">
-          <button type="button" className="reset-button" onClick={() => void handleReset()} disabled={resetting}>
-            {resetting ? '초기화 중…' : '초기화'}
+          <button type="button" className="reset-button" onClick={() => void handleReset()} disabled={!!mutating}>
+            {mutating === 'reset' ? '초기화 중…' : '초기화'}
           </button>
         </div>
 
@@ -183,8 +200,8 @@ function HoldingsSection({ portfolio, onChange }: { portfolio: Portfolio; onChan
             onChange={(e) => setQuantity(e.target.value)}
             aria-label="수량"
           />
-          <button type="submit" disabled={pending}>
-            {pending ? '주문 중…' : '주문'}
+          <button type="submit" disabled={!!mutating}>
+            {mutating === 'order' ? '주문 중…' : '주문'}
           </button>
         </form>
         {formError && <p className="notice notice-error">{formError}</p>}
@@ -445,7 +462,9 @@ export default function PortfolioPage() {
       {error && <p className="notice notice-error">{error.message}</p>}
       {data && <HoldingsSection portfolio={data} onChange={() => setReloadKey((k) => k + 1)} />}
 
-      <DiagnosisSection />
+      {/* reloadKey가 바뀌면(주문/초기화) 통째로 리마운트해서 진단 결과를 지운다 - 주문 전에 받은 진단이
+          그대로 남아있으면 바뀐 보유 종목과 안 맞는 설명을 보여주게 된다. */}
+      <DiagnosisSection key={reloadKey} />
       <TradesSection reloadKey={reloadKey} />
       <WatchlistSection />
     </div>

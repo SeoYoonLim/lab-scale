@@ -19,6 +19,12 @@ import type { Api } from './index'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
+// 기본 타임아웃. 리서치/진단은 LLM을 기다려야 해서 훨씬 오래 걸릴 수 있다고 backend/API.md에 적혀
+// 있으므로(각각 60초, 90초 이상 권장) 그 둘만 따로 늘려서 부른다.
+const DEFAULT_TIMEOUT_MS = 20_000
+const RESEARCH_TIMEOUT_MS = 60_000
+const DIAGNOSIS_TIMEOUT_MS = 90_000
+
 // FastAPI 검증 오류(422)는 detail이 [{msg, loc, ...}] 배열이고,
 // 그 외 오류(400/401/404/409/502/503)는 detail이 문자열이다. (backend/API.md 참고)
 async function readErrorMessage(res: Response, fallback: string): Promise<string> {
@@ -39,36 +45,59 @@ function authHeader(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
-// auth=true면 로그인 필요 API다: 토큰을 Authorization 헤더로 싣고, 401이면 토큰을 지우고
-// AUTH_EXPIRED_EVENT를 쏜다(AuthContext가 듣고 로그인 화면으로 돌려보낸다).
-async function request<T>(path: string, init: RequestInit = {}, auth = false): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(auth ? authHeader() : {}),
-      ...init.headers,
-    },
-  })
-  if (auth && res.status === 401) {
-    clearToken()
-    window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+// request()/requestVoid() 둘 다 쓰는 공통 부분: fetch + 타임아웃 + 인증 헤더 + 401 처리.
+// 응답 본문을 읽는 방식(JSON 있음/없음)만 다르므로 그건 각자 알아서 한다.
+async function doFetch(path: string, init: RequestInit, auth: boolean, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      ...init,
+      headers: { ...(auth ? authHeader() : {}), ...init.headers },
+      signal: controller.signal,
+    })
+    if (auth && res.status === 401) {
+      clearToken()
+      window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+    }
+    return res
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      // status 0: ApiError.status===401/409 같은 분기에 절대 안 걸리게, 실제 HTTP 상태와는 구분되는 값.
+      throw new ApiError('요청이 너무 오래 걸려서 중단했어요. 네트워크를 확인하고 다시 시도해주세요.', 0)
+    }
+    throw err
+  } finally {
+    clearTimeout(timeoutId)
   }
+}
+
+async function request<T>(
+  path: string,
+  init: RequestInit = {},
+  auth = false,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<T> {
+  const res = await doFetch(
+    path,
+    { ...init, headers: { 'Content-Type': 'application/json', ...init.headers } },
+    auth,
+    timeoutMs,
+  )
   if (!res.ok) {
     throw new ApiError(await readErrorMessage(res, `요청에 실패했어요. (${res.status})`), res.status)
   }
   return res.json() as Promise<T>
 }
 
-async function requestVoid(path: string, init: RequestInit, fallback: string, auth = false): Promise<void> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...init,
-    headers: { ...(auth ? authHeader() : {}), ...init.headers },
-  })
-  if (auth && res.status === 401) {
-    clearToken()
-    window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
-  }
+async function requestVoid(
+  path: string,
+  init: RequestInit,
+  fallback: string,
+  auth = false,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<void> {
+  const res = await doFetch(path, init, auth, timeoutMs)
   // 204 No Content: 본문이 없어서 res.json()을 호출하면 안 된다.
   if (!res.ok) {
     throw new ApiError(await readErrorMessage(res, fallback), res.status)
@@ -93,6 +122,7 @@ export const httpApi: Api = {
       '/research',
       { method: 'POST', body: JSON.stringify({ question, previous_report_id: previousReportId ?? null }) },
       true,
+      RESEARCH_TIMEOUT_MS,
     ),
   listReports: (limit = 20, offset = 0) =>
     request<ReportList>(`/research${qs({ limit, offset })}`, {}, true),
@@ -117,7 +147,8 @@ export const httpApi: Api = {
     request<TradeList>(`/portfolio/trades${qs({ limit, offset, ticker })}`, {}, true),
   resetPortfolio: () =>
     request<Portfolio>('/portfolio/reset', { method: 'POST', body: JSON.stringify({ confirm: true }) }, true),
-  getDiagnosis: () => request<DiagnosisResponse>('/portfolio/diagnosis', { method: 'POST' }, true),
+  getDiagnosis: () =>
+    request<DiagnosisResponse>('/portfolio/diagnosis', { method: 'POST' }, true, DIAGNOSIS_TIMEOUT_MS),
 
   getRealtimePrice: (ticker) => request<RealtimePrice>(`/stocks/${encodeURIComponent(ticker)}/realtime-price`),
   getTrending: (category, limit = 10) => request<TrendingResponse>(`/discovery/trending${qs({ category, limit })}`),
