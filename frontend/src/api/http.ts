@@ -1,4 +1,22 @@
+import type { z } from 'zod'
 import { ApiError } from './errors'
+import {
+  authResponseSchema,
+  companyListSchema,
+  diagnosisResponseSchema,
+  disclaimerResponseSchema,
+  orderResultSchema,
+  portfolioSchema,
+  realtimePriceSchema,
+  reportDetailSchema,
+  reportListSchema,
+  researchResponseSchema,
+  tradeListSchema,
+  trendingResponseSchema,
+  userSchema,
+  watchlistItemSchema,
+  watchlistListSchema,
+} from './schemas'
 import { AUTH_EXPIRED_EVENT, clearToken, getToken } from '../utils/token'
 import type {
   AuthResponse,
@@ -46,6 +64,7 @@ function authHeader(): Record<string, string> {
 }
 
 const TIMEOUT_MESSAGE = '요청이 너무 오래 걸려서 중단했어요. 네트워크를 확인하고 다시 시도해주세요.'
+const SCHEMA_MISMATCH_MESSAGE = '서버 응답 형식이 올바르지 않아요. 잠시 후 다시 시도해주세요.'
 
 function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === 'AbortError'
@@ -74,12 +93,16 @@ async function doFetch(path: string, init: RequestInit, auth: boolean, signal: A
   return res
 }
 
-async function request<T>(
-  path: string,
-  init: RequestInit = {},
-  auth = false,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
-): Promise<T> {
+interface RequestOptions<T> {
+  auth?: boolean
+  timeoutMs?: number
+  // 주면 응답 JSON을 실제로 검증한다(backend/API.md의 계약과 다른 모양이면 렌더링 전에 걸러낸다).
+  // mock.ts는 TS가 짠 객체를 그대로 반환하므로 안 거친다 - 검증이 필요한 건 실제 네트워크 응답뿐이다.
+  schema?: z.ZodType<T>
+}
+
+async function request<T>(path: string, init: RequestInit = {}, options: RequestOptions<T> = {}): Promise<T> {
+  const { auth = false, timeoutMs = DEFAULT_TIMEOUT_MS, schema } = options
   const { signal, clear } = startTimeout(timeoutMs)
   try {
     const res = await doFetch(
@@ -91,7 +114,14 @@ async function request<T>(
     if (!res.ok) {
       throw new ApiError(await readErrorMessage(res, `요청에 실패했어요. (${res.status})`), res.status)
     }
-    return (await res.json()) as T
+    const json = await res.json()
+    if (!schema) return json as T
+    const parsed = schema.safeParse(json)
+    if (!parsed.success) {
+      console.error(`API 응답이 backend/API.md와 다른 형식이에요 (${path}):`, parsed.error.issues)
+      throw new ApiError(SCHEMA_MISMATCH_MESSAGE, 502)
+    }
+    return parsed.data
   } catch (err) {
     // status 0: ApiError.status===401/409 같은 분기에 절대 안 걸리게, 실제 HTTP 상태와는 구분되는 값.
     if (isAbortError(err)) throw new ApiError(TIMEOUT_MESSAGE, 0)
@@ -105,9 +135,9 @@ async function requestVoid(
   path: string,
   init: RequestInit,
   fallback: string,
-  auth = false,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
+  options: { auth?: boolean; timeoutMs?: number } = {},
 ): Promise<void> {
+  const { auth = false, timeoutMs = DEFAULT_TIMEOUT_MS } = options
   const { signal, clear } = startTimeout(timeoutMs)
   try {
     const res = await doFetch(path, init, auth, signal)
@@ -131,46 +161,78 @@ function qs(params: Record<string, string | number | undefined>): string {
 
 export const httpApi: Api = {
   signup: (username, password) =>
-    request<AuthResponse>('/auth/signup', { method: 'POST', body: JSON.stringify({ username, password }) }),
+    request<AuthResponse>(
+      '/auth/signup',
+      { method: 'POST', body: JSON.stringify({ username, password }) },
+      { schema: authResponseSchema },
+    ),
   login: (username, password) =>
-    request<AuthResponse>('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
-  me: () => request<User>('/auth/me', {}, true),
+    request<AuthResponse>(
+      '/auth/login',
+      { method: 'POST', body: JSON.stringify({ username, password }) },
+      { schema: authResponseSchema },
+    ),
+  me: () => request<User>('/auth/me', {}, { auth: true, schema: userSchema }),
 
   askResearch: (question, previousReportId) =>
     request<ResearchResponse>(
       '/research',
       { method: 'POST', body: JSON.stringify({ question, previous_report_id: previousReportId ?? null }) },
-      true,
-      RESEARCH_TIMEOUT_MS,
+      { auth: true, timeoutMs: RESEARCH_TIMEOUT_MS, schema: researchResponseSchema },
     ),
   listReports: (limit = 20, offset = 0) =>
-    request<ReportList>(`/research${qs({ limit, offset })}`, {}, true),
-  getReport: (reportId) => request<ReportDetail>(`/research/${reportId}`, {}, true),
-  deleteReport: (reportId) => requestVoid(`/research/${reportId}`, { method: 'DELETE' }, '삭제에 실패했어요.', true),
+    request<ReportList>(`/research${qs({ limit, offset })}`, {}, { auth: true, schema: reportListSchema }),
+  getReport: (reportId) =>
+    request<ReportDetail>(`/research/${reportId}`, {}, { auth: true, schema: reportDetailSchema }),
+  deleteReport: (reportId) =>
+    requestVoid(`/research/${reportId}`, { method: 'DELETE' }, '삭제에 실패했어요.', { auth: true }),
 
-  listWatchlist: () => request<{ items: WatchlistItem[] }>('/watchlist', {}, true).then((res) => res.items),
+  listWatchlist: () =>
+    request<{ items: WatchlistItem[] }>('/watchlist', {}, { auth: true, schema: watchlistListSchema }).then(
+      (res) => res.items,
+    ),
   addWatchlistItem: (ticker) =>
-    request<WatchlistItem>('/watchlist', { method: 'POST', body: JSON.stringify({ ticker }) }, true),
+    request<WatchlistItem>(
+      '/watchlist',
+      { method: 'POST', body: JSON.stringify({ ticker }) },
+      { auth: true, schema: watchlistItemSchema },
+    ),
   removeWatchlistItem: (ticker) =>
     requestVoid(
       `/watchlist/${encodeURIComponent(ticker)}`,
       { method: 'DELETE' },
       '관심종목 삭제에 실패했어요.',
-      true,
+      { auth: true },
     ),
 
-  getPortfolio: () => request<Portfolio>('/portfolio', {}, true),
+  getPortfolio: () => request<Portfolio>('/portfolio', {}, { auth: true, schema: portfolioSchema }),
   placeOrder: (ticker, side, quantity) =>
-    request<OrderResult>('/portfolio/orders', { method: 'POST', body: JSON.stringify({ ticker, side, quantity }) }, true),
+    request<OrderResult>(
+      '/portfolio/orders',
+      { method: 'POST', body: JSON.stringify({ ticker, side, quantity }) },
+      { auth: true, schema: orderResultSchema },
+    ),
   getTrades: (limit = 50, offset = 0, ticker) =>
-    request<TradeList>(`/portfolio/trades${qs({ limit, offset, ticker })}`, {}, true),
+    request<TradeList>(`/portfolio/trades${qs({ limit, offset, ticker })}`, {}, { auth: true, schema: tradeListSchema }),
   resetPortfolio: () =>
-    request<Portfolio>('/portfolio/reset', { method: 'POST', body: JSON.stringify({ confirm: true }) }, true),
+    request<Portfolio>(
+      '/portfolio/reset',
+      { method: 'POST', body: JSON.stringify({ confirm: true }) },
+      { auth: true, schema: portfolioSchema },
+    ),
   getDiagnosis: () =>
-    request<DiagnosisResponse>('/portfolio/diagnosis', { method: 'POST' }, true, DIAGNOSIS_TIMEOUT_MS),
+    request<DiagnosisResponse>(
+      '/portfolio/diagnosis',
+      { method: 'POST' },
+      { auth: true, timeoutMs: DIAGNOSIS_TIMEOUT_MS, schema: diagnosisResponseSchema },
+    ),
 
-  getRealtimePrice: (ticker) => request<RealtimePrice>(`/stocks/${encodeURIComponent(ticker)}/realtime-price`),
-  getTrending: (category, limit = 10) => request<TrendingResponse>(`/discovery/trending${qs({ category, limit })}`),
-  searchCompanies: (q, limit) => request<Company[]>(`/companies${qs({ q, limit })}`),
-  getDisclaimer: () => request<{ text: string }>('/disclaimer').then((res) => res.text),
+  getRealtimePrice: (ticker) =>
+    request<RealtimePrice>(`/stocks/${encodeURIComponent(ticker)}/realtime-price`, {}, { schema: realtimePriceSchema }),
+  getTrending: (category, limit = 10) =>
+    request<TrendingResponse>(`/discovery/trending${qs({ category, limit })}`, {}, { schema: trendingResponseSchema }),
+  searchCompanies: (q, limit) =>
+    request<Company[]>(`/companies${qs({ q, limit })}`, {}, { schema: companyListSchema }),
+  getDisclaimer: () =>
+    request<{ text: string }>('/disclaimer', {}, { schema: disclaimerResponseSchema }).then((res) => res.text),
 }
