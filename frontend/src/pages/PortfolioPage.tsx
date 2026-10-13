@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from '../api'
 import { ApiError } from '../api/errors'
 import { useAsync } from '../hooks/useAsync'
-import type { DiagnosisResponse, Portfolio, WatchlistItem } from '../types'
+import type { DiagnosisResponse, OrderResult, Portfolio, WatchlistItem } from '../types'
 import { formatDate, formatPct, formatPrice, trendClass } from '../utils/format'
+
+const ORDER_PREVIEW_DEBOUNCE_MS = 400
 
 const TRADES_PAGE_SIZE = 20
 const MAX_ORDER_QUANTITY = 100_000 // backend/API.md: 주문 수량은 1~100,000주(정수)
@@ -110,6 +112,33 @@ function HoldingsSection({ portfolio, onChange }: { portfolio: Portfolio; onChan
   // 둘 중 하나가 진행 중이면 다른 쪽도 같이 막는다 - "어떤 작업이 진행 중인가"를 하나로 합쳤다.
   const [mutating, setMutating] = useState<'order' | 'reset' | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  const [preview, setPreview] = useState<{ companyName: string; price: number } | null>(null)
+  const [lastOrder, setLastOrder] = useState<OrderResult | null>(null)
+
+  // 입력한 종목의 실시간 시세로 "예상 금액"을 미리 보여준다 - 실제 체결가는 주문 시점 시세라 다를 수 있다.
+  // company_resolver가 별칭/종목명도 받으므로 그대로 getRealtimePrice에 넘긴다.
+  useEffect(() => {
+    const trimmed = ticker.trim()
+    // ticker가 비면 아무것도 예약하지 않는다 - preview는 그대로 둬도 아래 렌더링이 ticker.trim()을
+    // 같이 확인하므로 화면에는 안 보인다(effect 안에서 수동 setState(null) 하는 대신).
+    if (!trimmed) return
+    let cancelled = false
+    const id = setTimeout(() => {
+      api.getRealtimePrice(trimmed).then(
+        (data) => {
+          if (!cancelled) setPreview({ companyName: data.company_name, price: data.current_price })
+        },
+        () => {
+          // 타이핑 중이거나 모르는 종목일 수 있다 - 미리보기는 조용히 숨기고, 실제 오류는 제출 시 보여준다.
+          if (!cancelled) setPreview(null)
+        },
+      )
+    }, ORDER_PREVIEW_DEBOUNCE_MS)
+    return () => {
+      cancelled = true
+      clearTimeout(id)
+    }
+  }, [ticker])
 
   async function handleOrder(e: FormEvent) {
     e.preventDefault()
@@ -122,11 +151,13 @@ function HoldingsSection({ portfolio, onChange }: { portfolio: Portfolio; onChan
     setMutating('order')
     setFormError(null)
     try {
-      await api.placeOrder(ticker.trim(), side, qty)
+      const result = await api.placeOrder(ticker.trim(), side, qty)
+      setLastOrder(result)
       setTicker('')
       setQuantity('1')
       onChange()
     } catch (err) {
+      setLastOrder(null)
       setFormError(err instanceof Error ? err.message : '주문에 실패했어요.')
     } finally {
       setMutating(null)
@@ -147,6 +178,7 @@ function HoldingsSection({ portfolio, onChange }: { portfolio: Portfolio; onChan
     setFormError(null)
     try {
       await api.resetPortfolio()
+      setLastOrder(null) // 초기화되면 holding 참조가 더 이상 유효하지 않으니 이전 체결 결과는 지운다.
       onChange()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : '초기화하지 못했어요.')
@@ -204,7 +236,23 @@ function HoldingsSection({ portfolio, onChange }: { portfolio: Portfolio; onChan
             {mutating === 'order' ? '주문 중…' : '주문'}
           </button>
         </form>
+        {preview && ticker.trim() && Number(quantity) > 0 && (
+          <p className="muted small order-preview">
+            예상 금액: {preview.companyName} {formatPrice(preview.price)}원 × {quantity}주 ={' '}
+            {formatPrice(preview.price * Number(quantity))}원 (현재가 기준, 실제 체결가는 달라질 수 있어요)
+          </p>
+        )}
         {formError && <p className="notice notice-error">{formError}</p>}
+        {lastOrder && (
+          <p className="notice order-result">
+            {lastOrder.side === 'buy' ? '매수' : '매도'} 체결: {lastOrder.company_name} {lastOrder.quantity}주 @{' '}
+            {formatPrice(lastOrder.price)}원 (잔액 {formatPrice(lastOrder.cash_balance)}원
+            {lastOrder.holding
+              ? `, 보유 ${lastOrder.holding.quantity}주 · 평균 ${formatPrice(lastOrder.holding.avg_price)}원`
+              : ' · 전량 매도로 보유 종목 없음'}
+            )
+          </p>
+        )}
 
         {portfolio.holdings.length === 0 ? (
           <p className="muted">보유 종목이 없어요.</p>

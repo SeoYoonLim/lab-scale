@@ -222,6 +222,10 @@
   color: var(--danger);
 }
 
+.order-result {
+  border-left-color: var(--accent);
+}
+
 .back-link {
   display: inline-block;
   margin-bottom: 16px;
