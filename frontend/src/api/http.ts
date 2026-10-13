@@ -45,31 +45,33 @@ function authHeader(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
-// request()/requestVoid() 둘 다 쓰는 공통 부분: fetch + 타임아웃 + 인증 헤더 + 401 처리.
-// 응답 본문을 읽는 방식(JSON 있음/없음)만 다르므로 그건 각자 알아서 한다.
-async function doFetch(path: string, init: RequestInit, auth: boolean, timeoutMs: number): Promise<Response> {
+const TIMEOUT_MESSAGE = '요청이 너무 오래 걸려서 중단했어요. 네트워크를 확인하고 다시 시도해주세요.'
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'AbortError'
+}
+
+// signal의 abort는 request()/requestVoid()가 끝까지(응답 본문을 다 읽을 때까지) 들고 있는다 - 여기서
+// 타이머를 끝내버리면 "헤더는 왔는데 본문이 느리게 오는" 상황에 타임아웃이 안 걸린다.
+function startTimeout(timeoutMs: number): { signal: AbortSignal; clear: () => void } {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const res = await fetch(`${BASE_URL}${path}`, {
-      ...init,
-      headers: { ...(auth ? authHeader() : {}), ...init.headers },
-      signal: controller.signal,
-    })
-    if (auth && res.status === 401) {
-      clearToken()
-      window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
-    }
-    return res
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      // status 0: ApiError.status===401/409 같은 분기에 절대 안 걸리게, 실제 HTTP 상태와는 구분되는 값.
-      throw new ApiError('요청이 너무 오래 걸려서 중단했어요. 네트워크를 확인하고 다시 시도해주세요.', 0)
-    }
-    throw err
-  } finally {
-    clearTimeout(timeoutId)
+  return { signal: controller.signal, clear: () => clearTimeout(timeoutId) }
+}
+
+// request()/requestVoid() 둘 다 쓰는 공통 부분: fetch + 인증 헤더 + 401 처리.
+// 응답 본문을 읽는 방식(JSON 있음/없음)과 타임아웃 범위는 각자(본문을 다 읽을 때까지) 책임진다.
+async function doFetch(path: string, init: RequestInit, auth: boolean, signal: AbortSignal): Promise<Response> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...init,
+    headers: { ...(auth ? authHeader() : {}), ...init.headers },
+    signal,
+  })
+  if (auth && res.status === 401) {
+    clearToken()
+    window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
   }
+  return res
 }
 
 async function request<T>(
@@ -78,16 +80,25 @@ async function request<T>(
   auth = false,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<T> {
-  const res = await doFetch(
-    path,
-    { ...init, headers: { 'Content-Type': 'application/json', ...init.headers } },
-    auth,
-    timeoutMs,
-  )
-  if (!res.ok) {
-    throw new ApiError(await readErrorMessage(res, `요청에 실패했어요. (${res.status})`), res.status)
+  const { signal, clear } = startTimeout(timeoutMs)
+  try {
+    const res = await doFetch(
+      path,
+      { ...init, headers: { 'Content-Type': 'application/json', ...init.headers } },
+      auth,
+      signal,
+    )
+    if (!res.ok) {
+      throw new ApiError(await readErrorMessage(res, `요청에 실패했어요. (${res.status})`), res.status)
+    }
+    return (await res.json()) as T
+  } catch (err) {
+    // status 0: ApiError.status===401/409 같은 분기에 절대 안 걸리게, 실제 HTTP 상태와는 구분되는 값.
+    if (isAbortError(err)) throw new ApiError(TIMEOUT_MESSAGE, 0)
+    throw err
+  } finally {
+    clear()
   }
-  return res.json() as Promise<T>
 }
 
 async function requestVoid(
@@ -97,10 +108,18 @@ async function requestVoid(
   auth = false,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<void> {
-  const res = await doFetch(path, init, auth, timeoutMs)
-  // 204 No Content: 본문이 없어서 res.json()을 호출하면 안 된다.
-  if (!res.ok) {
-    throw new ApiError(await readErrorMessage(res, fallback), res.status)
+  const { signal, clear } = startTimeout(timeoutMs)
+  try {
+    const res = await doFetch(path, init, auth, signal)
+    // 204 No Content: 본문이 없어서 res.json()을 호출하면 안 된다.
+    if (!res.ok) {
+      throw new ApiError(await readErrorMessage(res, fallback), res.status)
+    }
+  } catch (err) {
+    if (isAbortError(err)) throw new ApiError(TIMEOUT_MESSAGE, 0)
+    throw err
+  } finally {
+    clear()
   }
 }
 
