@@ -235,7 +235,9 @@ _CAUSAL_RE = re.compile(
     # "주가는 뉴스에 반응했다"처럼 사건에 반응했다고 쓰는 것도 원인 서술이다("공시 이후 주가 반응은 …"은 해당 없음)
     r"|(?:에|에\s*대해|에\s*대한)\s*(?:주가\s*(?:가|는)?\s*)?(?:민감하게\s*|크게\s*|즉각\s*)?반응(?:했|하|한|해|을\s*보)"
     # "주가 움직임은 이 뉴스와 관련이 없다/있다"도 인과를 (부정 방향으로) 단정하는 서술이다
-    r"|(?:관련|연관)(?:이|은|성이|성은)?\s*(?:없|있|크|적)|무관"
+    r"|(?:관련|연관)(?:이|은|성이|성은)?\s*(?:없|있|크|적|보|많|높|깊)|무관"
+    # "뉴스에 따라 주가가 변동했다", "기대가 주가 재평가 가능성을 높였다"처럼 사건이 주가를 움직였다는 서술
+    r"|(?:에|에\s*의해)\s*따(?:라|른|르면)|따라서|(?:주가|가능성|기대|전망)\S*\s*(?:을|를)\s*(?:높였|낮췄|올렸|키웠|끌어올렸|떨어뜨렸|이끌었|부추겼|자극했)"
     # "공시되어, 하락했다", "발표되자 올랐다"처럼 사건을 연결어미로 등락에 바로 잇는 서술("~돼서 떨어졌다"로 읽힌다)
     r"|(?:공시|발표|보도|공개|게재)(?:되어|돼서|되자|하자|되면서|하면서|돼)\s*,?\s*.{0,25}?"
     r"(?:상승|하락|올랐|내렸|떨어|오른|내린|빠졌|반등|급락|급등)"
@@ -435,10 +437,13 @@ def _estimates_null(sentence: str, numbers, summary: dict) -> bool:
     return False
 
 
-def _repeats_table(sentence: str, numbers, sent_dates) -> bool:
-    """코드가 쓴 섹션의 수치·날짜·사유를 되풀이할 뿐 새 비교나 주의할 점이 없는 문장인지(앞선 검사를 모두 통과한 문장에만 쓴다)."""
-    has_data = bool(numbers or sent_dates or _HORIZON_RE.search(sentence) or _NOT_COMPUTED_RE.search(sentence))
-    return has_data and not _NEW_OBSERVATION_RE.search(sentence)
+def _has_data(sentence: str, numbers, sent_dates) -> bool:
+    return bool(numbers or sent_dates or _HORIZON_RE.search(sentence) or _NOT_COMPUTED_RE.search(sentence))
+
+
+def _no_new_observation(sentence: str) -> bool:
+    """사건들 사이의 비교나 주의할 점(겹치는 사건, 시장 전체 흐름, 표본·일반화 주의 등)이 하나도 없는 문장인지."""
+    return not _NEW_OBSERVATION_RE.search(sentence)
 
 
 def check_event_answer(answer: str, result: dict, other_names=()) -> tuple[str, list[tuple[str, str]]]:
@@ -539,8 +544,10 @@ def check_event_answer(answer: str, result: dict, other_names=()) -> tuple[str, 
                     reason = "계산되지 않은 값을 추정"
                 elif found and _direction_wrong(body, numbers, scope, result):
                     reason = "방향이 결과와 반대"
-                elif found and _repeats_table(body, numbers, sent_dates):
-                    reason = "표의 수치·사유를 되풀이"
+                elif found and _no_new_observation(body):
+                    # 해석은 사건들 사이의 비교나 주의할 점만 쓴다. 수치·날짜·사유만 담았으면 표의 되풀이이고, 그렇지 않아도
+                    # 제목을 바꿔 쓴 문장이나 막연한 서술이라 쓰지 않는다.
+                    reason = "표의 수치·사유를 되풀이" if _has_data(body, numbers, sent_dates) else "비교·주의가 없는 문장"
             if reason:
                 dropped.append((sent.strip(), reason))
             else:

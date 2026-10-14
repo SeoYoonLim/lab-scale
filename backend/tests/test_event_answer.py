@@ -456,6 +456,21 @@ class TestChecker:
         text, dropped = self.check(sent)
         assert text == "" and dropped[0][1] == "내용 없는 안내·마무리 문장", dropped
 
+    @pytest.mark.parametrize(
+        "sent, reason",
+        [
+            # slow 재측정(8개 항목)에서 해석에 남았던 문장들
+            ("KODEX 200은 최근 뉴스에 따라 주가가 변동했습니다.", "인과 단정"),
+            ("이들 사건들 중에서 10월 13일의 사건만 관련이 보입니다.", "인과 단정"),
+            ("KT의 5G 요금제 개편과 AI 요금제에 대한 기대는 주가의 재평가 가능성을 높였다.", "인과 단정"),
+            ("KT의 최근 뉴스는 여러 개 있습니다.", "비교·주의가 없는 문장"),  # 비교·주의 표지도 수치도 없는 막연한 서술
+            ("삼성전자 신제품 공개 기사가 있었습니다.", "비교·주의가 없는 문장"),
+        ],
+    )
+    def test_vague_or_paraphrased_sentences_dropped(self, sent, reason):
+        text, dropped = self.check(sent)
+        assert text == "" and dropped[0][1] == reason, dropped
+
     def test_everything_dropped_gives_empty_text_and_no_interpretation_heading(self):
         llm = "공시 이후 1거래일간 -0.72% 움직였습니다.\n\n위와 같이 나타났습니다.\n- 5거래일: 아직 계산할 수 없습니다."
         text, dropped = self.check(llm)
