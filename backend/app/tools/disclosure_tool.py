@@ -1,4 +1,5 @@
 from app.db.session import SessionLocal
+from app.korean import josa
 from app.models import Disclosure
 from app.tools.company_resolver import not_found_response, resolve_company, to_int
 
@@ -13,6 +14,19 @@ def disclosure_tool(company_name: str, limit: int = 5) -> dict:
             return not_found_response({"company_name": company_name, "limit": limit}, res)
         company = res.company
         corrected = {"corrected_from": res.corrected_from} if res.corrected_from else {}
+
+        if company.asset_type == "etf":
+            # ETF는 개별 기업이 아니라 DART 공시 수집 대상이 아니다. "아직 수집된 공시가 없다"고 하면 곧 생길 것처럼 읽혀서
+            # 왜 없는지를 결과에 담는다.
+            return {
+                "company_name": company.name,
+                "limit": limit,
+                "found": False,
+                "asset_type": "etf",
+                "message": f"{josa(company.name, '은/는')} ETF(상장지수펀드)입니다. ETF는 개별 기업이 아니라서 이 서비스는 "
+                "ETF의 공시를 수집하지 않습니다. 공시·실적 대신 가격 흐름과 관련 뉴스로 확인할 수 있습니다.",
+                **corrected,
+            }
 
         rows = (
             db.query(Disclosure)
