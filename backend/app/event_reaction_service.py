@@ -74,8 +74,10 @@ def _load_events(db, company: Company, since: date) -> list[dict]:
 
 def build_event_reactions(
     db, company: Company, event_type: EventType = "all", limit: int = 10, since_days: int = 60,
-    today: date | None = None,
+    today: date | None = None, title_keyword: str | None = None,
 ) -> dict:
+    """title_keyword가 있으면 제목에 그 낱말이 든 사건만 고른다(리서치 tool 전용, API는 쓰지 않는다).
+    다른 사건 수(other_events_in_window)는 키워드와 무관하게 전체 사건으로 센다."""
     today = today or datetime.now(KST).date()
     bars = [
         Bar(d, float(c), None if v is None else float(v))
@@ -110,7 +112,10 @@ def build_event_reactions(
     chosen: list[tuple[int, dict]] = []
     for kind in ("disclosure", "news"):
         if event_type in (kind, "all"):
-            chosen += [(i, e) for i, e in enumerate(events) if e["event_type"] == kind][:limit]
+            chosen += [
+                (i, e) for i, e in enumerate(events)
+                if e["event_type"] == kind and (not title_keyword or title_keyword in e["title"])
+            ][:limit]
     chosen.sort(key=lambda p: (p[1]["day"], p[1]["event_at"] or datetime.min.replace(tzinfo=KST)), reverse=True)
 
     out = []

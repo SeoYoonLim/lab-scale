@@ -131,3 +131,56 @@ def is_cause_question(question: str) -> bool:
     ("오늘 많이 오른 종목 알려줘") False다. 종목이 특정됐는지는 여기서 보지 않는다(호출측이 tool 호출 인자로 본다)."""
     q = question or ""
     return bool(_CAUSE_RE.search(q) and _PRICE_MOVE_RE.search(q))
+
+
+# 뉴스·공시 같은 "사건" 이후 주가 반응을 묻는 질문(app/tools/event_reaction_tool.py). 사건어가 먼저 나오고 그 뒤에
+# 시간 관계어(이후/직후/나온 뒤/발표 후/~했을 때 주가)가 와야 한다 - "9월 이후 뉴스"처럼 순서가 반대면 기간 표현이다.
+# "반응"은 뜻이 넓어서 사건어와 함께 있을 때만 인정하고(순서 무관), 종목이 특정됐는지는 호출측(app/agent.py)이 본다.
+# "삼성전자 최근 뉴스 알려줘", "삼성전자 공시 알려줘", "뉴스랑 주가 움직임 같이 알려줘"(동시 조회)는 관계어가 없어서 걸리지 않는다.
+_EVENT_WORD = (
+    r"공시|뉴스|기사|보도|발표|실적|소식|유상증자|무상증자|합병|분할|배당|자기주식|자사주|공급계약|소송"
+)
+_EVENT_AFTER_RE = re.compile(
+    r"(?:" + _EVENT_WORD + r")[^.?!\n]{0,15}?"
+    r"(?:이후|직후"
+    r"|(?:나온|나오고|난|나고|뜬|뜨고|있은|있었던|있고|낸|내고|올라온|공개된|발표한|발표된|발표하고|공시된|보도된|된|한)"
+    r"\s*(?:뒤|후|다음(?:\s*날)?)(?:에|로|엔)?(?![가-힣])"
+    # 동사 없이 "공시 후 주가", "발표 뒤에 주가 흐름"처럼 쓴 경우는 바로 뒤에 주가 관련 낱말이 올 때만("뉴스 다음 기사"는 제외)
+    r"|(?<![가-힣])(?:뒤|후|다음(?:\s*날)?)(?:에|로|엔)?(?![가-힣])\s*(?:의\s*)?(?:주가|주식|시세|반응|흐름|움직|등락|수익률)"
+    r"|했을\s*때\s*(?:주가|주식|시세)|됐을\s*때\s*(?:주가|주식|시세)|나왔을\s*때\s*(?:주가|주식|시세))"
+)
+_EVENT_WORD_RE = re.compile(_EVENT_WORD)
+_REACTION_RE = re.compile(r"반응")
+
+
+def needs_event_reaction_tool(question: str) -> bool:
+    """질문이 뉴스·공시(사건) 이후의 주가 반응을 묻는 내용이면 True.
+
+    True만으로 tool을 실행하지는 않는다 - 질문(또는 후속 질문이면 직전 질문)에서 종목을 하나 특정할 수 있어야 한다."""
+    q = question or ""
+    if _EVENT_AFTER_RE.search(q):
+        return True
+    return bool(_REACTION_RE.search(q) and _EVENT_WORD_RE.search(q))
+
+
+_EVENT_DISCLOSURE_RE = re.compile(r"공시|유상증자|무상증자|합병|분할|자기주식|자사주|공급계약")
+_EVENT_NEWS_RE = re.compile(r"뉴스|기사|보도|소식")
+
+
+def event_type_for(question: str) -> str:
+    """질문의 사건 종류: 공시 쪽 낱말만 있으면 disclosure, 뉴스 쪽 낱말만 있으면 news, 둘 다 있거나 둘 다 없으면
+    ("실적 발표") all."""
+    q = question or ""
+    disc, news = bool(_EVENT_DISCLOSURE_RE.search(q)), bool(_EVENT_NEWS_RE.search(q))
+    if disc and not news:
+        return "disclosure"
+    if news and not disc:
+        return "news"
+    return "all"
+
+
+def event_keyword_for(question: str, allowed) -> str | None:
+    """질문에 나온 제목 키워드(허용 목록 allowed 중 질문에 먼저 나온 것). '자사주'는 공시 제목 표기인 '자기주식'으로 본다."""
+    q = (question or "").replace("자사주", "자기주식")
+    hits = [(q.find(k), k) for k in allowed if k in q]
+    return min(hits)[1] if hits else None
