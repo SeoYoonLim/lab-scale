@@ -19,7 +19,7 @@ Authorization: Bearer <access_token>
 | 구분 | 엔드포인트 |
 | --- | --- |
 | **인증 필요** | `/api/auth/me`, `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET) |
-| 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending` |
+| 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status` |
 
 - 데이터는 **사용자별로 분리**된다. 리서치 리포트 목록/조회/삭제/이어 쓰기(`previous_report_id`)는 본인 것만 대상이고,
   **남의 리포트 ID는 없는 리포트와 똑같이 404**다(403이 아니다 — 그 ID가 존재하는지 드러내지 않기 위해).
@@ -99,7 +99,7 @@ ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응�
   수집하지 않습니다"라고 답한다.
 - **ETF 상품 정보(구성종목, 추종지수, 운용보수, 순자산, 괴리율)는 수집하지 않는다**. 그래서 리서치 답변은 이런 내용을 말하지 않도록
   막았다(모르는 것을 지어내지 않게). 레버리지·인버스 구조 설명은 이름으로 판별한 고정 문구뿐이다.
-- **`/api/discovery/trending`의 기준 날짜는 유형별로 따로 계산한다**: 주식은 2026-10-08, ETF는 2026-10-14가 최신이다(주식 주가 수집이 더 오래전에 멈춰 있다).
+- **`/api/discovery/trending`의 기준 날짜는 유형별로 따로 계산한다**: 2026-10-14 갱신 이후 주식·ETF 모두 10/14가 최신이지만, 갱신 시점이 어긋나면 달라질 수 있다.
   `price_date`로 확인할 수 있다.
 - **"한 달"처럼 숫자가 없는 기간 표현은 서버가 값으로 바꾸지 못한다**(주식과 같다). 모델이 추론한 값(보통 30거래일)으로 조회한다.
 - 레버리지·인버스 판별은 **이름**("레버리지", "인버스", "2X" 등)으로 한다. 이름에 그 표시가 없는 파생형 상품은 잡지 못한다.
@@ -137,6 +137,7 @@ ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응�
 | GET | `/api/portfolio/diagnosis/{id}/compare` | 필요 | 이전 진단과 비교(코드로만 계산). `base`로 기준 진단 지정 |
 | DELETE | `/api/portfolio/diagnosis/{id}` | 필요 | 내 진단 한 건 삭제 |
 | GET | `/api/disclaimer` | 공개 | 서비스 면책 문구(`{"text": "..."}`) |
+| GET | `/api/status` | 공개 | 데이터 기준일(소스별 최신 날짜, 지수 stale 여부, 마지막 갱신 결과). 푸터의 "데이터 기준일" 표시용 |
 
 아래 각 엔드포인트의 에러 표에는 401을 반복해 적지 않았다. **인증 필요 API는 모두 위 "인증 에러 (401)"가 공통으로 적용된다.**
 
@@ -353,7 +354,7 @@ LLM이 tool을 고른 뒤 서버 코드가 아래 네 가지를 보정한다. �
   `["news_tool", "stock_tool"]`이고, 답변에 실제 기간 등락률이 들어간다(전에는 주가를 조회하지 않아 "왜 올랐어?"라는
   질문의 전제를 그대로 받아 답했다). `sources`는 그대로 뉴스·공시 문서만 담는다.
   - `market_tool`(코스피/코스닥 지수 대비)은 **지수 데이터가 그 종목의 최신 주가 날짜까지 수집돼 있을 때만** 함께
-    덧붙인다. 2026-10-11 현재 지수는 2026-09-17까지만 있어서(수집 원천이 그 뒤 데이터를 주지 않음) 붙지 않는다.
+    덧붙인다. 지수는 2026-10-14 갱신으로 10/14까지 받아 두었고, 소스가 멈추면 `GET /api/status`의 `market_index.stale`이 true가 된다.
   - 모델이 종목을 하나로 특정한 tool 호출을 했을 때만 덧붙인다. 원인 표현만 있거나("PER이 왜 중요해?") 등락 표현만
     있는 질문("오늘 많이 오른 종목 알려줘"), 종목이 둘 이상인 질문은 이전과 같다.
 
@@ -1814,6 +1815,74 @@ curl -X DELETE http://localhost:8000/api/portfolio/diagnosis/1011 -H "Authorizat
 
 ---
 
+## GET /api/status
+
+데이터 기준일. 로그인 없이 호출할 수 있고 읽기 전용(집계 MAX 쿼리 7개)이다. 화면 푸터에 "데이터 기준일"을 보여주는 용도다.
+기존 API 응답은 바뀌지 않았고 이 엔드포인트만 추가됐다(2026-10-14).
+
+```bash
+curl http://localhost:8000/api/status
+```
+
+```json
+{
+  "generated_at": "2026-10-14T17:25:31+09:00",
+  "sources": {
+    "stock_price":   {"latest_date": "2026-10-14"},
+    "etf_price":     {"latest_date": "2026-10-14"},
+    "market_index":  {"latest_date": "2026-10-14", "stale": false},
+    "exchange_rate": {"latest_date": "2026-10-12"},
+    "news":          {"latest_published_date": "2026-10-14"},
+    "disclosure":    {"latest_date": "2026-10-14"}
+  },
+  "last_refresh": {"finished_at": "2026-10-14T18:05:00+09:00", "ok": true, "failed_steps": []},
+  "is_realtime": false,
+  "note": "주가는 종가 기준이며, 실시간 시세는 별도 엔드포인트로 제공됩니다."
+}
+```
+
+(위 값은 형태를 보여주는 예시다. 실제 갱신 직후 값은 README "데이터 현황" 참고.)
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `generated_at` | string | 응답 생성 시각(KST, ISO 8601) |
+| `sources.stock_price.latest_date` | date \| null | 주식 주가의 가장 최근 날짜 |
+| `sources.etf_price.latest_date` | date \| null | ETF 주가의 가장 최근 날짜 |
+| `sources.market_index.latest_date` | date \| null | 코스피/코스닥 중 더 뒤처진 쪽의 최신 날짜 |
+| `sources.market_index.stale` | boolean | 최근 거래일(평일 기준) 대비 **2영업일 이상** 뒤처졌거나 데이터가 없으면 `true`. 주말은 세지 않고 공휴일은 모른다 |
+| `sources.exchange_rate.latest_date` | date \| null | 환율(USD/KRW)의 최신 날짜 |
+| `sources.news.latest_published_date` | date \| null | 뉴스 발행일 중 가장 최근(KST 기준 날짜) |
+| `sources.disclosure.latest_date` | date \| null | 공시일 중 가장 최근(KST 기준 날짜) |
+| `last_refresh` | object \| null | 마지막 `scripts/refresh_data.py` 실행 요약. 기록이 없으면 `null` |
+| `last_refresh.finished_at` | string \| null | 그 실행의 마지막 단계 종료 시각(KST) |
+| `last_refresh.ok` | boolean | 실패한 단계가 없으면 `true`(건너뛴 단계는 실패로 보지 않는다) |
+| `last_refresh.failed_steps` | string[] | 실패한 단계 이름(`prices`, `index`, `fx`, `news`, `embed`, `content`) |
+| `is_realtime` | boolean | 항상 `false`. 이 값들은 종가 기준 DB 값이다 |
+| `note` | string | 화면에 그대로 써도 되는 안내 문장 |
+
+`503`(DB 연결 불가)은 다른 API와 같은 형식이다. 날짜 필드는 데이터가 아예 없으면 `null`일 수 있다.
+
+### 갱신 스크립트와 기록 테이블
+
+데이터는 스케줄러 없이 `python -m scripts.refresh_data`(backend 디렉터리)로 수동 갱신한다. 평일 **15:30(KST) 이후** 실행을 권장한다.
+장중에 실행하면 당일 행이 장중 값일 수 있어 경고를 출력하며, 15:30 이후 다시 실행하면 같은 날짜가 종가로 덮어써진다(upsert).
+
+| 옵션 | 설명 |
+| --- | --- |
+| `--only prices,index,fx,news,embed,content` | 쉼표로 구분한 단계만 실행 |
+| `--skip ...` | 같은 형식으로 단계를 제외(`--only`와 함께 쓰면 그 결과에서 뺀다) |
+| `--days N` | 주가·지수·환율 조회 기간(달력 일), 기본 10 |
+| `--timeout-min N` | 단계별 제한 시간(분), 기본 30. 넘으면 그 단계만 `failed`(`StepTimeout`)로 기록하고 다음 단계로 진행 |
+| `--dry-run` | 실제 호출·DB 기록 없이 계획만 출력 |
+
+한 단계가 실패해도 다음 단계로 계속 진행하고, 마지막에 단계별 결과 표를 출력하며 하나라도 실패하면 종료 코드 1이다.
+종목별 수집 실패가 절반 미만이면 경고만 하고 그 단계는 성공으로 본다.
+
+`data_refresh_log` 테이블(마이그레이션 `c5d8f3a07b14`)에는 실행마다 **6단계 모두 한 행씩**(건너뛴 단계는 `skipped`) 기록한다:
+`id`, `step`, `status`(`success`/`failed`/`skipped`), `started_at`, `finished_at`, `rows_added`(실행 전후 행 수 차이, 임베딩·본문 단계는 채워진 건수), `latest_date`, `error_type`(예외 클래스 이름만, 메시지는 저장하지 않는다).
+
+---
+
 ## GET /api/disclaimer
 
 서비스 면책 문구. 로그인 없이 호출할 수 있다. 앱 하단/푸터나 약관 화면에 그대로 보여주면 된다.
@@ -1885,8 +1954,8 @@ FastAPI 기본 형식으로 `detail`이 **배열**이다. 필드별 위치는 `l
 - 종목은 DB에 등록된 이름 기준으로 찾되, "네이버"(`NAVER`), "포스코홀딩스"(`POSCO홀딩스`), "현대자동차"(`현대차`)처럼 흔한 통칭은 별칭 사전
   (`backend/app/company_aliases.py`)으로 등록명에 연결한다. 사전에 없는 통칭은 인식하지 못하고 200 응답의 `answer`에 "찾지 못했다"는 안내가 나오므로,
   프론트에서 종목 자동완성/선택 UI를 둔다면 등록명(company 테이블의 name)으로 보내는 것이 가장 안전하다.
-- 데이터는 수동으로 갱신한다. 2026-09-28 기준 주가는 9/23, 뉴스는 9/24, 공시는 9/22까지이고 코스피/코스닥 지수는 9/17까지다. "오늘 주가"를
-  물어도 DB의 최신 값(위 날짜)으로 답한다.
+- 데이터는 수동으로 갱신한다(`python -m scripts.refresh_data`, 평일 15:30 이후 권장). 2026-10-14 갱신 기준 주가·지수·뉴스·공시는 10/14, 환율은 10/12까지다.
+  현재 기준일은 `GET /api/status`로 확인한다. "오늘 주가"를 물어도 DB의 최신 종가로 답한다.
 
 ## 성능 (일반 조회 API)
 

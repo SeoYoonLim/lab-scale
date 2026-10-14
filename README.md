@@ -38,6 +38,7 @@
 | GET | `/api/portfolio/diagnosis/{id}/compare` | 필요 | 이전 진단과 비교(`base`로 기준 지정, 생략하면 바로 이전). 총자산 증감·종목별 비중 변화·플래그 신규/해소·20거래일 수익률 변화. 코드로만 계산(LLM 없음). 이전 진단이 없으면 200 + `previous`/`changes` null |
 | DELETE | `/api/portfolio/diagnosis/{id}` | 필요 | 내 진단 한 건 삭제(204). 남의 것/없는 것은 404 |
 | GET | `/api/disclaimer` | 공개 | 서비스 면책 문구 `{"text": "..."}`. 같은 문구가 `POST /api/research`·`GET /api/research/{id}` 응답의 `disclaimer` 필드에도 있음(목록에는 없음) |
+| GET | `/api/status` | 공개 | 데이터 기준일: 소스별 최신 날짜, 지수 `stale`(2영업일 이상 뒤처지면 true), 마지막 `refresh_data` 결과(`last_refresh`, 없으면 null). `is_realtime`은 항상 false |
 | GET | `/api/discovery/trending` | 공개 | 급등/급락/거래량 급증 종목(FR-13, 질문 없이 바로 호출, `category`/`limit` 쿼리). 기본은 주식만, `asset_type=etf`로 ETF |
 
 "인증 필요"인 API는 **`Authorization: Bearer <access_token>` 헤더**가 있어야 하고, 없거나 만료·변조됐으면 401입니다
@@ -49,7 +50,7 @@
 
 ### DB 스키마 개요
 
-PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(`backend/alembic/versions/`, 현재 head `b7c4e92a1d36`)입니다.
+PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(`backend/alembic/versions/`, 현재 head `c5d8f3a07b14`)입니다.
 
 | 테이블 | 내용 | 주요 컬럼 |
 | --- | --- | --- |
@@ -102,16 +103,19 @@ PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(
 **이번 작업에서 DB 스키마는 변경하지 않았습니다**(스키마 변경은 팀 협의가 필요해서 제외). 별칭이 많아지면 DB 테이블(alias table)로 옮기는 방향을
 서윤님과 논의할 예정입니다. `resolve_company`가 정확/공백·대소문자 일치 다음, 퍼지 매칭 앞에서 이 사전을 봅니다(상세는 아래 "해결된 이슈 기록").
 
-### 데이터 현황 (2026-09-28 조회, 수집은 수동)
+### 데이터 현황 (2026-10-14 17:43 `refresh_data` 실행 직후, 수집은 수동)
 
-종목 300 · 주가 18,565행(6/26~9/23) · 지수 코스피/코스닥 각 116행(4/1~9/17) · 뉴스 3,013건(최신 9/24, 임베딩 완료) ·
-공시 6,308건(최신 9/22, 원문 6,268건, 임베딩 완료) · 리포트 6건(1~6번은 **데모 데이터라 지우지 않습니다**) ·
-환율(USD/KRW) 129행(4/2~9/29, 2026-10-01 수집).
-지수는 FinanceDataReader가 오늘도 9/17까지만 줘서 종목 주가보다 며칠 늦습니다(우리 쪽 문제가 아니라 원천의 제한, 재확인함).
+종목 300 · 주가는 2026-10-14까지 갱신(주식·ETF 모두, 이번 실행에서 900행 추가) · 지수 코스피/코스닥 각 122행(4/1~10/14, 합 12행 추가, 소스 `fdr:KS11`/`fdr:KQ11`) ·
+뉴스·공시 합 3,875건 추가(뉴스 6,532건 최신 10/14, 공시 7,168건 최신 10/14), 임베딩 3,875건 채움, 공시 원문 853건 수집 · 리포트 8건(1~6번은 **데모 데이터라 지우지 않습니다**) ·
+환율(USD/KRW)은 10/12까지(FinanceDataReader가 그 뒤 날짜를 아직 주지 않음, 7행 추가).
+현재 값은 `GET /api/status`로 확인합니다. 지수 소스 결과: 1순위 FinanceDataReader `KS11`/`KQ11`이 10/14까지 정상 응답해 그대로 채택했고,
+폴백 체인(`app/collectors.py`의 `MARKET_INDEX_SOURCES`: FDR 기본 -> FDR 별칭 `KOSPI`/`KOSDAQ` -> FDR의 Yahoo 경유 `^KS11`/`^KQ11`)을 넣어 한 소스가 멈춰도
+이어서 받습니다(사용한 소스는 실행 로그에 남음). 네이버 금융 지수 일별 시세 페이지는 HTTP 410(서비스 종료)이라 쓰지 않았고 yfinance는 설치하지 않았습니다.
+기존 지수 행의 9/17 값은 장중 값으로 저장돼 종가와 약간 다르며(코스피 6,724.34 vs 종가 6,715.41), 조회 기간(`--days`)을 길게 주고 다시 실행하면 upsert로 교정됩니다.
 
 **ETF (2026-10-14 수집)**: 종목 50(`asset_type='etf'`, 시가총액 상위 + 대표 5종) · 주가 2,950행(7/16~10/14, 50종목 모두 최신일 10/14) ·
 뉴스 504건(2단계 재수집: 제목·본문에 그 ETF 이름이 독립된 이름으로 나오는 기사만, 이름 포함 비율 49.6% → 97.6%, 임베딩 완료) · 공시 0건(ETF는 공시 수집을 건너뜀). 위 주식 수치는 이 수집 전후로 바뀌지 않았다(건수·합계 검증).
-주식 주가의 최신일은 2026-10-08이라 ETF가 며칠 더 최근이다. 알려진 한계(뉴스 관련도, 시장 지수 비교 불가 등)는 `backend/API.md`의 "종목 유형" 절.
+(2026-10-14 갱신 후에는 주식도 10/14로 ETF와 같다.) 알려진 한계(뉴스 관련도, 시장 지수 비교 불가 등)는 `backend/API.md`의 "종목 유형" 절.
 
 ### ETF 처리 규칙 (2026-10-14, 2단계)
 
@@ -365,6 +369,19 @@ python -m app.embeddings --apply                # 임베딩이 비어 있는 뉴
 python scripts/collect_disclosure_content.py --apply   # 공시 원문 수집 (이어서 실행 가능, DART 일일 한도 약 2만 건)
 ```
 
+**한 번에 갱신 (`scripts/refresh_data.py`)**: 아래 개별 스크립트를 순서대로(주가 -> 지수 -> 환율 -> 뉴스·공시 -> 임베딩 -> 공시 본문) 실행하고 단계마다
+`data_refresh_log` 테이블에 한 행씩 기록합니다(`GET /api/status`의 `last_refresh`가 읽음). 평일 **15:30(KST) 이후** 실행을 권장합니다
+(장중에 실행하면 경고를 출력하고, 이후 실행에서 같은 날짜가 종가로 덮어써집니다). 한 단계가 실패해도 다음 단계로 계속하고, 마지막에 단계별 결과 표를 출력하며,
+실패가 하나라도 있으면 종료 코드 1입니다. 2026-10-14 실제 실행: 6단계 모두 성공, 약 14분(주가 173초, 뉴스 369초, 임베딩 77초, 공시 본문 203초).
+
+```bash
+python -m scripts.refresh_data --dry-run                  # 실제 호출 없이 계획만
+python -m scripts.refresh_data                            # 전 단계
+python -m scripts.refresh_data --only prices,index,fx     # 일부 단계만 (prices,index,fx,news,embed,content)
+python -m scripts.refresh_data --skip news,embed,content  # 일부 단계 제외
+python -m scripts.refresh_data --days 30 --timeout-min 30 # 조회 기간(기본 10일), 단계별 제한 시간(기본 30분)
+```
+
 공시 원문은 `disclosure.content`에 저장되어 `rag_search_tool`이 근거 요약문으로 LLM에 보여줍니다. 임베딩 텍스트에는 일부러 넣지 않습니다
 (재본 결과 검색 적중이 떨어졌습니다. 근거는 `backend/app/embeddings.py`의 `_disclosure_text` 주석 참고).
 
@@ -454,8 +471,9 @@ pytest -m "slow or not slow"      # 전부 한 번에 (2026-10-01 기준 608개 
   여전히 기간 인자 자체가 없어 "지난주 뉴스"도 그냥 최신 N건이다. `stock_tool`/`market_tool`의 `period_days` 상한(60)은 그대로라
   "올해"/"작년"처럼 큰 범위는 여전히 조용히 60으로 잘린다. 평일 수는 공휴일을 고려하지 않는 근사치다(KRX 휴장일 캘린더 없음). 자세한
   지원 범위는 `app/period_parser.py` 모듈 docstring, 해결 경위는 아래 "해결된 이슈 기록" 참고.
-- **데이터가 수동 갱신이라 오래됨** (2026-09-28 기준): 주가 9/23, 뉴스 9/24, 공시 9/22까지. 코스피/코스닥 지수는 FinanceDataReader가 9/17까지만
-  줘서 종목 주가보다 며칠 늦고, `market_tool`은 지수의 마지막 날짜까지만 비교한다(결과의 `note`에 표시). 자동 갱신 여부는 논의 필요.
+- **데이터는 수동 갱신이다**: `python -m scripts.refresh_data`(평일 15:30 이후 권장)로 한 번에 갱신하고, 기준일은 `GET /api/status`로 확인한다. 자동 스케줄러는 없다.
+  환율은 FinanceDataReader가 주는 날짜(2026-10-14 기준 10/12)까지만 있고, `market_tool`은 지수의 마지막 날짜까지만 비교한다(결과의 `note`에 표시).
+  공휴일 캘린더가 없어 `stale` 판정은 평일 기준이다.
 - **답변 품질(llama3.1:8b)**: 답변이 짧고 수치 없이 결론만 말하거나(시장 비교 질문 4건 중 2건), 드물게 어색한 표현과 다른 언어 문자가 섞인다
   (예: 뉴스 답변에 "관련ニュ스"). tool 결과의 숫자는 대체로 정확히 옮기지만 서술은 불안정하다. 별도 대응은 아직 없다.
 - **slow 테스트의 드문 실패 1건**: 후속 질문 slow 테스트(`test_follow_up_without_company_name_keeps_previous_company[news_tool]`)가 처음 돌렸을 때
