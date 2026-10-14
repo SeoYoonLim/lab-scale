@@ -1,7 +1,8 @@
 """universe_top{N}.json의 종목에 대해 뉴스 + DART 공시를 수집한다.
 
 universe_etf{N}.json(scripts/build_etf_universe.py)처럼 항목에 "asset_type": "etf"가 있으면 ETF로 등록하고, DART 공시는
-수집하지 않고(ETF는 공시 대상이 아니다) 뉴스만 수집한다. 뉴스 검색어는 ETF 이름 그대로다.
+수집하지 않고(ETF는 공시 대상이 아니다) 뉴스만 수집한다. ETF 뉴스는 이름으로 최신순·관련도순 두 번 검색해서 제목·본문에
+그 ETF 이름이 직접 나오는 기사만 저장한다(app.collectors._etf_news_candidates).
 
 회사는 항상 (ticker, name) 쌍으로 먼저 등록한 뒤 수집하고, 종목별 결과/소요시간을 기록한다.
 실패해도 다음 종목으로 계속 진행하며(자동 재시도 없음) 마지막에 실패 목록을 출력한다.
@@ -89,7 +90,8 @@ def main():
             continue
 
         news, news_sec = _timed(
-            fetch_and_save_news, name, display=args.display, dry_run=args.dry_run, ticker=ticker
+            fetch_and_save_news, name, display=args.display, dry_run=args.dry_run, ticker=ticker,
+            etf=asset_type == "etf",
         )
         time.sleep(args.delay)
         if asset_type == "etf":

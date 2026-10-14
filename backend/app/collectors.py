@@ -24,6 +24,7 @@ from sqlalchemy import or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db.session import SessionLocal
+from app.etf import mentions_etf_name
 from app.models import Company, Disclosure, ExchangeRate, MarketIndex, News, StockPrice
 
 load_dotenv()
@@ -234,13 +235,13 @@ def _safe_error(e: Exception) -> str:
     return _API_KEY_RE.sub(r"\1***", f"{type(e).__name__}: {e}")
 
 
-def fetch_naver_news(company_name: str, display: int = 10) -> list[dict]:
+def fetch_naver_news(company_name: str, display: int = 10, sort: str = "date") -> list[dict]:
     client_id = os.environ["NAVER_CLIENT_ID"]
     client_secret = os.environ["NAVER_CLIENT_SECRET"]
 
     resp = requests.get(
         NAVER_NEWS_URL,
-        params={"query": company_name, "display": display, "start": 1, "sort": "date"},
+        params={"query": company_name, "display": display, "start": 1, "sort": sort},
         headers={
             "X-Naver-Client-Id": client_id,
             "X-Naver-Client-Secret": client_secret,
@@ -490,21 +491,54 @@ def backfill_company_market(dry_run: bool = False) -> tuple[int, int]:
         db.close()
 
 
+def _etf_news_candidates(etf_name: str, display: int) -> tuple[list[dict], int]:
+    """ETF 뉴스 후보: ETF 이름으로 최신순·관련도순 두 번 검색해 합치고(같은 기사는 한 번), 제목·본문에 이 ETF 이름이
+    직접 나오는 기사만 최신순으로 display건 남긴다. (후보 목록, 이름이 없어 뺀 건수).
+
+    이름 그대로 최신순으로만 검색하면 ETF 시장 전반 기사나 같은 계열의 다른 상품 기사가 섞여서, 1단계 수집분은 제목·본문에
+    ETF 이름이 들어 있는 기사가 평균 50%였다("RISE 200"에는 무관한 기사도 섞였다). "KODEX 200"이 "KODEX 200TR"처럼
+    더 긴 다른 ETF 이름의 일부로만 나오는 기사도 이 ETF의 기사가 아니라서 뺀다."""
+    db = SessionLocal()
+    try:
+        others = [n for (n,) in db.query(Company.name).filter(Company.asset_type == "etf", Company.name != etf_name)]
+    finally:
+        db.close()
+    seen, merged = set(), []
+    for sort in ("date", "sim"):
+        for it in fetch_naver_news(etf_name, display=NAVER_MAX_DISPLAY, sort=sort):
+            link = it.get("link") or it.get("originallink")
+            if link in seen:
+                continue
+            seen.add(link)
+            merged.append(it)
+    related = [
+        it for it in merged
+        if mentions_etf_name(f"{_clean_text(it.get('title', ''))} {_clean_text(it.get('description', ''))}", etf_name, others)
+    ]
+    related.sort(key=lambda it: parsedate_to_datetime(it["pubDate"]), reverse=True)
+    return related[: display * NEWS_OVERFETCH], len(merged) - len(related)
+
+
 # 네이버 뉴스 검색 API로 뉴스 수집 후 DB 저장 함수
 def fetch_and_save_news(
-    company_name: str, display: int = 10, dry_run: bool = False, ticker: str | None = None
+    company_name: str, display: int = 10, dry_run: bool = False, ticker: str | None = None, etf: bool = False
 ) -> CollectResult:
     """ticker를 주면 (ticker, company_name) 쌍으로 회사를 조회/생성한다.
 
     ticker가 없으면 이미 등록된 회사(name 또는 ticker 일치)를 쓰고, 없으면 DART 정식
     회사명으로 종목코드를 조회한다. 조회에 실패하면 회사를 만들지 않고 중단한다.
+    etf=True면 ETF 이름이 직접 나오는 기사만 저장한다(_etf_news_candidates). 주식(etf=False)은 이전과 같다.
     """
     print(f"[{company_name}] 뉴스 {display}건 수집 중...")
 
+    unrelated = 0
     try:
-        candidates = fetch_naver_news(
-            news_search_query(company_name), display=min(NAVER_MAX_DISPLAY, display * NEWS_OVERFETCH)
-        )
+        if etf:
+            candidates, unrelated = _etf_news_candidates(company_name, display)
+        else:
+            candidates = fetch_naver_news(
+                news_search_query(company_name), display=min(NAVER_MAX_DISPLAY, display * NEWS_OVERFETCH)
+            )
     except Exception as e:
         msg = _safe_error(e)
         print(f"오류 발생: {msg}")
@@ -519,6 +553,8 @@ def fetch_and_save_news(
             skipped += 1
         else:
             items.append(it)
+    if etf:
+        print(f"ETF 이름이 나오지 않아 제외한 기사 {unrelated}건")
 
     db = SessionLocal()
     try:
