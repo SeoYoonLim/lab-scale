@@ -432,7 +432,9 @@ class TestChecker:
         assert text == "" and dropped
 
     @pytest.mark.parametrize(
-        "sent", ["* 뉴스 3: 코스피 기사", "- 공시 1. 특수관계인에대한출자", "두 번째 뉴스는 반도체 기사입니다."]
+        "sent",
+        ["* 뉴스 3: 코스피 기사", "- 공시 1. 특수관계인에대한출자", "두 번째 뉴스는 반도체 기사입니다.",
+         '- 뉴스 타이틀 4: "외인 매도 기사"', "- 뉴스 제목 2: 기사", "3번 뉴스는 반도체 기사입니다."],
     )
     def test_enumerated_relisting_dropped(self, sent):
         # slow 측정에서 나온 사례: 결과에 없는 번호("뉴스 4")로 사건 제목을 다시 나열
@@ -466,6 +468,11 @@ class TestChecker:
         )
         assert text == "- 공시 이후 1거래일간 -0.72% 움직였습니다."
         assert ("2. \"가평군 재즈페스티벌 성료\"", "사건 제목만 다시 나열") in dropped
+
+    def test_decimal_after_event_word_is_not_enumeration(self):
+        r = _result([_event(d1=(0.72, 0.1, 0.62))])
+        sent = "공시 이후 0.72% 움직였습니다."
+        assert check_event_answer(sent, r, ()) == (sent, [])
 
     def test_company_name_digits_are_not_numbers(self):
         r = _result([_event()], company_name="KODEX 200")
