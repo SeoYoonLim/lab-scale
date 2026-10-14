@@ -73,7 +73,7 @@ def independent_summary_numbers(result: dict) -> set[Decimal]:
     out |= {Decimal(len(evs))}
     reps = {}
     for e in evs:
-        reps.setdefault(e.get("reaction_start_date") or ("p", e["event_at"] or e["event_date"]), e)
+        reps.setdefault(e.get("reaction_start_date") or ("p", (e["event_at"] or e["event_date"])[:10]), e)
     out.add(Decimal(len(reps)))
     for h in ("d1", "d5", "d20"):
         vals = [e["returns"][h] for e in reps.values() if e["returns"][h]["available"] and "가격 조정" not in (e.get("note") or "")]
@@ -82,7 +82,9 @@ def independent_summary_numbers(result: dict) -> set[Decimal]:
             xs = [v[key] for v in vals if v[key] is not None]
             out.add(Decimal(len(xs)))
             if xs:
-                out |= _variants(Decimal(str(sum(xs) / len(xs))))
+                mean = sum(xs) / len(xs)
+                # 반올림 경계(-1.515 등)는 Decimal 반올림과 파이썬 round가 다를 수 있어 둘 다 허용한다
+                out |= _variants(Decimal(str(mean))) | _variants(Decimal(str(round(mean, 2))))
         out.add(Decimal(sum(1 for v in vals if v["pct"] > 0)))
     return out
 
