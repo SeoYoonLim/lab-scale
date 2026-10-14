@@ -23,7 +23,7 @@ SMALL_SAMPLE = 3
 # (agent.FEW_SHOT_MESSAGES 주석 참고).
 EVENT_ANSWER_RULES = (
     "이 질문은 뉴스·공시(사건) 이후의 주가 반응을 묻는다. 사건별 수치와 요약, 면책 문구는 코드가 이미 답변에 넣는다. "
-    "너는 '## ' 제목이나 목록 없이 두세 문장의 짧은 해석만 한국어로 써라. 다음을 반드시 지켜라. "
+    "너는 '## ' 제목이나 목록 없이 한두 문장의 짧은 해석만 한국어로 써라. 다음을 반드시 지켜라. "
     "(1) 주가 움직임을 사건과 인과로 연결하지 마라. '때문에', '영향으로', '덕분에', '탓에', '원인은', '~로 인해', '반영' 같은 "
     "표현을 쓰지 마라. 'OO 공시 이후 N거래일간 X% 움직였다'처럼 시간 순서로만 서술하라. "
     "(2) 조회 결과에 있는 수치와 날짜만 그대로 써라. 새로 계산하거나 바꾼 수치를 쓰지 마라. 기간은 1거래일, 5거래일, 20거래일로만 "
@@ -31,7 +31,9 @@ EVENT_ANSWER_RULES = (
     "(3) 값이 null이거나 available이 false인 항목은 추정하지 말고 아직 계산할 수 없다고만 말하라. "
     "(4) 과거의 반응을 앞으로의 주가로 일반화하거나 예측하지 마라. 매수나 매도를 권하지 마라. "
     "(5) 같은 기간에 다른 사건이 있으면(other_events_in_window) 그 사건만의 움직임으로 볼 수 없다고 말해도 된다. "
-    "시장 지수 대비 초과수익률(excess_pct)이 있으면 시장 전체 흐름과 함께 봐야 한다고 말해도 된다."
+    "시장 지수 대비 초과수익률(excess_pct)이 있으면 시장 전체 흐름과 함께 봐야 한다고 말해도 된다. "
+    "(6) 표에 이미 있는 수치와 사유를 되풀이하지 마라. 사건들 사이의 비교나 주의할 점만 한두 문장으로 써라. "
+    "초과수익률은 %p, 수익률과 지수 수익률은 %로 구분해서 써라. 쓸 말이 없으면 아무것도 쓰지 말고 비워 두어라."
 )
 
 _REASON_TEXT = [
@@ -63,13 +65,54 @@ def _is_adjusted(e: dict) -> bool:
     return bool(e.get("note")) and "가격 조정" in e["note"]
 
 
+DEFAULT_ITEMS = 5  # 유형별로 보여주는 항목 수(공시는 건, 뉴스는 같은 날짜 묶음)
+MAX_GROUP_TITLES = 3
+
+
+def _day(e: dict) -> str:
+    return (e.get("event_at") or e.get("event_date") or "")[:10]
+
+
+def _time_key(e: dict) -> tuple[str, str]:
+    return (_day(e), e.get("event_at") or "")
+
+
+def _reaction_key(e: dict):
+    """같은 반응 구간(반응 시작일)의 사건은 기준일도 같아서 수치가 같다. 시작일이 없는(아직 다음 거래일이 없는) 사건은 발생일로 묶는다."""
+    return e.get("reaction_start_date") or ("pending", _day(e))
+
+
+def display_items(result: dict) -> list[dict]:
+    """답변에 보여줄 항목들(최신순). 공시는 건별, 뉴스는 반응 시작일이 같은 것끼리 한 항목으로 묶는다.
+    유형별로 result["limit"](기본 5)개 항목까지만 쓰고, 그 밖의 사건은 답변·요약·검증에서 모두 제외한다."""
+    limit = result.get("limit") or DEFAULT_ITEMS
+    events = [e for e in result.get("events") or [] if isinstance(e, dict)]
+    disclosures = sorted((e for e in events if e["event_type"] == "disclosure"), key=_time_key, reverse=True)
+    groups: dict = {}
+    for e in sorted((e for e in events if e["event_type"] == "news"), key=_time_key, reverse=True):
+        groups.setdefault(_reaction_key(e), []).append(e)
+    items = [{"kind": "disclosure", "events": [e]} for e in disclosures[:limit]]
+    items += [{"kind": "news", "events": g} for g in list(groups.values())[:limit]]
+    items.sort(key=lambda it: max(_time_key(e) for e in it["events"]), reverse=True)
+    return items
+
+
 def shown_events(result: dict) -> list[dict]:
-    return [e for e in result.get("events") or [] if isinstance(e, dict)]
+    """답변에 실제로 쓰이는 사건들(묶인 뉴스는 전부 포함)."""
+    return [e for it in display_items(result) for e in it["events"]]
 
 
 def display_summary(result: dict) -> dict:
-    """요약에 쓰는 summary: 가격 조정 가능성 경고가 있는 사건(수익률을 표시하지 않는 사건)을 뺀 사건으로 다시 계산한다."""
-    return summarize([e for e in shown_events(result) if not _is_adjusted(e)])
+    """요약에 쓰는 summary. 같은 반응 구간(반응 시작일)의 사건은 수치가 같아서 날짜 하나로 센다(같은 날 뉴스 5건이 표본 5건이 되지 않게).
+    가격 조정 가능성 경고가 있는 사건(수익률을 표시하지 않는 사건)은 평균에서 뺀다. event_count는 사건 수, date_count는 날짜 수."""
+    events = shown_events(result)
+    reps: dict = {}
+    for e in events:
+        reps.setdefault(_reaction_key(e), e)
+    out = summarize([e for e in reps.values() if not _is_adjusted(e)])
+    out["event_count"] = len(events)
+    out["date_count"] = len(reps)
+    return out
 
 
 def _horizon_text(n: int, h: dict, index_name: str | None) -> str:
@@ -83,25 +126,26 @@ def _horizon_text(n: int, h: dict, index_name: str | None) -> str:
 
 def summary_sentence(summary: dict) -> str:
     """코드가 계산한 값과 표본 수만 쓰는 요약 문장."""
-    total = summary.get("event_count", 0)
+    total, dates = summary.get("event_count", 0), summary.get("date_count", 0)
+    scope = f"조회한 사건 {total}건(날짜 {dates}개)"
     parts, small = [], []
     for n in HORIZONS:
         k = summary.get(f"with_d{n}", 0)
         if not k:
             continue
         avg = summary.get(f"avg_d{n}_pct")
-        part = f"{n}거래일 수익률은 {k}건에서 계산됐고 평균 {avg:+.2f}%(상승 {summary.get(f'positive_d{n}_count', 0)}건)"
+        part = f"{n}거래일 수익률은 {k}개 날짜에서 계산됐고 평균 {avg:+.2f}%(상승 {summary.get(f'positive_d{n}_count', 0)}개)"
         ex = summary.get(f"avg_excess_d{n}_pct")
         if ex is not None:
-            part += f", 지수 대비 초과수익률 평균 {ex:+.2f}%p({summary.get(f'with_excess_d{n}', 0)}건)"
+            part += f", 지수 대비 초과수익률 평균 {ex:+.2f}%p({summary.get(f'with_excess_d{n}', 0)}개 날짜)"
         parts.append(part)
         if k < SMALL_SAMPLE:
             small.append(f"{n}거래일")
     if not parts:
-        return f"요약: 조회한 사건 {total}건 모두 아직 수익률을 계산할 수 없습니다."
-    text = f"요약: 조회한 사건 {total}건 중 " + "; ".join(parts) + "입니다."
+        return f"요약: {scope} 모두 아직 수익률을 계산할 수 없습니다."
+    text = f"요약: {scope} 중 " + "; ".join(parts) + "입니다. 같은 날짜의 사건은 수치가 같아 날짜 하나로 셌습니다."
     if small:
-        text += f" {', '.join(small)} 수익률은 표본이 {SMALL_SAMPLE}건 미만이라 일반화하기 어렵습니다."
+        text += f" {', '.join(small)} 수익률은 표본(날짜)이 {SMALL_SAMPLE}개 미만이라 일반화하기 어렵습니다."
     return text
 
 
@@ -111,8 +155,13 @@ def format_event_section(result: dict) -> str:
         msg = (result or {}).get("message") or "대상 사건이 없습니다."
         return f"{SECTION_TITLE}\n{msg}"
     index_name = INDEX_NAMES.get(result.get("market_index"))
-    events = shown_events(result)
-    head = f"{result['company_name']}({result['ticker']}) 최근 {result.get('since_days')}일 안의 사건 {len(events)}건"
+    items = display_items(result)
+    events = [e for it in items for e in it["events"]]
+    summary = display_summary(result)
+    head = (
+        f"{result['company_name']}({result['ticker']}) 최근 {result.get('since_days')}일 안의 사건 {summary['event_count']}건"
+        f"(날짜 {summary['date_count']}개)"
+    )
     head += f", 주가 기준일 {result.get('price_as_of')}"
     head += f", 비교 지수 {index_name}." if index_name else "."
     lines = [SECTION_TITLE, head]
@@ -127,12 +176,23 @@ def format_event_section(result: dict) -> str:
     for note in sorted(excess_notes):
         lines.append(f"※ {note}.")
     lines.append("")
-    for e in events:
-        kind = "공시" if e["event_type"] == "disclosure" else "뉴스"
-        title_line = f"- {_event_when(e)} · {kind} · {e['title']}"
+    for it in items:
+        evs = it["events"]
+        e = evs[0]  # 묶인 뉴스는 반응 시작일이 같아 기준일·수익률·거래량이 모두 같다
+        if it["kind"] == "disclosure":
+            title_line = f"- {_event_when(e)} · 공시 · {e['title']}"
+        else:
+            days = sorted({_day(x) for x in evs})
+            label = days[0] if len(days) == 1 else f"{days[0]}~{days[-1]}"
+            title_line = f"- {label} · 뉴스 {len(evs)}건"
         if e.get("other_events_in_window"):
             title_line += f" (같은 기간 다른 사건 {e['other_events_in_window']}건)"
         lines.append(title_line)
+        if it["kind"] == "news":
+            for x in evs[:MAX_GROUP_TITLES]:
+                lines.append(f"  · {x['title']}")
+            if len(evs) > MAX_GROUP_TITLES:
+                lines.append(f"  · 외 {len(evs) - MAX_GROUP_TITLES}건")
         if e.get("base_close") is not None:
             lines.append(f"  - 기준 종가 {_won(e['base_close'])}({e['base_date']}), 반응 시작일 {e.get('reaction_start_date') or '없음'}")
         if _is_adjusted(e):
@@ -144,7 +204,7 @@ def format_event_section(result: dict) -> str:
                 f"  - 거래량: 반응 시작일 거래량이 기준일까지 최근 {e['volume_sample_days']}거래일 평균의 {e['volume_ratio']:.2f}배"
             )
     lines.append("")
-    lines.append(summary_sentence(display_summary(result)))
+    lines.append(summary_sentence(summary))
     return "\n".join(lines).strip()
 
 
@@ -198,7 +258,7 @@ _FUTURE_RE = re.compile(
 )
 # 조회 결과에 없는 기간 표현(결과는 1/5/20거래일뿐이다)
 _PERIOD_WORD_RE = re.compile(r"한\s?달|일주일|한\s?주(?![가-힣식])|두\s?달|석\s?달|반년|분기|\d+\s?(?:개월|주(?:간|일)|달|년)")
-_UNIT_RE = re.compile(r"([+-]?\d[\d,]*(?:\.\d+)?)\s?(%p|%|원|배|건|거래일|일)")
+_UNIT_RE = re.compile(r"([+-]?\d[\d,]*(?:\.\d+)?)\s?(%p|%|원|배|건|개|거래일|일)")
 _BARE_NUM_RE = re.compile(r"(?<![\d.,])([+-]?\d[\d,]*\.\d+|\d{3,}(?:,\d{3})*)(?![\d.,%])")
 _KOREAN_NUM_RE = re.compile(r"\d[\d,.]*\s?[천백십만억조](?:\s?\d*[\d,.]*\s?[천백십만억조])*\s?(?:원|주)")
 _DATE_PATTERNS = [
@@ -221,6 +281,18 @@ _ENUM_RE = re.compile(
 )
 # 뒤에 내용이 없는 안내 문장(사건 목록은 코드가 이미 썼다)
 _FILLER_RE = re.compile(r"(?:다음과|아래와)\s*같습니다|정리하면\s*다음")
+# 마무리 인사·내용 없는 맺음 문장("위와 같이 나타났습니다", "시간 순서를 따랐습니다")
+_CLOSING_RE = re.compile(
+    r"위와\s*같이|위(?:의)?\s*(?:내용|표|결과|사건)(?:과|와|을|를|은|는)?\s*(?:같|참고|확인)|시간\s*순서(?:를|로|대로)?\s*(?:따랐|따라|나타|보여)"
+    r"|이상입니다|참고(?:하시|해\s*주)|확인하시기\s*바랍|도움이\s*되|나타났습니다\.?$|보여줍니다\.?$"
+)
+# 조회 결과의 사유 문구("20거래일 경과 전")를 그대로 옮긴 문장. 표에는 "아직 N거래일이 지나지 않아…"로 풀어 썼다.
+_RAW_REASON_RE = re.compile(r"경과\s?전")
+# 표를 보지 않아도 되는 새 정보: 사건 사이의 비교, 겹치는 사건, 시장 전체와의 관계, 표본·일반화 주의
+_NEW_OBSERVATION_RE = re.compile(
+    r"가장|대부분|모두|반면|한편|달리|보다|엇갈|일관|공통|차이|겹|다른\s*사건|함께\s*(?:봐야|보|고려)|시장\s*(?:전체|흐름|지수)|표본|일반화|단정"
+    r"|\d+\s?(?:건|개)\s*중|사건들|여러\s*사건|알\s*수\s*없"
+)
 _RESIDUE_RE = re.compile(r"빈칸|빈 칸|이 섹션은|N/?A|\{|\}|\[[^\]]*(?:수치|값|날짜|종목)[^\]]*\]")
 
 
@@ -236,14 +308,17 @@ def _allowed(result: dict, events: list[dict] | None = None) -> dict:
     events = shown_events(result) if events is None else events
     summary = display_summary(result)
     pct: set[Decimal] = set()
+    ret: set[Decimal] = set()  # %로 쓰는 값(수익률, 지수 수익률)
+    pp: set[Decimal] = set()  # %p로 쓰는 값(초과수익률)
     signs: dict[Decimal, set[int]] = {}
 
-    def add_pct(v):
+    def add_pct(v, unit_set):
         if v is None:
             return
         d = Decimal(str(v))
         for x in _variants(d):
             pct.add(x)
+            unit_set.add(x)
             signs.setdefault(x, set()).add((d > 0) - (d < 0))
 
     won, times, counts = set(), set(), {Decimal(n) for n in HORIZONS}
@@ -251,8 +326,9 @@ def _allowed(result: dict, events: list[dict] | None = None) -> dict:
         if _is_adjusted(e):
             continue
         for h in e["returns"].values():
-            for key in ("pct", "index_pct", "excess_pct"):
-                add_pct(h.get(key))
+            add_pct(h.get("pct"), ret)
+            add_pct(h.get("index_pct"), ret)
+            add_pct(h.get("excess_pct"), pp)
         if e.get("base_close") is not None:
             won |= _variants(Decimal(str(e["base_close"])))
         if e.get("volume_ratio") is not None:
@@ -261,12 +337,12 @@ def _allowed(result: dict, events: list[dict] | None = None) -> dict:
         counts.add(Decimal(e.get("volume_sample_days") or 0))
     for k, v in summary.items():
         if k.startswith("avg_"):
-            add_pct(v)
+            add_pct(v, pp if "excess" in k else ret)
         elif isinstance(v, int):
             counts.add(Decimal(v))
-    counts.add(Decimal(len(shown_events(result))))
+    counts.add(Decimal(len(events)))
     counts.add(Decimal(result.get("since_days") or 0))
-    return {"%": pct, "원": won, "배": times, "건": counts, "일": counts, "signs": signs}
+    return {"%": pct, "원": won, "배": times, "건": counts, "개": counts, "일": counts, "signs": signs, "ret": ret, "pp": pp}
 
 
 def _allowed_dates(result: dict) -> set[date]:
@@ -359,6 +435,12 @@ def _estimates_null(sentence: str, numbers, summary: dict) -> bool:
     return False
 
 
+def _repeats_table(sentence: str, numbers, sent_dates) -> bool:
+    """코드가 쓴 섹션의 수치·날짜·사유를 되풀이할 뿐 새 비교나 주의할 점이 없는 문장인지(앞선 검사를 모두 통과한 문장에만 쓴다)."""
+    has_data = bool(numbers or sent_dates or _HORIZON_RE.search(sentence) or _NOT_COMPUTED_RE.search(sentence))
+    return has_data and not _NEW_OBSERVATION_RE.search(sentence)
+
+
 def check_event_answer(answer: str, result: dict, other_names=()) -> tuple[str, list[tuple[str, str]]]:
     """LLM 해석 문장을 event_reaction_tool 결과와 문장 단위로 대조해 맞지 않는 문장을 지운다. (정리된 답변, [(지운 문장, 사유)]).
 
@@ -369,7 +451,7 @@ def check_event_answer(answer: str, result: dict, other_names=()) -> tuple[str, 
     (섹션 구성은 코드가 한다)."""
     events = shown_events(result) if isinstance(result, dict) else []
     found = isinstance(result, dict) and result.get("found")
-    allowed = _allowed(result) if found else {"%": set(), "원": set(), "배": set(), "건": set(), "일": set(), "signs": {}}
+    allowed = _allowed(result) if found else {"%": set(), "원": set(), "배": set(), "건": set(), "개": set(), "일": set(), "signs": {}, "ret": set(), "pp": set()}
     dates = _allowed_dates(result) if found else set()
     summary = display_summary(result) if found else {}
     subject = [result.get("company_name")] if isinstance(result, dict) and result.get("company_name") else []
@@ -403,8 +485,10 @@ def check_event_answer(answer: str, result: dict, other_names=()) -> tuple[str, 
             reason = None
             if NUMBER_MASK in sent or _RESIDUE_RE.search(sent):
                 reason = "템플릿 잔재"
-            elif _FILLER_RE.search(body):
-                reason = "내용 없는 안내 문장"
+            elif _FILLER_RE.search(body) or _CLOSING_RE.search(body):
+                reason = "내용 없는 안내·마무리 문장"
+            elif _RAW_REASON_RE.search(body):
+                reason = "기간과 사유 문구를 섞어 씀"
             elif _FOREIGN_RE.search(body) or _FIELD_RE.search(body):
                 reason = "다른 언어·필드 이름 섞임"
             elif _CAUSAL_RE.search(body) and not _CAUSAL_HEDGE_RE.search(body):
@@ -427,9 +511,18 @@ def check_event_answer(answer: str, result: dict, other_names=()) -> tuple[str, 
                 scoped = _events_by_date(sent_dates, events)
                 scope = _allowed(result, scoped) if scoped else allowed
                 bad = []
+                confused = []
                 for num, unit in numbers:
+                    raw_unit = unit
                     unit = "%" if unit == "%p" else ("일" if unit == "거래일" else unit)
                     value = _dec(num)
+                    if value is not None and raw_unit in ("%", "%p"):
+                        v = abs(value).normalize()
+                        # 같은 값이 %와 %p 양쪽에 있으면 구분할 수 없어 통과시킨다
+                        if raw_unit == "%" and v in scope["pp"] and v not in scope["ret"]:
+                            confused.append(f"{num}% (결과는 %p)")
+                        if raw_unit == "%p" and v in scope["ret"] and v not in scope["pp"]:
+                            confused.append(f"{num}%p (결과는 %)")
                     if value is None or abs(value).normalize() not in scope[unit] | (allowed[unit] if unit in ("건", "일") else set()):
                         bad.append(f"{num}{unit}")
                 rest = _UNIT_RE.sub(" ", no_dates)
@@ -440,10 +533,14 @@ def check_event_answer(answer: str, result: dict, other_names=()) -> tuple[str, 
                         bad.append(num)
                 if bad:
                     reason = f"결과에 없는 수치 {bad}"
+                elif confused:
+                    reason = f"%와 %p를 혼동 {confused}"
                 elif _estimates_null(body, numbers, summary):
                     reason = "계산되지 않은 값을 추정"
                 elif found and _direction_wrong(body, numbers, scope, result):
                     reason = "방향이 결과와 반대"
+                elif found and _repeats_table(body, numbers, sent_dates):
+                    reason = "표의 수치·사유를 되풀이"
             if reason:
                 dropped.append((sent.strip(), reason))
             else:
@@ -467,3 +564,12 @@ def compose_event_answer(llm_answer: str, result: dict, extra_notices=()) -> str
         disclaimer = DISCLAIMER
     parts.append(f"※ {disclaimer}")
     return "\n\n".join(parts)
+
+
+def trim_result(result: dict) -> dict:
+    """tool 결과를 답변에 실제로 쓰는 사건만 남긴 사본으로 만든다(저장·근거(sources)·검증이 답변과 같은 사건을 보게 한다).
+    조회는 묶기 전 사건을 넉넉히 하므로(event_reaction_tool.FETCH_FACTOR) 원래 조회 건수는 fetched_event_count에 남긴다."""
+    if not isinstance(result, dict) or not result.get("found"):
+        return result
+    events = shown_events(result)
+    return {**result, "events": events, "fetched_event_count": len(result.get("events") or [])}

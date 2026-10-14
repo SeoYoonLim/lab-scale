@@ -18,6 +18,8 @@ TITLE_KEYWORDS = ("실적", "영업", "유상증자", "무상증자", "합병", 
 # 조회 기간(일). API 최대값과 같다 - 키워드로 거를 때 오래된 사건까지 볼 수 있게.
 TOOL_SINCE_DAYS = 120
 MAX_LIMIT = 10
+# 답변은 같은 날짜의 뉴스를 한 항목으로 묶어 보여주므로(app/event_answer.py) 표시할 항목 수(limit)보다 넉넉히 조회한다(유형별).
+FETCH_FACTOR = 3
 _EVENT_TYPES = ("disclosure", "news", "all")
 _TYPE_KO = {"disclosure": "공시", "news": "뉴스", "all": "공시·뉴스"}
 
@@ -27,7 +29,8 @@ def _jsonable(obj):
 
 
 def event_reaction_tool(company_name: str, event_type: str = "all", limit: int = 5, keyword: str | None = None) -> dict:
-    """종목의 최근 공시·뉴스 이후 주가 반응(1/5/20거래일 수익률, 지수 대비 초과수익률, 거래량비)을 조회한다."""
+    """종목의 최근 공시·뉴스 이후 주가 반응(1/5/20거래일 수익률, 지수 대비 초과수익률, 거래량비)을 조회한다.
+    limit은 답변에 보여줄 항목 수(공시 건수, 뉴스는 같은 날짜 묶음 수)이고, 조회는 그 FETCH_FACTOR배까지 한다."""
     limit = to_int(limit, default=5, lo=1, hi=MAX_LIMIT)
     event_type = event_type if event_type in _EVENT_TYPES else "all"
     keyword = keyword if keyword in TITLE_KEYWORDS else None
@@ -39,7 +42,7 @@ def event_reaction_tool(company_name: str, event_type: str = "all", limit: int =
             return not_found_response(base, res)
         company = res.company
         data = build_event_reactions(
-            db, company, event_type, limit, TOOL_SINCE_DAYS, title_keyword=keyword
+            db, company, event_type, limit * FETCH_FACTOR, TOOL_SINCE_DAYS, title_keyword=keyword
         )
     finally:
         db.close()

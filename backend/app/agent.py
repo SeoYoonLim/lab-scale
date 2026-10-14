@@ -20,6 +20,7 @@ from app.event_answer import (
     compose_event_answer,
     display_summary,
     event_result_for_llm,
+    trim_result,
 )
 from app.etf import (
     ETF_ANSWER_RULES,
@@ -980,6 +981,7 @@ def _answer_event(question: str, model: str, company: str, previous: dict | None
         result = event_reaction_tool(**args)
     except Exception as e:
         result = {"found": False, "message": f"event_reaction_tool 실행 중 오류: {type(e).__name__}"}
+    result = trim_result(result)  # 답변에 쓰는 사건만(같은 날짜 뉴스 묶기 후 항목 수 제한)
     result.setdefault("called_via", "event_reaction_gate")
     record = {
         "tool_name": "event_reaction_tool",
