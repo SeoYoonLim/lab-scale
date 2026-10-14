@@ -412,10 +412,15 @@ class TestFactSentences:
         assert holding_fact(by_name["삼성전자"]) == "삼성전자는 총자산의 5.26%이고, 최근 20거래일 주가 등락률은 -2.59%입니다."
         assert holding_fact(by_name["에코프로비엠"]) == "에코프로비엠은 총자산의 6.33%이고, 최근 20거래일 주가 등락률은 +18.56%입니다."
 
+    # 2단계: 진단 문장의 조사는 app.korean.josa로 붙인다(읽는 소리 기준). 예전 _topic_particle은 영문·숫자로 끝나면 모두 '는'이라
+    # "KODEX 200는", "S-Oil는"(에쓰오일 -> '은')처럼 틀렸다.
     @pytest.mark.parametrize("name, particle", [("삼성전자", "는"), ("에코프로비엠", "은"), ("KB금융", "은"), ("NAVER", "는"),
-                                                 ("LG", "는"), ("기아", "는"), ("S-Oil", "는")])
+                                                 ("LG", "는"), ("기아", "는"), ("S-Oil", "은"), ("KODEX 200", "은"),
+                                                 ("TIGER 미국S&P500", "은"), ("KODEX 레버리지", "는")])
     def test_topic_particle(self, name, particle):
-        assert d._topic_particle(name) == particle
+        from app.korean import josa
+
+        assert josa(name, "은/는") == name + particle
 
     def test_unpriced_holding_has_no_weight_clause(self):
         items, m = compute_portfolio(1000, [H(cur=None, r20=3.5)])

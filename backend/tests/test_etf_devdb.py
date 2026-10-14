@@ -286,5 +286,7 @@ class TestTradingFlow:
         assert r.status_code == 200, r.text
         body = r.json()
         assert [x["ticker"] for x in body["holdings"]] == ["069500"]
-        assert body["holdings"][0]["market"] == "OTHER"  # ETF는 company.market이 NULL이라 OTHER로 묶인다(2단계에서 다듬을 부분)
+        # 2단계: ETF는 시장 쏠림 계산에서 빠지고(market "ETF"), ETF를 보유하면 종목 수 부족 경고를 하지 않는다
+        assert body["holdings"][0]["market"] == "ETF" and body["metrics"]["market_weights_pct"] == {}
+        assert not {"MARKET_SKEW", "FEW_HOLDINGS"} & {f["code"] for f in body["flags"]}
         assert body["diagnosis_id"] is not None

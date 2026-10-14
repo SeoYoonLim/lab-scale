@@ -146,7 +146,9 @@ def reset_my_portfolio(
 class DiagnosisHolding(BaseModel):
     ticker: str
     company_name: str
+    # KOSPI / KOSDAQ / OTHER, ETF는 "ETF"(상장 시장 구분이 없어 시장 쏠림 계산에서 빠진다)
     market: str
+    asset_type: Literal["stock", "etf"] = "stock"
     quantity: int
     avg_price: float
     current_price: float | None = None
