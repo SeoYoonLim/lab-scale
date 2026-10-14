@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 import ollama
 
 from app.db.session import SessionLocal
+from app.event_answer import EVENT_ANSWER_RULES, check_event_answer, compose_event_answer, event_result_for_llm
 from app.etf import (
     ETF_ANSWER_RULES,
     check_etf_answer,
@@ -30,15 +31,19 @@ from app.reports import save_report as save_report_row
 from app.sources import build_sources
 from app.tools.company_resolver import extract_from_text, normalize_name, resolve_company
 from app.routing import (
+    event_keyword_for,
+    event_type_for,
     explicitly_requested_tools,
     is_cause_question,
     is_trend_question,
     needs_discovery_tool,
+    needs_event_reaction_tool,
     needs_fx_tool,
     needs_market_tool,
 )
 from app.tools.disclosure_tool import disclosure_tool
 from app.tools.discovery_tool import discovery_tool
+from app.tools.event_reaction_tool import TITLE_KEYWORDS, event_reaction_tool
 from app.tools.fx_tool import fx_tool
 from app.tools.market_tool import market_data_is_current, market_tool
 from app.tools.news_tool import news_tool
@@ -925,12 +930,102 @@ def _finish_etf_answer(answer: str, records: list[dict], subjects: list[tuple[st
     return "\n\n".join([answer, *[e for e in extra if e]])
 
 
+# ---------- 사건(뉴스·공시) 이후 주가 반응 질문 ----------
+# app/routing.py의 needs_event_reaction_tool 게이트를 통과하고 종목이 하나로 특정되면, 1차 호출(tool 선택)을 하지 않고 코드가
+# event_reaction_tool을 실행한다. 사건별 수치·요약·면책 문구는 코드가 쓰고(app/event_answer.py), LLM은 해석 두세 문장만 쓰며
+# 그 문장은 결과와 대조해 맞지 않으면 지운다. 게이트를 통과하지 않은 질문은 이 경로를 전혀 타지 않는다(프롬프트·tool 선택·
+# 기간 처리가 이전과 같다).
+# LLM이 고른 stock_tool/news_tool 결과를 함께 쓰지 않는 이유: 사건 구간과 무관한 기간의 수치와 기사 본문(수치·"~때문에 상승"
+# 같은 주장)이 해석 문장으로 섞여 들어와 검증해야 할 범위가 커진다. 이 질문의 답에 필요한 수치는 event_reaction_tool에 다 있다.
+EVENT_TOOL_LIMIT = 5
+
+
+def _event_subject(question: str, previous: dict | None = None) -> str | None:
+    """사건 반응 질문이면 대상 종목 이름(DB 등록명), 아니면 None. 질문에서 종목이 정확히 하나일 때만 정한다(둘 이상이면 어느
+    종목의 사건인지 정할 수 없어 기존 경로로 간다). 질문에 종목이 없고 후속 질문이면 직전 질문의 종목이 하나일 때 그 종목.
+    DB 오류면 None(기존 경로)."""
+    if not needs_event_reaction_tool(question):
+        return None
+    try:
+        db = SessionLocal()
+        try:
+            found = extract_from_text(db, question)
+            if not found and previous:
+                found = extract_from_text(db, previous.get("question") or "")
+            return found[0].name if len(found) == 1 else None
+        finally:
+            db.close()
+    except Exception:
+        return None
+
+
+def _answer_event(question: str, model: str, company: str, previous: dict | None = None) -> tuple[dict, list[dict]]:
+    """사건 반응 질문의 답변. 코드가 event_reaction_tool을 실행하고 섹션을 쓴 뒤, LLM 해석은 검증을 통과한 문장만 붙인다.
+    대상 사건이 없으면 LLM을 부르지 않는다(사유 문장만). Ollama가 응답하지 않으면 해석 없이 코드가 쓴 섹션만으로 답한다."""
+    args = {
+        "company_name": company,
+        "event_type": event_type_for(question),
+        "limit": EVENT_TOOL_LIMIT,
+        "keyword": event_keyword_for(question, TITLE_KEYWORDS),
+    }
+    called_at = datetime.now(timezone.utc)
+    started = time.perf_counter()
+    try:
+        result = event_reaction_tool(**args)
+    except Exception as e:
+        result = {"found": False, "message": f"event_reaction_tool 실행 중 오류: {type(e).__name__}"}
+    result.setdefault("called_via", "event_reaction_gate")
+    record = {
+        "tool_name": "event_reaction_tool",
+        "arguments": args,
+        "result": result,
+        "called_at": called_at,
+        "elapsed_ms": round((time.perf_counter() - started) * 1000),
+    }
+
+    interpretation = ""
+    if result.get("found"):
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            *FEW_SHOT_MESSAGES,
+            *_previous_turn(previous),
+            {"role": "user", "content": question},
+            {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "event_reaction_tool", "arguments": args}}]},
+            {"role": "tool", "content": json.dumps(event_result_for_llm(result), ensure_ascii=False)},
+            {"role": "system", "content": EVENT_ANSWER_RULES},
+        ]
+        try:
+            final = ollama.chat(model=model, messages=messages)
+            text = strip_role_prefix(extract_answer_text(final["message"]["content"]))
+            if isinstance(text, str) and not _mentions_tool_call(text):
+                interpretation, dropped = check_event_answer(remove_empty_sections(text), result, _company_names())
+                result.setdefault("dropped_sentences", [{"sentence": s, "reason": r} for s, r in dropped])
+        except (ConnectionError, ollama.ResponseError):
+            interpretation = ""
+
+    notices = []
+    if result.get("asset_type") == "etf" and (kind := leverage_kind(result.get("company_name") or "")):
+        notices.append(leverage_notice(result["company_name"], kind))
+    answer = compose_event_answer(interpretation, result, notices)
+    response = {
+        "answer": answer,
+        "used_tools": ["event_reaction_tool"],
+        "sources": build_sources([("event_reaction_tool", result)]),
+    }
+    return response, [record]
+
+
 def _answer(question: str, model: str, previous: dict | None = None) -> tuple[dict, list[dict]]:
     """답변을 만든다. (응답 dict, tool 실행 기록 목록)을 돌려준다.
 
     previous={"question", "answer", ...}가 있으면 후속 질문으로 보고 그 질문/답변을 few-shot 뒤, 이번 질문 앞에
     대화 기록으로 넣는다. 없으면 메시지 구성이 이전과 완전히 같다.
     tool 실행 기록: {"tool_name", "arguments", "result", "called_at", "elapsed_ms"} (실행 순서대로)."""
+    # 사건 이후 주가 반응 질문(게이트 + 종목 하나)만 별도 경로로 간다. 그 밖의 질문은 아래 기존 경로 그대로다.
+    event_company = _event_subject(question, previous)
+    if event_company is not None:
+        return _answer_event(question, model, event_company, previous)
+
     system_prompt, tools = build_request(question)
     messages = [
         {"role": "system", "content": system_prompt},
