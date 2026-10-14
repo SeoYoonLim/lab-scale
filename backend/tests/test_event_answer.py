@@ -410,7 +410,7 @@ class TestChecker:
 
     @pytest.mark.parametrize(
         "sent",
-        ["삼성전자 최근 공시 이후 주가 반응은 다음과 같습니다.", "[수치 생략]만큼 올랐습니다.",
+        ["삼성전자 최근 공시 이후 주가 반응은 다음과 같습니다.", "상세한 뉴스 내용은 아래와 같습니다.", "[수치 생략]만큼 올랐습니다.",
          "주가가 market index와 비슷했습니다.", "excess_pct 값은 양수입니다."],
     )
     def test_residue_filler_and_foreign_dropped(self, sent):

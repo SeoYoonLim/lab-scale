@@ -110,6 +110,13 @@ class TestEventPath:
         assert "대상 사건이 없습니다" in resp["answer"] and resp["answer"].endswith(DISCLAIMER)
         assert resp["sources"] == []
 
+    def test_nothing_computed_skips_llm(self, env):
+        env["result"] = _result([_event(d1=None)])
+        resp, _ = agent._answer("삼성전자 공시 이후 주가 반응은?", "m")
+        assert env["chat_calls"] == []
+        assert "모두 아직 수익률을 계산할 수 없습니다" in resp["answer"] and "## 해석" not in resp["answer"]
+        assert resp["answer"].endswith(DISCLAIMER) and resp["sources"]
+
     def test_ollama_down_returns_code_section(self, env):
         env["chat_error"] = ConnectionError("down")
         resp, _ = agent._answer("삼성전자 공시 이후 주가 반응은?", "m")

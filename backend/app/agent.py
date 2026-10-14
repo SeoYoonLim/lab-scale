@@ -14,7 +14,13 @@ from datetime import datetime, timezone
 import ollama
 
 from app.db.session import SessionLocal
-from app.event_answer import EVENT_ANSWER_RULES, check_event_answer, compose_event_answer, event_result_for_llm
+from app.event_answer import (
+    EVENT_ANSWER_RULES,
+    check_event_answer,
+    compose_event_answer,
+    display_summary,
+    event_result_for_llm,
+)
 from app.etf import (
     ETF_ANSWER_RULES,
     check_etf_answer,
@@ -961,7 +967,7 @@ def _event_subject(question: str, previous: dict | None = None) -> str | None:
 
 def _answer_event(question: str, model: str, company: str, previous: dict | None = None) -> tuple[dict, list[dict]]:
     """사건 반응 질문의 답변. 코드가 event_reaction_tool을 실행하고 섹션을 쓴 뒤, LLM 해석은 검증을 통과한 문장만 붙인다.
-    대상 사건이 없으면 LLM을 부르지 않는다(사유 문장만). Ollama가 응답하지 않으면 해석 없이 코드가 쓴 섹션만으로 답한다."""
+    대상 사건이 없거나 계산된 수익률이 하나도 없으면 LLM을 부르지 않는다(코드가 쓴 섹션만). Ollama가 응답하지 않으면 해석 없이 코드가 쓴 섹션만으로 답한다."""
     args = {
         "company_name": company,
         "event_type": event_type_for(question),
@@ -984,7 +990,9 @@ def _answer_event(question: str, model: str, company: str, previous: dict | None
     }
 
     interpretation = ""
-    if result.get("found"):
+    # 계산된 수익률이 하나도 없으면(사건이 모두 너무 최근) 해석할 수치가 없어서 모델을 부르지 않는다. 이때 모델은 "다른 정보를
+    # 제공해드리겠습니다" 같은 내용 없는 문장이나 기사 관련성 추측만 썼다(slow 측정).
+    if result.get("found") and (display_summary(result).get("with_d1") or 0) > 0:
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             *FEW_SHOT_MESSAGES,
