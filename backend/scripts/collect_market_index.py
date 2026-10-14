@@ -1,4 +1,4 @@
-"""시장 전체 지수(코스피 KS11, 코스닥 KQ11)의 일별 종가를 FinanceDataReader로 수집해 market_index에 upsert하고,
+"""시장 전체 지수(코스피 KS11, 코스닥 KQ11)의 일별 종가를 FinanceDataReader(실패 시 별칭·Yahoo 경유 심볼로 폴백, collectors.MARKET_INDEX_SOURCES)로 수집해 market_index에 upsert하고,
 company.market(상장 시장)이 비어 있는 종목의 시장 구분을 채운다.
 
 market_tool은 종목이 상장된 시장의 지수와 등락률을 비교하므로 두 데이터가 모두 필요하다.
@@ -26,7 +26,7 @@ def main():
     for code, name in MARKET_INDEXES.items():
         res = fetch_and_save_market_index(code, days=args.days, dry_run=args.dry_run)
         status = "OK" if res.ok else f"FAIL ({res.error})"
-        print(f"{name}({code}) {status} 조회 {res.fetched}건 / 신규 {res.saved}건")
+        print(f"{name}({code}) {status} 조회 {res.fetched}건 / 신규 {res.saved}건 / 소스 {res.source}")
         failed |= not res.ok
 
     if not args.skip_market_backfill:

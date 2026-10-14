@@ -225,6 +225,7 @@ class CollectResult:
     error: str | None = None
     records: list = field(default_factory=list)
     skipped: int = 0
+    source: str | None = None
 
 
 _API_KEY_RE = re.compile(r"(crtfc_key=)[^&\s]+")
@@ -361,21 +362,57 @@ def _index_row(date_index, row) -> dict:
     }
 
 
+# 지수 소스 폴백 체인. 앞에서부터 시도해 "최근 일봉이 오는" 첫 소스를 쓴다(2026-10-14 실측).
+#  1) FDR 기본 심볼(KS11/KQ11)  2) FDR 별칭(KOSPI/KOSDAQ)  3) FDR의 Yahoo 경유 심볼(^KS11/^KQ11)
+# 네이버 금융 지수 일별 시세 페이지(sise_index_day.naver)는 같은 날 확인 시 HTTP 410(서비스 종료)이라 체인에서 뺐다.
+# yfinance는 3)이 이미 Yahoo를 쓰므로 의존성을 추가하지 않았다.
+MARKET_INDEX_SOURCES = {
+    "KS11": (("fdr:KS11", "KS11"), ("fdr:KOSPI", "KOSPI"), ("fdr-yahoo:^KS11", "^KS11")),
+    "KQ11": (("fdr:KQ11", "KQ11"), ("fdr:KOSDAQ", "KOSDAQ"), ("fdr-yahoo:^KQ11", "^KQ11")),
+}
+# 가장 최근 일봉이 이보다 오래됐으면 "멈춘 소스"로 보고 다음 소스로 넘어간다(연휴를 감안한 달력 일수).
+INDEX_MAX_STALE_DAYS = 10
+
+
+def fetch_index_frame(index_code: str, start_date: str, end_date: str, reader=None, today=None):
+    """폴백 체인을 순서대로 시도해 (DataFrame, 소스 이름, 시도별 실패 사유 목록)을 돌려준다. 모두 실패하면 df는 None."""
+    reader = reader or fdr.DataReader
+    today = today or datetime.now(KST).date()
+    errors = []
+    for source, symbol in MARKET_INDEX_SOURCES.get(index_code, ((f"fdr:{index_code}", index_code),)):
+        try:
+            df = reader(symbol, start_date, end_date)
+        except Exception as e:
+            errors.append(f"{source}: {_safe_error(e)}")
+            continue
+        if df is None or df.empty or "Close" not in df or df["Close"].dropna().empty:
+            errors.append(f"{source}: 데이터 없음")
+            continue
+        df = df.dropna(subset=["Close"])
+        latest = df.index.max().date()
+        if (today - latest).days > INDEX_MAX_STALE_DAYS:
+            errors.append(f"{source}: 최신 일봉이 {latest}로 오래됨")
+            continue
+        return df, source, errors
+    return None, None, errors
+
+
 def fetch_and_save_market_index(index_code: str, days: int = 7, dry_run: bool = False) -> CollectResult:
-    """FinanceDataReader로 지수 일별 종가를 받아 market_index에 upsert한다(멱등)."""
+    """지수 일별 종가를 폴백 체인(MARKET_INDEX_SOURCES)으로 받아 market_index에 upsert한다(멱등)."""
     today = datetime.now(KST)
     start_date = (today - timedelta(days=days)).strftime("%Y-%m-%d")
     end_date = today.strftime("%Y-%m-%d")
 
-    try:
-        df = fdr.DataReader(index_code, start_date, end_date)
-    except Exception as e:
-        return CollectResult(ok=False, error=_safe_error(e))
+    df, source, errors = fetch_index_frame(index_code, start_date, end_date, today=today.date())
+    for msg in errors:
+        print(f"[market_index {index_code}] 소스 실패 - {msg}")
+    if df is None:
+        return CollectResult(
+            ok=False, error=f"'{index_code}' {start_date}~{end_date} 모든 지수 소스 실패: " + " | ".join(errors)
+        )
+    print(f"[market_index {index_code}] 소스 사용: {source}")
 
-    if df is None or df.empty:
-        return CollectResult(ok=False, error=f"'{index_code}'의 {start_date}~{end_date} 지수 데이터를 받지 못했습니다.")
-
-    records = [_index_row(i, r) for i, r in df.dropna(subset=["Close"]).iterrows()]
+    records = [_index_row(i, r) for i, r in df.sort_index().iterrows()]
 
     db = SessionLocal()
     try:
@@ -387,7 +424,7 @@ def fetch_and_save_market_index(index_code: str, days: int = 7, dry_run: bool = 
         }
         new = [r for r in records if r["price_date"] not in existing]
         if dry_run:
-            return CollectResult(ok=True, saved=len(new), fetched=len(records))
+            return CollectResult(ok=True, saved=len(new), fetched=len(records), source=source)
 
         stmt = pg_insert(MarketIndex).values([{**r, "index_code": index_code} for r in records])
         stmt = stmt.on_conflict_do_update(
@@ -396,7 +433,7 @@ def fetch_and_save_market_index(index_code: str, days: int = 7, dry_run: bool = 
         )
         db.execute(stmt)
         db.commit()
-        return CollectResult(ok=True, saved=len(new), fetched=len(records))
+        return CollectResult(ok=True, saved=len(new), fetched=len(records), source=source)
     except Exception as e:
         db.rollback()
         return CollectResult(ok=False, fetched=len(records), error=_safe_error(e))
