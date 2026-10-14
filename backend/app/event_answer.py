@@ -202,6 +202,8 @@ _NOT_COMPUTED_RE = re.compile(r"계산할\s*수\s*없|계산되지\s*않|지나�
 _DENIES_DATA_RE = re.compile(r"조회하지 못|조회되지 않|조회 결과에 없|조회할 수 없")
 # 영어 소문자 낱말(3자 이상)이 섞인 문장("market index와 비교했을 때"). 종목명·제목 속 영문은 대문자 약어라 걸리지 않는다.
 _FOREIGN_RE = re.compile(r"[a-z]{3,}")
+# 결과에 없는 번호를 매겨 사건을 다시 나열한 줄("뉴스 3: …", "두 번째 공시는 …"). 사건 목록은 코드가 이미 썼다.
+_ENUM_RE = re.compile(r"(?:뉴스|공시|사건|기사)\s?\d+\s?[:.)]|(?:첫|두|세|네|다섯)\s?번째\s?(?:뉴스|공시|사건|기사)")
 # 뒤에 내용이 없는 안내 문장(사건 목록은 코드가 이미 썼다)
 _FILLER_RE = re.compile(r"(?:다음|아래)과\s*같습니다|정리하면\s*다음")
 _RESIDUE_RE = re.compile(r"빈칸|빈 칸|이 섹션은|N/?A|\{|\}|\[[^\]]*(?:수치|값|날짜|종목)[^\]]*\]")
@@ -361,11 +363,18 @@ def check_event_answer(answer: str, result: dict, other_names=()) -> tuple[str, 
     for line in (answer or "").split("\n"):
         if line.lstrip().startswith("#"):
             continue
+        if _ENUM_RE.search(_strip_titles(line, events)):
+            # 번호를 매겨 사건을 다시 나열한 줄은 통째로 지운다("공시 1. 제목"이 문장 경계에서 나뉘어 제목만 남지 않게)
+            dropped.append((line.strip(), "임의 번호로 사건 나열"))
+            continue
         kept = []
         for sent in _sentences(line):
             if not sent.strip():
                 continue
+            # 사건 제목과 종목명("KODEX 200"의 200) 속 숫자는 수치로 보지 않는다
             body = _strip_titles(sent, events)
+            for name in subject:
+                body = body.replace(name, " ")
             sent_dates, no_dates = _dates_in(body)
             numbers = _UNIT_RE.findall(no_dates)
             reason = None

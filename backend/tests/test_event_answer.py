@@ -430,6 +430,19 @@ class TestChecker:
         text, dropped = self.check("7월 30일 공시 이후 1거래일간 -5.76% 움직였습니다.")
         assert text == "" and dropped
 
+    @pytest.mark.parametrize(
+        "sent", ["* 뉴스 3: 코스피 기사", "- 공시 1. 특수관계인에대한출자", "두 번째 뉴스는 반도체 기사입니다."]
+    )
+    def test_enumerated_relisting_dropped(self, sent):
+        # slow 측정에서 나온 사례: 결과에 없는 번호("뉴스 4")로 사건 제목을 다시 나열
+        text, dropped = self.check(sent)
+        assert text == "" and dropped[0][1] == "임의 번호로 사건 나열"
+
+    def test_company_name_digits_are_not_numbers(self):
+        r = _result([_event()], company_name="KODEX 200")
+        text, dropped = check_event_answer("KODEX 200 뉴스 이후 1거래일간 -0.72% 움직였습니다.", r, ())
+        assert dropped == []
+
     def test_not_found_result_drops_numbers(self):
         text, dropped = check_event_answer("주가는 3% 올랐습니다.", {"found": False, "message": "x"}, ())
         assert text == ""
