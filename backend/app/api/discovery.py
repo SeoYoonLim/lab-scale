@@ -9,6 +9,7 @@ from app.discovery import get_trending
 router = APIRouter(prefix="/api/discovery", tags=["discovery"])
 
 Category = Literal["gainers", "losers", "volume_surge"]
+AssetType = Literal["stock", "etf"]
 
 
 class TrendingItem(BaseModel):
@@ -24,6 +25,7 @@ class TrendingItem(BaseModel):
 
 class TrendingResponse(BaseModel):
     category: Category
+    asset_type: AssetType = "stock"
     price_date: str
     window_days: int
     items: list[TrendingItem]
@@ -33,11 +35,12 @@ class TrendingResponse(BaseModel):
 def get_trending_stocks(
     category: Category = Query("gainers", description="gainers(급등)/losers(급락)/volume_surge(거래량 급증)"),
     limit: int = Query(10, ge=1, le=50),
+    asset_type: AssetType = Query("stock", description="stock(주식, 기본)/etf. ETF는 주식과 섞지 않고 따로 본다"),
 ) -> TrendingResponse:
     """특정 종목 질문 없이 바로 호출하는 시장 전체 스크리닝(FR-13). stock_price만으로 계산하는 순수 집계다."""
     db = SessionLocal()
     try:
-        result = get_trending(db, category, limit)
+        result = get_trending(db, category, limit, asset_type=asset_type)
         if not result["found"]:
             raise HTTPException(status_code=503, detail=result["message"])
         return TrendingResponse(**result)

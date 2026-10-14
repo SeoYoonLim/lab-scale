@@ -24,6 +24,7 @@ from sqlalchemy import or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db.session import SessionLocal
+from app.etf import mentions_etf_name
 from app.models import Company, Disclosure, ExchangeRate, MarketIndex, News, StockPrice
 
 load_dotenv()
@@ -175,12 +176,18 @@ def fetch_dart_disclosures(corp_code: str, days: int = 90) -> list[dict]:
     return items
 
 
-def get_or_create_company(db, ticker: str, name: str) -> Company:
+ASSET_TYPES = ("stock", "etf")
+
+
+def get_or_create_company(db, ticker: str, name: str, asset_type: str = "stock") -> Company:
     """(ticker, name) 쌍으로 회사를 조회/생성한다. 회사 row를 만드는 유일한 경로.
 
     ticker가 KRX 코드 형식이 아니면(예: 회사명이 그대로 들어온 경우) 예외를 던져
-    잘못된 row가 만들어지지 않게 한다.
+    잘못된 row가 만들어지지 않게 한다. asset_type('stock'|'etf')은 새로 만들 때만 쓰고,
+    이미 있는 회사의 asset_type은 바꾸지 않는다.
     """
+    if asset_type not in ASSET_TYPES:
+        raise ValueError(f"유효하지 않은 asset_type {asset_type!r}; {ASSET_TYPES} 중 하나여야 합니다.")
     if not TICKER_RE.match(ticker):
         raise ValueError(f"유효하지 않은 종목코드 {ticker!r} (name={name!r}); KRX 6자리 코드가 필요합니다.")
 
@@ -194,7 +201,7 @@ def get_or_create_company(db, ticker: str, name: str) -> Company:
             f"name={name!r}인 회사가 이미 다른 종목코드({same_name.ticker})로 존재합니다. 요청 종목코드={ticker}"
         )
 
-    company = Company(ticker=ticker, name=name)
+    company = Company(ticker=ticker, name=name, asset_type=asset_type)
     db.add(company)
     db.flush()
     return company
@@ -218,6 +225,7 @@ class CollectResult:
     error: str | None = None
     records: list = field(default_factory=list)
     skipped: int = 0
+    source: str | None = None
 
 
 _API_KEY_RE = re.compile(r"(crtfc_key=)[^&\s]+")
@@ -228,13 +236,13 @@ def _safe_error(e: Exception) -> str:
     return _API_KEY_RE.sub(r"\1***", f"{type(e).__name__}: {e}")
 
 
-def fetch_naver_news(company_name: str, display: int = 10) -> list[dict]:
+def fetch_naver_news(company_name: str, display: int = 10, sort: str = "date") -> list[dict]:
     client_id = os.environ["NAVER_CLIENT_ID"]
     client_secret = os.environ["NAVER_CLIENT_SECRET"]
 
     resp = requests.get(
         NAVER_NEWS_URL,
-        params={"query": company_name, "display": display, "start": 1, "sort": "date"},
+        params={"query": company_name, "display": display, "start": 1, "sort": sort},
         headers={
             "X-Naver-Client-Id": client_id,
             "X-Naver-Client-Secret": client_secret,
@@ -354,21 +362,57 @@ def _index_row(date_index, row) -> dict:
     }
 
 
+# 지수 소스 폴백 체인. 앞에서부터 시도해 "최근 일봉이 오는" 첫 소스를 쓴다(2026-10-14 실측).
+#  1) FDR 기본 심볼(KS11/KQ11)  2) FDR 별칭(KOSPI/KOSDAQ)  3) FDR의 Yahoo 경유 심볼(^KS11/^KQ11)
+# 네이버 금융 지수 일별 시세 페이지(sise_index_day.naver)는 같은 날 확인 시 HTTP 410(서비스 종료)이라 체인에서 뺐다.
+# yfinance는 3)이 이미 Yahoo를 쓰므로 의존성을 추가하지 않았다.
+MARKET_INDEX_SOURCES = {
+    "KS11": (("fdr:KS11", "KS11"), ("fdr:KOSPI", "KOSPI"), ("fdr-yahoo:^KS11", "^KS11")),
+    "KQ11": (("fdr:KQ11", "KQ11"), ("fdr:KOSDAQ", "KOSDAQ"), ("fdr-yahoo:^KQ11", "^KQ11")),
+}
+# 가장 최근 일봉이 이보다 오래됐으면 "멈춘 소스"로 보고 다음 소스로 넘어간다(연휴를 감안한 달력 일수).
+INDEX_MAX_STALE_DAYS = 10
+
+
+def fetch_index_frame(index_code: str, start_date: str, end_date: str, reader=None, today=None):
+    """폴백 체인을 순서대로 시도해 (DataFrame, 소스 이름, 시도별 실패 사유 목록)을 돌려준다. 모두 실패하면 df는 None."""
+    reader = reader or fdr.DataReader
+    today = today or datetime.now(KST).date()
+    errors = []
+    for source, symbol in MARKET_INDEX_SOURCES.get(index_code, ((f"fdr:{index_code}", index_code),)):
+        try:
+            df = reader(symbol, start_date, end_date)
+        except Exception as e:
+            errors.append(f"{source}: {_safe_error(e)}")
+            continue
+        if df is None or df.empty or "Close" not in df or df["Close"].dropna().empty:
+            errors.append(f"{source}: 데이터 없음")
+            continue
+        df = df.dropna(subset=["Close"])
+        latest = df.index.max().date()
+        if (today - latest).days > INDEX_MAX_STALE_DAYS:
+            errors.append(f"{source}: 최신 일봉이 {latest}로 오래됨")
+            continue
+        return df, source, errors
+    return None, None, errors
+
+
 def fetch_and_save_market_index(index_code: str, days: int = 7, dry_run: bool = False) -> CollectResult:
-    """FinanceDataReader로 지수 일별 종가를 받아 market_index에 upsert한다(멱등)."""
+    """지수 일별 종가를 폴백 체인(MARKET_INDEX_SOURCES)으로 받아 market_index에 upsert한다(멱등)."""
     today = datetime.now(KST)
     start_date = (today - timedelta(days=days)).strftime("%Y-%m-%d")
     end_date = today.strftime("%Y-%m-%d")
 
-    try:
-        df = fdr.DataReader(index_code, start_date, end_date)
-    except Exception as e:
-        return CollectResult(ok=False, error=_safe_error(e))
+    df, source, errors = fetch_index_frame(index_code, start_date, end_date, today=today.date())
+    for msg in errors:
+        print(f"[market_index {index_code}] 소스 실패 - {msg}")
+    if df is None:
+        return CollectResult(
+            ok=False, error=f"'{index_code}' {start_date}~{end_date} 모든 지수 소스 실패: " + " | ".join(errors)
+        )
+    print(f"[market_index {index_code}] 소스 사용: {source}")
 
-    if df is None or df.empty:
-        return CollectResult(ok=False, error=f"'{index_code}'의 {start_date}~{end_date} 지수 데이터를 받지 못했습니다.")
-
-    records = [_index_row(i, r) for i, r in df.dropna(subset=["Close"]).iterrows()]
+    records = [_index_row(i, r) for i, r in df.sort_index().iterrows()]
 
     db = SessionLocal()
     try:
@@ -380,7 +424,7 @@ def fetch_and_save_market_index(index_code: str, days: int = 7, dry_run: bool = 
         }
         new = [r for r in records if r["price_date"] not in existing]
         if dry_run:
-            return CollectResult(ok=True, saved=len(new), fetched=len(records))
+            return CollectResult(ok=True, saved=len(new), fetched=len(records), source=source)
 
         stmt = pg_insert(MarketIndex).values([{**r, "index_code": index_code} for r in records])
         stmt = stmt.on_conflict_do_update(
@@ -389,7 +433,7 @@ def fetch_and_save_market_index(index_code: str, days: int = 7, dry_run: bool = 
         )
         db.execute(stmt)
         db.commit()
-        return CollectResult(ok=True, saved=len(new), fetched=len(records))
+        return CollectResult(ok=True, saved=len(new), fetched=len(records), source=source)
     except Exception as e:
         db.rollback()
         return CollectResult(ok=False, fetched=len(records), error=_safe_error(e))
@@ -484,21 +528,54 @@ def backfill_company_market(dry_run: bool = False) -> tuple[int, int]:
         db.close()
 
 
+def _etf_news_candidates(etf_name: str, display: int) -> tuple[list[dict], int]:
+    """ETF 뉴스 후보: ETF 이름으로 최신순·관련도순 두 번 검색해 합치고(같은 기사는 한 번), 제목·본문에 이 ETF 이름이
+    직접 나오는 기사만 최신순으로 display건 남긴다. (후보 목록, 이름이 없어 뺀 건수).
+
+    이름 그대로 최신순으로만 검색하면 ETF 시장 전반 기사나 같은 계열의 다른 상품 기사가 섞여서, 1단계 수집분은 제목·본문에
+    ETF 이름이 들어 있는 기사가 평균 50%였다("RISE 200"에는 무관한 기사도 섞였다). "KODEX 200"이 "KODEX 200TR"처럼
+    더 긴 다른 ETF 이름의 일부로만 나오는 기사도 이 ETF의 기사가 아니라서 뺀다."""
+    db = SessionLocal()
+    try:
+        others = [n for (n,) in db.query(Company.name).filter(Company.asset_type == "etf", Company.name != etf_name)]
+    finally:
+        db.close()
+    seen, merged = set(), []
+    for sort in ("date", "sim"):
+        for it in fetch_naver_news(etf_name, display=NAVER_MAX_DISPLAY, sort=sort):
+            link = it.get("link") or it.get("originallink")
+            if link in seen:
+                continue
+            seen.add(link)
+            merged.append(it)
+    related = [
+        it for it in merged
+        if mentions_etf_name(f"{_clean_text(it.get('title', ''))} {_clean_text(it.get('description', ''))}", etf_name, others)
+    ]
+    related.sort(key=lambda it: parsedate_to_datetime(it["pubDate"]), reverse=True)
+    return related[: display * NEWS_OVERFETCH], len(merged) - len(related)
+
+
 # 네이버 뉴스 검색 API로 뉴스 수집 후 DB 저장 함수
 def fetch_and_save_news(
-    company_name: str, display: int = 10, dry_run: bool = False, ticker: str | None = None
+    company_name: str, display: int = 10, dry_run: bool = False, ticker: str | None = None, etf: bool = False
 ) -> CollectResult:
     """ticker를 주면 (ticker, company_name) 쌍으로 회사를 조회/생성한다.
 
     ticker가 없으면 이미 등록된 회사(name 또는 ticker 일치)를 쓰고, 없으면 DART 정식
     회사명으로 종목코드를 조회한다. 조회에 실패하면 회사를 만들지 않고 중단한다.
+    etf=True면 ETF 이름이 직접 나오는 기사만 저장한다(_etf_news_candidates). 주식(etf=False)은 이전과 같다.
     """
     print(f"[{company_name}] 뉴스 {display}건 수집 중...")
 
+    unrelated = 0
     try:
-        candidates = fetch_naver_news(
-            news_search_query(company_name), display=min(NAVER_MAX_DISPLAY, display * NEWS_OVERFETCH)
-        )
+        if etf:
+            candidates, unrelated = _etf_news_candidates(company_name, display)
+        else:
+            candidates = fetch_naver_news(
+                news_search_query(company_name), display=min(NAVER_MAX_DISPLAY, display * NEWS_OVERFETCH)
+            )
     except Exception as e:
         msg = _safe_error(e)
         print(f"오류 발생: {msg}")
@@ -513,6 +590,8 @@ def fetch_and_save_news(
             skipped += 1
         else:
             items.append(it)
+    if etf:
+        print(f"ETF 이름이 나오지 않아 제외한 기사 {unrelated}건")
 
     db = SessionLocal()
     try:

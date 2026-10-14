@@ -31,6 +31,10 @@ PROTECTED = [
     ("GET", "/api/portfolio/trades"),
     ("POST", "/api/portfolio/reset"),
     ("POST", "/api/portfolio/diagnosis"),
+    ("GET", "/api/portfolio/diagnosis/history"),
+    ("GET", "/api/portfolio/diagnosis/1"),
+    ("GET", "/api/portfolio/diagnosis/1/compare"),
+    ("DELETE", "/api/portfolio/diagnosis/1"),
     ("GET", "/api/auth/me"),
 ]
 
@@ -216,6 +220,8 @@ class TestRouteCoverage:
         ("GET", "/api/disclaimer"),
         ("GET", "/api/discovery/trending"),
         ("GET", "/api/stocks/{ticker}/realtime-price"),
+        ("GET", "/api/status"),
+        ("GET", "/api/stocks/{ticker}/event-reactions"),
     }
     PROTECTED_ROUTES = {
         ("GET", "/api/auth/me"),
@@ -231,6 +237,10 @@ class TestRouteCoverage:
         ("GET", "/api/portfolio/trades"),
         ("POST", "/api/portfolio/reset"),
         ("POST", "/api/portfolio/diagnosis"),
+        ("GET", "/api/portfolio/diagnosis/history"),
+        ("GET", "/api/portfolio/diagnosis/{diagnosis_id}"),
+        ("GET", "/api/portfolio/diagnosis/{diagnosis_id}/compare"),
+        ("DELETE", "/api/portfolio/diagnosis/{diagnosis_id}"),
     }
 
     def _routes(self):

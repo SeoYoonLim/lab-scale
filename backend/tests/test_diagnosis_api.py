@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 import app.api.portfolio as portfolio_api
 import app.diagnosis as d
+import app.diagnosis_history as history
 from app.agent import MODEL_NAME
 from app.diagnosis import HoldingInput
 from app.disclaimer import DISCLAIMER
@@ -29,8 +30,9 @@ GOOD = {
     "risks": ["카카오의 손익률이 -15.56%로 기준(-10%) 이하입니다."],
     "suggestions": ["카카오를 보유한 이유를 다시 점검해볼 수 있습니다."],
 }
-TOP_KEYS = {"generated_at", "source", "model", "metrics", "holdings", "flags", "summary", "strengths", "risks",
-            "suggestions", "notes", "disclaimer"}
+BODY_KEYS = {"generated_at", "source", "model", "metrics", "holdings", "flags", "summary", "strengths", "risks",
+             "suggestions", "notes", "disclaimer"}
+TOP_KEYS = BODY_KEYS | {"diagnosis_id", "created_at"}  # 저장 이력 도입으로 두 필드가 추가됐다(기존 필드는 그대로)
 
 
 @pytest.fixture(autouse=True)
@@ -45,6 +47,19 @@ def setup(monkeypatch, login_as):
 
     monkeypatch.setattr(d, "load_inputs", fake_load)
     return seen_keys
+
+
+@pytest.fixture(autouse=True)
+def saves(monkeypatch):
+    """저장(DB)을 가짜로 바꾸고 (user_id, 본문) 호출 기록을 돌려준다. 이 파일의 테스트는 DB에 아무것도 쓰지 않는다."""
+    calls = []
+
+    def fake_save(user_id, response):
+        calls.append((user_id, response))
+        return {"id": 100 + len(calls), "created_at": "2026-10-14T01:00:00+00:00"}
+
+    monkeypatch.setattr(history, "save_diagnosis", fake_save)
+    return calls
 
 
 def llm(monkeypatch, *responses):
@@ -222,3 +237,41 @@ class TestIsolationAndPrompt:
         assert h["price_unavailable"] is True and h["eval_amount"] is None
         assert body["metrics"]["holding_count"] == 3 and body["metrics"]["priced_holding_count"] == 2
         assert any("SK하이닉스의 현재가를 가져오지 못해" in n for n in body["notes"])
+
+
+class TestSaving:
+    def test_response_carries_id_and_created_at(self, monkeypatch, saves):
+        llm(monkeypatch, GOOD)
+        body = post().json()
+        assert body["diagnosis_id"] == 101 and body["created_at"] == "2026-10-14T01:00:00+00:00"
+        assert set(body) == TOP_KEYS
+
+    def test_saves_the_whole_body_without_the_added_fields_for_the_logged_in_user(self, monkeypatch, saves):
+        llm(monkeypatch, GOOD)
+        body = post().json()
+        assert len(saves) == 1
+        user_id, stored = saves[0]
+        assert user_id == 7  # users.id(owner key "user:7"가 아니다)
+        assert set(stored) == BODY_KEYS
+        assert stored == {k: v for k, v in body.items() if k in BODY_KEYS}
+
+    def test_fallback_result_is_saved_too(self, monkeypatch, saves):
+        llm(monkeypatch, ConnectionError("down"))
+        assert post().json()["source"] == "rule_based"
+        assert saves[0][1]["source"] == "rule_based"
+
+    def test_no_holdings_is_not_saved(self, monkeypatch, login_as, saves):
+        login_as(99)
+        llm(monkeypatch, GOOD)
+        assert post().status_code == 400
+        assert saves == []
+
+    def test_save_failure_still_returns_the_diagnosis(self, monkeypatch):
+        """저장 함수는 실패해도 예외를 내지 않고 None을 돌려준다(진단 응답을 막지 않는다)."""
+        monkeypatch.setattr(history, "save_diagnosis", lambda user_id, response: None)
+        llm(monkeypatch, GOOD)
+        r = post()
+        assert r.status_code == 200
+        body = r.json()
+        assert body["diagnosis_id"] is None and body["created_at"] is None
+        assert set(body) == TOP_KEYS and body["source"] == "llm" and body["metrics"]["total_asset"] == 7_472_500

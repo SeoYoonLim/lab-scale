@@ -3,6 +3,7 @@ from datetime import date
 from sqlalchemy import func
 
 from app.db.session import SessionLocal
+from app.korean import josa
 from app.models import MarketIndex, StockPrice
 from app.models.market_index import MARKET_INDEXES
 from app.tools.company_resolver import not_found_response, resolve_company, to_int
@@ -105,6 +106,14 @@ def market_tool(ticker: str, period_days: int = 5) -> dict:
         if res.corrected_from:
             base["corrected_from"] = res.corrected_from
 
+        if company.asset_type == "etf":
+            return {
+                **base,
+                "found": False,
+                "asset_type": "etf",
+                "message": f"{josa(company.name, '은/는')} ETF(상장지수펀드)라서 코스피/코스닥 같은 상장 시장 구분이 없어 "
+                "시장 지수와 비교하지 않습니다. 가격 흐름은 주가 조회 결과로 확인할 수 있습니다.",
+            }
         index_code = index_code_for_market(company.market)
         if index_code is None:
             return {**base, "found": False, "message": f"'{company.name}'의 상장 시장 정보가 없어 시장 지수와 비교할 수 없습니다."}

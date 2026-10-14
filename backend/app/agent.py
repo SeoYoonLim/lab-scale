@@ -7,6 +7,7 @@ FastAPI 라우트(app/api/research.py)와 CLI 스모크 테스트 스크립트�
 
 import inspect
 import json
+import os
 import re
 import time
 from datetime import datetime, timezone
@@ -14,20 +15,43 @@ from datetime import datetime, timezone
 import ollama
 
 from app.db.session import SessionLocal
+from app.event_answer import (
+    EVENT_ANSWER_RULES,
+    check_event_answer,
+    compose_event_answer,
+    display_summary,
+    event_result_for_llm,
+    trim_result,
+)
+from app.etf import (
+    ETF_ANSWER_RULES,
+    check_etf_answer,
+    comparison_sentence,
+    compose_etf_answer,
+    leverage_kind,
+    leverage_notice,
+    news_result_for_llm,
+    remove_empty_sections,
+)
+from app.models import Company
 from app.period_parser import mentions_period, parse_period
 from app.reports import save_report as save_report_row
 from app.sources import build_sources
 from app.tools.company_resolver import extract_from_text, normalize_name, resolve_company
 from app.routing import (
+    event_keyword_for,
+    event_type_for,
     explicitly_requested_tools,
     is_cause_question,
     is_trend_question,
     needs_discovery_tool,
+    needs_event_reaction_tool,
     needs_fx_tool,
     needs_market_tool,
 )
 from app.tools.disclosure_tool import disclosure_tool
 from app.tools.discovery_tool import discovery_tool
+from app.tools.event_reaction_tool import TITLE_KEYWORDS, event_reaction_tool
 from app.tools.fx_tool import fx_tool
 from app.tools.market_tool import market_data_is_current, market_tool
 from app.tools.news_tool import news_tool
@@ -785,12 +809,243 @@ def _previous_turn(previous: dict | None) -> list[dict]:
     ]
 
 
+# ---------- ETF 질문 ----------
+# ETF 질문에서는 (1) 가격 흐름(stock_tool)과 뉴스(news_tool)를 둘 다 보고, (2) 기간을 말하지 않았으면 기본 20거래일을 보고,
+# (3) 뉴스 기사 속 수치는 LLM에 넘기지 않고(같은 계열 다른 상품의 수치가 섞여 있다), (4) 최종 답변에 ETF 규칙(app.etf.
+# ETF_ANSWER_RULES)을 더하고, (5) 주가 조회 결과에 없는 등락률 문장은 지우고, (6) 레버리지/인버스면 고정 설명을 붙인다.
+# 주식만 나오는 질문은 이 경로를 타지 않는다(메시지·tool·후처리가 이전과 같다. 빈 섹션 정리만 공통).
+MAX_ETF_SUBJECTS = 3
+
+
+def _question_subjects(question: str, calls: list[dict]) -> list[tuple[str, str]]:
+    """질문에 나온 종목들 [(이름, asset_type)] (등장 순서). 질문에서 못 찾으면 tool 호출 인자의 종목.
+    DB 오류가 나면 빈 리스트(ETF 처리를 하지 않고 이전과 같은 경로로 간다)."""
+    try:
+        db = SessionLocal()
+        try:
+            found = [(c.name, c.asset_type) for c in extract_from_text(db, question)]
+            if not found:
+                seen = set()
+                for call in calls:
+                    key = _COMPANY_ARG.get(call["function"]["name"])
+                    raw = _as_args(call["function"]["arguments"]).get(key) if key else None
+                    company = resolve_company(db, raw).company if normalize_name(raw) else None
+                    if company is not None and company.id not in seen:
+                        seen.add(company.id)
+                        found.append((company.name, company.asset_type))
+            return found[:MAX_ETF_SUBJECTS]
+        finally:
+            db.close()
+    except Exception:
+        return []
+
+
+def _called_companies(calls: list[dict], tool: str) -> set[str]:
+    """tool 호출들이 가리키는 종목 이름(DB 등록명). 해석이 안 되는 인자는 정규화한 원문 그대로 넣는다."""
+    names = set()
+    db = SessionLocal()
+    try:
+        for call in calls:
+            if call["function"]["name"] != tool:
+                continue
+            raw = _as_args(call["function"]["arguments"]).get(_COMPANY_ARG[tool])
+            company = resolve_company(db, raw).company if normalize_name(raw) else None
+            names.add(company.name if company is not None else normalize_name(raw))
+    finally:
+        db.close()
+    return names
+
+
+def _add_etf_tools(calls: list[dict], subjects: list[tuple[str, str]]) -> list[int]:
+    """ETF 질문: 질문 속 종목마다 stock_tool, ETF마다 news_tool이 있게 한다(빠진 것만 끝에 덧붙인다). 덧붙인 인덱스 목록."""
+    added = []
+    have = {tool: _called_companies(calls, tool) for tool in ("stock_tool", "news_tool")}
+    for name, asset_type in subjects:
+        wanted = ["stock_tool"] + (["news_tool"] if asset_type == "etf" else [])
+        for tool in wanted:
+            if name in have[tool]:
+                continue
+            added.append(len(calls))
+            if tool == "stock_tool":
+                args = {"ticker": name, "period_days": DEFAULT_TREND_PERIOD_DAYS}
+            else:
+                args = {"company_name": name, "limit": 5}
+            calls.append({"function": {"name": tool, "arguments": args}})
+            have[tool].add(name)
+    return added
+
+
+def _to_period(value) -> int | None:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _apply_etf_period(calls: list[dict], question: str) -> dict[int, object]:
+    """ETF 질문의 stock_tool 기간: 기간을 말하지 않았으면 DEFAULT_TREND_PERIOD_DAYS(ETF는 하루 등락보다 흐름으로 보는 상품이고,
+    "KODEX 200이랑 삼성전자 중 어느 게 더 올랐어?"는 같은 기간으로 비교해야 한다). 기간을 말했는데 호출마다 기간이 다르면
+    (파서가 값으로 못 바꾼 "한 달" 등) 가장 긴 값으로 맞춘다. {호출 인덱스: 바꾸기 전 값}."""
+    stock = []
+    for i, call in enumerate(calls):
+        if call["function"]["name"] == "stock_tool":
+            args = _as_args(call["function"]["arguments"])
+            call["function"]["arguments"] = args
+            stock.append((i, args))
+    if not stock:
+        return {}
+    if not mentions_period(question):
+        target = DEFAULT_TREND_PERIOD_DAYS
+    else:
+        values = {_to_period(a.get("period_days")) for _, a in stock}
+        known = [v for v in values if v is not None]
+        if len(values) <= 1:
+            return {}
+        target = max(known) if known else DEFAULT_TREND_PERIOD_DAYS
+    changed = {}
+    for i, args in stock:
+        if _to_period(args.get("period_days")) != target:
+            changed[i] = args.get("period_days")
+            args["period_days"] = target
+    return changed
+
+
+def _company_names() -> list[str]:
+    """DB의 모든 종목명(질문에 없는 종목에 수치를 붙인 문장을 찾는 데 쓴다). DB 오류면 빈 리스트."""
+    try:
+        db = SessionLocal()
+        try:
+            return [n for (n,) in db.query(Company.name)]
+        finally:
+            db.close()
+    except Exception:
+        return []
+
+
+def _finish_etf_answer(answer: str, records: list[dict], subjects: list[tuple[str, str]]) -> str:
+    """ETF 답변 후처리(app.etf): LLM 답변에서 조회 결과와 맞지 않는 문장을 지우고(check_etf_answer), 가격·뉴스 섹션은 코드가
+    조회 결과로 쓰고(compose_etf_answer), 두 종목 이상이면 코드가 계산한 비교 문장, 레버리지/인버스 ETF면 고정 설명을 붙인다."""
+    prices = [
+        {**r["result"], "company_name": r["result"].get("company_name") or r["arguments"].get("ticker")}
+        for r in records
+        if r["tool_name"] == "stock_tool" and isinstance(r["result"], dict) and r["result"].get("found")
+    ]
+    news = [r["result"] for r in records if r["tool_name"] == "news_tool" and isinstance(r["result"], dict)]
+    answer, _ = check_etf_answer(answer, {p["company_name"]: p for p in prices}, _company_names())
+    answer = compose_etf_answer(remove_empty_sections(answer), prices, news).strip() or FALLBACK_ANSWER
+    extra = [comparison_sentence(prices)]
+    extra += [leverage_notice(name, kind) for name, t in subjects if t == "etf" and (kind := leverage_kind(name))]
+    return "\n\n".join([answer, *[e for e in extra if e]])
+
+
+# ---------- 사건(뉴스·공시) 이후 주가 반응 질문 ----------
+# app/routing.py의 needs_event_reaction_tool 게이트를 통과하고 종목이 하나로 특정되면, 1차 호출(tool 선택)을 하지 않고 코드가
+# event_reaction_tool을 실행한다. 사건별 수치·요약·면책 문구는 코드가 쓰고(app/event_answer.py), LLM은 해석 두세 문장만 쓰며
+# 그 문장은 결과와 대조해 맞지 않으면 지운다. 게이트를 통과하지 않은 질문은 이 경로를 전혀 타지 않는다(프롬프트·tool 선택·
+# 기간 처리가 이전과 같다).
+# LLM이 고른 stock_tool/news_tool 결과를 함께 쓰지 않는 이유: 사건 구간과 무관한 기간의 수치와 기사 본문(수치·"~때문에 상승"
+# 같은 주장)이 해석 문장으로 섞여 들어와 검증해야 할 범위가 커진다. 이 질문의 답에 필요한 수치는 event_reaction_tool에 다 있다.
+EVENT_TOOL_LIMIT = 5
+# 사건 반응 답변의 LLM 해석(## 해석)은 기본으로 끈다: 검증을 통과한 해석 문장이 30회 중 3~6회만 남고, 남아도 한 줄의 주의 문구 수준이며
+# 어색한 문장이 통과하는 일도 있었다(README "알려진 한계"). 켜려면 환경변수를 1/true/on으로 설정한다. 꺼져 있으면 Ollama를 호출하지 않으므로
+# 이 경로의 답변은 Ollama 없이도 나오고 응답이 빠르다(질문 이해와 tool 선택은 코드 게이트가 한다).
+EVENT_LLM_INTERPRETATION_ENV = "EVENT_REACTION_LLM_INTERPRETATION"
+
+
+def event_llm_interpretation_enabled() -> bool:
+    return os.environ.get(EVENT_LLM_INTERPRETATION_ENV, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _event_subject(question: str, previous: dict | None = None) -> str | None:
+    """사건 반응 질문이면 대상 종목 이름(DB 등록명), 아니면 None. 질문에서 종목이 정확히 하나일 때만 정한다(둘 이상이면 어느
+    종목의 사건인지 정할 수 없어 기존 경로로 간다). 질문에 종목이 없고 후속 질문이면 직전 질문의 종목이 하나일 때 그 종목.
+    DB 오류면 None(기존 경로)."""
+    if not needs_event_reaction_tool(question):
+        return None
+    try:
+        db = SessionLocal()
+        try:
+            found = extract_from_text(db, question)
+            if not found and previous:
+                found = extract_from_text(db, previous.get("question") or "")
+            return found[0].name if len(found) == 1 else None
+        finally:
+            db.close()
+    except Exception:
+        return None
+
+
+def _answer_event(question: str, model: str, company: str, previous: dict | None = None) -> tuple[dict, list[dict]]:
+    """사건 반응 질문의 답변. 코드가 event_reaction_tool을 실행하고 섹션·요약·면책 문구를 쓴다.
+    LLM 해석은 EVENT_REACTION_LLM_INTERPRETATION이 켜진 경우에만 만들고(기본 꺼짐) 검증(check_event_answer)을 통과한 문장만 붙인다.
+    대상 사건이 없거나 계산된 수익률이 하나도 없으면 켜져 있어도 LLM을 부르지 않는다. Ollama가 응답하지 않아도 코드가 쓴 섹션만으로 답한다."""
+    args = {
+        "company_name": company,
+        "event_type": event_type_for(question),
+        "limit": EVENT_TOOL_LIMIT,
+        "keyword": event_keyword_for(question, TITLE_KEYWORDS),
+    }
+    called_at = datetime.now(timezone.utc)
+    started = time.perf_counter()
+    try:
+        result = event_reaction_tool(**args)
+    except Exception as e:
+        result = {"found": False, "message": f"event_reaction_tool 실행 중 오류: {type(e).__name__}"}
+    result = trim_result(result)  # 답변에 쓰는 사건만(같은 날짜 뉴스 묶기 후 항목 수 제한)
+    result.setdefault("called_via", "event_reaction_gate")
+    record = {
+        "tool_name": "event_reaction_tool",
+        "arguments": args,
+        "result": result,
+        "called_at": called_at,
+        "elapsed_ms": round((time.perf_counter() - started) * 1000),
+    }
+
+    interpretation = ""
+    # 계산된 수익률이 하나도 없으면(사건이 모두 너무 최근) 해석할 수치가 없어서 모델을 부르지 않는다. 이때 모델은 "다른 정보를
+    # 제공해드리겠습니다" 같은 내용 없는 문장이나 기사 관련성 추측만 썼다(slow 측정).
+    if event_llm_interpretation_enabled() and result.get("found") and (display_summary(result).get("with_d1") or 0) > 0:
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            *FEW_SHOT_MESSAGES,
+            *_previous_turn(previous),
+            {"role": "user", "content": question},
+            {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "event_reaction_tool", "arguments": args}}]},
+            {"role": "tool", "content": json.dumps(event_result_for_llm(result), ensure_ascii=False)},
+            {"role": "system", "content": EVENT_ANSWER_RULES},
+        ]
+        try:
+            final = ollama.chat(model=model, messages=messages)
+            text = strip_role_prefix(extract_answer_text(final["message"]["content"]))
+            if isinstance(text, str) and not _mentions_tool_call(text):
+                interpretation, dropped = check_event_answer(remove_empty_sections(text), result, _company_names())
+                result.setdefault("dropped_sentences", [{"sentence": s, "reason": r} for s, r in dropped])
+        except (ConnectionError, ollama.ResponseError):
+            interpretation = ""
+
+    notices = []
+    if result.get("asset_type") == "etf" and (kind := leverage_kind(result.get("company_name") or "")):
+        notices.append(leverage_notice(result["company_name"], kind))
+    answer = compose_event_answer(interpretation, result, notices)
+    response = {
+        "answer": answer,
+        "used_tools": ["event_reaction_tool"],
+        "sources": build_sources([("event_reaction_tool", result)]),
+    }
+    return response, [record]
+
+
 def _answer(question: str, model: str, previous: dict | None = None) -> tuple[dict, list[dict]]:
     """답변을 만든다. (응답 dict, tool 실행 기록 목록)을 돌려준다.
 
     previous={"question", "answer", ...}가 있으면 후속 질문으로 보고 그 질문/답변을 few-shot 뒤, 이번 질문 앞에
     대화 기록으로 넣는다. 없으면 메시지 구성이 이전과 완전히 같다.
     tool 실행 기록: {"tool_name", "arguments", "result", "called_at", "elapsed_ms"} (실행 순서대로)."""
+    # 사건 이후 주가 반응 질문(게이트 + 종목 하나)만 별도 경로로 간다. 그 밖의 질문은 아래 기존 경로 그대로다.
+    event_company = _event_subject(question, previous)
+    if event_company is not None:
+        return _answer_event(question, model, event_company, previous)
+
     system_prompt, tools = build_request(question)
     messages = [
         {"role": "system", "content": system_prompt},
@@ -805,9 +1060,17 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     if msg is None:
         return {"answer": FALLBACK_ANSWER, "used_tools": [], "sources": []}, []
 
+    etf_added: list[int] = []
     if not tool_calls:
-        # 모델이 tool 없이 바로 답한 경우
-        return {"answer": strip_role_prefix(extract_answer_text(msg["content"])), "used_tools": [], "sources": []}, []
+        # 모델이 tool 없이 바로 답한 경우. 다만 ETF가 나오는 질문("KODEX 인버스는 어떤 상품이야?")은 개념 질문처럼 보여도
+        # 조회 없이 답하면 상품 구조·추종지수를 지어낼 수 있어서, 가격·뉴스를 조회한 뒤 답한다.
+        subjects = _question_subjects(question, [])
+        if not any(t == "etf" for _, t in subjects):
+            answer = remove_empty_sections(strip_role_prefix(extract_answer_text(msg["content"])))
+            return {"answer": answer, "used_tools": [], "sources": []}, []
+        tool_calls = []
+        etf_added = _add_etf_tools(tool_calls, subjects)
+        msg = {"role": "assistant", "content": "", "tool_calls": tool_calls}
 
     messages.append(msg)
     records = []
@@ -816,9 +1079,14 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     #    결과를 다시 넘겨줌. 질문이 이름으로 요청한 tool이 빠졌으면 덧붙이고(보정된 종목 인자를 쓰도록 보정 뒤에),
     #    기간은 질문에서 인식한 값 > 흐름 질문의 기본 기간 > LLM 추론값 순으로 정한다.
     repaired = _repair_company_args(tool_calls, question, previous["question"] if previous else None)
-    added = set(_add_requested_tools(tool_calls, question))
+    added = set(_add_requested_tools(tool_calls, question)) | set(etf_added)
+    subjects = _question_subjects(question, tool_calls)
+    etf_mode = any(t == "etf" for _, t in subjects)
+    if etf_mode:
+        added |= set(_add_etf_tools(tool_calls, subjects))
     period_overrides = _apply_period_override(tool_calls, question)
     period_defaults = _apply_default_period(tool_calls, question)
+    etf_periods = _apply_etf_period(tool_calls, question) if etf_mode else {}
     for idx, call in enumerate(tool_calls):
         fn_name = call["function"]["name"]
         fn_args = _as_args(call["function"]["arguments"])
@@ -837,6 +1105,9 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
         if idx in period_defaults and isinstance(result, dict):
             result.setdefault("period_days_corrected_from", period_defaults[idx])
             result.setdefault("period_days_corrected_via", "default_trend_period")
+        if idx in etf_periods and isinstance(result, dict):
+            result.setdefault("period_days_corrected_from", etf_periods[idx])
+            result.setdefault("period_days_corrected_via", "etf_default_period")
         if idx in added and isinstance(result, dict):
             result.setdefault("called_via", "question_keywords")
 
@@ -849,19 +1120,27 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
                 "elapsed_ms": elapsed_ms,
             }
         )
+        # ETF 질문이면 뉴스 기사 속 수치는 LLM에 넘기지 않는다(기록·출처에는 원문이 남는다)
+        llm_result = news_result_for_llm(result) if etf_mode and fn_name == "news_tool" else result
         messages.append(
             {
                 "role": "tool",
-                "content": json.dumps(result, ensure_ascii=False),
+                "content": json.dumps(llm_result, ensure_ascii=False),
             }
         )
 
-    # 3. tool 결과를 반영한 최종 답변 생성. 구조화 안내(FR-11)는 이 호출 직전에만 추가한다.
-    messages.append({"role": "system", "content": ANSWER_STRUCTURE_INSTRUCTION})
+    # 3. tool 결과를 반영한 최종 답변 생성. 구조화 안내(FR-11)는 이 호출 직전에만 추가한다. ETF 질문이면 ETF 규칙을 덧붙인다.
+    instruction = ANSWER_STRUCTURE_INSTRUCTION + (" " + ETF_ANSWER_RULES if etf_mode else "")
+    messages.append({"role": "system", "content": instruction})
     final = ollama.chat(model=model, messages=messages)
     answer = strip_role_prefix(extract_answer_text(final["message"]["content"]))
     if _mentions_tool_call(answer):
         answer = FALLBACK_ANSWER
+    else:
+        # 결과가 없는 섹션에 "(이 섹션은 ... 빈칸입니다.)" 같은 자리표시만 쓴 경우 그 섹션을 지운다
+        answer = remove_empty_sections(answer)
+        if etf_mode:
+            answer = _finish_etf_answer(answer, records, subjects)
     response = {
         "answer": answer,
         "used_tools": [r["tool_name"] for r in records],

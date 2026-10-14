@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import app.watchlist as watchlist
 from app.watchlist import added_item, item_dict
 
-COMPANY = SimpleNamespace(id=1, ticker="005930", name="삼성전자")
+COMPANY = SimpleNamespace(id=1, ticker="005930", name="삼성전자", asset_type="stock")
 ROW = SimpleNamespace(created_at=datetime(2026, 10, 1, tzinfo=timezone.utc))
 PRICE = SimpleNamespace(
     company_id=1, close_price=Decimal("263000.00"), price_date=date(2026, 10, 8), change_pct=Decimal("-2.23")
@@ -21,6 +21,7 @@ class TestItemDict:
             "company_id": 1,
             "ticker": "005930",
             "company_name": "삼성전자",
+            "asset_type": "stock",
             "added_at": "2026-10-01T00:00:00+00:00",
             "latest_close": 263000.0,
             "latest_close_date": "2026-10-08",

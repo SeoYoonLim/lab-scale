@@ -166,6 +166,7 @@ def get_portfolio(db, device_id: str) -> dict:
             {
                 "ticker": c.ticker,
                 "company_name": c.name,
+                "asset_type": c.asset_type,
                 "quantity": h.quantity,
                 "avg_price": avg_price,
                 "current_price": current_price,
@@ -200,7 +201,7 @@ def list_trades(db, device_id: str, limit: int, offset: int, company_id: int | N
     total = base.count()
     rows = (
         base.join(Company, Company.id == Trade.company_id)
-        .with_entities(Trade, Company.ticker, Company.name)
+        .with_entities(Trade, Company.ticker, Company.name, Company.asset_type)
         .order_by(Trade.executed_at.desc(), Trade.id.desc())
         .limit(limit)
         .offset(offset)
@@ -211,13 +212,14 @@ def list_trades(db, device_id: str, limit: int, offset: int, company_id: int | N
             "id": t.id,
             "ticker": ticker,
             "company_name": name,
+            "asset_type": asset_type,
             "side": t.side,
             "quantity": t.quantity,
             "price": float(t.price),
             "amount": round(float(t.price) * t.quantity, 2),
             "executed_at": t.executed_at.isoformat(),
         }
-        for t, ticker, name in rows
+        for t, ticker, name, asset_type in rows
     ]
     return {"total": total, "limit": limit, "offset": offset, "items": items}
 

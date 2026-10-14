@@ -7,6 +7,7 @@ universe 파일은 커밋 대상이 아니므로 먼저 `python -m scripts.build
 사용 예:
   python -m scripts.collect_prices --every 40 --dry-run          # DB에 쓰지 않고 시범 확인
   python -m scripts.collect_prices --days 90 --report prices_report.json
+  python -m scripts.collect_prices --universe universe_etf50.json   # ETF(asset_type='etf'로 등록)
 """
 
 import argparse
@@ -42,7 +43,7 @@ def main():
         ticker, name = t["ticker"], t["name"]
         row = {"rank": t["rank"], "ticker": ticker, "name": name}
 
-        err = _register(ticker, name) if not args.dry_run else None
+        err = _register(ticker, name, t.get("asset_type", "stock")) if not args.dry_run else None
         if err:
             row.update(ok=False, saved=0, fetched=0, error=f"회사 등록 실패: {err}", sec=0)
             rows.append(row)

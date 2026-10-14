@@ -32,6 +32,8 @@ from sqlalchemy import func, select
 from app.agent import MODEL_NAME
 from app.company_aliases import COMPANY_ALIASES
 from app.disclaimer import DISCLAIMER
+from app.etf import leverage_kind
+from app.korean import josa
 from app.models import Company, Holding, StockPrice
 from app.portfolio import get_or_create_account
 from app.realtime_price import get_realtime_price_data
@@ -44,7 +46,8 @@ MIN_HOLDING_COUNT = 3  # 보유 종목 수 < 이 값이면 종목 수 적음
 CASH_HIGH_PCT = 70.0  # 현금 비중 >= 이 값이면 현금 과다
 CASH_LOW_PCT = 5.0  # 현금 비중 < 이 값이면 현금 부족
 BIG_LOSS_PCT = -10.0  # 종목 손익률 <= 이 값이면 큰 손실 종목
-MARKET_SKEW_PCT = 80.0  # 한 시장 비중(주식 평가금액 대비) >= 이 값이면 시장 편중
+MARKET_SKEW_PCT = 80.0  # 한 시장 비중(주식 평가금액 대비, ETF 제외) >= 이 값이면 시장 편중
+LEVERAGED_INVERSE_PCT = 0.0  # 레버리지/인버스 ETF를 보유하면(비중 > 이 값, 현재가를 못 구했어도) 위험 플래그
 
 RETURN_WINDOW_DAYS = 20  # 최근 N거래일 수익률(stock_price 종가 기준)
 LLM_TIMEOUT_SECONDS = 60
@@ -75,6 +78,7 @@ class HoldingInput:
     current_price: float | None
     is_realtime: bool = False
     return_20d_pct: float | None = None
+    asset_type: str = "stock"  # 'stock' | 'etf'
 
 
 # ---------- 순수 계산 ----------
@@ -92,8 +96,10 @@ def _pct(part: float, whole: float) -> float | None:
     return _r2(part / whole * 100) if whole else None
 
 
-def normalize_market(market: str | None) -> str:
-    """KOSDAQ GLOBAL은 KOSDAQ으로 묶는다. 시장 정보가 없으면 OTHER."""
+def normalize_market(market: str | None, asset_type: str = "stock") -> str:
+    """KOSDAQ GLOBAL은 KOSDAQ으로 묶는다. ETF는 상장 시장 구분이 없어서 ETF, 그 밖에 시장 정보가 없으면 OTHER."""
+    if asset_type == "etf":
+        return "ETF"
     if not market:
         return "OTHER"
     m = market.upper()
@@ -109,7 +115,7 @@ def compute_portfolio(cash_balance: float, holdings: list[HoldingInput]) -> tupl
 
     - 비중(weight_pct), 상위 1·3종목 비중, 현금 비중: 총자산(현금 + 현재가를 구한 종목의 평가금액) 대비 %
     - 허핀달 지수: 현재가를 구한 보유 종목끼리의 비중(주식 평가금액 대비, 0~1)으로 계산한 sum(w^2). 1이면 한 종목뿐
-    - 시장별 비중: 주식 평가금액 대비 %
+    - 시장별 비중: 주식(ETF 제외) 평가금액 대비 %. ETF는 상장 시장(코스피/코스닥) 구분이 없어서 시장 쏠림 계산에 넣지 않는다
     - 손익률: 평단가 대비(종목), 매입금액 합계 대비(포트폴리오)
     분모가 0이면 해당 값은 None이다.
     """
@@ -123,7 +129,8 @@ def compute_portfolio(cash_balance: float, holdings: list[HoldingInput]) -> tupl
         item = {
             "ticker": h.ticker,
             "company_name": h.company_name,
-            "market": normalize_market(h.market),
+            "market": normalize_market(h.market, h.asset_type),
+            "asset_type": h.asset_type,
             "quantity": h.quantity,
             "avg_price": _r2(h.avg_price),
             "current_price": None if h.current_price is None else _r2(h.current_price),
@@ -149,8 +156,10 @@ def compute_portfolio(cash_balance: float, holdings: list[HoldingInput]) -> tupl
     total_pl = _r0(sum(i["profit_loss"] for i in priced_items))
 
     markets: dict[str, float] = {}
-    for i in priced_items:
+    stock_items = [i for i in priced_items if i["asset_type"] != "etf"]
+    for i in stock_items:
         markets[i["market"]] = markets.get(i["market"], 0.0) + i["eval_amount"]
+    stocks_only_eval = _r0(sum(i["eval_amount"] for i in stock_items))
 
     ranked = [i for i in priced_items if i["profit_loss_pct"] is not None]
     best = max(ranked, key=lambda i: i["profit_loss_pct"], default=None)
@@ -175,7 +184,7 @@ def compute_portfolio(cash_balance: float, holdings: list[HoldingInput]) -> tupl
                 Decimal("0.0001"), rounding=ROUND_HALF_UP))
             if stock_eval else None
         ),
-        "market_weights_pct": {m: _pct(v, stock_eval) for m, v in sorted(markets.items())} if stock_eval else {},
+        "market_weights_pct": {m: _pct(v, stocks_only_eval) for m, v in sorted(markets.items())} if stocks_only_eval else {},
         "total_profit_loss": total_pl,
         "total_profit_loss_pct": _pct(total_pl, cost_basis) if cost_basis else None,
         "best_holding": brief(best),
@@ -197,7 +206,9 @@ def compute_flags(items: list[dict], metrics: dict) -> list[dict]:
             top1, CONCENTRATION_TOP1_PCT)
 
     n = metrics["holding_count"]
-    if n < MIN_HOLDING_COUNT:
+    # ETF는 한 상품 안에서 여러 자산에 나눠 투자하므로, ETF를 하나라도 보유하면 종목 수만으로 분산 부족을 판단하지 않는다
+    # (rule_based_text가 그 사실을 강점이 아니라 안내 문장으로 쓴다). 한 종목 쏠림은 CONCENTRATION_HIGH가 따로 본다.
+    if n < MIN_HOLDING_COUNT and not any(i.get("asset_type") == "etf" for i in items):
         add("FEW_HOLDINGS", f"보유 종목이 {n}개로 기준({MIN_HOLDING_COUNT}개) 미만입니다.", n, MIN_HOLDING_COUNT)
 
     cash_pct = metrics["cash_weight_pct"]
@@ -216,6 +227,20 @@ def compute_flags(items: list[dict], metrics: dict) -> list[dict]:
         if pct is not None and pct >= MARKET_SKEW_PCT:
             add("MARKET_SKEW", f"주식 평가금액의 {pct}%가 {market}에 몰려 있습니다(기준 {MARKET_SKEW_PCT:g}%).",
                 pct, MARKET_SKEW_PCT, market=market)
+
+    for i in items:
+        kind = leverage_kind(i["company_name"]) if i.get("asset_type") == "etf" else None
+        if kind is None:
+            continue
+        w = i["weight_pct"]
+        head = f"{josa(i['company_name'], '은/는')} {kind} ETF"
+        message = (
+            f"{head}로 총자산의 {w}%입니다. 하루 수익률을 기준으로 움직여 오래 보유하면 기초지수 수익률과 달라질 수 있습니다."
+            if w is not None
+            else f"{head}입니다. 하루 수익률을 기준으로 움직여 오래 보유하면 기초지수 수익률과 달라질 수 있습니다."
+        )
+        add("LEVERAGED_INVERSE_ETF", message, w if w is not None else 0.0, LEVERAGED_INVERSE_PCT,
+            ticker=i["ticker"], company_name=i["company_name"])
     return flags
 
 
@@ -465,7 +490,13 @@ def rule_based_text(items: list[dict], metrics: dict, flags: list[dict]) -> dict
     strengths = []
     if m["top1_weight_pct"] is not None and "CONCENTRATION_HIGH" not in codes:
         strengths.append(f"상위 1종목 비중이 {m['top1_weight_pct']}%로 한 종목에 크게 쏠려 있지 않습니다.")
-    if "FEW_HOLDINGS" not in codes:
+    etf_count = sum(1 for i in items if i.get("asset_type") == "etf")
+    if etf_count and m["holding_count"] < MIN_HOLDING_COUNT:
+        strengths.append(
+            f"보유 종목은 {m['holding_count']}개지만 ETF가 {etf_count}개 포함돼 있습니다. ETF는 한 상품 안에서 여러 자산에 나눠 "
+            "투자하는 상품이라 종목 수만으로 분산 정도를 판단하지 않았습니다."
+        )
+    elif "FEW_HOLDINGS" not in codes:
         strengths.append(f"{m['holding_count']}개 종목에 나눠 보유하고 있습니다.")
     if m["best_holding"] and m["best_holding"]["profit_loss_pct"] is not None and m["best_holding"]["profit_loss_pct"] > 0:
         b = m["best_holding"]
@@ -484,6 +515,7 @@ def rule_based_text(items: list[dict], metrics: dict, flags: list[dict]) -> dict
         "CASH_LOW": "예상치 못한 하락에 대비한 현금 여유를 검토해볼 수 있습니다.",
         "BIG_LOSS": "손실이 큰 종목은 처음 매수한 이유가 여전히 유효한지 점검해볼 수 있습니다.",
         "MARKET_SKEW": "다른 시장의 종목도 함께 살펴보는 방안을 검토해볼 수 있습니다.",
+        "LEVERAGED_INVERSE_ETF": "레버리지·인버스 ETF는 보유 기간과 비중을 따로 점검해볼 수 있습니다.",
     }
     suggestions = [suggestion_by_code[c] for c in suggestion_by_code if c in codes]
     if not suggestions:
@@ -491,18 +523,9 @@ def rule_based_text(items: list[dict], metrics: dict, flags: list[dict]) -> dict
     return {"summary": summary, "strengths": strengths, "risks": risks, "suggestions": suggestions}
 
 
-def _topic_particle(word: str) -> str:
-    """보조사 '은/는'. 마지막 글자가 받침 있는 한글이면 '은', 그 외(받침 없음, 영문·숫자로 끝남)는 '는'."""
-    last = word[-1:]
-    if "가" <= last <= "힣" and (ord(last) - ord("가")) % 28:
-        return "은"
-    return "는"
-
-
 def holding_fact(item: dict) -> str:
     """한 종목의 사실 문장: 총자산 대비 비중과 최근 20거래일 주가 등락률. 한 문장의 숫자는 모두 그 종목(item)의 값이다."""
-    name = item["company_name"]
-    head = f"{name}{_topic_particle(name)} "
+    head = f"{josa(item['company_name'], '은/는')} "
     tail = f"최근 {RETURN_WINDOW_DAYS}거래일 주가 등락률은 {item['return_20d_pct']:+}%입니다."
     if item["weight_pct"] is None:
         return head + tail
@@ -655,6 +678,7 @@ def load_inputs(db, owner_key: str) -> tuple[float, list[HoldingInput]]:
                 current_price=price["current_price"] if price else None,
                 is_realtime=bool(price and price["is_realtime"]),
                 return_20d_pct=returns.get(c.id),
+                asset_type=c.asset_type or "stock",
             )
         )
     return float(account.cash_balance), inputs
@@ -673,10 +697,10 @@ def build_diagnosis(cash_balance: float, inputs: list[HoldingInput]) -> dict:
         notes.append(f"{', '.join(unpriced)}의 현재가를 가져오지 못해 평가금액·비중·손익 계산에서 제외했습니다.")
     fallback_priced = [i["company_name"] for i in items if not i["price_unavailable"] and not i["is_realtime"]]
     if fallback_priced:
-        notes.append(f"{', '.join(fallback_priced)}는 실시간 시세 대신 DB에 저장된 최근 종가로 계산했습니다.")
+        notes.append(f"{josa(', '.join(fallback_priced), '은/는')} 실시간 시세 대신 DB에 저장된 최근 종가로 계산했습니다.")
     no_return = [i["company_name"] for i in items if i["return_20d_pct"] is None]
     if no_return:
-        notes.append(f"{', '.join(no_return)}는 저장된 주가가 부족해 최근 {RETURN_WINDOW_DAYS}거래일 수익률을 계산하지 못했습니다.")
+        notes.append(f"{josa(', '.join(no_return), '은/는')} 저장된 주가가 부족해 최근 {RETURN_WINDOW_DAYS}거래일 수익률을 계산하지 못했습니다.")
 
     explanation, reason = None, None
     if metrics["priced_holding_count"] == 0:

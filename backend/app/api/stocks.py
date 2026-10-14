@@ -1,10 +1,11 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, HTTPException, Path, Query
 from pydantic import BaseModel
 
 from app.db.session import SessionLocal
+from app.event_reaction_service import build_event_reactions
 from app.realtime_price import get_realtime_price_data
 from app.tools.company_resolver import resolve_company
 
@@ -60,5 +61,68 @@ def get_stock_realtime_price(
             **data,
             **extra,
         )
+    finally:
+        db.close()
+
+
+class Horizon(BaseModel):
+    pct: float | None
+    index_pct: float | None
+    excess_pct: float | None
+    available: bool
+    reason: str | None
+
+
+class Returns(BaseModel):
+    d1: Horizon
+    d5: Horizon
+    d20: Horizon
+
+
+class EventReaction(BaseModel):
+    event_type: Literal["disclosure", "news"]
+    title: str
+    url: str | None
+    event_at: str | None
+    event_date: str | None
+    time_known: bool
+    base_date: date | None
+    base_close: float | None
+    reaction_start_date: date | None
+    returns: Returns
+    volume_ratio: float | None
+    volume_sample_days: int
+    other_events_in_window: int
+    note: str | None
+
+
+class EventReactionsResponse(BaseModel):
+    ticker: str
+    company_name: str
+    asset_type: str
+    price_as_of: date | None
+    market_index: str | None
+    events: list[EventReaction]
+    summary: dict[str, int | float | None]
+    disclaimer: str
+
+
+@router.get("/{ticker}/event-reactions", response_model=EventReactionsResponse)
+def get_event_reactions(
+    ticker: str = Path(min_length=1, max_length=50),
+    event_type: Literal["disclosure", "news", "all"] = "all",
+    limit: int = Query(10, ge=1, le=30, description="유형별 최대 사건 수(all이면 공시·뉴스 각각 최신 limit건)"),
+    since_days: int = Query(60, ge=1, le=120),
+) -> dict:
+    """뉴스·공시가 나온 시점 이후 주가 반응(1/5/20거래일 수익률, 지수 대비 초과수익률, 거래량 비율). 공개.
+
+    계산 정의와 한계는 `app/event_reaction.py` 모듈 docstring과 API.md 참고. 시간적 선후관계일 뿐 인과관계가 아니다.
+    """
+    db = SessionLocal()
+    try:
+        res = resolve_company(db, ticker)
+        if res.company is None:
+            raise HTTPException(status_code=404, detail=res.message)
+        return build_event_reactions(db, res.company, event_type, limit, since_days)
     finally:
         db.close()

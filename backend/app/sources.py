@@ -28,6 +28,13 @@ def extract_sources(fn_name: str, result: dict) -> list[dict]:
             source("disclosure", d["title"], [d["company_name"]], d.get("source_url"))
             for d in result.get("disclosures", [])
         ]
+    if fn_name == "event_reaction_tool":
+        # 사건 이후 주가 반응: 사건(뉴스/공시) 하나가 근거 문서 하나다. type은 기존 값(news|disclosure)만 쓴다.
+        return [
+            source(e["event_type"], e["title"], [result.get("company_name")], e.get("url"))
+            for e in result.get("events", [])
+            if e.get("event_type") in ("news", "disclosure")
+        ]
     if fn_name == "rag_search_tool":
         out = []
         for r in result.get("results", []):
