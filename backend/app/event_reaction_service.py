@@ -1,6 +1,7 @@
 """종목의 뉴스·공시 사건을 DB에서 읽어 app/event_reaction.py로 반응 지표를 계산한다(GET /api/stocks/{ticker}/event-reactions).
 
-쿼리는 종목 시세 1번, 지수 1번, 공시 1번, 뉴스 1번이고 계산은 전부 메모리에서 한다.
+쿼리는 종목 시세 1번, 지수 1번, 공시 1번, 뉴스 1번(+ 이름이 겹치는 다른 종목 이름 1번)이고 계산은 전부 메모리에서 한다.
+뉴스 사건은 제목에 종목 이름(또는 별칭)이 독립된 이름으로 들어 있는 기사만 쓴다(공시는 거르지 않는다).
 """
 
 from datetime import date, datetime, time, timedelta
@@ -8,6 +9,8 @@ from typing import Literal
 
 from sqlalchemy import select
 
+from app.company_aliases import COMPANY_ALIASES
+from app.etf import mentions_etf_name
 from app.event_reaction import (
     DISCLAIMER,
     KST,
@@ -35,6 +38,17 @@ def _dedupe(events: list[dict]) -> list[dict]:
     return out
 
 
+def _name_forms(company: Company) -> list[str]:
+    """뉴스 제목에서 이 종목을 가리키는 이름들: 등록명과 company_aliases의 별칭."""
+    return [company.name, *[alias for alias, name in COMPANY_ALIASES.items() if name == company.name]]
+
+
+def _title_mentions(title: str, names: list[str], longer_names: list[str]) -> bool:
+    """제목에 종목 이름(또는 별칭)이 독립된 이름으로 들어 있는지. ETF 뉴스에 쓰는 판별(app.etf.mentions_etf_name)을 그대로 쓴다:
+    앞에 한글·영문·숫자가 붙어 있거나("삼성전자우"처럼 뒤에 다른 이름이 이어지면) 더 긴 다른 종목 이름의 일부로만 나오면 아니다."""
+    return any(mentions_etf_name(title, n, longer_names) for n in names)
+
+
 def _load_events(db, company: Company, since: date) -> list[dict]:
     since_dt = datetime.combine(since, time.min, tzinfo=KST)
     events = []
@@ -56,8 +70,11 @@ def _load_events(db, company: Company, since: date) -> list[dict]:
         .where(News.company_id == company.id, News.published_at >= since_dt)
         .order_by(News.published_at.desc())
     ).all()
+    # 종목 관련 뉴스만 사건으로 쓴다: 수집 단계에서는 종목명으로 검색해 온 기사라 제목에 종목이 없는 기사(시황 기사, 다른 종목 기사)가 섞여 있다.
+    names = _name_forms(company)
+    longer = [n for (n,) in db.query(Company.name).filter(Company.name.contains(company.name), Company.id != company.id)] if rows else []
     for title, url, at in rows:
-        if at is None:
+        if at is None or not _title_mentions(title, names, longer):
             continue
         at = at.astimezone(KST)
         day = at.date()
