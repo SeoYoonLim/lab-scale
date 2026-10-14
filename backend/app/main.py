@@ -16,6 +16,7 @@ from app.api.disclaimer import router as disclaimer_router
 from app.api.discovery import router as discovery_router
 from app.api.portfolio import router as portfolio_router
 from app.api.research import router as research_router
+from app.api.status import router as status_router
 from app.api.stocks import router as stocks_router
 from app.api.watchlist import router as watchlist_router
 from app.auth import get_jwt_secret
@@ -75,6 +76,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(disclaimer_router)
+app.include_router(status_router)
 app.include_router(research_router)
 app.include_router(stocks_router)
 app.include_router(companies_router)

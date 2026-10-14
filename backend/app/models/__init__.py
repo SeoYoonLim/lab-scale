@@ -1,4 +1,5 @@
 from app.models.company import Company
+from app.models.data_refresh_log import DataRefreshLog
 from app.models.disclosure import Disclosure
 from app.models.exchange_rate import ExchangeRate
 from app.models.holding import Holding
@@ -20,6 +21,7 @@ __all__ = [
     "Disclosure",
     "MarketIndex",
     "ExchangeRate",
+    "DataRefreshLog",
     "ResearchReport",
     "PortfolioDiagnosis",
     "ToolCallLog",
