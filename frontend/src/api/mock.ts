@@ -1,11 +1,21 @@
 import { ApiError } from './errors'
 import { AUTH_EXPIRED_EVENT, clearToken, getToken } from '../utils/token'
 import type {
+  AssetType,
   AuthResponse,
   Company,
+  DiagnosisChanges,
+  DiagnosisCompareResponse,
+  DiagnosisDetail,
   DiagnosisFlag,
+  DiagnosisFlagSummary,
+  DiagnosisHistoryItem,
+  DiagnosisHistoryList,
   DiagnosisHolding,
+  DiagnosisHoldingChange,
   DiagnosisResponse,
+  DiagnosisReturnChange,
+  DiagnosisTotalAssetChange,
   Holding,
   OrderResult,
   Portfolio,
@@ -33,18 +43,26 @@ const DISCLAIMER =
 interface CompanyMeta {
   ticker: string
   name: string
-  market: 'KOSPI' | 'KOSDAQ'
+  // ETF는 market이 null(backend/API.md "종목 유형: 주식과 ETF")
+  market: 'KOSPI' | 'KOSDAQ' | null
+  assetType: AssetType
 }
 
 // 백엔드 DB의 sector 컬럼은 2026-10-07 기준 실제로 비어 있다(README "구현된 API" 참고) — mock도 null로 맞춘다.
 const COMPANY_META: CompanyMeta[] = [
-  { ticker: '005930', name: '삼성전자', market: 'KOSPI' },
-  { ticker: '000660', name: 'SK하이닉스', market: 'KOSPI' },
-  { ticker: '035420', name: 'NAVER', market: 'KOSPI' },
-  { ticker: '035720', name: '카카오', market: 'KOSPI' },
-  { ticker: '005380', name: '현대차', market: 'KOSPI' },
-  { ticker: '373220', name: 'LG에너지솔루션', market: 'KOSPI' },
-  { ticker: '247540', name: '에코프로비엠', market: 'KOSDAQ' },
+  { ticker: '005930', name: '삼성전자', market: 'KOSPI', assetType: 'stock' },
+  { ticker: '000660', name: 'SK하이닉스', market: 'KOSPI', assetType: 'stock' },
+  { ticker: '035420', name: 'NAVER', market: 'KOSPI', assetType: 'stock' },
+  { ticker: '035720', name: '카카오', market: 'KOSPI', assetType: 'stock' },
+  { ticker: '005380', name: '현대차', market: 'KOSPI', assetType: 'stock' },
+  { ticker: '373220', name: 'LG에너지솔루션', market: 'KOSPI', assetType: 'stock' },
+  { ticker: '247540', name: '에코프로비엠', market: 'KOSDAQ', assetType: 'stock' },
+  // ETF(2026-10-14 추가). 실제 API.md 예시와 같은 종목코드/이름을 쓴다 - 레버리지·인버스는
+  // LEVERAGED_INVERSE_ETF 플래그 테스트용.
+  { ticker: '069500', name: 'KODEX 200', market: null, assetType: 'etf' },
+  { ticker: '360750', name: 'TIGER 미국S&P500', market: null, assetType: 'etf' },
+  { ticker: '122630', name: 'KODEX 레버리지', market: null, assetType: 'etf' },
+  { ticker: '114800', name: 'KODEX 인버스', market: null, assetType: 'etf' },
 ]
 
 const BASE_PRICE: Record<string, number> = {
@@ -55,6 +73,27 @@ const BASE_PRICE: Record<string, number> = {
   '005380': 230000,
   '373220': 380000,
   '247540': 130000,
+  '069500': 36000,
+  '360750': 19000,
+  '122630': 83000,
+  '114800': 5500,
+}
+
+// backend/API.md: 레버리지·인버스는 ETF 이름으로 판별한다(LEVERAGED_INVERSE_ETF 플래그).
+function isLeveragedOrInverseEtf(name: string): boolean {
+  return /레버리지|인버스|2X/i.test(name)
+}
+
+// 종목명에 "은/는"을 붙인다(한글 마지막 글자의 받침 유무로 판단). 실제 백엔드처럼 읽는 소리까지
+// 완벽히 따지지는 않지만("200"처럼 숫자로 끝나는 이름은 받침 있는 쪽으로 둔다), 적어도 한글로 끝나는
+// 흔한 ETF 이름("KODEX 레버리지" 등)에서 "레버리지은"처럼 틀리진 않는다.
+function josaEunNeun(name: string): string {
+  const last = name.trim().at(-1) ?? ''
+  const code = last.codePointAt(0) ?? 0
+  if (code >= 0xac00 && code <= 0xd7a3) {
+    return (code - 0xac00) % 28 === 0 ? '는' : '은'
+  }
+  return '은'
 }
 
 const DISCLOSURE_TYPES = [
@@ -148,6 +187,7 @@ function companyView(meta: CompanyMeta): Company {
     name: meta.name,
     market: meta.market,
     sector: null,
+    asset_type: meta.assetType,
     latest_close: latest?.close_price ?? null,
     change_pct: latest?.change_pct ?? null,
   }
@@ -292,9 +332,13 @@ interface UserStore {
   holdings: Map<string, { quantity: number; avg_price: number }>
   trades: Trade[]
   nextTradeId: number
+  // 진단 이력(2026-10-14 추가). 실제 백엔드처럼 최근 50건만 보관한다.
+  diagnosisHistory: DiagnosisDetail[]
+  nextDiagnosisId: number
 }
 
 const INITIAL_CASH = 10_000_000
+const MAX_DIAGNOSIS_HISTORY = 50
 const stores = new Map<number, UserStore>()
 
 function storeFor(userId: number): UserStore {
@@ -308,6 +352,8 @@ function storeFor(userId: number): UserStore {
       holdings: new Map(),
       trades: [],
       nextTradeId: 1,
+      diagnosisHistory: [],
+      nextDiagnosisId: 1,
     }
     stores.set(userId, s)
   }
@@ -478,10 +524,11 @@ async function getRealtimePrice(ticker: string): Promise<RealtimePrice> {
 
 const WINDOW_DAYS = 20
 
-async function getTrending(category: TrendingCategory, limit = 10): Promise<TrendingResponse> {
+async function getTrending(category: TrendingCategory, limit = 10, assetType: AssetType = 'stock'): Promise<TrendingResponse> {
   await delay(200)
+  const candidates = COMPANY_META.filter((meta) => meta.assetType === assetType)
 
-  const items: TrendingItem[] = COMPANY_META.map((meta) => {
+  const items: TrendingItem[] = candidates.map((meta) => {
     const series = getPriceSeries(meta.ticker)
     const latest = series.at(-1)!
     const window = series.slice(-1 - WINDOW_DAYS, -1)
@@ -506,7 +553,8 @@ async function getTrending(category: TrendingCategory, limit = 10): Promise<Tren
 
   return {
     category,
-    price_date: getPriceSeries(COMPANY_META[0].ticker).at(-1)!.price_date,
+    asset_type: assetType,
+    price_date: getPriceSeries(candidates[0].ticker).at(-1)!.price_date,
     window_days: WINDOW_DAYS,
     items: sorted.slice(0, limit),
   }
@@ -514,12 +562,13 @@ async function getTrending(category: TrendingCategory, limit = 10): Promise<Tren
 
 // ---------- 종목 검색 ----------
 
-async function searchCompanies(q?: string, limit = 50): Promise<Company[]> {
+async function searchCompanies(q?: string, limit = 50, assetType?: AssetType): Promise<Company[]> {
   await delay(200)
   const needle = q?.trim().toLowerCase()
+  const byType = assetType ? COMPANY_META.filter((c) => c.assetType === assetType) : COMPANY_META
   const matched = needle
-    ? COMPANY_META.filter((c) => c.name.toLowerCase().includes(needle) || c.ticker.includes(needle))
-    : COMPANY_META
+    ? byType.filter((c) => c.name.toLowerCase().includes(needle) || c.ticker.includes(needle))
+    : byType
   return matched.slice(0, limit).map(companyView)
 }
 
@@ -540,6 +589,7 @@ function watchlistItemView(ticker: string, added_at: string): WatchlistItem {
     company_id: COMPANY_META.indexOf(meta) + 1,
     ticker: meta.ticker,
     company_name: meta.name,
+    asset_type: meta.assetType,
     added_at,
     latest_close: latest?.close_price ?? null,
     latest_close_date: latest?.price_date ?? null,
@@ -590,6 +640,7 @@ function buildPortfolio(store: UserStore): Portfolio {
     holdingItems.push({
       ticker: meta.ticker,
       company_name: meta.name,
+      asset_type: meta.assetType,
       quantity,
       avg_price,
       current_price: current,
@@ -653,6 +704,7 @@ async function placeOrder(ticker: string, side: 'buy' | 'sell', quantity: number
     id: store.nextTradeId++,
     ticker: meta.ticker,
     company_name: meta.name,
+    asset_type: meta.assetType,
     side,
     quantity,
     price,
@@ -716,7 +768,11 @@ async function getDiagnosis(): Promise<DiagnosisResponse> {
 
   const holdings: DiagnosisHolding[] = []
   const marketEval: Record<string, number> = {}
+  // stockEvalAmount: 보유 종목 전체(ETF 포함) 평가금액 합 - herfindahl_index/total_asset의 분모다.
+  // stocksOnlyEvalAmount: ETF를 뺀 주식만의 평가금액 합 - market_weights_pct의 분모다(backend/app/diagnosis.py
+  // 의 stock_eval/stocks_only_eval과 같은 구분. 이름은 헷갈리지만 실제 백엔드도 이렇게 나뉘어 있다).
   let stockEvalAmount = 0
+  let stocksOnlyEvalAmount = 0
   let totalCost = 0
   let totalProfitLoss = 0
 
@@ -733,12 +789,18 @@ async function getDiagnosis(): Promise<DiagnosisResponse> {
     stockEvalAmount += eval_amount
     totalCost += avg_price * quantity
     totalProfitLoss += profit_loss
-    marketEval[meta.market] = (marketEval[meta.market] ?? 0) + eval_amount
+    // ETF는 시장 쏠림 계산에서 뺀다(backend/API.md 2026-10-14) - market도 "ETF"로 둔다(예전엔 "OTHER").
+    const holdingMarket = meta.assetType === 'etf' ? 'ETF' : meta.market!
+    if (meta.assetType === 'stock') {
+      marketEval[holdingMarket] = (marketEval[holdingMarket] ?? 0) + eval_amount
+      stocksOnlyEvalAmount += eval_amount
+    }
 
     holdings.push({
       ticker: meta.ticker,
       company_name: meta.name,
-      market: meta.market,
+      asset_type: meta.assetType,
+      market: holdingMarket,
       quantity,
       avg_price,
       current_price: current,
@@ -775,7 +837,8 @@ async function getDiagnosis(): Promise<DiagnosisResponse> {
 
   const marketWeightsPct: Record<string, number | null> = {}
   for (const [market, amount] of Object.entries(marketEval)) {
-    marketWeightsPct[market] = stockEvalAmount > 0 ? Math.round((amount / stockEvalAmount) * 10000) / 100 : null
+    marketWeightsPct[market] =
+      stocksOnlyEvalAmount > 0 ? Math.round((amount / stocksOnlyEvalAmount) * 10000) / 100 : null
   }
 
   const byProfitDesc = holdings.slice().sort((a, b) => (b.profit_loss_pct ?? 0) - (a.profit_loss_pct ?? 0))
@@ -804,16 +867,26 @@ async function getDiagnosis(): Promise<DiagnosisResponse> {
       market: null,
     })
   }
+  // ETF를 하나라도 보유하면 FEW_HOLDINGS를 걸지 않는다(backend/API.md 2026-10-14) - ETF는 한 상품
+  // 안에서 여러 자산에 나눠 투자해서 종목 수로 분산 정도를 보기 어렵다. 대신 strengths에 안내한다.
+  const heldEtfCount = holdings.filter((h) => h.asset_type === 'etf').length
+  let etfFewHoldingsNote: string | null = null
   if (holdings.length < 3) {
-    flags.push({
-      code: 'FEW_HOLDINGS',
-      message: `보유 종목이 ${holdings.length}개로 적어요.`,
-      value: holdings.length,
-      threshold: 3,
-      ticker: null,
-      company_name: null,
-      market: null,
-    })
+    if (heldEtfCount > 0) {
+      etfFewHoldingsNote =
+        `보유 종목은 ${holdings.length}개지만 ETF가 ${heldEtfCount}개 포함돼 있습니다. ETF는 한 상품 ` +
+        '안에서 여러 자산에 나눠 투자해서 종목 수로 분산 정도를 보기는 어렵습니다.'
+    } else {
+      flags.push({
+        code: 'FEW_HOLDINGS',
+        message: `보유 종목이 ${holdings.length}개로 적어요.`,
+        value: holdings.length,
+        threshold: 3,
+        ticker: null,
+        company_name: null,
+        market: null,
+      })
+    }
   }
   if (cashWeightPct != null && cashWeightPct >= FLAG_RULES.CASH_HIGH) {
     flags.push({
@@ -863,6 +936,24 @@ async function getDiagnosis(): Promise<DiagnosisResponse> {
       })
     }
   }
+  // LEVERAGED_INVERSE_ETF: 레버리지·인버스 ETF를 보유한 종목마다 1개(backend/API.md 2026-10-14).
+  for (const h of holdings) {
+    if (h.asset_type === 'etf' && isLeveragedOrInverseEtf(h.company_name)) {
+      const kind = /인버스/.test(h.company_name) ? '인버스' : '레버리지'
+      const weight = h.weight_pct ?? 0
+      flags.push({
+        code: 'LEVERAGED_INVERSE_ETF',
+        message:
+          `${h.company_name}${josaEunNeun(h.company_name)} ${kind} ETF로 총자산의 ${weight}%입니다. 하루 수익률을 기준으로 움직여 ` +
+          '오래 보유하면 기초지수 수익률과 달라질 수 있습니다.',
+        value: weight,
+        threshold: 0,
+        ticker: h.ticker,
+        company_name: h.company_name,
+        market: null,
+      })
+    }
+  }
 
   const totalProfitLossPct = totalCost > 0 ? Math.round((totalProfitLoss / totalCost) * 10000) / 100 : null
 
@@ -871,10 +962,11 @@ async function getDiagnosis(): Promise<DiagnosisResponse> {
     `현금 비중은 ${cashWeightPct ?? '-'}%입니다. 보유 종목은 ${holdings.length}개이고 ` +
     `총 평가손익은 ${Math.round(totalProfitLoss).toLocaleString('ko-KR')}원(${totalProfitLossPct ?? '-'}%)입니다.`
 
-  const strengths =
-    flags.length === 0
-      ? [`상위 1종목 비중이 ${top1WeightPct ?? '-'}%로 한 종목에 크게 쏠려 있지 않습니다.`, `${holdings.length}개 종목에 나눠 보유하고 있습니다.`]
-      : [`${holdings.length}개 종목에 나눠 보유하고 있습니다.`]
+  const strengths = [
+    ...(flags.length === 0 ? [`상위 1종목 비중이 ${top1WeightPct ?? '-'}%로 한 종목에 크게 쏠려 있지 않습니다.`] : []),
+    `${holdings.length}개 종목에 나눠 보유하고 있습니다.`,
+    ...(etfFewHoldingsNote ? [etfFewHoldingsNote] : []),
+  ]
 
   const risks =
     flags.length > 0 ? flags.map((f) => f.message) : ['규칙 기준으로 확인된 위험 항목은 없습니다.']
@@ -886,9 +978,9 @@ async function getDiagnosis(): Promise<DiagnosisResponse> {
       : []),
   ]
 
-  return {
+  const computed = {
     generated_at: new Date().toISOString(),
-    source: 'rule_based',
+    source: 'rule_based' as const,
     model: null,
     metrics: {
       total_asset: Math.round(totalAsset),
@@ -915,6 +1007,162 @@ async function getDiagnosis(): Promise<DiagnosisResponse> {
     notes: ['샘플 데이터 기반 규칙 진단이에요(실제 백엔드의 LLM 설명과는 다릅니다).'],
     disclaimer: DISCLAIMER,
   }
+
+  // 성공한 진단은 이력에 저장한다(최근 50건, backend/API.md "진단 이력"). 실패 없이 매번 저장되므로
+  // diagnosis_id/created_at은 항상 값이 있다(저장 실패를 흉내 내지는 않는다).
+  const id = store.nextDiagnosisId++
+  const created_at = new Date().toISOString()
+  store.diagnosisHistory.push({ ...computed, id, created_at })
+  if (store.diagnosisHistory.length > MAX_DIAGNOSIS_HISTORY) store.diagnosisHistory.shift()
+
+  return { ...computed, diagnosis_id: id, created_at }
+}
+
+// ---------- 포트폴리오 진단 이력(2026-10-14 추가) ----------
+
+function toHistoryItem(detail: DiagnosisDetail): DiagnosisHistoryItem {
+  return {
+    id: detail.id,
+    created_at: detail.created_at!,
+    source: detail.source,
+    total_asset: detail.metrics.total_asset,
+    holdings_count: detail.metrics.holding_count,
+    flags: detail.flags.map(
+      (f): DiagnosisFlagSummary => ({ code: f.code, ticker: f.ticker, company_name: f.company_name, market: f.market }),
+    ),
+    summary_preview: detail.summary.length > 80 ? detail.summary.slice(0, 80) : detail.summary,
+  }
+}
+
+function findDiagnosis(store: UserStore, diagnosisId: number): DiagnosisDetail {
+  const found = store.diagnosisHistory.find((d) => d.id === diagnosisId)
+  if (!found) throw new ApiError(`diagnosis_id=${diagnosisId} 진단을 찾을 수 없습니다.`, 404)
+  return found
+}
+
+// 같은 플래그인지는 (code, ticker, market)으로 가른다(backend/API.md) - BIG_LOSS는 종목마다,
+// MARKET_SKEW는 시장마다 따로 신규/해소를 잡는다.
+function flagKey(f: { code: string; ticker: string | null; market: string | null }): string {
+  return `${f.code}|${f.ticker ?? ''}|${f.market ?? ''}`
+}
+
+function computeDiagnosisChanges(previous: DiagnosisDetail, current: DiagnosisDetail): DiagnosisChanges {
+  const prevAsset = previous.metrics.total_asset
+  const currAsset = current.metrics.total_asset
+  const total_asset: DiagnosisTotalAssetChange = {
+    previous: prevAsset,
+    current: currAsset,
+    change_amount: Math.round((currAsset - prevAsset) * 100) / 100,
+    change_pct: prevAsset !== 0 ? Math.round(((currAsset - prevAsset) / prevAsset) * 10000) / 100 : null,
+  }
+
+  const prevByTicker = new Map(previous.holdings.map((h) => [h.ticker, h]))
+  const currByTicker = new Map(current.holdings.map((h) => [h.ticker, h]))
+  const tickers = new Set([...prevByTicker.keys(), ...currByTicker.keys()])
+
+  const holdings: DiagnosisHoldingChange[] = []
+  for (const ticker of tickers) {
+    const p = prevByTicker.get(ticker)
+    const c = currByTicker.get(ticker)
+    const previous_weight_pct = p?.weight_pct ?? null
+    const current_weight_pct = c?.weight_pct ?? null
+    const weight_change_pp =
+      previous_weight_pct != null && current_weight_pct != null
+        ? Math.round((current_weight_pct - previous_weight_pct) * 100) / 100
+        : current_weight_pct != null
+          ? current_weight_pct // added: 이전을 0으로 봄
+          : previous_weight_pct != null
+            ? -previous_weight_pct // removed: -이전 비중
+            : null
+    holdings.push({
+      ticker,
+      company_name: (c ?? p)!.company_name,
+      status: !p ? 'added' : !c ? 'removed' : 'kept',
+      previous_weight_pct,
+      current_weight_pct,
+      weight_change_pp,
+    })
+  }
+  holdings.sort((a, b) => Math.abs(b.weight_change_pp ?? 0) - Math.abs(a.weight_change_pp ?? 0))
+
+  const prevFlags = new Map(previous.flags.map((f) => [flagKey(f), f]))
+  const currFlags = new Map(current.flags.map((f) => [flagKey(f), f]))
+  const added = [...currFlags.entries()].filter(([key]) => !prevFlags.has(key)).map(([, f]) => f)
+  const resolved = [...prevFlags.entries()].filter(([key]) => !currFlags.has(key)).map(([, f]) => f)
+
+  const returns_20d: DiagnosisReturnChange[] = []
+  for (const ticker of tickers) {
+    const p = prevByTicker.get(ticker)?.return_20d_pct
+    const c = currByTicker.get(ticker)?.return_20d_pct
+    if (p == null || c == null) continue
+    returns_20d.push({
+      ticker,
+      company_name: (currByTicker.get(ticker) ?? prevByTicker.get(ticker))!.company_name,
+      previous_return_20d_pct: p,
+      current_return_20d_pct: c,
+      change_pp: Math.round((c - p) * 100) / 100,
+    })
+  }
+  returns_20d.sort((a, b) => Math.abs(b.change_pp ?? 0) - Math.abs(a.change_pp ?? 0))
+
+  return { total_asset, holdings, flags: { added, resolved }, returns_20d }
+}
+
+async function getDiagnosisHistory(limit = 20, offset = 0): Promise<DiagnosisHistoryList> {
+  await delay(150)
+  const store = storeFor(currentUserId())
+  const sorted = store.diagnosisHistory.slice().reverse() // 최신순
+  return {
+    total: store.diagnosisHistory.length,
+    limit,
+    offset,
+    items: sorted.slice(offset, offset + limit).map(toHistoryItem),
+  }
+}
+
+async function getDiagnosisDetail(diagnosisId: number): Promise<DiagnosisDetail> {
+  await delay(150)
+  return findDiagnosis(storeFor(currentUserId()), diagnosisId)
+}
+
+async function compareDiagnosis(diagnosisId: number, baseId?: number): Promise<DiagnosisCompareResponse> {
+  await delay(150)
+  const store = storeFor(currentUserId())
+  const current = findDiagnosis(store, diagnosisId)
+
+  let previous: DiagnosisDetail | undefined
+  if (baseId != null) {
+    previous = findDiagnosis(store, baseId)
+  } else {
+    // base를 안 주면 바로 이전 진단(created_at 기준, 같으면 id 기준)을 쓴다. 이력에 저장된 항목은
+    // 우리가 직접 만들었으니(getDiagnosis) created_at이 항상 실제 문자열이다(! 로 단언).
+    const currentCreatedAt = current.created_at!
+    previous = store.diagnosisHistory
+      .filter(
+        (d) =>
+          d.id !== current.id &&
+          (d.created_at! < currentCreatedAt || (d.created_at === currentCreatedAt && d.id < current.id)),
+      )
+      .sort((a, b) => (a.created_at === b.created_at ? b.id - a.id : b.created_at!.localeCompare(a.created_at!)))[0]
+  }
+
+  if (!previous) {
+    return { current: toHistoryItem(current), previous: null, changes: null, disclaimer: DISCLAIMER }
+  }
+  return {
+    current: toHistoryItem(current),
+    previous: toHistoryItem(previous),
+    changes: computeDiagnosisChanges(previous, current),
+    disclaimer: DISCLAIMER,
+  }
+}
+
+async function deleteDiagnosis(diagnosisId: number): Promise<void> {
+  await delay(150)
+  const store = storeFor(currentUserId())
+  const index = store.diagnosisHistory.findIndex((d) => d.id === diagnosisId)
+  if (index === -1) throw new ApiError(`diagnosis_id=${diagnosisId} 진단을 찾을 수 없습니다.`, 404)
+  store.diagnosisHistory.splice(index, 1)
 }
 
 export const mockApi: Api = {
@@ -940,4 +1188,8 @@ export const mockApi: Api = {
   getTrades,
   resetPortfolio,
   getDiagnosis,
+  getDiagnosisHistory,
+  getDiagnosisDetail,
+  compareDiagnosis,
+  deleteDiagnosis,
 }

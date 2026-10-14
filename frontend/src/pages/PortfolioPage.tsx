@@ -4,6 +4,9 @@ import type { FormEvent } from 'react'
 import { api } from '../api'
 import { ApiError } from '../api/errors'
 import { queryKeys } from '../api/queryKeys'
+import AssetTypeBadge from '../components/AssetTypeBadge'
+import DiagnosisCompareView from '../components/DiagnosisCompareView'
+import DiagnosisResultView from '../components/DiagnosisResultView'
 import type { Portfolio, WatchlistItem } from '../types'
 import { formatDate, formatPct, formatPrice, trendClass } from '../utils/format'
 
@@ -80,7 +83,9 @@ function WatchlistSection() {
           {data?.map((item) => (
             <li key={item.ticker} className="ledger-row watch-row">
               <div>
-                <div className="ledger-question">{item.company_name}</div>
+                <div className="ledger-question">
+                  {item.company_name} <AssetTypeBadge assetType={item.asset_type} />
+                </div>
                 <div className="meta muted small">
                   <span>{item.ticker}</span>
                   <span>{formatDate(item.added_at)} 등록</span>
@@ -275,7 +280,9 @@ function HoldingsSection({ portfolio, onMutated }: { portfolio: Portfolio; onMut
             {portfolio.holdings.map((h) => (
               <li key={h.ticker} className="ledger-row watch-row">
                 <div>
-                  <div className="ledger-question">{h.company_name}</div>
+                  <div className="ledger-question">
+                    {h.company_name} <AssetTypeBadge assetType={h.asset_type} />
+                  </div>
                   <div className="meta muted small">
                     <span>{h.quantity}주</span>
                     <span>평균 {formatPrice(h.avg_price)}원</span>
@@ -302,8 +309,24 @@ function HoldingsSection({ portfolio, onMutated }: { portfolio: Portfolio; onMut
 // 뮤테이션(버튼을 누르는 행동)으로 다룬다. 보유 종목이 바뀌면 부모가 key를 바꿔 이 컴포넌트를
 // 통째로 리마운트시켜서 지난 결과를 지운다.
 function DiagnosisSection() {
-  const diagnosisMutation = useMutation({ mutationFn: () => api.getDiagnosis() })
+  const queryClient = useQueryClient()
+  const [showCompare, setShowCompare] = useState(false)
+  const diagnosisMutation = useMutation({
+    mutationFn: () => api.getDiagnosis(),
+    onSuccess: () => {
+      setShowCompare(false)
+      // 방금 받은 진단이 이력에 쌓였으니, 아래 이력 섹션도 다음에 보면 최신 상태이게 한다.
+      void queryClient.invalidateQueries({ queryKey: ['diagnosisHistory'] })
+    },
+  })
   const result = diagnosisMutation.data
+  const diagnosisId = result?.diagnosis_id ?? undefined
+
+  const compareQuery = useQuery({
+    queryKey: queryKeys.diagnosisCompare(diagnosisId ?? -1),
+    queryFn: () => api.compareDiagnosis(diagnosisId!),
+    enabled: showCompare && diagnosisId != null,
+  })
 
   return (
     <section>
@@ -338,92 +361,154 @@ function DiagnosisSection() {
         )}
 
         {result && (
-          <div className="diagnosis-result">
-            <div className="meta">
-              <span className="diagnosis-source">
-                {result.source === 'llm' ? `AI 설명 (${result.model})` : '규칙 기반 설명'}
+          <>
+            <DiagnosisResultView result={result} />
+            <div className="diagnosis-history-link">
+              <span className="muted small">
+                {diagnosisId != null ? '이 진단은 이력에 저장됐어요.' : '이력에 저장되지 않았어요(저장만 실패, 결과는 정상이에요).'}
               </span>
-              <span className="muted small">{formatDate(result.generated_at)} 기준</span>
+              {diagnosisId != null && (
+                <button type="button" className="reset-button" onClick={() => setShowCompare((v) => !v)}>
+                  {showCompare ? '비교 닫기' : '이전 진단과 비교'}
+                </button>
+              )}
             </div>
-
-            <p className="entry-answer">{result.summary}</p>
-
-            <div className="diagnosis-metrics">
-              <div>
-                <span className="muted small">총자산</span>
-                <span className="num">{formatPrice(result.metrics.total_asset)}원</span>
-              </div>
-              <div>
-                <span className="muted small">현금 비중</span>
-                <span className="num">{result.metrics.cash_weight_pct ?? '-'}%</span>
-              </div>
-              <div>
-                <span className="muted small">상위 1종목 비중</span>
-                <span className="num">{result.metrics.top1_weight_pct ?? '-'}%</span>
-              </div>
-              <div>
-                <span className="muted small">상위 3종목 비중</span>
-                <span className="num">{result.metrics.top3_weight_pct ?? '-'}%</span>
-              </div>
-              <div>
-                <span className="muted small">집중도(허핀달)</span>
-                <span className="num">{result.metrics.herfindahl_index ?? '-'}</span>
-              </div>
-              <div>
-                <span className="muted small">총 평가손익</span>
-                <span className={`num ${trendClass(result.metrics.total_profit_loss_pct)}`}>
-                  {formatPrice(result.metrics.total_profit_loss)}원 ({formatPct(result.metrics.total_profit_loss_pct)})
-                </span>
-              </div>
-            </div>
-
-            {result.flags.length > 0 && (
-              <div className="diagnosis-block">
-                <div className="muted small">확인된 항목</div>
-                <ul className="list">
-                  {result.flags.map((flag, i) => (
-                    <li key={i}>{flag.message}</li>
-                  ))}
-                </ul>
+            {showCompare && (
+              <div className="diagnosis-compare-panel">
+                {compareQuery.isPending && <p className="muted">비교하는 중…</p>}
+                {compareQuery.error && <p className="notice notice-error">{compareQuery.error.message}</p>}
+                {compareQuery.data && <DiagnosisCompareView compare={compareQuery.data} />}
               </div>
             )}
+          </>
+        )}
+      </div>
+    </section>
+  )
+}
 
-            <div className="diagnosis-columns">
-              <div>
-                <div className="muted small">강점</div>
-                <ul className="list">
-                  {result.strengths.map((s, i) => (
-                    <li key={i}>{s}</li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <div className="muted small">위험 요인</div>
-                <ul className="list">
-                  {result.risks.map((s, i) => (
-                    <li key={i}>{s}</li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <div className="muted small">제안</div>
-                <ul className="list">
-                  {result.suggestions.map((s, i) => (
-                    <li key={i}>{s}</li>
-                  ))}
-                </ul>
-              </div>
-            </div>
+const DIAGNOSIS_HISTORY_PAGE_SIZE = 10
 
-            {result.notes.length > 0 && (
-              <div className="notice">
-                {result.notes.map((note, i) => (
-                  <div key={i}>{note}</div>
-                ))}
-              </div>
-            )}
+function DiagnosisHistorySection() {
+  const queryClient = useQueryClient()
+  const [offset, setOffset] = useState(0)
+  const [expanded, setExpanded] = useState<{ id: number; view: 'detail' | 'compare' } | null>(null)
 
-            <p className="disclaimer-note muted small">{result.disclaimer}</p>
+  const { data, error, isPending } = useQuery({
+    queryKey: queryKeys.diagnosisHistory(DIAGNOSIS_HISTORY_PAGE_SIZE, offset),
+    queryFn: () => api.getDiagnosisHistory(DIAGNOSIS_HISTORY_PAGE_SIZE, offset),
+  })
+
+  const detailQuery = useQuery({
+    queryKey: queryKeys.diagnosisDetail(expanded?.id ?? -1),
+    queryFn: () => api.getDiagnosisDetail(expanded!.id),
+    enabled: expanded?.view === 'detail',
+  })
+  const compareQuery = useQuery({
+    queryKey: queryKeys.diagnosisCompare(expanded?.id ?? -1),
+    queryFn: () => api.compareDiagnosis(expanded!.id),
+    enabled: expanded?.view === 'compare',
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.deleteDiagnosis(id),
+    onSuccess: () => {
+      setExpanded(null)
+      void queryClient.invalidateQueries({ queryKey: ['diagnosisHistory'] })
+    },
+  })
+
+  function toggle(id: number, view: 'detail' | 'compare') {
+    setExpanded((prev) => (prev?.id === id && prev.view === view ? null : { id, view }))
+  }
+
+  async function handleDelete(id: number) {
+    if (!confirm('이 진단을 삭제할까요? 되돌릴 수 없어요.')) return
+    await deleteMutation.mutateAsync(id)
+  }
+
+  return (
+    <section>
+      <h2 className="section-title">진단 이력</h2>
+      <div className="card">
+        {isPending && <p className="muted">불러오는 중…</p>}
+        {error && <p className="notice notice-error">{error.message}</p>}
+        {data && data.items.length === 0 && (
+          <p className="muted">아직 저장된 진단이 없어요. 위에서 AI 진단을 받아보세요.</p>
+        )}
+
+        {data && data.items.length > 0 && (
+          <ul className="ledger">
+            {data.items.map((item) => (
+              <li key={item.id} className="ledger-row">
+                <div className="ledger-summary diagnosis-history-row">
+                  <div>
+                    <div className="ledger-head">
+                      <span className="num">{formatDate(item.created_at)}</span>
+                      <span>{item.source === 'llm' ? 'AI 설명' : '규칙 기반'}</span>
+                    </div>
+                    <div className="meta muted small">
+                      <span className="num">{formatPrice(item.total_asset)}원</span>
+                      <span>{item.holdings_count}종목</span>
+                      {item.flags.length > 0 && <span>플래그 {item.flags.length}개</span>}
+                    </div>
+                  </div>
+                  <div className="watch-right diagnosis-history-actions">
+                    <button type="button" className="diagnosis-history-toggle" onClick={() => toggle(item.id, 'detail')}>
+                      {expanded?.id === item.id && expanded.view === 'detail' ? '상세 닫기' : '상세'}
+                    </button>
+                    <button type="button" className="diagnosis-history-toggle" onClick={() => toggle(item.id, 'compare')}>
+                      {expanded?.id === item.id && expanded.view === 'compare' ? '비교 닫기' : '이전과 비교'}
+                    </button>
+                    <button
+                      type="button"
+                      className="delete-report"
+                      onClick={() => void handleDelete(item.id)}
+                      disabled={deleteMutation.isPending}
+                    >
+                      삭제
+                    </button>
+                  </div>
+                </div>
+
+                {expanded?.id === item.id && expanded.view === 'detail' && (
+                  <div className="ledger-detail">
+                    {detailQuery.isPending && <p className="muted">불러오는 중…</p>}
+                    {detailQuery.error && <p className="notice notice-error">{detailQuery.error.message}</p>}
+                    {detailQuery.data && <DiagnosisResultView result={detailQuery.data} />}
+                  </div>
+                )}
+                {expanded?.id === item.id && expanded.view === 'compare' && (
+                  <div className="ledger-detail">
+                    {compareQuery.isPending && <p className="muted">비교하는 중…</p>}
+                    {compareQuery.error && <p className="notice notice-error">{compareQuery.error.message}</p>}
+                    {compareQuery.data && <DiagnosisCompareView compare={compareQuery.data} />}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {data && data.total > 0 && (
+          <div className="pagination">
+            <button
+              type="button"
+              disabled={offset === 0}
+              onClick={() => setOffset(Math.max(0, offset - DIAGNOSIS_HISTORY_PAGE_SIZE))}
+            >
+              이전
+            </button>
+            <span className="muted small">
+              {offset + 1}–{Math.min(offset + DIAGNOSIS_HISTORY_PAGE_SIZE, data.total)} / {data.total}
+            </span>
+            <button
+              type="button"
+              disabled={offset + DIAGNOSIS_HISTORY_PAGE_SIZE >= data.total}
+              onClick={() => setOffset(offset + DIAGNOSIS_HISTORY_PAGE_SIZE)}
+            >
+              다음
+            </button>
           </div>
         )}
       </div>
@@ -472,7 +557,9 @@ function TradesSection() {
             {data.items.map((t) => (
               <li key={t.id} className="ledger-row watch-row">
                 <div>
-                  <div className="ledger-question">{t.company_name}</div>
+                  <div className="ledger-question">
+                    {t.company_name} <AssetTypeBadge assetType={t.asset_type} />
+                  </div>
                   <div className="meta muted small">
                     <span>{t.side === 'buy' ? '매수' : '매도'}</span>
                     <span>{t.quantity}주</span>
@@ -527,6 +614,7 @@ export default function PortfolioPage() {
       {data && <HoldingsSection portfolio={data} onMutated={() => setResetSignal((k) => k + 1)} />}
 
       <DiagnosisSection key={resetSignal} />
+      <DiagnosisHistorySection />
       <TradesSection />
       <WatchlistSection />
     </div>

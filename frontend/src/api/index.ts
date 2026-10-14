@@ -1,6 +1,10 @@
 import type {
+  AssetType,
   AuthResponse,
   Company,
+  DiagnosisCompareResponse,
+  DiagnosisDetail,
+  DiagnosisHistoryList,
   DiagnosisResponse,
   OrderResult,
   Portfolio,
@@ -40,13 +44,18 @@ export interface AccountApi {
   getTrades(limit?: number, offset?: number, ticker?: string): Promise<TradeList>
   resetPortfolio(): Promise<Portfolio>
   getDiagnosis(): Promise<DiagnosisResponse>
+  // 진단 이력(2026-10-14 추가): 성공한 진단은 저장되고(diagnosis_id), 이력에서 다시 보거나 비교할 수 있다.
+  getDiagnosisHistory(limit?: number, offset?: number): Promise<DiagnosisHistoryList>
+  getDiagnosisDetail(diagnosisId: number): Promise<DiagnosisDetail>
+  compareDiagnosis(diagnosisId: number, baseId?: number): Promise<DiagnosisCompareResponse>
+  deleteDiagnosis(diagnosisId: number): Promise<void>
 }
 
 // 질문/로그인 없이 바로 부르는 API.
 export interface PublicApi {
   getRealtimePrice(ticker: string): Promise<RealtimePrice>
-  getTrending(category: TrendingCategory, limit?: number): Promise<TrendingResponse>
-  searchCompanies(q?: string, limit?: number): Promise<Company[]>
+  getTrending(category: TrendingCategory, limit?: number, assetType?: AssetType): Promise<TrendingResponse>
+  searchCompanies(q?: string, limit?: number, assetType?: AssetType): Promise<Company[]>
   getDisclaimer(): Promise<string>
 }
 

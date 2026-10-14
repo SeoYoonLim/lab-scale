@@ -3,6 +3,9 @@ import { ApiError } from './errors'
 import {
   authResponseSchema,
   companyListSchema,
+  diagnosisCompareResponseSchema,
+  diagnosisDetailSchema,
+  diagnosisHistoryListSchema,
   diagnosisResponseSchema,
   disclaimerResponseSchema,
   orderResultSchema,
@@ -21,6 +24,9 @@ import { AUTH_EXPIRED_EVENT, clearToken, getToken } from '../utils/token'
 import type {
   AuthResponse,
   Company,
+  DiagnosisCompareResponse,
+  DiagnosisDetail,
+  DiagnosisHistoryList,
   DiagnosisResponse,
   OrderResult,
   Portfolio,
@@ -226,13 +232,33 @@ export const httpApi: Api = {
       { method: 'POST' },
       { auth: true, timeoutMs: DIAGNOSIS_TIMEOUT_MS, schema: diagnosisResponseSchema },
     ),
+  getDiagnosisHistory: (limit = 20, offset = 0) =>
+    request<DiagnosisHistoryList>(
+      `/portfolio/diagnosis/history${qs({ limit, offset })}`,
+      {},
+      { auth: true, schema: diagnosisHistoryListSchema },
+    ),
+  getDiagnosisDetail: (diagnosisId) =>
+    request<DiagnosisDetail>(`/portfolio/diagnosis/${diagnosisId}`, {}, { auth: true, schema: diagnosisDetailSchema }),
+  compareDiagnosis: (diagnosisId, baseId) =>
+    request<DiagnosisCompareResponse>(
+      `/portfolio/diagnosis/${diagnosisId}/compare${qs({ base: baseId })}`,
+      {},
+      { auth: true, schema: diagnosisCompareResponseSchema },
+    ),
+  deleteDiagnosis: (diagnosisId) =>
+    requestVoid(`/portfolio/diagnosis/${diagnosisId}`, { method: 'DELETE' }, '진단 삭제에 실패했어요.', { auth: true }),
 
   getRealtimePrice: (ticker) =>
     request<RealtimePrice>(`/stocks/${encodeURIComponent(ticker)}/realtime-price`, {}, { schema: realtimePriceSchema }),
-  getTrending: (category, limit = 10) =>
-    request<TrendingResponse>(`/discovery/trending${qs({ category, limit })}`, {}, { schema: trendingResponseSchema }),
-  searchCompanies: (q, limit) =>
-    request<Company[]>(`/companies${qs({ q, limit })}`, {}, { schema: companyListSchema }),
+  getTrending: (category, limit = 10, assetType) =>
+    request<TrendingResponse>(
+      `/discovery/trending${qs({ category, limit, asset_type: assetType })}`,
+      {},
+      { schema: trendingResponseSchema },
+    ),
+  searchCompanies: (q, limit, assetType) =>
+    request<Company[]>(`/companies${qs({ q, limit, asset_type: assetType })}`, {}, { schema: companyListSchema }),
   getDisclaimer: () =>
     request<{ text: string }>('/disclaimer', {}, { schema: disclaimerResponseSchema }).then((res) => res.text),
 }

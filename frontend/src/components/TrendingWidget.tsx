@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../api'
 import { queryKeys } from '../api/queryKeys'
-import type { TrendingCategory } from '../types'
+import type { AssetType, TrendingCategory } from '../types'
 import { formatPct, formatPrice, trendClass } from '../utils/format'
 
 const CATEGORY_LABELS: Record<TrendingCategory, string> = {
@@ -13,30 +13,49 @@ const CATEGORY_LABELS: Record<TrendingCategory, string> = {
 
 const CATEGORIES: TrendingCategory[] = ['gainers', 'losers', 'volume_surge']
 
+const ASSET_TYPE_LABELS: Record<AssetType, string> = { stock: '주식', etf: 'ETF' }
+const ASSET_TYPES: AssetType[] = ['stock', 'etf']
+
 // 질문 없이 바로 보여주는 "오늘의 관심 종목"(GET /api/discovery/trending). 종목을 누르면
 // 그 종목에 대한 질문을 입력창에 채워준다(바로 보내지는 않음).
 export default function TrendingWidget({ onPick }: { onPick: (question: string) => void }) {
   const [category, setCategory] = useState<TrendingCategory>('gainers')
+  // 기본은 주식만(backend/API.md) - ETF도 따로 볼 수 있게 토글을 둔다.
+  const [assetType, setAssetType] = useState<AssetType>('stock')
   const { data, error, isPending } = useQuery({
-    queryKey: queryKeys.trending(category),
-    queryFn: () => api.getTrending(category, 5),
+    queryKey: queryKeys.trending(category, assetType),
+    queryFn: () => api.getTrending(category, 5, assetType),
   })
 
   return (
     <div className="trending card">
       <div className="card-head">
         <h2 className="section-title">오늘의 관심 종목</h2>
-        <div className="segmented" role="group" aria-label="분류">
-          {CATEGORIES.map((c) => (
-            <button
-              key={c}
-              type="button"
-              className={c === category ? 'seg active' : 'seg'}
-              onClick={() => setCategory(c)}
-            >
-              {CATEGORY_LABELS[c]}
-            </button>
-          ))}
+        <div className="trending-filters">
+          <div className="segmented" role="group" aria-label="분류">
+            {CATEGORIES.map((c) => (
+              <button
+                key={c}
+                type="button"
+                className={c === category ? 'seg active' : 'seg'}
+                onClick={() => setCategory(c)}
+              >
+                {CATEGORY_LABELS[c]}
+              </button>
+            ))}
+          </div>
+          <div className="segmented" role="group" aria-label="종목 유형">
+            {ASSET_TYPES.map((t) => (
+              <button
+                key={t}
+                type="button"
+                className={t === assetType ? 'seg active' : 'seg'}
+                onClick={() => setAssetType(t)}
+              >
+                {ASSET_TYPE_LABELS[t]}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

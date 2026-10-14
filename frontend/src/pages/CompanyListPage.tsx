@@ -3,17 +3,23 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import { queryKeys } from '../api/queryKeys'
+import AssetTypeBadge from '../components/AssetTypeBadge'
+import type { AssetType } from '../types'
 import { formatPct, formatPrice, trendClass } from '../utils/format'
 
 // GET /api/companies?q= 는 로그인 없이 바로 검색할 수 있다(별칭 포함, 종목명/티커 부분 일치).
 // 예전처럼 300종목을 그냥 쭉 나열하는 대신, 검색으로 찾게 한다.
 const SEARCH_DEBOUNCE_MS = 300
 
+type AssetTypeFilter = 'all' | AssetType
+const ASSET_TYPE_LABELS: Record<AssetTypeFilter, string> = { all: '전체', stock: '주식', etf: 'ETF' }
+
 export default function CompanyListPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   // ?q= 로 들어오면(공유한 링크, 종목 상세에서 뒤로가기) 검색어를 복원한다.
   const [q, setQ] = useState(() => searchParams.get('q') ?? '')
   const [debouncedQ, setDebouncedQ] = useState(q)
+  const [assetTypeFilter, setAssetTypeFilter] = useState<AssetTypeFilter>('all')
 
   useEffect(() => {
     const id = setTimeout(() => setDebouncedQ(q), SEARCH_DEBOUNCE_MS)
@@ -26,11 +32,13 @@ export default function CompanyListPage() {
     setSearchParams(debouncedQ ? { q: debouncedQ } : {}, { replace: true })
   }, [debouncedQ, setSearchParams])
 
+  const assetType = assetTypeFilter === 'all' ? undefined : assetTypeFilter
+
   // placeholderData: keepPreviousData - 검색어를 바꾸는 동안 이전 결과를 그대로 보여주면서(깜빡임 없이)
   // isFetching만으로 "검색 중" 표시를 띄운다.
   const { data, error, isPending, isFetching } = useQuery({
-    queryKey: queryKeys.companies(debouncedQ || undefined, 50),
-    queryFn: () => api.searchCompanies(debouncedQ || undefined, 50),
+    queryKey: queryKeys.companies(debouncedQ || undefined, 50, assetType),
+    queryFn: () => api.searchCompanies(debouncedQ || undefined, 50, assetType),
     placeholderData: keepPreviousData,
   })
 
@@ -42,9 +50,22 @@ export default function CompanyListPage() {
         className="company-search"
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        placeholder="종목명 또는 종목코드로 검색 (예: 삼성전자)"
+        placeholder="종목명 또는 종목코드로 검색 (예: 삼성전자, 코덱스200)"
         aria-label="종목 검색"
       />
+
+      <div className="segmented asset-type-filter" role="group" aria-label="종목 유형">
+        {(['all', 'stock', 'etf'] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            className={t === assetTypeFilter ? 'seg active' : 'seg'}
+            onClick={() => setAssetTypeFilter(t)}
+          >
+            {ASSET_TYPE_LABELS[t]}
+          </button>
+        ))}
+      </div>
 
       {isPending && <p className="muted">불러오는 중…</p>}
       {/* 검색어를 바꾸는 중에는 이전 결과를 그대로 보여주면서(깜빡임 없이) 이 표시만 띄운다 -
@@ -59,7 +80,9 @@ export default function CompanyListPage() {
             {data.map((company) => (
               <Link key={company.ticker} to={`/companies/${company.ticker}`} className="company-card">
                 <div>
-                  <div className="company-name">{company.name}</div>
+                  <div className="company-name">
+                    {company.name} <AssetTypeBadge assetType={company.asset_type} />
+                  </div>
                   <div className="meta muted">
                     <span>{company.ticker}</span>
                     {company.market && <span>{company.market}</span>}

@@ -66,6 +66,121 @@ describe('mockApi getDiagnosis', () => {
   })
 })
 
+describe('mockApi ETF (2026-10-14 추가)', () => {
+  it('searchCompanies(asset_type=etf)는 ETF만 돌려주고, 전체 응답에 asset_type이 들어 있다', async () => {
+    const all = await mockApi.searchCompanies(undefined, 50)
+    expect(all.some((c) => c.asset_type === 'stock')).toBe(true)
+    expect(all.some((c) => c.asset_type === 'etf')).toBe(true)
+
+    const etfOnly = await mockApi.searchCompanies(undefined, 50, 'etf')
+    expect(etfOnly.length).toBeGreaterThan(0)
+    expect(etfOnly.every((c) => c.asset_type === 'etf')).toBe(true)
+    // ETF는 market/sector가 null(backend/API.md)
+    expect(etfOnly.every((c) => c.market === null)).toBe(true)
+  })
+
+  it('getTrending 기본값은 주식만이고, asset_type=etf를 주면 ETF만 나온다', async () => {
+    const stockDefault = await mockApi.getTrending('gainers', 5)
+    expect(stockDefault.asset_type).toBe('stock')
+
+    const etf = await mockApi.getTrending('gainers', 5, 'etf')
+    expect(etf.asset_type).toBe('etf')
+    expect(etf.items.length).toBeGreaterThan(0)
+  })
+
+  it('ETF를 보유하면 종목 수가 3개 미만이어도 FEW_HOLDINGS 대신 strengths 안내가 들어간다', async () => {
+    await signupAndLogin()
+    await mockApi.placeOrder('069500', 'buy', 1) // KODEX 200, ETF 1종목만 보유
+    const result = await mockApi.getDiagnosis()
+    expect(result.flags.some((f) => f.code === 'FEW_HOLDINGS')).toBe(false)
+    expect(result.strengths.some((s) => s.includes('ETF'))).toBe(true)
+  })
+
+  it('레버리지 ETF를 보유하면 LEVERAGED_INVERSE_ETF 플래그가 붙는다', async () => {
+    await signupAndLogin()
+    await mockApi.placeOrder('122630', 'buy', 1) // KODEX 레버리지
+    const result = await mockApi.getDiagnosis()
+    const flag = result.flags.find((f) => f.code === 'LEVERAGED_INVERSE_ETF')
+    expect(flag).toBeDefined()
+    expect(flag?.ticker).toBe('122630')
+  })
+
+  it('ETF는 시장 쏠림(MARKET_SKEW) 계산에서 빠진다', async () => {
+    await signupAndLogin()
+    // 주식 1종목 + ETF 1종목: 주식만 보면 그 시장이 100%라 MARKET_SKEW가 걸려야 한다.
+    await mockApi.placeOrder('005930', 'buy', 1)
+    await mockApi.placeOrder('069500', 'buy', 1)
+    const result = await mockApi.getDiagnosis()
+    const skew = result.flags.find((f) => f.code === 'MARKET_SKEW')
+    expect(skew?.market).toBe('KOSPI')
+    const etfHolding = result.holdings.find((h) => h.ticker === '069500')
+    expect(etfHolding?.market).toBe('ETF')
+    expect(etfHolding?.asset_type).toBe('etf')
+  })
+})
+
+describe('mockApi 진단 이력(2026-10-14 추가)', () => {
+  it('진단마다 diagnosis_id/created_at이 채워지고, GET로 그대로 조회된다', async () => {
+    await signupAndLogin()
+    await mockApi.placeOrder('005930', 'buy', 1)
+    const posted = await mockApi.getDiagnosis()
+    expect(posted.diagnosis_id).not.toBeNull()
+    expect(posted.created_at).not.toBeNull()
+
+    const detail = await mockApi.getDiagnosisDetail(posted.diagnosis_id!)
+    expect(detail.id).toBe(posted.diagnosis_id)
+    expect(detail.summary).toBe(posted.summary)
+  })
+
+  it('남의(혹은 없는) 진단 id는 404다', async () => {
+    await signupAndLogin()
+    await mockApi.placeOrder('005930', 'buy', 1)
+    const posted = await mockApi.getDiagnosis()
+
+    await signupAndLogin() // 다른 사용자로 전환
+    const err: unknown = await mockApi.getDiagnosisDetail(posted.diagnosis_id!).catch((e) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect((err as ApiError).status).toBe(404)
+  })
+
+  it('첫 진단의 compare는 previous/changes가 null이고, 두 번째 진단은 변화가 계산된다', async () => {
+    await signupAndLogin()
+    await mockApi.placeOrder('005930', 'buy', 2)
+    const first = await mockApi.getDiagnosis()
+
+    const firstCompare = await mockApi.compareDiagnosis(first.diagnosis_id!)
+    expect(firstCompare.previous).toBeNull()
+    expect(firstCompare.changes).toBeNull()
+
+    await mockApi.placeOrder('035720', 'buy', 3) // 카카오 신규 편입
+    const second = await mockApi.getDiagnosis()
+
+    const compare = await mockApi.compareDiagnosis(second.diagnosis_id!)
+    expect(compare.previous?.id).toBe(first.diagnosis_id)
+    expect(compare.changes?.holdings.some((h) => h.ticker === '035720' && h.status === 'added')).toBe(true)
+  })
+
+  it('getDiagnosisHistory는 최신순으로 나오고, 삭제하면 목록과 조회 모두에서 사라진다', async () => {
+    await signupAndLogin()
+    await mockApi.placeOrder('005930', 'buy', 1)
+    const first = await mockApi.getDiagnosis()
+    await mockApi.placeOrder('035720', 'buy', 1)
+    const second = await mockApi.getDiagnosis()
+
+    const history = await mockApi.getDiagnosisHistory(20, 0)
+    expect(history.items[0].id).toBe(second.diagnosis_id)
+    expect(history.items[1].id).toBe(first.diagnosis_id)
+
+    await mockApi.deleteDiagnosis(first.diagnosis_id!)
+    const afterDelete = await mockApi.getDiagnosisHistory(20, 0)
+    expect(afterDelete.items.some((i) => i.id === first.diagnosis_id)).toBe(false)
+
+    const err: unknown = await mockApi.getDiagnosisDetail(first.diagnosis_id!).catch((e) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect((err as ApiError).status).toBe(404)
+  })
+})
+
 describe('mockApi auth', () => {
   it('로그인 실패(비밀번호 틀림)는 ApiError(401)를 던진다', async () => {
     const username = `user${Math.random().toString(36).slice(2, 10)}`

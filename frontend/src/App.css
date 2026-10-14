@@ -633,6 +633,28 @@
   font-weight: 600;
 }
 
+.trending-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.asset-type-filter {
+  margin-bottom: 16px;
+}
+
+/* ETF 뱃지(2026-10-14 추가) - 주식은 기본값이라 뱃지를 안 보여주고 ETF만 표시한다 */
+.asset-type-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
 .two-col {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -932,6 +954,38 @@
   grid-template-columns: repeat(3, 1fr);
   gap: 20px;
   margin-bottom: 16px;
+}
+
+/* ---------- AI 진단 이력(2026-10-14 추가) ---------- */
+.diagnosis-history-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.diagnosis-compare-panel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.diagnosis-history-row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  cursor: default;
+}
+
+.diagnosis-history-toggle {
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-muted);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 13px;
 }
 
 /* ---------- 로그인/회원가입 ---------- */

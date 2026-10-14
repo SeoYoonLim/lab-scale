@@ -3,12 +3,22 @@
 // 타입 에러가 난다.
 import { z } from 'zod'
 import type {
+  AssetType,
   AuthResponse,
   Company,
+  DiagnosisChanges,
+  DiagnosisCompareResponse,
+  DiagnosisDetail,
   DiagnosisFlag,
+  DiagnosisFlagSummary,
+  DiagnosisHistoryItem,
+  DiagnosisHistoryList,
   DiagnosisHolding,
+  DiagnosisHoldingChange,
   DiagnosisMetrics,
   DiagnosisResponse,
+  DiagnosisReturnChange,
+  DiagnosisTotalAssetChange,
   Holding,
   HoldingBrief,
   OrderResult,
@@ -26,6 +36,8 @@ import type {
   User,
   WatchlistItem,
 } from '../types'
+
+export const assetTypeSchema = z.enum(['stock', 'etf']) satisfies z.ZodType<AssetType>
 
 export const userSchema = z.object({
   id: z.number(),
@@ -102,6 +114,7 @@ export const companySchema = z.object({
   name: z.string(),
   market: z.string().nullable(),
   sector: z.string().nullable(),
+  asset_type: assetTypeSchema,
   latest_close: z.number().nullable(),
   change_pct: z.number().nullable(),
 }) satisfies z.ZodType<Company>
@@ -120,6 +133,7 @@ export const trendingItemSchema = z.object({
 
 export const trendingResponseSchema = z.object({
   category: z.enum(['gainers', 'losers', 'volume_surge']),
+  asset_type: assetTypeSchema,
   price_date: z.string(),
   window_days: z.number(),
   items: z.array(trendingItemSchema),
@@ -129,6 +143,7 @@ export const watchlistItemSchema = z.object({
   company_id: z.number(),
   ticker: z.string(),
   company_name: z.string(),
+  asset_type: assetTypeSchema,
   added_at: z.string(),
   latest_close: z.number().nullable(),
   latest_close_date: z.string().nullable(),
@@ -140,6 +155,7 @@ export const watchlistListSchema = z.object({ items: z.array(watchlistItemSchema
 export const holdingSchema = z.object({
   ticker: z.string(),
   company_name: z.string(),
+  asset_type: assetTypeSchema,
   quantity: z.number(),
   avg_price: z.number(),
   current_price: z.number().nullable(),
@@ -172,6 +188,7 @@ export const tradeSchema = z.object({
   id: z.number(),
   ticker: z.string(),
   company_name: z.string(),
+  asset_type: assetTypeSchema,
   side: z.enum(['buy', 'sell']),
   quantity: z.number(),
   price: z.number(),
@@ -189,6 +206,7 @@ export const tradeListSchema = z.object({
 export const diagnosisHoldingSchema = z.object({
   ticker: z.string(),
   company_name: z.string(),
+  asset_type: assetTypeSchema,
   market: z.string(),
   quantity: z.number(),
   avg_price: z.number(),
@@ -248,6 +266,78 @@ export const diagnosisResponseSchema = z.object({
   suggestions: z.array(z.string()),
   notes: z.array(z.string()),
   disclaimer: z.string(),
+  diagnosis_id: z.number().nullable(),
+  created_at: z.string().nullable(),
 }) satisfies z.ZodType<DiagnosisResponse>
+
+// GET /api/portfolio/diagnosis/{id} - diagnosis_id 자리에 id가 오는 것만 다르다.
+export const diagnosisDetailSchema = diagnosisResponseSchema
+  .omit({ diagnosis_id: true })
+  .extend({ id: z.number() }) satisfies z.ZodType<DiagnosisDetail>
+
+export const diagnosisFlagSummarySchema = z.object({
+  code: z.string(),
+  ticker: z.string().nullable(),
+  company_name: z.string().nullable(),
+  market: z.string().nullable(),
+}) satisfies z.ZodType<DiagnosisFlagSummary>
+
+export const diagnosisHistoryItemSchema = z.object({
+  id: z.number(),
+  created_at: z.string(),
+  source: z.enum(['llm', 'rule_based']),
+  total_asset: z.number(),
+  holdings_count: z.number(),
+  flags: z.array(diagnosisFlagSummarySchema),
+  summary_preview: z.string(),
+}) satisfies z.ZodType<DiagnosisHistoryItem>
+
+export const diagnosisHistoryListSchema = z.object({
+  total: z.number(),
+  limit: z.number(),
+  offset: z.number(),
+  items: z.array(diagnosisHistoryItemSchema),
+}) satisfies z.ZodType<DiagnosisHistoryList>
+
+export const diagnosisTotalAssetChangeSchema = z.object({
+  previous: z.number(),
+  current: z.number(),
+  change_amount: z.number(),
+  change_pct: z.number().nullable(),
+}) satisfies z.ZodType<DiagnosisTotalAssetChange>
+
+export const diagnosisHoldingChangeSchema = z.object({
+  ticker: z.string(),
+  company_name: z.string(),
+  status: z.enum(['added', 'removed', 'kept']),
+  previous_weight_pct: z.number().nullable(),
+  current_weight_pct: z.number().nullable(),
+  weight_change_pp: z.number().nullable(),
+}) satisfies z.ZodType<DiagnosisHoldingChange>
+
+export const diagnosisReturnChangeSchema = z.object({
+  ticker: z.string(),
+  company_name: z.string(),
+  previous_return_20d_pct: z.number().nullable(),
+  current_return_20d_pct: z.number().nullable(),
+  change_pp: z.number().nullable(),
+}) satisfies z.ZodType<DiagnosisReturnChange>
+
+export const diagnosisChangesSchema = z.object({
+  total_asset: diagnosisTotalAssetChangeSchema,
+  holdings: z.array(diagnosisHoldingChangeSchema),
+  flags: z.object({
+    added: z.array(diagnosisFlagSchema),
+    resolved: z.array(diagnosisFlagSchema),
+  }),
+  returns_20d: z.array(diagnosisReturnChangeSchema),
+}) satisfies z.ZodType<DiagnosisChanges>
+
+export const diagnosisCompareResponseSchema = z.object({
+  current: diagnosisHistoryItemSchema,
+  previous: diagnosisHistoryItemSchema.nullable(),
+  changes: diagnosisChangesSchema.nullable(),
+  disclaimer: z.string(),
+}) satisfies z.ZodType<DiagnosisCompareResponse>
 
 export const disclaimerResponseSchema = z.object({ text: z.string() })
