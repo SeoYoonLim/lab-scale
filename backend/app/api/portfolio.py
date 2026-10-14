@@ -1,11 +1,15 @@
 from typing import Any, Literal
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Response
 from pydantic import BaseModel, Field
 
-from app.api.deps import get_owner_key
+import app.diagnosis_history as diagnosis_history
+from app.api.deps import get_current_user, get_owner_key
+from app.api.research import BIGINT_MAX
+from app.auth import CurrentUser
 from app.db.session import SessionLocal
 from app.diagnosis import NoHoldings, diagnose
+from app.disclaimer import DISCLAIMER
 from app.portfolio import (
     InsufficientBalance,
     InsufficientQuantity,
@@ -187,7 +191,9 @@ class DiagnosisFlag(BaseModel):
     market: str | None = None
 
 
-class DiagnosisResponse(BaseModel):
+class DiagnosisBody(BaseModel):
+    """진단 응답 본문. 저장본(portfolio_diagnosis.result)도 이 형태 그대로다."""
+
     generated_at: str
     source: Literal["llm", "rule_based"]
     model: str | None = None
@@ -202,19 +208,162 @@ class DiagnosisResponse(BaseModel):
     disclaimer: str
 
 
+class DiagnosisResponse(DiagnosisBody):
+    # 저장에 실패하면 둘 다 null. 진단 결과는 저장 성공 여부와 무관하게 정상 반환된다.
+    diagnosis_id: int | None = None
+    created_at: str | None = None
+
+
+class DiagnosisDetail(DiagnosisBody):
+    id: int
+    created_at: str
+
+
+class DiagnosisFlagBrief(BaseModel):
+    code: str
+    ticker: str | None = None
+    company_name: str | None = None
+    market: str | None = None
+
+
+class DiagnosisHistoryItem(BaseModel):
+    id: int
+    created_at: str
+    source: Literal["llm", "rule_based"]
+    total_asset: float
+    holdings_count: int
+    flags: list[DiagnosisFlagBrief]
+    summary_preview: str
+
+
+class DiagnosisHistoryList(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[DiagnosisHistoryItem]
+
+
+class TotalAssetChange(BaseModel):
+    previous: float
+    current: float
+    change_amount: float
+    change_pct: float | None = None
+
+
+class HoldingWeightChange(BaseModel):
+    ticker: str
+    company_name: str
+    # added: 이전 진단에 없던 종목(신규 편입), removed: 이번 진단에 없는 종목(전량 제외), kept: 둘 다 보유
+    status: Literal["added", "removed", "kept"]
+    previous_weight_pct: float | None = None
+    current_weight_pct: float | None = None
+    weight_change_pp: float | None = None
+
+
+class ReturnChange(BaseModel):
+    ticker: str
+    company_name: str
+    previous_return_20d_pct: float
+    current_return_20d_pct: float
+    change_pp: float
+
+
+class FlagChanges(BaseModel):
+    added: list[DiagnosisFlag]
+    resolved: list[DiagnosisFlag]
+
+
+class DiagnosisChanges(BaseModel):
+    total_asset: TotalAssetChange
+    holdings: list[HoldingWeightChange]
+    flags: FlagChanges
+    returns_20d: list[ReturnChange]
+
+
+class DiagnosisComparison(BaseModel):
+    current: DiagnosisHistoryItem
+    previous: DiagnosisHistoryItem | None = None
+    changes: DiagnosisChanges | None = None
+    disclaimer: str = DISCLAIMER
+
+
+def _diagnosis_not_found(diagnosis_id: int) -> HTTPException:
+    # 남의 진단도 "없음"과 똑같이 404로 응답한다(403이면 그 id가 존재한다는 사실이 드러난다).
+    return HTTPException(status_code=404, detail=f"diagnosis_id={diagnosis_id} 진단을 찾을 수 없습니다.")
+
+
 @router.post("/diagnosis", response_model=DiagnosisResponse, response_model_exclude_none=False)
-def diagnose_my_portfolio(owner_key: str = Depends(get_owner_key)) -> DiagnosisResponse:
+def diagnose_my_portfolio(user: CurrentUser = Depends(get_current_user)) -> DiagnosisResponse:
     """내 포트폴리오 AI 진단. 지표와 플래그는 코드가 계산하고 LLM은 설명만 한다(실패 시 규칙 기반 문장).
 
-    보유 종목이 없으면 400(LLM 호출 없음). 결과는 저장하지 않는다. LLM을 쓰면 수 초~수십 초 걸린다.
+    보유 종목이 없으면 400(LLM 호출 없음, 저장 안 함). 결과는 사용자당 최근 50건까지 저장하고 `diagnosis_id`/`created_at`을
+    붙인다(저장에 실패하면 null이고 진단은 정상 반환). LLM을 쓰면 수 초~수십 초 걸린다.
     """
     db = SessionLocal()
     try:
-        return DiagnosisResponse(**diagnose(db, owner_key))
+        body = DiagnosisBody(**diagnose(db, user.owner_key))
     except NoHoldings as e:
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         db.close()
+    saved = diagnosis_history.save_diagnosis(user.id, body.model_dump(mode="json"))
+    return DiagnosisResponse(
+        **body.model_dump(),
+        diagnosis_id=saved["id"] if saved else None,
+        created_at=saved["created_at"] if saved else None,
+    )
+
+
+# /diagnosis/history는 /diagnosis/{diagnosis_id}보다 먼저 정의한다(그렇지 않으면 "history"가 id 자리에 들어간다).
+@router.get("/diagnosis/history", response_model=DiagnosisHistoryList)
+def list_my_diagnoses(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    user: CurrentUser = Depends(get_current_user),
+) -> DiagnosisHistoryList:
+    """내 진단 이력(최신순, 최근 50건까지 보관). 이력이 없으면 total 0, items []."""
+    total, items = diagnosis_history.list_diagnoses(user.id, limit, offset)
+    return DiagnosisHistoryList(total=total, limit=limit, offset=offset, items=items)
+
+
+@router.get("/diagnosis/{diagnosis_id}", response_model=DiagnosisDetail, response_model_exclude_none=False)
+def get_my_diagnosis(
+    diagnosis_id: int = Path(ge=1, le=BIGINT_MAX), user: CurrentUser = Depends(get_current_user)
+) -> DiagnosisDetail:
+    """내 진단 한 건(저장된 진단 응답 그대로 + id, created_at)."""
+    record = diagnosis_history.get_diagnosis(user.id, diagnosis_id)
+    if record is None:
+        raise _diagnosis_not_found(diagnosis_id)
+    return DiagnosisDetail(**record["result"], id=record["id"], created_at=record["created_at"].isoformat())
+
+
+@router.get("/diagnosis/{diagnosis_id}/compare", response_model=DiagnosisComparison)
+def compare_my_diagnosis(
+    diagnosis_id: int = Path(ge=1, le=BIGINT_MAX),
+    base: int | None = Query(None, ge=1, le=BIGINT_MAX),
+    user: CurrentUser = Depends(get_current_user),
+) -> DiagnosisComparison:
+    """내 진단과 이전 진단의 비교(코드로만 계산, LLM 없음). `base`가 없으면 바로 이전 진단과 비교한다."""
+    current = diagnosis_history.get_diagnosis(user.id, diagnosis_id)
+    if current is None:
+        raise _diagnosis_not_found(diagnosis_id)
+    if base is None:
+        previous = diagnosis_history.get_previous_diagnosis(user.id, current)
+    else:
+        previous = diagnosis_history.get_diagnosis(user.id, base)
+        if previous is None:
+            raise _diagnosis_not_found(base)
+    return DiagnosisComparison(**diagnosis_history.build_comparison(current, previous))
+
+
+@router.delete("/diagnosis/{diagnosis_id}", status_code=204)
+def delete_my_diagnosis(
+    diagnosis_id: int = Path(ge=1, le=BIGINT_MAX), user: CurrentUser = Depends(get_current_user)
+) -> Response:
+    """내 진단 한 건을 삭제한다."""
+    if not diagnosis_history.delete_diagnosis(user.id, diagnosis_id):
+        raise _diagnosis_not_found(diagnosis_id)
+    return Response(status_code=204)
 
 
 @router.post("/orders", response_model=OrderResponse)
