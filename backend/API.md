@@ -19,7 +19,7 @@ Authorization: Bearer <access_token>
 | 구분 | 엔드포인트 |
 | --- | --- |
 | **인증 필요** | `/api/auth/me`, `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET) |
-| 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status` |
+| 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status`, `/api/stocks/{ticker}/event-reactions` |
 
 - 데이터는 **사용자별로 분리**된다. 리서치 리포트 목록/조회/삭제/이어 쓰기(`previous_report_id`)는 본인 것만 대상이고,
   **남의 리포트 ID는 없는 리포트와 똑같이 404**다(403이 아니다 — 그 ID가 존재하는지 드러내지 않기 위해).
@@ -138,6 +138,7 @@ ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응�
 | DELETE | `/api/portfolio/diagnosis/{id}` | 필요 | 내 진단 한 건 삭제 |
 | GET | `/api/disclaimer` | 공개 | 서비스 면책 문구(`{"text": "..."}`) |
 | GET | `/api/status` | 공개 | 데이터 기준일(소스별 최신 날짜, 지수 stale 여부, 마지막 갱신 결과). 푸터의 "데이터 기준일" 표시용 |
+| GET | `/api/stocks/{ticker}/event-reactions` | 공개 | 뉴스·공시 이후 주가 반응(1/5/20거래일 수익률, 지수 대비 초과수익률, 거래량 비율)을 코드로 계산. `event_type`/`limit`(1~30, 유형별)/`since_days`(최대 120) 쿼리. 시간적 선후관계일 뿐 인과가 아님 |
 
 아래 각 엔드포인트의 에러 표에는 401을 반복해 적지 않았다. **인증 필요 API는 모두 위 "인증 에러 (401)"가 공통으로 적용된다.**
 
@@ -1880,6 +1881,119 @@ curl http://localhost:8000/api/status
 
 `data_refresh_log` 테이블(마이그레이션 `c5d8f3a07b14`)에는 실행마다 **6단계 모두 한 행씩**(건너뛴 단계는 `skipped`) 기록한다:
 `id`, `step`, `status`(`success`/`failed`/`skipped`), `started_at`, `finished_at`, `rows_added`(실행 전후 행 수 차이, 임베딩·본문 단계는 채워진 건수), `latest_date`, `error_type`(예외 클래스 이름만, 메시지는 저장하지 않는다).
+
+---
+
+## GET /api/stocks/{ticker}/event-reactions
+
+뉴스·공시가 나온 시점 이후 주가가 실제로 어떻게 움직였는지를 **코드로 계산**해서 돌려준다(2026-10-14 추가, 응답 추가만이고 기존 API는 그대로).
+로그인 없이 호출할 수 있다(시세 데이터와 같은 성격). LLM은 쓰지 않는다. `{ticker}`는 티커 또는 종목명(별칭 포함)이다.
+
+**이 값은 시간적 선후관계일 뿐 인과관계가 아니다.** 같은 기간의 시장 전체 흐름이나 다른 사건이 영향을 줬을 수 있고 표본이 적을 수 있다.
+화면에 보여줄 때는 응답의 `disclaimer`를 함께 보여준다(`GET /api/disclaimer`의 서비스 면책 문구와는 별개의 고정 문구다).
+
+```bash
+curl "http://localhost:8000/api/stocks/005930/event-reactions?event_type=disclosure&limit=5&since_days=120"
+```
+
+| 쿼리 | 기본 | 설명 |
+| --- | --- | --- |
+| `event_type` | `all` | `disclosure` / `news` / `all` |
+| `limit` | 10 | 1~30. **유형별** 최대 건수다(`all`이면 공시 최신 `limit`건 + 뉴스 최신 `limit`건, 합쳐서 최신순) |
+| `since_days` | 60 | 1~120. 이 기간 안의 사건만(KST 기준 오늘부터 역산) |
+
+사건 선택: 공시는 접수일 최신순, 뉴스는 발행 시각 최신순이고, **같은 날 같은 제목은 하나만** 남긴다. 뉴스는 기존 수집 규칙(비금융 도메인 제외 등)을
+그대로 따르며 새 필터를 만들지 않았다. **ETF는 뉴스만** 대상이고(공시 없음) 초과수익률은 `null`이다.
+
+실제 응답(2026-10-14, 삼성전자 공시 1건만 발췌, 나머지 필드 생략 없이 이 모양):
+
+```json
+{
+  "ticker": "005930",
+  "company_name": "삼성전자",
+  "asset_type": "stock",
+  "price_as_of": "2026-10-14",
+  "market_index": "KS11",
+  "events": [
+    {
+      "event_type": "disclosure",
+      "title": "특수관계인에대한출자",
+      "url": "https://dart.fss.or.kr/...",
+      "event_at": null,
+      "event_date": "2026-07-30",
+      "time_known": false,
+      "base_date": "2026-07-29",
+      "base_close": 208500.0,
+      "reaction_start_date": "2026-07-30",
+      "returns": {
+        "d1":  {"pct": -0.72, "index_pct": -1.23, "excess_pct": 0.51, "available": true, "reason": null},
+        "d5":  {"pct": 17.99, "index_pct": 16.51, "excess_pct": 1.48, "available": true, "reason": null},
+        "d20": {"pct": 27.58, "index_pct": 22.06, "excess_pct": 5.52, "available": true, "reason": null}
+      },
+      "volume_ratio": 1.55,
+      "volume_sample_days": 20,
+      "other_events_in_window": 12,
+      "note": null
+    }
+  ],
+  "summary": {
+    "event_count": 20,
+    "with_d1": 10, "avg_d1_pct": -0.5, "positive_d1_count": 5, "with_excess_d1": 10, "avg_excess_d1_pct": 0.46,
+    "with_d5": 6, "avg_d5_pct": -2.56, "positive_d5_count": 1, "with_excess_d5": 6, "avg_excess_d5_pct": -0.89,
+    "with_d20": 4, "avg_d20_pct": -1.67, "positive_d20_count": 1, "with_excess_d20": 4, "avg_excess_d20_pct": 0.36
+  },
+  "disclaimer": "사건 이후의 주가 움직임은 시간적 선후관계일 뿐 ..."
+}
+```
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `price_as_of` | date \| null | 이 종목 주가의 마지막 날짜 |
+| `market_index` | string \| null | 비교한 지수(`KS11` 코스피, `KQ11` 코스닥). ETF·시장 구분 없음은 `null` |
+| `events[].event_type` | string | `disclosure` / `news` |
+| `events[].event_at` | string \| null | 뉴스 발행 시각(KST ISO). 공시는 `null` |
+| `events[].event_date` | string \| null | 시각을 모르는 사건의 날짜(공시 접수일). `event_at`이 있으면 `null`(둘 중 정확히 하나만 값이 있다) |
+| `events[].time_known` | boolean | 시각을 아는 사건인지(공시는 항상 `false`) |
+| `events[].base_date`, `base_close` | date, number \| null | 기준일과 그날 종가. 시세 데이터 시작 전이면 `null` |
+| `events[].reaction_start_date` | date \| null | 반응 시작일(1일째). 다음 거래일이 아직 없으면 `null` |
+| `events[].returns.d1/d5/d20.pct` | number \| null | 기준 종가 대비 N일째 종가 수익률(%). 아직 N거래일이 안 지났으면 `null` |
+| `...index_pct`, `excess_pct` | number \| null | 같은 구간 시장 지수 수익률(%)과 초과수익률(종목 - 지수, %p) |
+| `...available` | boolean | `pct`가 계산됐는지(`pct != null`과 같다) |
+| `...reason` | string \| null | `pct`를 못 구한 사유("20거래일 경과 전" 등). `pct`는 있는데 지수/초과수익률이 없을 때는 그 사유(ETF 등) |
+| `events[].volume_ratio` | number \| null | 반응 시작일 거래량 / 기준일까지 최근 20거래일 평균 거래량 |
+| `events[].volume_sample_days` | int | 위 평균에 쓴 일수(20일치가 안 되면 있는 만큼, 최대 20) |
+| `events[].other_events_in_window` | int | 같은 종목의 **다른 사건**(공시·뉴스 모두, 유형 필터·`limit`과 무관하게 `since_days` 안 전체) 중 반응 시작일이 이 사건의 반응 구간(1일째~20일째, 또는 마지막 거래일)에 드는 건수 |
+| `events[].note` | string \| null | 가격 조정(분할 등) 가능성 경고 등 |
+| `summary` | object | 사건 수와 지표별 평균. 평균은 `available`인 사건만 대상이고 표본 수(`with_dN`)를 같이 준다. 해당 사건이 없으면 평균은 `null` |
+| `disclaimer` | string | 이 API 전용 고정 면책 문구 |
+
+### 계산 정의
+
+1. **거래일 달력**: 그 종목의 주가(`stock_price`) 날짜다. 휴장일·주말은 달력에 없는 날이다(추석·대체공휴일 포함, 별도 휴장일 목록은 없다).
+2. **기준 종가와 반응 시작일**
+   - 시각을 아는 사건(뉴스): 거래일 **15:30(KST) 이후** 발행이면 기준일 = 그날, 반응 시작일 = 다음 거래일. 거래일 **장 시작 전·장중**(15:30 전) 발행이면 기준일 = 직전 거래일, 반응 시작일 = 그날. **휴장일**(주말 포함) 발행이면 기준일 = 직전 거래일, 반응 시작일 = 다음 거래일.
+   - 날짜만 아는 사건(공시): 시각을 알 수 없으므로 기준일 = 직전 거래일, 반응 시작일 = 접수일(접수일이 휴장일이면 다음 거래일), `time_known=false`. 장 마감 후 접수된 공시도 접수일 반응으로 세므로 반응이 하루 빠르게 잡힐 수 있다.
+   - 뉴스의 발행 시각이 정확히 00:00:00이면 시각 없이 날짜만 들어온 것으로 보고 공시처럼 다룬다(`time_known=false`).
+3. **N거래일 수익률**(N = 1, 5, 20): 반응 시작일을 1일째로 센 N일째 종가 / 기준 종가 - 1 (%).
+4. **초과수익률**: 같은 기준일과 같은 N일째 날짜의 시장 지수(`company.market`이 KOSPI면 KS11, KOSDAQ·KOSDAQ GLOBAL이면 KQ11) 수익률을 같은 방식으로 구해 `종목 - 지수`(%p). ETF나 시장 구분이 없는 종목, 그 날짜의 지수 값이 없는 경우는 `null`(`reason`에 사유).
+5. **거래량 비율**: 반응 시작일 거래량 / 기준일을 포함한 최근 20거래일 평균 거래량. 20일치가 안 되면 있는 만큼으로 계산하고 `volume_sample_days`로 알려 준다.
+6. **가격 조정 경고**: 기준일부터 20일째(또는 마지막 거래일)까지 종가 기준 일간 등락률 절댓값이 30%를 넘는 날이 있으면 `note`에 "가격 조정(분할 등) 가능성"을 넣는다. 수정주가 여부는 알 수 없다.
+7. 모든 숫자는 소수 둘째 자리 반올림이다.
+
+### 한계
+
+- **인과관계가 아니다.** 사건 뒤의 주가는 시장 전체·업종·다른 뉴스의 영향을 함께 받는다. `excess_pct`(지수 대비)와 `other_events_in_window`(같은 구간의 다른 사건 수)는 이를 가늠하는 참고 수치일 뿐 영향을 분리해 주지는 않는다.
+- **공시는 접수일만 있고 시각이 없다.** 장중/장후 구분이 안 되어 반응이 접수일에 잡힌다.
+- **달력은 종목 주가 기준**이다. 주가 수집이 안 된 날은 거래일로 보지 않는다(2026-10-14 현재 주식은 2026-06-26부터, ETF는 2026-07-16부터 시세가 있어, 그 이전 사건은 `base_close`가 `null`이다).
+- **표본이 적다.** 뉴스는 종목별 최신 기사 위주로 수집되어 오래된 뉴스가 드물고(삼성전자 뉴스는 2026-09-24 이후만 있다), 최근 사건은 5·20거래일이 아직 안 지나 `null`이다. `summary.with_dN`을 꼭 같이 보여 준다.
+- 뉴스는 제목·본문에 그 종목이 직접 나오는지만 보는 기존 수집 규칙을 따르므로, 종목과 무관한 기사가 섞여 있을 수 있다.
+- 지수는 코스피·코스닥 둘뿐이고, 환율·업종 지수 등은 반영하지 않는다.
+
+| 상태 | 원인 | 응답 |
+| --- | --- | --- |
+| 404 | 종목을 찾지 못함 | `{"detail": "..."}` (다른 종목 API와 같은 메시지 형식) |
+| 422 | `event_type`/`limit`/`since_days` 범위 오류 | 검증 오류 형식 |
+| 503 | DB 연결 불가 | 다른 API와 같음 |
 
 ---
 
