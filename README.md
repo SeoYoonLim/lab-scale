@@ -110,8 +110,22 @@ PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(
 지수는 FinanceDataReader가 오늘도 9/17까지만 줘서 종목 주가보다 며칠 늦습니다(우리 쪽 문제가 아니라 원천의 제한, 재확인함).
 
 **ETF (2026-10-14 수집)**: 종목 50(`asset_type='etf'`, 시가총액 상위 + 대표 5종) · 주가 2,950행(7/16~10/14, 50종목 모두 최신일 10/14) ·
-뉴스 500건(ETF 이름 검색, 임베딩 완료) · 공시 0건(ETF는 공시 수집을 건너뜀). 위 주식 수치는 이 수집 전후로 바뀌지 않았다(건수·합계 검증).
+뉴스 504건(2단계 재수집: 제목·본문에 그 ETF 이름이 독립된 이름으로 나오는 기사만, 이름 포함 비율 49.6% → 97.6%, 임베딩 완료) · 공시 0건(ETF는 공시 수집을 건너뜀). 위 주식 수치는 이 수집 전후로 바뀌지 않았다(건수·합계 검증).
 주식 주가의 최신일은 2026-10-08이라 ETF가 며칠 더 최근이다. 알려진 한계(뉴스 관련도, 시장 지수 비교 불가 등)는 `backend/API.md`의 "종목 유형" 절.
+
+### ETF 처리 규칙 (2026-10-14, 2단계)
+
+ETF는 주식과 같은 `company` 행이지만(`asset_type='etf'`) 리서치·진단에서 아래처럼 다르게 다룬다. 주식만 나오는 질문·포트폴리오는 이전과 같다.
+상세와 고정 문구 원문은 `backend/API.md`("ETF 질문 처리 규칙", 진단 "플래그 규칙").
+
+- **리서치**(`app/agent.py`, `app/etf.py`): 질문에 ETF가 있으면 가격 흐름(`stock_tool`, 기간을 말하지 않으면 20거래일)과 뉴스(`news_tool`)를
+  함께 보고, 답변의 가격(`## 주가 동향`)과 뉴스(`## 관련 뉴스`, 기사 제목 인용) 섹션은 서버가 조회 결과로 쓰고, 뉴스 기사 속 수치는 모델에 넘기지 않으며(가린 사본), 답변을 주가 조회 결과와 문장 단위로 대조해 맞지 않는 문장(다른 종목의 수치, 결과에 없는 계산값, 반대 방향 서술, 출처 없는 추종지수·구성종목 설명)을 서버가 지운다. 두 종목 이상 비교 질문에는 서버가 계산한 비교 문장을 붙인다. 최종 답변에 ETF 규칙
+  (회사처럼 서술 금지, 근거 없는 구성종목·추종지수·보수 단정 금지)을 추가하고, 레버리지·인버스 ETF에는 구조 설명 고정 문구를 붙인다.
+  시장 비교·공시 tool은 ETF에 "대상이 아니다"는 사유를 돌려준다.
+- **기간 파싱**(`app/period_parser.py`): ETF 이름 구간을 지운 뒤 파싱한다("KODEX 200 주가"의 "200 주"를 200주로 읽던 문제).
+- **진단**(`app/diagnosis.py`): ETF는 시장 쏠림 계산에서 제외(`market` = `ETF`), ETF 보유 시 `FEW_HOLDINGS` 대신 안내 문장, 레버리지·인버스
+  보유에 새 플래그 `LEVERAGED_INVERSE_ETF`. 진단 문장의 조사는 읽는 소리 기준(`app/korean.py`, "KODEX 200은").
+- **빈 섹션 정리**(모든 리서치 답변): "## 위험요인\n(이 섹션은 … 빈칸입니다.)"처럼 자리표시만 있는 섹션을 지운다.
 
 ### FR 대응 현황
 
@@ -346,7 +360,7 @@ python -m scripts.collect_universe --report r.json   # 종목별 뉴스 + DART �
 # ETF (주식과 별개로 실행, 순서는 같다): 목록 생성 -> 주가(등록 시 asset_type='etf') -> 뉴스만(공시는 건너뜀) -> 임베딩
 python -m scripts.build_etf_universe 50         # 시총 상위 50개 ETF + 대표 5종 (scripts/universe_etf50.json, 커밋 대상 아님)
 python -m scripts.collect_prices --universe universe_etf50.json --days 90
-python -m scripts.collect_universe --universe universe_etf50.json
+python -m scripts.collect_universe --universe universe_etf50.json   # ETF 이름이 제목·본문에 나오는 기사만 저장
 python -m app.embeddings --apply                # 임베딩이 비어 있는 뉴스/공시에 bge-m3 임베딩 채우기 (--apply 없으면 dry-run)
 python scripts/collect_disclosure_content.py --apply   # 공시 원문 수집 (이어서 실행 가능, DART 일일 한도 약 2만 건)
 ```
