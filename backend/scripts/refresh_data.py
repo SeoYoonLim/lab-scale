@@ -216,7 +216,7 @@ class _Tee:
             show = now - self._last_shown >= self.interval
         else:
             # 종목별 "[이름(코드)] ... 수집 중" 같은 잡음은 숨기고, 요약/실패/오류 줄은 항상 보인다.
-            show = not line.startswith("[")
+            show = not line.startswith(("[", "DB 저장 완료"))
         if show:
             if is_progress and not _ALWAYS_SHOW_RE.search(line):
                 self._last_shown = now

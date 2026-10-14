@@ -179,6 +179,12 @@ class TestTee:
         assert "[1/300]" in out and "[2/300]" not in out and "[4/300]" in out
         assert "FAIL" in out and "SECRET99" not in out
 
+    def test_per_ticker_save_lines_are_hidden_but_summary_shown(self, capsys):
+        tee = rd._Tee(__import__("sys").stdout, deadline=None, mono=lambda: 0.0)
+        tee.write("DB 저장 완료: 신규 1건\n[삼성전자(005930)] 수집 중...\n===== 요약 =====\n")
+        out = capsys.readouterr().out
+        assert "DB 저장 완료" not in out and "수집 중" not in out and "요약" in out
+
     def test_timeout_raises_step_timeout(self):
         t = [0.0]
         tee = rd._Tee(__import__("sys").stdout, deadline=10, mono=lambda: t[0])
