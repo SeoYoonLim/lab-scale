@@ -25,7 +25,7 @@
 | GET | `/api/research/{report_id}` | 필요 | 내 리포트 한 건(전체 답변, sources, tool 사용 이력). 남의 리포트는 404 |
 | DELETE | `/api/research/{report_id}` | 필요 | 내 리포트 삭제(204, 본문 없음). 후속 리포트는 남고 연결만 끊김. 남의 리포트는 404 |
 | GET | `/api/stocks/{ticker}/realtime-price` | 공개 | 종목 현재가(비공식 소스 기반 실시간, 장외/장애 시 DB 최근 종가로 자동 폴백) |
-| GET | `/api/companies` | 공개 | 종목 목록/검색(`q` 종목명·티커 부분 일치, 별칭 포함, `limit` 기본 50) + 최근 종가·등락률. 프론트 "종목" 페이지용 |
+| GET | `/api/companies` | 공개 | 종목 목록/검색(`q` 종목명·티커 부분 일치, 별칭·ETF 브랜드 한글 표기 포함, `limit` 기본 50) + 최근 종가·등락률. `asset_type=stock\|etf` 필터(생략하면 전체), 항목마다 `asset_type`. 프론트 "종목" 페이지용 |
 | GET/POST | `/api/watchlist` | 필요 | 내 관심종목 조회/추가 |
 | DELETE | `/api/watchlist/{ticker}` | 필요 | 내 관심종목 삭제 |
 | GET | `/api/portfolio` | 필요 | 내 모의투자 잔고 + 보유 종목(평가손익 포함). 첫 호출 시 계좌 자동 생성(초기 잔고 1,000만원) |
@@ -38,7 +38,7 @@
 | GET | `/api/portfolio/diagnosis/{id}/compare` | 필요 | 이전 진단과 비교(`base`로 기준 지정, 생략하면 바로 이전). 총자산 증감·종목별 비중 변화·플래그 신규/해소·20거래일 수익률 변화. 코드로만 계산(LLM 없음). 이전 진단이 없으면 200 + `previous`/`changes` null |
 | DELETE | `/api/portfolio/diagnosis/{id}` | 필요 | 내 진단 한 건 삭제(204). 남의 것/없는 것은 404 |
 | GET | `/api/disclaimer` | 공개 | 서비스 면책 문구 `{"text": "..."}`. 같은 문구가 `POST /api/research`·`GET /api/research/{id}` 응답의 `disclaimer` 필드에도 있음(목록에는 없음) |
-| GET | `/api/discovery/trending` | 공개 | 급등/급락/거래량 급증 종목(FR-13, 질문 없이 바로 호출, `category`/`limit` 쿼리) |
+| GET | `/api/discovery/trending` | 공개 | 급등/급락/거래량 급증 종목(FR-13, 질문 없이 바로 호출, `category`/`limit` 쿼리). 기본은 주식만, `asset_type=etf`로 ETF |
 
 "인증 필요"인 API는 **`Authorization: Bearer <access_token>` 헤더**가 있어야 하고, 없거나 만료·변조됐으면 401입니다
 (로그인/가입 응답의 `access_token`, 만료 24시간). 예전 `X-Device-Id` 헤더는 더 이상 쓰지 않습니다(보내도 무시되고, 토큰이 없으면 401).
@@ -49,11 +49,11 @@
 
 ### DB 스키마 개요
 
-PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(`backend/alembic/versions/`, 현재 head `a3f7c1d95b20`)입니다.
+PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(`backend/alembic/versions/`, 현재 head `b7c4e92a1d36`)입니다.
 
 | 테이블 | 내용 | 주요 컬럼 |
 | --- | --- | --- |
-| `company` | 종목 300개(시총 상위) | `ticker`(unique), `name`, `market`(KOSPI/KOSDAQ/KOSDAQ GLOBAL), `sector`(현재 비어 있음) |
+| `company` | 종목 300개(시총 상위) + ETF 50개 | `ticker`(unique), `name`, `market`(KOSPI/KOSDAQ/KOSDAQ GLOBAL, ETF는 NULL), `sector`(현재 비어 있음), `asset_type`(`stock`/`etf`, NOT NULL, 기본 `stock`, CHECK 제약) |
 | `stock_price` | 일별 OHLCV | `company_id`, `price_date`, `close_price`, `volume`, `change_pct` (종목+날짜 unique) |
 | `market_index` | 코스피(KS11)/코스닥(KQ11) 일별 종가 | `index_code`, `price_date`, `close_price`, `change_pct` (지수+날짜 unique) |
 | `news` | 네이버 뉴스 | `company_id`, `title`, `url`, `published_at`, `embedding vector(1024)` |
@@ -73,7 +73,7 @@ PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(
 (어떤 사용자에게도 보이지 않음), 사용자를 지워도 이 테이블들의 행은 자동으로 지워지지 않습니다(FK가 아니라 문자열 키이므로).
 
 **서윤님이 설계한 스키마와 실제로 만들어진 스키마를 맞춰봐 주세요.** 최초 설계 스냅샷은 `db/schema.sql`(서윤님 커밋)이고, 임시 DB에 그 파일을 적용해서
-실제 DB와 컬럼·인덱스·FK를 기계적으로 비교했습니다. 컬럼/타입/FK는 모두 같고 **차이는 아래 8가지**입니다(설계와 다른 것이 의도에 맞는지 확인 필요).
+실제 DB와 컬럼·인덱스·FK를 기계적으로 비교했습니다. 컬럼/타입/FK는 모두 같고 **차이는 아래 9가지**입니다(설계와 다른 것이 의도에 맞는지 확인 필요).
 
 1. `market_index` 테이블 추가(FR-06, 설계에 없던 확장)
 2. `research_report.previous_report_id` 컬럼 + 자기 참조 FK(`ON DELETE SET NULL`) 추가(FR-10, 설계에 없던 확장)
@@ -91,6 +91,9 @@ PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(
    `device_id` 컬럼에 로그인 사용자의 소유자 키 `user:{id}`를 저장한다. 기존 리포트(`user_id` NULL)와 기존 디바이스 행은 그대로 보존된다.
 8. `portfolio_diagnosis` 테이블 추가(2026-10-14, 포트폴리오 AI 진단 이력 저장/비교). `research_report.user_id`와 같은 방식으로 `users.id` FK(`ON DELETE CASCADE`)로
    소유자를 구분하고, 진단 응답 본문을 JSONB로 통째로 저장한다. 사용자당 최근 50건만 보관한다(저장 직후 초과분 삭제).
+9. `company.asset_type` 컬럼(`stock`/`etf`, NOT NULL, 기본 `stock`, `CHECK (asset_type IN ('stock','etf'))`) 추가(2026-10-14, ETF 1단계).
+   ETF를 별도 테이블로 나누지 않고 주식과 같은 `company` 한 행으로 다룬다(`stock_price`/`news`/관심종목/모의매매가 그대로 동작). 기존 300종목은 모두 `stock`이고,
+   ETF는 `market`/`sector`가 NULL이다(KRX ETF 목록에 시장 구분이 없다).
 
 `db/schema.sql`은 갱신하지 않고 상단에 "최초 설계 스냅샷이며 기준은 Alembic"이라는 안내만 달았습니다.
 
@@ -105,6 +108,10 @@ PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(
 공시 6,308건(최신 9/22, 원문 6,268건, 임베딩 완료) · 리포트 6건(1~6번은 **데모 데이터라 지우지 않습니다**) ·
 환율(USD/KRW) 129행(4/2~9/29, 2026-10-01 수집).
 지수는 FinanceDataReader가 오늘도 9/17까지만 줘서 종목 주가보다 며칠 늦습니다(우리 쪽 문제가 아니라 원천의 제한, 재확인함).
+
+**ETF (2026-10-14 수집)**: 종목 50(`asset_type='etf'`, 시가총액 상위 + 대표 5종) · 주가 2,950행(7/16~10/14, 50종목 모두 최신일 10/14) ·
+뉴스 500건(ETF 이름 검색, 임베딩 완료) · 공시 0건(ETF는 공시 수집을 건너뜀). 위 주식 수치는 이 수집 전후로 바뀌지 않았다(건수·합계 검증).
+주식 주가의 최신일은 2026-10-08이라 ETF가 며칠 더 최근이다. 알려진 한계(뉴스 관련도, 시장 지수 비교 불가 등)는 `backend/API.md`의 "종목 유형" 절.
 
 ### FR 대응 현황
 
@@ -336,6 +343,10 @@ python -m scripts.build_universe 300            # 시총 상위 300종목 목록
 python -m scripts.collect_prices --days 90      # 주가(OHLCV)
 python -m scripts.collect_market_index --days 180    # 코스피/코스닥 지수 일별 종가 + company.market(상장 시장) 채우기
 python -m scripts.collect_universe --report r.json   # 종목별 뉴스 + DART 공시 목록
+# ETF (주식과 별개로 실행, 순서는 같다): 목록 생성 -> 주가(등록 시 asset_type='etf') -> 뉴스만(공시는 건너뜀) -> 임베딩
+python -m scripts.build_etf_universe 50         # 시총 상위 50개 ETF + 대표 5종 (scripts/universe_etf50.json, 커밋 대상 아님)
+python -m scripts.collect_prices --universe universe_etf50.json --days 90
+python -m scripts.collect_universe --universe universe_etf50.json
 python -m app.embeddings --apply                # 임베딩이 비어 있는 뉴스/공시에 bge-m3 임베딩 채우기 (--apply 없으면 dry-run)
 python scripts/collect_disclosure_content.py --apply   # 공시 원문 수집 (이어서 실행 가능, DART 일일 한도 약 2만 건)
 ```

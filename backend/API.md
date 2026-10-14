@@ -63,6 +63,39 @@ Authorization: Bearer <access_token>
 **프론트가 다른 포트나 도메인에서 뜬다면 미리 알려주세요.** `backend/app/main.py`의 `allow_origins`에 추가해야 하고,
 추가 전에는 브라우저가 CORS 오류로 요청을 막습니다(curl/Postman은 영향 없음).
 
+## 종목 유형: 주식과 ETF (2026-10-14 추가, 1단계)
+
+ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응답의 **`asset_type`**(`"stock"` 또는 `"etf"`) 하나뿐이고, 검색·관심종목·
+모의매매(매수/매도/초기화)는 주식과 똑같이 동작한다(종목코드나 이름으로 부르면 된다: `069500`, `KODEX 200`, `코덱스200`).
+기존 필드는 하나도 바뀌지 않았고 `asset_type`만 **추가**됐다(주식은 항상 `"stock"`).
+
+- **수집된 ETF**: 시가총액 상위 50개(KODEX 200, TIGER 미국S&P500, TIGER 미국나스닥100, KODEX 레버리지, KODEX 인버스 등 대표 5종 포함).
+  일별 주가 최근 90일(2026-07-16~2026-10-14) + 뉴스(ETF 이름으로 검색). **공시는 없다**(ETF는 DART 공시 수집 대상이 아니다).
+- **`asset_type`이 붙는 응답**: `GET /api/companies`의 항목, `GET /api/watchlist`의 `items[]`와 `POST /api/watchlist` 응답,
+  `GET /api/portfolio`의 `holdings[]`, `GET /api/portfolio/trades`의 `items[]`, `GET /api/discovery/trending`(응답 최상위).
+- **ETF 이름 입력**: 운용사 브랜드의 한글 표기를 영문으로 읽는다(`코덱스`=KODEX, `타이거`=TIGER, `에이스`=ACE, `쏠`=SOL,
+  `케이비스타`=KBSTAR, `아리랑`=ARIRANG, `하나로`=HANARO, `라이즈`=RISE, `플러스`=PLUS). "코덱스200", "코덱스 레버리지", "타이거 미국나스닥100"처럼
+  입력하면 된다. `타이거 나스닥`처럼 줄여 쓴 몇 가지(`TIGER 나스닥`, `TIGER S&P500`, `KODEX 나스닥100` 등)는 대표 상품으로 연결한다.
+  KBSTAR는 RISE로, ARIRANG는 PLUS로 이름이 바뀐 브랜드라 그 이름으로 입력하면 현재 이름의 ETF를 찾는다.
+  "에이스침대"처럼 브랜드와 겹치는 일반 이름은 그대로 주식으로 해석한다.
+
+### 알려진 한계 (확인된 사실만)
+
+- **ETF는 `market`/`sector`가 `null`이다**(KRX 목록에 시장 구분이 없다). 그래서 `GET /api/companies` 항목의 `market`은 `null`이고,
+  **시장 지수(코스피/코스닥)와의 비교는 되지 않는다**(리서치의 `market_tool`은 "상장 시장 정보가 없어 시장 지수와 비교할 수 없습니다"라고 답한다).
+- **공시가 없다**: 리서치의 `disclosure_tool`은 ETF에 "등록된 종목이지만 아직 수집된 공시가 없습니다"라고 답한다.
+- **뉴스 관련도가 주식보다 낮다**: ETF 이름 그대로 검색해서 저장한 뉴스 500건 중 제목/본문에 ETF 이름이 들어 있는 비율이 평균 50%다
+  (50개 중 14개 ETF는 20% 미만, "RISE 200"처럼 이름이 짧고 흔한 것은 무관한 기사도 섞인다). ETF 시황 기사가 여러 ETF에 같이 저장되기도 한다.
+- **`/api/discovery/trending`의 기준 날짜는 유형별로 따로 계산한다**: 주식은 2026-10-08, ETF는 2026-10-14가 최신이다(주식 주가 수집이 더 오래전에 멈춰 있다).
+  `price_date`로 확인할 수 있다.
+- **포트폴리오 진단(`POST /api/portfolio/diagnosis`)은 아직 ETF를 구분하지 않는다**: ETF만 보유하면 시장이 `OTHER`로 묶여
+  "주식 평가금액의 100%가 OTHER에 몰려 있습니다"(`MARKET_SKEW`)가 나오고, ETF 한 종목이 이미 분산 상품인데도 `FEW_HOLDINGS`가 걸린다.
+  에러 없이 동작은 한다. 2단계에서 다룬다.
+- **리서치 답변은 ETF에 맞춰 다듬어지지 않았다**: 주가·뉴스 tool은 동작하지만 이름에 숫자가 든 ETF("KODEX 200")를 기간 표현("200주")으로
+  잘못 읽는 경우가 있고, ETF 고유 정보(레버리지/인버스 구조, 괴리율 등)는 답하지 못한다. 2단계에서 다룬다.
+
+---
+
 ## 엔드포인트 요약
 
 | 메서드 | 경로 | 인증 | 설명 |
@@ -75,8 +108,8 @@ Authorization: Bearer <access_token>
 | GET | `/api/research/{report_id}` | 필요 | 내 리포트 한 건 조회 |
 | DELETE | `/api/research/{report_id}` | 필요 | 내 리포트 한 건 삭제(tool 호출 이력 포함) |
 | GET | `/api/stocks/{ticker}/realtime-price` | 공개 | 종목 현재가(비공식 소스 기반 실시간 시세, 장외/장애 시 자동 폴백) |
-| GET | `/api/companies` | 공개 | 종목 목록/검색(`q`로 종목명·티커 부분 일치, 별칭 포함) + 최근 종가·등락률 |
-| GET | `/api/discovery/trending` | 공개 | 급등/급락/거래량 급증 종목 |
+| GET | `/api/companies` | 공개 | 종목 목록/검색(`q`로 종목명·티커 부분 일치, 별칭 포함) + 최근 종가·등락률. `asset_type=stock\|etf`로 주식/ETF만 |
+| GET | `/api/discovery/trending` | 공개 | 급등/급락/거래량 급증 종목(기본은 주식만, `asset_type=etf`로 ETF) |
 | GET | `/api/watchlist` | 필요 | 내 관심종목 목록 |
 | POST | `/api/watchlist` | 필요 | 관심종목 추가 |
 | DELETE | `/api/watchlist/{ticker}` | 필요 | 관심종목 삭제 |
@@ -566,11 +599,13 @@ curl http://localhost:8000/api/stocks/005930/realtime-price
 | --- | --- | --- |
 | `q` | string | 선택. 종목명 또는 티커 부분 일치 검색어. 생략하면 상위 `limit`개 반환. 최대 100자 |
 | `limit` | int | 선택(기본 50). 1~300 |
+| `asset_type` | string | 선택. `stock`(주식만) 또는 `etf`(ETF만). **생략하면 전체**(주식 + ETF). 다른 값이면 422 |
 
 ```bash
 curl "http://localhost:8000/api/companies?q=삼성전자"
 curl "http://localhost:8000/api/companies?q=네이버"   # 별칭 -> NAVER
 curl "http://localhost:8000/api/companies?limit=10"  # q 없이 상위 10개
+curl "http://localhost:8000/api/companies?q=코덱스200&asset_type=etf"   # ETF만, 한글 브랜드 표기도 된다
 ```
 
 ### 응답 200
@@ -582,11 +617,40 @@ curl "http://localhost:8000/api/companies?limit=10"  # q 없이 상위 10개
     "name": "삼성전자",
     "market": "KOSPI",
     "sector": null,
+    "asset_type": "stock",
     "latest_close": 286500.0,
     "change_pct": 3.24
   }
 ]
 ```
+
+ETF 예시(2026-10-14 실제 호출, `q=코덱스200&asset_type=etf&limit=2`). ETF는 `market`/`sector`가 `null`이다:
+
+```json
+[
+  {
+    "ticker": "069500",
+    "name": "KODEX 200",
+    "market": null,
+    "sector": null,
+    "asset_type": "etf",
+    "latest_close": 96370.0,
+    "change_pct": 1.18
+  },
+  {
+    "ticker": "278530",
+    "name": "KODEX 200TR",
+    "market": null,
+    "sector": null,
+    "asset_type": "etf",
+    "latest_close": 34905.0,
+    "change_pct": 0.9
+  }
+]
+```
+
+`asset_type`은 항상 들어 있다(`"stock"` 또는 `"etf"`). `q`는 부분 일치라서 `코덱스200`에는 `KODEX 200TR`처럼 이름이 이어지는 ETF도 같이 나온다.
+`asset_type`을 생략한 검색은 이름에 검색어가 든 주식과 ETF를 id 순으로 함께 돌려준다(`q=삼성전자` → 삼성전자(주식), RISE 삼성전자SK하이닉스채권혼합50(ETF)).
 
 `latest_close`/`change_pct`는 DB에 저장된 **가장 최근 종가**(일별, 실시간 아님) 기준이다 - 실시간 시세가 필요하면
 `GET /api/stocks/{ticker}/realtime-price`를 따로 호출하세요. 그 종목에 저장된 주가가 아직 없으면 둘 다 `null`.
@@ -596,8 +660,101 @@ curl "http://localhost:8000/api/companies?limit=10"  # q 없이 상위 10개
 
 | 상태 | 언제 | body |
 | --- | --- | --- |
-| 422 | `limit`이 1~300 범위 밖, 또는 `q`가 100자 초과 | 검증 오류 형식 |
+| 422 | `limit`이 1~300 범위 밖, `q`가 100자 초과, 또는 `asset_type`이 `stock`/`etf`가 아님 | 검증 오류 형식 |
 | 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
+
+---
+
+## GET /api/discovery/trending
+
+질문 없이 바로 호출하는 시장 전체 스크리닝(FR-13). 저장된 `stock_price`만으로 계산하는 순수 집계다. 로그인 불필요(공개).
+
+| 쿼리 | 기본값 | 규칙 |
+| --- | --- | --- |
+| `category` | `gainers` | `gainers`(급등) / `losers`(급락) / `volume_surge`(거래량 급증). 다른 값이면 422 |
+| `limit` | 10 | 1~50. 벗어나면 422 |
+| `asset_type` | `stock` | `stock`(주식) 또는 `etf`. **기본은 주식만**이라 ETF가 섞이지 않는다. 다른 값이면 422 |
+
+```bash
+curl "http://localhost:8000/api/discovery/trending?category=gainers&limit=2"
+curl "http://localhost:8000/api/discovery/trending?category=gainers&limit=2&asset_type=etf"
+```
+
+### 응답 200
+
+기본(주식, 2026-10-14 실제 호출):
+
+```json
+{
+  "category": "gainers",
+  "asset_type": "stock",
+  "price_date": "2026-10-08",
+  "window_days": 20,
+  "items": [
+    {
+      "ticker": "131970",
+      "company_name": "두산테스나",
+      "close_price": 123300.0,
+      "change_pct": 12.3,
+      "volume": 1021196,
+      "avg_volume": 384287.45,
+      "volume_ratio": 2.66
+    },
+    {
+      "ticker": "229640",
+      "company_name": "LS에코에너지",
+      "close_price": 72900.0,
+      "change_pct": 6.89,
+      "volume": 425862,
+      "avg_volume": 261817.3,
+      "volume_ratio": 1.63
+    }
+  ]
+}
+```
+
+`asset_type=etf`(2026-10-14 실제 호출):
+
+```json
+{
+  "category": "gainers",
+  "asset_type": "etf",
+  "price_date": "2026-10-14",
+  "window_days": 20,
+  "items": [
+    {
+      "ticker": "305720",
+      "company_name": "KODEX 2차전지산업",
+      "close_price": 15790.0,
+      "change_pct": 2.7,
+      "volume": 5453150,
+      "avg_volume": 4797701.2,
+      "volume_ratio": 1.14
+    },
+    {
+      "ticker": "122630",
+      "company_name": "KODEX 레버리지",
+      "close_price": 83710.0,
+      "change_pct": 2.13,
+      "volume": 12056891,
+      "avg_volume": 15424826.35,
+      "volume_ratio": 0.78
+    }
+  ]
+}
+```
+
+- `asset_type`은 요청한 유형을 그대로 돌려준다(2026-10-14 추가, 기존 필드는 그대로).
+- **최신 거래일(`price_date`)과 평균 거래량의 직전 거래일은 그 유형의 종목끼리만 계산한다.** 위 예시처럼 주식은 2026-10-08, ETF는
+  2026-10-14가 최신이다(전체의 최신 날짜를 쓰면 ETF만 더 최근까지 수집된 날 주식 결과가 비어 버린다).
+- 거래량 급증은 배수 2.0 이상만 나오므로 `volume_surge`는 `items`가 `[]`일 수 있다(에러 아님).
+
+### 에러
+
+| 상태 | 언제 | body |
+| --- | --- | --- |
+| 422 | `category`/`asset_type`이 허용 값이 아니거나 `limit`이 범위 밖 | 검증 오류 형식 |
+| 503 | 그 유형의 주가 데이터가 아직 없음, DB 연결 불가 | `{"detail": "..."}` |
 
 ---
 
@@ -619,6 +776,7 @@ curl http://localhost:8000/api/watchlist -H "Authorization: Bearer $TOKEN"
       "company_id": 1,
       "ticker": "005930",
       "company_name": "삼성전자",
+      "asset_type": "stock",
       "added_at": "2026-10-01T02:29:00.729024+00:00",
       "latest_close": 286500.0,
       "latest_close_date": "2026-09-23",
@@ -629,6 +787,7 @@ curl http://localhost:8000/api/watchlist -H "Authorization: Bearer $TOKEN"
 ```
 
 종목에 저장된 주가가 아직 없으면 `latest_close`/`latest_close_date`/`change_pct`가 `null`이다. 관심종목이 없으면 `items: []`.
+`asset_type`(`"stock"`/`"etf"`)은 2026-10-14에 추가됐다. ETF도 같은 방식으로 등록·삭제한다.
 
 ### 에러
 
@@ -667,6 +826,7 @@ curl -X POST http://localhost:8000/api/watchlist \
   "company_id": 1,
   "ticker": "005930",
   "company_name": "삼성전자",
+  "asset_type": "stock",
   "added_at": "2026-10-11T08:36:47.116856+00:00",
   "latest_close": 263000.0,
   "latest_close_date": "2026-10-08",
@@ -677,6 +837,21 @@ curl -X POST http://localhost:8000/api/watchlist \
 응답은 `GET /api/watchlist`의 `items[]` 항목과 **같은 형식, 같은 값**이다(2026-10-11부터 최근 종가 3개 필드도 채운다.
 그 전에는 항상 `null`이었다). 추가 직후 GET을 다시 부르지 않고 응답을 목록에 바로 넣어도 된다. 저장된 주가가 아직
 없는 종목이면 세 필드는 `null`이다.
+
+ETF를 추가한 실제 응답(2026-10-14, 요청 `{"ticker": "코덱스200"}`):
+
+```json
+{
+  "company_id": 303,
+  "ticker": "069500",
+  "company_name": "KODEX 200",
+  "asset_type": "etf",
+  "added_at": "2026-10-14T04:12:48.355657+00:00",
+  "latest_close": 96370.0,
+  "latest_close_date": "2026-10-14",
+  "change_pct": 1.18
+}
+```
 
 ### 에러
 
@@ -731,6 +906,7 @@ curl http://localhost:8000/api/portfolio -H "Authorization: Bearer $TOKEN"
     {
       "ticker": "005930",
       "company_name": "삼성전자",
+      "asset_type": "stock",
       "quantity": 5,
       "avg_price": 270000.0,
       "current_price": 270000.0,
@@ -749,6 +925,7 @@ curl http://localhost:8000/api/portfolio -H "Authorization: Bearer $TOKEN"
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
 | `cash_balance` | number | 현금 잔고 |
+| `holdings[].asset_type` | string | `"stock"` 또는 `"etf"`(2026-10-14 추가). ETF 보유도 같은 항목 형식이다 |
 | `holdings[].avg_price` | number | 평균 매입 단가(가중평균, 매도로는 바뀌지 않음) |
 | `holdings[].current_price` | number \| null | 현재가. 실시간+DB 폴백 모두 실패하면 `null`(이 종목은 평가손익 계산에서 제외되고 `note`에 안내) |
 | `holdings[].is_realtime` | boolean | `current_price`가 실시간 조회 성공값이면 `true`, DB 폴백이면 `false` |
@@ -756,6 +933,25 @@ curl http://localhost:8000/api/portfolio -H "Authorization: Bearer $TOKEN"
 | `total_eval_amount` | number | 보유 종목 평가금액 합(가격을 못 구한 종목은 0으로 취급돼 빠짐) |
 | `total_asset` | number | `cash_balance + total_eval_amount` |
 | `note` | string \| null | 가격을 못 구한 종목이 있으면 안내 문구, 없으면 `null` |
+
+ETF를 2주 매수한 뒤의 실제 `holdings`(2026-10-14):
+
+```json
+[
+  {
+    "ticker": "069500",
+    "company_name": "KODEX 200",
+    "asset_type": "etf",
+    "quantity": 2,
+    "avg_price": 96350.0,
+    "current_price": 96350.0,
+    "is_realtime": true,
+    "eval_amount": 192700.0,
+    "profit_loss": 0.0,
+    "profit_loss_pct": 0.0
+  }
+]
+```
 
 ### 에러
 
@@ -853,6 +1049,7 @@ curl "http://localhost:8000/api/portfolio/trades?limit=20&ticker=005930" -H "Aut
       "id": 12,
       "ticker": "005930",
       "company_name": "삼성전자",
+      "asset_type": "stock",
       "side": "sell",
       "quantity": 1,
       "price": 1000.0,
@@ -863,6 +1060,7 @@ curl "http://localhost:8000/api/portfolio/trades?limit=20&ticker=005930" -H "Aut
       "id": 11,
       "ticker": "005930",
       "company_name": "삼성전자",
+      "asset_type": "stock",
       "side": "buy",
       "quantity": 3,
       "price": 1000.0,
@@ -877,10 +1075,29 @@ curl "http://localhost:8000/api/portfolio/trades?limit=20&ticker=005930" -H "Aut
 | --- | --- |
 | `total` | 조건(`ticker` 포함)에 맞는 전체 체결 수(`limit`/`offset`과 무관). 페이지 수 계산용 |
 | `limit` / `offset` | 요청에 쓰인 값(기본값 포함) |
+| `items[].asset_type` | `"stock"` 또는 `"etf"`(2026-10-14 추가) |
 | `items[].side` | `"buy"` 또는 `"sell"` |
 | `items[].price` | 체결가 |
 | `items[].amount` | 체결 금액 = `price × quantity`(서버가 계산, trade 테이블에는 없는 값) |
 | `items[].executed_at` | ISO 8601(UTC, `+00:00`) |
+
+ETF 매수 체결 한 건의 실제 `items[]` 항목(2026-10-14):
+
+```json
+[
+  {
+    "id": 1723,
+    "ticker": "069500",
+    "company_name": "KODEX 200",
+    "asset_type": "etf",
+    "side": "buy",
+    "quantity": 2,
+    "price": 96350.0,
+    "amount": 192700.0,
+    "executed_at": "2026-10-14T04:12:50.939536+00:00"
+  }
+]
+```
 
 체결이 없으면 오류가 아니라 `{"total": 0, "limit": 50, "offset": 0, "items": []}`인 200이다. 다음 페이지는 `offset += limit`,
 `offset >= total`이면 끝이다.
