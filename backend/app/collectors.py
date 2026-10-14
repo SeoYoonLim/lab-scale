@@ -175,12 +175,18 @@ def fetch_dart_disclosures(corp_code: str, days: int = 90) -> list[dict]:
     return items
 
 
-def get_or_create_company(db, ticker: str, name: str) -> Company:
+ASSET_TYPES = ("stock", "etf")
+
+
+def get_or_create_company(db, ticker: str, name: str, asset_type: str = "stock") -> Company:
     """(ticker, name) 쌍으로 회사를 조회/생성한다. 회사 row를 만드는 유일한 경로.
 
     ticker가 KRX 코드 형식이 아니면(예: 회사명이 그대로 들어온 경우) 예외를 던져
-    잘못된 row가 만들어지지 않게 한다.
+    잘못된 row가 만들어지지 않게 한다. asset_type('stock'|'etf')은 새로 만들 때만 쓰고,
+    이미 있는 회사의 asset_type은 바꾸지 않는다.
     """
+    if asset_type not in ASSET_TYPES:
+        raise ValueError(f"유효하지 않은 asset_type {asset_type!r}; {ASSET_TYPES} 중 하나여야 합니다.")
     if not TICKER_RE.match(ticker):
         raise ValueError(f"유효하지 않은 종목코드 {ticker!r} (name={name!r}); KRX 6자리 코드가 필요합니다.")
 
@@ -194,7 +200,7 @@ def get_or_create_company(db, ticker: str, name: str) -> Company:
             f"name={name!r}인 회사가 이미 다른 종목코드({same_name.ticker})로 존재합니다. 요청 종목코드={ticker}"
         )
 
-    company = Company(ticker=ticker, name=name)
+    company = Company(ticker=ticker, name=name, asset_type=asset_type)
     db.add(company)
     db.flush()
     return company

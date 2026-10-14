@@ -1,5 +1,8 @@
 """universe_top{N}.json의 종목에 대해 뉴스 + DART 공시를 수집한다.
 
+universe_etf{N}.json(scripts/build_etf_universe.py)처럼 항목에 "asset_type": "etf"가 있으면 ETF로 등록하고, DART 공시는
+수집하지 않고(ETF는 공시 대상이 아니다) 뉴스만 수집한다. 뉴스 검색어는 ETF 이름 그대로다.
+
 회사는 항상 (ticker, name) 쌍으로 먼저 등록한 뒤 수집하고, 종목별 결과/소요시간을 기록한다.
 실패해도 다음 종목으로 계속 진행하며(자동 재시도 없음) 마지막에 실패 목록을 출력한다.
 
@@ -9,6 +12,7 @@ universe 파일은 커밋 대상이 아니므로 먼저 `python -m scripts.build
   python -m scripts.collect_universe --every 20                # 20개 간격 표본(시범)
   python -m scripts.collect_universe --dry-run --limit 3         # DB에 쓰지 않고 확인
   python -m scripts.collect_universe --report report.json        # 전체 실행 + 결과 JSON 저장
+  python -m scripts.collect_universe --universe universe_etf50.json   # ETF: 뉴스만 수집
 """
 
 import argparse
@@ -17,6 +21,7 @@ import time
 from pathlib import Path
 
 from app.collectors import (
+    CollectResult,
     _safe_error,
     fetch_and_save_disclosures,
     fetch_and_save_news,
@@ -28,11 +33,11 @@ from sqlalchemy import text
 UNIVERSE_DIR = Path(__file__).resolve().parent
 
 
-def _register(ticker: str, name: str) -> str | None:
+def _register(ticker: str, name: str, asset_type: str = "stock") -> str | None:
     """(ticker, name) 쌍으로 회사를 등록한다. 실패 사유를 반환하고, 성공하면 None."""
     db = SessionLocal()
     try:
-        get_or_create_company(db, ticker, name)
+        get_or_create_company(db, ticker, name, asset_type=asset_type)
         db.commit()
         return None
     except Exception as e:
@@ -71,10 +76,11 @@ def main():
 
     for i, t in enumerate(targets, 1):
         ticker, name = t["ticker"], t["name"]
-        row = {"rank": t["rank"], "ticker": ticker, "name": name}
+        asset_type = t.get("asset_type", "stock")
+        row = {"rank": t["rank"], "ticker": ticker, "name": name, "asset_type": asset_type}
         t0 = time.time()
 
-        err = _register(ticker, name) if not args.dry_run else None
+        err = _register(ticker, name, asset_type) if not args.dry_run else None
         if err:
             row["register_error"] = err
             row["news"] = row["disclosure"] = None
@@ -86,8 +92,12 @@ def main():
             fetch_and_save_news, name, display=args.display, dry_run=args.dry_run, ticker=ticker
         )
         time.sleep(args.delay)
-        disc, disc_sec = _timed(fetch_and_save_disclosures, name, days=args.days, dry_run=args.dry_run)
-        time.sleep(args.delay)
+        if asset_type == "etf":
+            # ETF는 DART 공시 대상이 아니라서 건너뛴다(실패가 아니라 "해당 없음"이다).
+            disc, disc_sec = CollectResult(ok=True), 0.0
+        else:
+            disc, disc_sec = _timed(fetch_and_save_disclosures, name, days=args.days, dry_run=args.dry_run)
+            time.sleep(args.delay)
 
         for key, res, sec in (("news", news, news_sec), ("disclosure", disc, disc_sec)):
             row[key] = {
@@ -101,7 +111,8 @@ def main():
         rows.append(row)
         print(
             f"[{i}/{len(targets)}] {name}({ticker}) "
-            f"뉴스 {'OK' if news.ok else 'FAIL'}+{news.saved} / 공시 {'OK' if disc.ok else 'FAIL'}+{disc.saved} "
+            f"뉴스 {'OK' if news.ok else 'FAIL'}+{news.saved} / "
+            f"{'공시 건너뜀(ETF)' if asset_type == 'etf' else '공시 ' + ('OK' if disc.ok else 'FAIL') + '+' + str(disc.saved)} "
             f"({row['sec']}s)"
         )
 

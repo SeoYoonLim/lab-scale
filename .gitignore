@@ -6,4 +6,5 @@ backend/scripts/benchmark_raw.json
 backend/scripts/benchmark_summary.json
 backend/backups/
 backend/scripts/universe_top*.json
+backend/scripts/universe_etf*.json
 backend/scripts/*_report.json
