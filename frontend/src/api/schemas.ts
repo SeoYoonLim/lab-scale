@@ -19,6 +19,10 @@ import type {
   DiagnosisResponse,
   DiagnosisReturnChange,
   DiagnosisTotalAssetChange,
+  EventReaction,
+  EventReactionsResponse,
+  EventReturn,
+  StatusResponse,
   Holding,
   HoldingBrief,
   OrderResult,
@@ -341,3 +345,73 @@ export const diagnosisCompareResponseSchema = z.object({
 }) satisfies z.ZodType<DiagnosisCompareResponse>
 
 export const disclaimerResponseSchema = z.object({ text: z.string() })
+
+export const statusResponseSchema = z.object({
+  generated_at: z.string(),
+  sources: z.object({
+    stock_price: z.object({ latest_date: z.string().nullable() }),
+    etf_price: z.object({ latest_date: z.string().nullable() }),
+    market_index: z.object({ latest_date: z.string().nullable(), stale: z.boolean() }),
+    exchange_rate: z.object({ latest_date: z.string().nullable() }),
+    news: z.object({ latest_published_date: z.string().nullable() }),
+    disclosure: z.object({ latest_date: z.string().nullable() }),
+  }),
+  last_refresh: z
+    .object({ finished_at: z.string().nullable(), ok: z.boolean(), failed_steps: z.array(z.string()) })
+    .nullable(),
+  is_realtime: z.boolean(),
+  note: z.string(),
+}) satisfies z.ZodType<StatusResponse>
+
+const eventReturnSchema = z.object({
+  pct: z.number().nullable(),
+  index_pct: z.number().nullable(),
+  excess_pct: z.number().nullable(),
+  available: z.boolean(),
+  reason: z.string().nullable(),
+}) satisfies z.ZodType<EventReturn>
+
+const eventReactionSchema = z.object({
+  event_type: z.enum(['disclosure', 'news']),
+  title: z.string(),
+  url: z.string().nullable(),
+  event_at: z.string().nullable(),
+  event_date: z.string().nullable(),
+  time_known: z.boolean(),
+  base_date: z.string().nullable(),
+  base_close: z.number().nullable(),
+  reaction_start_date: z.string().nullable(),
+  returns: z.object({ d1: eventReturnSchema, d5: eventReturnSchema, d20: eventReturnSchema }),
+  volume_ratio: z.number().nullable(),
+  volume_sample_days: z.number(),
+  other_events_in_window: z.number(),
+  note: z.string().nullable(),
+}) satisfies z.ZodType<EventReaction>
+
+export const eventReactionsResponseSchema = z.object({
+  ticker: z.string(),
+  company_name: z.string(),
+  asset_type: assetTypeSchema,
+  price_as_of: z.string().nullable(),
+  market_index: z.string().nullable(),
+  events: z.array(eventReactionSchema),
+  summary: z.object({
+    event_count: z.number(),
+    with_d1: z.number(),
+    avg_d1_pct: z.number().nullable(),
+    positive_d1_count: z.number(),
+    with_excess_d1: z.number(),
+    avg_excess_d1_pct: z.number().nullable(),
+    with_d5: z.number(),
+    avg_d5_pct: z.number().nullable(),
+    positive_d5_count: z.number(),
+    with_excess_d5: z.number(),
+    avg_excess_d5_pct: z.number().nullable(),
+    with_d20: z.number(),
+    avg_d20_pct: z.number().nullable(),
+    positive_d20_count: z.number(),
+    with_excess_d20: z.number(),
+    avg_excess_d20_pct: z.number().nullable(),
+  }),
+  disclaimer: z.string(),
+}) satisfies z.ZodType<EventReactionsResponse>

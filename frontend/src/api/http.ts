@@ -8,12 +8,14 @@ import {
   diagnosisHistoryListSchema,
   diagnosisResponseSchema,
   disclaimerResponseSchema,
+  eventReactionsResponseSchema,
   orderResultSchema,
   portfolioSchema,
   realtimePriceSchema,
   reportDetailSchema,
   reportListSchema,
   researchResponseSchema,
+  statusResponseSchema,
   tradeListSchema,
   trendingResponseSchema,
   userSchema,
@@ -28,12 +30,14 @@ import type {
   DiagnosisDetail,
   DiagnosisHistoryList,
   DiagnosisResponse,
+  EventReactionsResponse,
   OrderResult,
   Portfolio,
   ReportDetail,
   ReportList,
   ResearchResponse,
   RealtimePrice,
+  StatusResponse,
   TradeList,
   TrendingResponse,
   User,
@@ -259,6 +263,17 @@ export const httpApi: Api = {
     ),
   searchCompanies: (q, limit, assetType) =>
     request<Company[]>(`/companies${qs({ q, limit, asset_type: assetType })}`, {}, { schema: companyListSchema }),
+  getStatus: () => request<StatusResponse>('/status', {}, { schema: statusResponseSchema }),
+  getEventReactions: (ticker, options = {}) =>
+    request<EventReactionsResponse>(
+      `/stocks/${encodeURIComponent(ticker)}/event-reactions${qs({
+        event_type: options.eventType,
+        limit: options.limit,
+        since_days: options.sinceDays,
+      })}`,
+      {},
+      { schema: eventReactionsResponseSchema },
+    ),
   getDisclaimer: () =>
     request<{ text: string }>('/disclaimer', {}, { schema: disclaimerResponseSchema }).then((res) => res.text),
 }

@@ -337,3 +337,81 @@ export interface DiagnosisCompareResponse {
   changes: DiagnosisChanges | null
   disclaimer: string
 }
+
+// GET /api/status (데이터 기준일, 공개). 날짜 필드는 데이터가 아예 없으면 null.
+export interface StatusResponse {
+  generated_at: string
+  sources: {
+    stock_price: { latest_date: string | null }
+    etf_price: { latest_date: string | null }
+    market_index: { latest_date: string | null; stale: boolean }
+    exchange_rate: { latest_date: string | null }
+    news: { latest_published_date: string | null }
+    disclosure: { latest_date: string | null }
+  }
+  last_refresh: { finished_at: string | null; ok: boolean; failed_steps: string[] } | null
+  is_realtime: boolean
+  note: string
+}
+
+// GET /api/stocks/{ticker}/event-reactions (공개, LLM 미사용). 시간적 선후관계일 뿐 인과가 아니다.
+export type EventType = 'disclosure' | 'news'
+export type EventTypeFilter = EventType | 'all'
+
+export interface EventReturn {
+  pct: number | null
+  index_pct: number | null
+  excess_pct: number | null
+  available: boolean
+  // pct를 못 구한 사유("20거래일 경과 전" 등). pct는 있는데 지수/초과수익률이 없을 때는 그 사유
+  reason: string | null
+}
+
+export interface EventReaction {
+  event_type: EventType
+  title: string
+  url: string | null
+  // 뉴스는 event_at, 공시는 event_date 중 정확히 하나만 값이 있다
+  event_at: string | null
+  event_date: string | null
+  time_known: boolean
+  base_date: string | null
+  base_close: number | null
+  reaction_start_date: string | null
+  returns: { d1: EventReturn; d5: EventReturn; d20: EventReturn }
+  volume_ratio: number | null
+  volume_sample_days: number
+  other_events_in_window: number
+  note: string | null
+}
+
+export interface EventReactionSummary {
+  event_count: number
+  with_d1: number
+  avg_d1_pct: number | null
+  positive_d1_count: number
+  with_excess_d1: number
+  avg_excess_d1_pct: number | null
+  with_d5: number
+  avg_d5_pct: number | null
+  positive_d5_count: number
+  with_excess_d5: number
+  avg_excess_d5_pct: number | null
+  with_d20: number
+  avg_d20_pct: number | null
+  positive_d20_count: number
+  with_excess_d20: number
+  avg_excess_d20_pct: number | null
+}
+
+export interface EventReactionsResponse {
+  ticker: string
+  company_name: string
+  asset_type: AssetType
+  price_as_of: string | null
+  // KS11(코스피) / KQ11(코스닥). ETF·시장 구분 없음은 null
+  market_index: string | null
+  events: EventReaction[]
+  summary: EventReactionSummary
+  disclaimer: string
+}

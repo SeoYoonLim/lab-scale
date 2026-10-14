@@ -6,16 +6,26 @@ const TYPE_LABELS: Record<Source['type'], string> = {
   disclosure: '공시',
 }
 
-// 답변 아래에 근거를 각주처럼 붙인다. stock_tool·market_tool처럼 근거 문서가
-// 없는 도구는 "사용한 도구" 한 줄로만, 뉴스·공시·RAG 근거는 번호 매긴 각주로 보여준다.
+// 답변 아래에 근거를 붙인다. 위쪽 칩은 "무엇을 근거로 했는지"를 한눈에(사용한 도구, 뉴스·공시 건수),
+// 아래 각주는 번호 매긴 원문 링크다. stock_tool·market_tool처럼 근거 문서가 없는 도구는 칩으로만 보여준다.
 export default function SourceFootnotes({ usedTools, sources }: { usedTools: string[]; sources: Source[] }) {
   if (usedTools.length === 0) return null
 
+  const newsCount = sources.filter((s) => s.type === 'news').length
+  const disclosureCount = sources.filter((s) => s.type === 'disclosure').length
+
   return (
     <footer className="evidence">
-      <div className="evidence-tools muted small">
-        도구: {usedTools.map((t) => TOOL_LABELS[t] ?? t).join(', ')}
-      </div>
+      <div className="evidence-title">주요 근거 자료</div>
+      <ul className="evidence-chips">
+        {newsCount > 0 && <li className="chip chip-strong">뉴스 {newsCount}건</li>}
+        {disclosureCount > 0 && <li className="chip chip-strong">공시 {disclosureCount}건</li>}
+        {usedTools.map((t) => (
+          <li key={t} className="chip">
+            {TOOL_LABELS[t] ?? t}
+          </li>
+        ))}
+      </ul>
       {sources.length > 0 && (
         <ol className="footnotes">
           {sources.map((source, index) => (

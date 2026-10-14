@@ -1,28 +1,32 @@
 :root {
-  /* 대시보드형 팔레트: 남색 사이드바 + 흰 카드 + 파란 포인트.
+  /* 시안 톤: 짙은 남색 사이드바 + 연한 하늘색 배경 + 흰 카드 + 선명한 파란 포인트.
      상승/하락은 신호 색이라 accent와 구분되게 따로 둔다. */
-  --bg: #f3f5f9; /* 콘텐츠 영역 배경 */
+  --bg: #f2f6fd; /* 콘텐츠 영역 배경 */
   --surface: #ffffff; /* 카드 배경 */
-  --surface-2: #eef1f7; /* 옅은 강조(hover 등) */
-  --rule: #e3e7f0; /* 카드 테두리/구분선 */
-  --ink: #15192e; /* 본문 텍스트 */
-  --ink-muted: #6b7290; /* 보조 텍스트 */
+  --surface-2: #eef4fd; /* 옅은 강조(hover·칩 등) */
+  --rule: #e0e8f5; /* 카드 테두리/구분선 */
+  --ink: #111a33; /* 본문 텍스트 */
+  --ink-muted: #5f6b8a; /* 보조 텍스트 */
 
-  --sidebar-bg: #10152b; /* 사이드바 배경(남색) */
-  --sidebar-text: #9aa1c4; /* 사이드바 비활성 텍스트 */
+  --sidebar-bg: linear-gradient(180deg, #0c1a3d 0%, #0a1430 100%);
+  --sidebar-text: #a9b6da;
   --sidebar-text-active: #ffffff;
-  --sidebar-active-bg: rgba(255, 255, 255, 0.08);
+  --sidebar-active-bg: #2563eb;
 
-  --up: #e5484d; /* 상승 = 빨강(한국 증권 관례) */
-  --down: #3d6fb4; /* 하락 = 파랑. accent(아래)보다 차분한 톤으로 구분 */
-  --accent: #2f6feb; /* 버튼·링크·활성 상태 전용. 상승/하락과 겹치지 않게 분리 */
-  --accent-soft: #e8eefe;
+  --up: #e5383b; /* 상승 = 빨강(한국 증권 관례) */
+  --down: #2f6bd6; /* 하락 = 파랑 */
+  --accent: #2563eb; /* 버튼·링크·활성 상태 전용. 상승/하락과 겹치지 않게 분리 */
+  --accent-strong: #1d4fd0;
+  --accent-soft: #e4eeff;
   --accent-text: #ffffff;
+  --success: #12a05c;
+  --warn: #e08a00;
   --danger: #dc2626;
 
-  --radius: 12px;
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
-  --sidebar-w: 240px;
+  --radius: 16px;
+  --radius-sm: 10px;
+  --shadow-card: 0 1px 2px rgba(20, 44, 96, 0.04), 0 4px 16px rgba(20, 44, 96, 0.06);
+  --sidebar-w: 248px;
 
   --font-body: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI',
     'Malgun Gothic', sans-serif;
@@ -38,24 +42,26 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0f1320;
-    --surface: #171c2e;
-    --surface-2: #1e243a;
-    --rule: #2a3049;
-    --ink: #e7e9f5;
-    --ink-muted: #9aa1c4;
+    --bg: #0c1224;
+    --surface: #141b33;
+    --surface-2: #1b2442;
+    --rule: #27304f;
+    --ink: #e8ecfa;
+    --ink-muted: #9ba7cb;
 
-    --sidebar-bg: #0a0d1c;
-    --sidebar-text: #8890b8;
-    --sidebar-active-bg: rgba(255, 255, 255, 0.07);
+    --sidebar-bg: linear-gradient(180deg, #08102a 0%, #060b1e 100%);
+    --sidebar-text: #8b98c4;
 
     --up: #ff6b6f;
     --down: #6f9bd8;
-    --accent: #5b8cf2;
-    --accent-soft: #1c2746;
-    --accent-text: #0a0d1c;
+    --accent: #5b8cf5;
+    --accent-strong: #7aa2ff;
+    --accent-soft: #1a2a52;
+    --accent-text: #08102a;
+    --success: #3ccf8e;
+    --warn: #f0a93a;
     --danger: #f1605c;
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
   }
 }
 

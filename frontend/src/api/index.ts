@@ -6,12 +6,15 @@ import type {
   DiagnosisDetail,
   DiagnosisHistoryList,
   DiagnosisResponse,
+  EventReactionsResponse,
+  EventTypeFilter,
   OrderResult,
   Portfolio,
   ReportDetail,
   ReportList,
   ResearchResponse,
   RealtimePrice,
+  StatusResponse,
   TradeList,
   TrendingCategory,
   TrendingResponse,
@@ -57,6 +60,13 @@ export interface PublicApi {
   getTrending(category: TrendingCategory, limit?: number, assetType?: AssetType): Promise<TrendingResponse>
   searchCompanies(q?: string, limit?: number, assetType?: AssetType): Promise<Company[]>
   getDisclaimer(): Promise<string>
+  // 데이터 기준일(소스별 최신 날짜, 갱신 결과). 종가 기준 DB 값이라 실시간이 아니다.
+  getStatus(): Promise<StatusResponse>
+  // 뉴스·공시 이후 1/5/20거래일 주가 반응. 코드로 계산한 값이고 인과관계가 아니다. limit은 유형별 건수(1~30).
+  getEventReactions(
+    ticker: string,
+    options?: { eventType?: EventTypeFilter; limit?: number; sinceDays?: number },
+  ): Promise<EventReactionsResponse>
 }
 
 export type Api = AuthApi & ResearchApi & AccountApi & PublicApi

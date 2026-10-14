@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api'
+import { IconSearch, IconSend, IconSparkle } from '../components/icons'
+import DataToolCards from '../components/DataToolCards'
+import ResearchProgress from '../components/ResearchProgress'
 import SourceFootnotes from '../components/SourceFootnotes'
 import TrendingWidget from '../components/TrendingWidget'
 import type { Source } from '../types'
@@ -111,23 +114,61 @@ export default function ResearchPage() {
     }
   }
 
+  const composer = (
+    <form className={entries.length === 0 ? 'composer composer-hero' : 'composer'} onSubmit={handleSubmit}>
+      <div className="container container-wide composer-inner">
+        {threadReportId != null && (
+          <div className="thread-hint">
+            <span>#{threadReportId}에 이어서 대화 중이에요</span>
+            <button type="button" onClick={() => setThreadReportId(null)}>
+              새 질문으로 시작
+            </button>
+          </div>
+        )}
+        <div className="composer-row">
+          <span className="composer-icon">
+            <IconSearch />
+          </span>
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="예: 삼성전자 최근 3일 등락률 알려줘"
+            rows={1}
+            aria-label="질문 입력"
+          />
+          <button type="submit" className="send send-icon" disabled={pending || !input.trim()} aria-label="질문 보내기">
+            <IconSend />
+          </button>
+        </div>
+      </div>
+    </form>
+  )
+
   return (
     <div className="chat-page">
       <div className="chat-scroll">
-        <div className="container">
+        <div className="container container-wide">
           {entries.length === 0 && (
             <div className="entry-empty">
-              <h1>무엇이 궁금하세요?</h1>
+              <h1>
+                안녕하세요!
+                <br />
+                무엇을 분석해드릴까요?
+              </h1>
               <p>종목의 주가, 뉴스, 공시를 근거로 답해드려요.</p>
+              {composer}
               <ul className="suggestion-list">
                 {SUGGESTIONS.map((text) => (
                   <li key={text}>
                     <button type="button" className="suggestion" onClick={() => void send(text)}>
-                      {text}
+                      <IconSparkle />
+                      <span>{text}</span>
                     </button>
                   </li>
                 ))}
               </ul>
+              <DataToolCards />
               <TrendingWidget onPick={(question) => setInput(question)} />
             </div>
           )}
@@ -146,23 +187,18 @@ export default function ResearchPage() {
                 </div>
                 <h2 className="entry-question">{entry.question}</h2>
 
-                {entry.status === 'pending' && (
-                  <p className="entry-pending muted">
-                    <span className="dots" aria-hidden="true">
-                      <i />
-                      <i />
-                      <i />
-                    </span>
-                    도구를 호출하고 답변을 만드는 중이에요
-                  </p>
-                )}
+                {entry.status === 'pending' && <ResearchProgress />}
                 {entry.status === 'error' && <p className="entry-answer entry-error">{entry.errorMessage}</p>}
                 {entry.status === 'done' && (
-                  <>
+                  <div className="answer-card">
+                    <div className="answer-head">
+                      <span className="ai-badge">AI</span>
+                      <span className="answer-title">분석 결과</span>
+                    </div>
                     <p className="entry-answer">{entry.answer}</p>
                     <SourceFootnotes usedTools={entry.usedTools ?? []} sources={entry.sources ?? []} />
                     {entry.disclaimer && <p className="disclaimer-note muted small">{entry.disclaimer}</p>}
-                  </>
+                  </div>
                 )}
               </article>
             ))}
@@ -171,31 +207,7 @@ export default function ResearchPage() {
         </div>
       </div>
 
-      <form className="composer" onSubmit={handleSubmit}>
-        <div className="container composer-inner">
-          {threadReportId != null && (
-            <div className="thread-hint">
-              <span>#{threadReportId}에 이어서 대화 중이에요</span>
-              <button type="button" onClick={() => setThreadReportId(null)}>
-                새 질문으로 시작
-              </button>
-            </div>
-          )}
-          <div className="composer-row">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="예: 삼성전자 최근 3일 등락률 알려줘"
-              rows={1}
-              aria-label="질문 입력"
-            />
-            <button type="submit" className="send" disabled={pending || !input.trim()}>
-              보내기
-            </button>
-          </div>
-        </div>
-      </form>
+      {entries.length > 0 && composer}
     </div>
   )
 }

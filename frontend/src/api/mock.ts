@@ -16,6 +16,11 @@ import type {
   DiagnosisResponse,
   DiagnosisReturnChange,
   DiagnosisTotalAssetChange,
+  EventReaction,
+  EventReactionsResponse,
+  EventReturn,
+  EventType,
+  EventTypeFilter,
   Holding,
   OrderResult,
   Portfolio,
@@ -24,6 +29,7 @@ import type {
   ReportListItem,
   ResearchResponse,
   Source,
+  StatusResponse,
   Trade,
   TradeList,
   TrendingCategory,
@@ -517,6 +523,156 @@ async function getRealtimePrice(ticker: string): Promise<RealtimePrice> {
     is_realtime: true,
     source: 'naver',
     corrected_from: null,
+  }
+}
+
+// ---------- 데이터 기준일 / 사건 이후 주가 반응 ----------
+
+async function getStatus(): Promise<StatusResponse> {
+  await delay(100)
+  const latest = getPriceSeries('005930').at(-1)!.price_date
+  return {
+    generated_at: new Date().toISOString(),
+    sources: {
+      stock_price: { latest_date: latest },
+      etf_price: { latest_date: latest },
+      market_index: { latest_date: latest, stale: false },
+      exchange_rate: { latest_date: latest },
+      news: { latest_published_date: latest },
+      disclosure: { latest_date: latest },
+    },
+    last_refresh: { finished_at: new Date().toISOString(), ok: true, failed_steps: [] },
+    is_realtime: false,
+    note: '샘플 데이터예요. 주가는 종가 기준이며, 실시간 시세는 별도로 제공돼요.',
+  }
+}
+
+const EVENT_REACTION_DISCLAIMER =
+  '사건 이후의 주가 움직임은 시간적 선후관계일 뿐 인과관계가 아니에요. 같은 기간의 시장 전체 흐름이나 다른 사건이 영향을 줬을 수 있고 표본이 적을 수 있어요. (샘플 데이터)'
+
+// 시리즈 끝에서 거꾸로 센 거래일 수로 사건 위치를 고정해 두면 같은 종목은 항상 같은 결과가 나온다.
+const EVENT_OFFSETS: { type: EventType; back: number }[] = [
+  { type: 'disclosure', back: 2 },
+  { type: 'news', back: 4 },
+  { type: 'disclosure', back: 9 },
+  { type: 'news', back: 13 },
+  { type: 'news', back: 22 },
+  { type: 'disclosure', back: 31 },
+  { type: 'news', back: 47 },
+  { type: 'disclosure', back: 58 },
+]
+
+const round2 = (n: number) => Math.round(n * 100) / 100
+
+async function getEventReactions(
+  ticker: string,
+  options: { eventType?: EventTypeFilter; limit?: number; sinceDays?: number } = {},
+): Promise<EventReactionsResponse> {
+  await delay(200)
+  const meta = findCompanyMeta(ticker)
+  if (!meta) throw companyNotFound(ticker)
+  const { eventType = 'all', limit = 10, sinceDays = 60 } = options
+  if (!Number.isInteger(limit) || limit < 1 || limit > 30 || !Number.isInteger(sinceDays) || sinceDays < 1 || sinceDays > 120) {
+    throw new ApiError('limit은 1~30, since_days는 1~120 사이여야 해요.', 422)
+  }
+
+  const series = getPriceSeries(meta.ticker)
+  const isEtf = meta.assetType === 'etf'
+  const news = makeNews(meta.name, 8)
+  const disclosures = makeDisclosures(meta.name, 8)
+  // since_days는 달력 일수라 거래일로는 약 70%
+  const windowStart = series[Math.max(0, series.length - Math.round(sinceDays * 0.7))].price_date
+
+  const events: EventReaction[] = []
+  let newsIdx = 0
+  let disclosureIdx = 0
+  for (const { type, back } of EVENT_OFFSETS) {
+    if (isEtf && type === 'disclosure') continue // ETF는 뉴스만 대상
+    const idx = series.length - back
+    if (idx < 1 || series[idx].price_date < windowStart) continue
+    const item = type === 'news' ? news[newsIdx++ % news.length] : disclosures[disclosureIdx++ % disclosures.length]
+    const base = series[idx - 1] // 기준일 = 사건 직전 거래일(샘플은 시각 규칙을 단순화)
+    const returnAt = (n: number): EventReturn => {
+      const target = series[idx + n - 1]
+      if (!target) return { pct: null, index_pct: null, excess_pct: null, available: false, reason: `${n}거래일 경과 전` }
+      const pct = round2(((target.close_price - base.close_price) / base.close_price) * 100)
+      if (isEtf) {
+        return { pct, index_pct: null, excess_pct: null, available: true, reason: 'ETF는 지수 대비 초과수익률을 계산하지 않아요' }
+      }
+      const indexPct = round2(pct * 0.55 + (((idx + n) % 5) - 2) * 0.3)
+      return { pct, index_pct: indexPct, excess_pct: round2(pct - indexPct), available: true, reason: null }
+    }
+    const sampleDays = Math.min(20, idx)
+    const avgVolume = series.slice(idx - sampleDays, idx).reduce((a, p) => a + (p.volume ?? 0), 0) / sampleDays
+    events.push({
+      event_type: type,
+      title: item.title,
+      url: item.url,
+      event_at: type === 'news' ? `${series[idx].price_date}T${String(9 + (back % 6)).padStart(2, '0')}:20:00+09:00` : null,
+      event_date: type === 'disclosure' ? series[idx].price_date : null,
+      time_known: type === 'news',
+      base_date: base.price_date,
+      base_close: base.close_price,
+      reaction_start_date: series[idx].price_date,
+      returns: { d1: returnAt(1), d5: returnAt(5), d20: returnAt(20) },
+      volume_ratio: avgVolume > 0 ? round2((series[idx].volume ?? 0) / avgVolume) : null,
+      volume_sample_days: sampleDays,
+      other_events_in_window: (back * 7) % 5,
+      note: null,
+    })
+  }
+
+  // limit은 유형별 최대 건수(최신순). EVENT_OFFSETS가 최신 → 오래된 순이라 앞에서부터 센다.
+  const perType = new Map<EventType, number>()
+  const selected = events
+    .filter((e) => eventType === 'all' || e.event_type === eventType)
+    .filter((e) => {
+      const count = (perType.get(e.event_type) ?? 0) + 1
+      perType.set(e.event_type, count)
+      return count <= limit
+    })
+
+  const average = (values: (number | null)[]) => {
+    const present = values.filter((v): v is number => v != null)
+    return present.length ? round2(present.reduce((a, b) => a + b, 0) / present.length) : null
+  }
+  const stat = (key: 'd1' | 'd5' | 'd20') => ({
+    withReturn: selected.filter((e) => e.returns[key].available).length,
+    avg: average(selected.map((e) => e.returns[key].pct)),
+    positive: selected.filter((e) => (e.returns[key].pct ?? 0) > 0).length,
+    withExcess: selected.filter((e) => e.returns[key].excess_pct != null).length,
+    avgExcess: average(selected.map((e) => e.returns[key].excess_pct)),
+  })
+  const d1 = stat('d1')
+  const d5 = stat('d5')
+  const d20 = stat('d20')
+
+  return {
+    ticker: meta.ticker,
+    company_name: meta.name,
+    asset_type: meta.assetType,
+    price_as_of: series.at(-1)!.price_date,
+    market_index: isEtf || !meta.market ? null : meta.market === 'KOSPI' ? 'KS11' : 'KQ11',
+    events: selected,
+    summary: {
+      event_count: selected.length,
+      with_d1: d1.withReturn,
+      avg_d1_pct: d1.avg,
+      positive_d1_count: d1.positive,
+      with_excess_d1: d1.withExcess,
+      avg_excess_d1_pct: d1.avgExcess,
+      with_d5: d5.withReturn,
+      avg_d5_pct: d5.avg,
+      positive_d5_count: d5.positive,
+      with_excess_d5: d5.withExcess,
+      avg_excess_d5_pct: d5.avgExcess,
+      with_d20: d20.withReturn,
+      avg_d20_pct: d20.avg,
+      positive_d20_count: d20.positive,
+      with_excess_d20: d20.withExcess,
+      avg_excess_d20_pct: d20.avgExcess,
+    },
+    disclaimer: EVENT_REACTION_DISCLAIMER,
   }
 }
 
@@ -1179,6 +1335,8 @@ export const mockApi: Api = {
   getTrending,
   searchCompanies,
   getDisclaimer,
+  getStatus,
+  getEventReactions,
 
   listWatchlist,
   addWatchlistItem,

@@ -5,6 +5,7 @@ import { api } from '../api'
 import { ApiError } from '../api/errors'
 import { queryKeys } from '../api/queryKeys'
 import { useAuth } from '../auth/useAuth'
+import EventReactionsCard from '../components/EventReactionsCard'
 import { formatDate, formatPct, formatPrice, trendClass } from '../utils/format'
 
 // backend/API.md: 서버가 종목별로 3~5초 캐싱하므로 이 주기로 폴링해도 안전하다.
@@ -93,9 +94,14 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
 
       <section className="card summary">
         <div>
-          <h1 className="company-title">{realtime?.company_name ?? ticker}</h1>
+          <div className="company-head">
+            <span className="company-avatar" aria-hidden="true">
+              {(realtime?.company_name ?? ticker).slice(0, 1)}
+            </span>
+            <h1 className="company-title">{realtime?.company_name ?? ticker}</h1>
+            <span className="ticker-chip num">{ticker}</span>
+          </div>
           <div className="meta muted">
-            <span>{ticker}</span>
             {realtime?.corrected_from && <span>입력: {realtime.corrected_from}</span>}
           </div>
           <div className="watchlist-row">
@@ -153,6 +159,8 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
           <p className="muted">{isPending ? '불러오는 중…' : ''}</p>
         )}
       </section>
+
+      {realtime && <EventReactionsCard ticker={realtime.ticker} />}
 
       <div className="card research-cta">
         <div>

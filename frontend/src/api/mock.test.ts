@@ -203,3 +203,44 @@ describe('mockApi auth', () => {
     vi.restoreAllMocks()
   })
 })
+
+describe('mockApi 데이터 기준일·사건 반응(2026-10-15 추가)', () => {
+  it('getStatus는 종가 기준(is_realtime=false)이고 기준일이 있다', async () => {
+    const status = await mockApi.getStatus()
+    expect(status.is_realtime).toBe(false)
+    expect(status.sources.stock_price.latest_date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+
+  it('getEventReactions는 주식이면 공시·뉴스를 모두, 유형 필터를 주면 그 유형만 준다', async () => {
+    const all = await mockApi.getEventReactions('005930')
+    expect(all.asset_type).toBe('stock')
+    expect(all.market_index).toBe('KS11')
+    expect(new Set(all.events.map((e) => e.event_type))).toEqual(new Set(['disclosure', 'news']))
+    expect(all.summary.event_count).toBe(all.events.length)
+
+    const news = await mockApi.getEventReactions('005930', { eventType: 'news' })
+    expect(news.events.length).toBeGreaterThan(0)
+    expect(news.events.every((e) => e.event_type === 'news')).toBe(true)
+  })
+
+  it('아직 N거래일이 안 지난 최근 사건은 pct=null과 사유를 준다', async () => {
+    const { events } = await mockApi.getEventReactions('005930')
+    const latest = events[0]
+    expect(latest.returns.d20.pct).toBeNull()
+    expect(latest.returns.d20.available).toBe(false)
+    expect(latest.returns.d20.reason).toContain('거래일 경과 전')
+  })
+
+  it('ETF는 뉴스만 대상이고 지수 대비 초과수익률이 null이다', async () => {
+    const res = await mockApi.getEventReactions('069500')
+    expect(res.asset_type).toBe('etf')
+    expect(res.market_index).toBeNull()
+    expect(res.events.every((e) => e.event_type === 'news')).toBe(true)
+    expect(res.events.every((e) => e.returns.d1.excess_pct === null)).toBe(true)
+  })
+
+  it('모르는 종목은 404, 범위를 벗어난 limit은 422', async () => {
+    await expect(mockApi.getEventReactions('없는종목')).rejects.toMatchObject({ status: 404 })
+    await expect(mockApi.getEventReactions('005930', { limit: 31 })).rejects.toMatchObject({ status: 422 })
+  })
+})
