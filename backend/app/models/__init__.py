@@ -4,6 +4,7 @@ from app.models.exchange_rate import ExchangeRate
 from app.models.holding import Holding
 from app.models.market_index import MarketIndex
 from app.models.news import News
+from app.models.portfolio_diagnosis import PortfolioDiagnosis
 from app.models.research_report import ResearchReport
 from app.models.stock_price import StockPrice
 from app.models.tool_call_log import ToolCallLog
@@ -20,6 +21,7 @@ __all__ = [
     "MarketIndex",
     "ExchangeRate",
     "ResearchReport",
+    "PortfolioDiagnosis",
     "ToolCallLog",
     "Watchlist",
     "VirtualAccount",
