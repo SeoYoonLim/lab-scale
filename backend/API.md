@@ -18,7 +18,7 @@ Authorization: Bearer <access_token>
 
 | 구분 | 엔드포인트 |
 | --- | --- |
-| **인증 필요** | `/api/auth/me`, `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST) |
+| **인증 필요** | `/api/auth/me`, `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET) |
 | 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending` |
 
 - 데이터는 **사용자별로 분리**된다. 리서치 리포트 목록/조회/삭제/이어 쓰기(`previous_report_id`)는 본인 것만 대상이고,
@@ -84,7 +84,11 @@ Authorization: Bearer <access_token>
 | POST | `/api/portfolio/orders` | 필요 | 모의투자 매수/매도 주문 |
 | GET | `/api/portfolio/trades` | 필요 | 내 체결 내역(최신순, `limit`/`offset` 페이지네이션, `ticker` 필터) |
 | POST | `/api/portfolio/reset` | 필요 | 내 모의투자 초기화(보유·체결 내역 삭제 + 잔고 초기값). 본문 `{"confirm": true}` 필수 |
-| POST | `/api/portfolio/diagnosis` | 필요 | 내 포트폴리오 AI 진단(지표·플래그는 코드 계산, 설명은 LLM 또는 규칙 기반 폴백) |
+| POST | `/api/portfolio/diagnosis` | 필요 | 내 포트폴리오 AI 진단(지표·플래그는 코드 계산, 설명은 LLM 또는 규칙 기반 폴백). 결과를 저장하고 `diagnosis_id`·`created_at`을 붙인다 |
+| GET | `/api/portfolio/diagnosis/history` | 필요 | 내 진단 이력 목록(최신순, `limit`/`offset` 페이지네이션, 최근 50건 보관) |
+| GET | `/api/portfolio/diagnosis/{id}` | 필요 | 내 진단 한 건(저장된 진단 응답 그대로) |
+| GET | `/api/portfolio/diagnosis/{id}/compare` | 필요 | 이전 진단과 비교(코드로만 계산). `base`로 기준 진단 지정 |
+| DELETE | `/api/portfolio/diagnosis/{id}` | 필요 | 내 진단 한 건 삭제 |
 | GET | `/api/disclaimer` | 공개 | 서비스 면책 문구(`{"text": "..."}`) |
 
 아래 각 엔드포인트의 에러 표에는 401을 반복해 적지 않았다. **인증 필요 API는 모두 위 "인증 에러 (401)"가 공통으로 적용된다.**
@@ -936,7 +940,21 @@ curl -X POST http://localhost:8000/api/portfolio/reset   -H "Authorization: Bear
 내 모의투자 포트폴리오 AI 진단. **숫자와 판단(지표·플래그)은 서버 코드가 계산**하고, 종목명과 숫자가 들어가는
 **강점(`strengths`)·위험 요인(`risks`) 문장도 서버 코드가 템플릿으로 만든다**. LLM(llama3.1:8b)은 전체 요약(`summary`)과
 제안(`suggestions`)만 쓴다. LLM 설명이 검증을 통과하지 못하거나 Ollama가 응답하지 않으면 네 필드 모두 규칙 기반 문장으로
-대신한다(`source`로 구분). 결과는 저장하지 않는다(호출할 때마다 새로 계산). 본문 없음.
+대신한다(`source`로 구분). 호출할 때마다 새로 계산하고, 성공하면 결과를 **저장**한다(아래 "진단 이력"). 본문 없음.
+
+### 저장 필드 (2026-10-14 추가)
+
+성공한 진단은 사용자당 **최근 50건**까지 저장한다(51번째를 저장하면 가장 오래된 것이 지워진다). 응답 맨 끝에 필드 두 개가 **추가**됐고
+기존 필드는 하나도 바뀌지 않았다.
+
+| 필드 | 설명 |
+| --- | --- |
+| `diagnosis_id` | 저장된 진단의 id(`GET /api/portfolio/diagnosis/{id}`, `/compare`, `DELETE`에 쓴다). **저장에 실패하면 `null`** |
+| `created_at` | 저장 시각(ISO 8601, UTC). 저장에 실패하면 `null`. `generated_at`(진단을 계산한 시각)과는 수 밀리초 차이가 난다 |
+
+- 저장이 실패해도(DB 오류 등) 진단 응답은 정상(200)이고 두 필드만 `null`이다. 프론트는 `diagnosis_id`가 `null`이면 "이력에 저장되지 않았어요" 정도로 처리하면 된다.
+- 보유 종목이 없어 400이 나는 경우는 저장하지 않는다.
+- 실제 호출 결과(2026-10-14, 응답 끝부분): `"diagnosis_id": 1012, "created_at": "2026-10-14T03:26:06.065824+00:00"`
 
 **응답 시간**: LLM 경로 실측 약 4~6초(로컬 Ollama, 모델이 메모리에 올라와 있을 때. 첫 호출은 모델 로딩 때문에 30초 이상
 걸린 적이 있다 — 2026-10-11 실측 35.9초). 검증에 걸려 재시도하면 7~8초다. LLM 호출 타임아웃은 60초이고, 검증 실패 시
@@ -1146,11 +1164,381 @@ curl -X POST http://localhost:8000/api/portfolio/diagnosis -H "Authorization: Be
 
 | 상태 | 언제 | body |
 | --- | --- | --- |
-| 400 | 보유 종목이 없음(LLM을 호출하지 않음) | `{"detail": "보유 종목이 없습니다. 모의투자 주문 후 진단할 수 있어요."}` |
+| 400 | 보유 종목이 없음(LLM을 호출하지 않고 저장도 하지 않음) | `{"detail": "보유 종목이 없습니다. 모의투자 주문 후 진단할 수 있어요."}` |
 | 401 | 토큰 없음/만료/변조 | 위 "인증 에러" |
-| 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
+| 503 | 진단에 필요한 DB 조회가 불가(저장만 실패한 경우는 에러가 아니라 200 + `diagnosis_id: null`) | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
 
 LLM 실패는 에러가 아니라 폴백(200)이다.
+
+---
+
+## 진단 이력 (2026-10-14 추가)
+
+`POST /api/portfolio/diagnosis` 결과를 저장해 두고 다시 보거나 이전 진단과 비교한다. 아래 4개 엔드포인트는 모두 **로그인 필요**이고
+**본인 진단만** 대상이다. 남의 진단 id는 **없는 id와 똑같이 404**다(403이 아니다 — 그 id가 존재하는지 드러내지 않기 위해).
+사용자당 최근 50건만 보관하므로, 오래된 진단은 새 진단이 저장될 때 사라진다(그 id로 조회하면 404). 아래 예시는 dev DB에서 임시
+계정으로 실제 호출한 결과이고(2026-10-14), 두 번째 진단 전에 시세를 일부러 바꿨다(삼성전자 270,000→283,500원, 카카오 40,000→34,000원,
+에코프로비엠 8주 신규 매수).
+
+---
+
+## GET /api/portfolio/diagnosis/history
+
+내 진단 이력(최신순). 이력이 없으면 `total: 0`, `items: []`.
+
+### 쿼리 파라미터
+
+| 이름 | 기본값 | 규칙 |
+| --- | --- | --- |
+| `limit` | 20 | 1~100. 범위 밖이면 422 |
+| `offset` | 0 | 0 이상. 음수면 422 |
+
+```bash
+curl "http://localhost:8000/api/portfolio/diagnosis/history?limit=20&offset=0" -H "Authorization: Bearer $TOKEN"
+```
+
+### 응답 200
+
+```json
+{
+  "total": 2,
+  "limit": 20,
+  "offset": 0,
+  "items": [
+    {
+      "id": 1012,
+      "created_at": "2026-10-14T03:26:06.065824+00:00",
+      "source": "llm",
+      "total_asset": 10015000.0,
+      "holdings_count": 3,
+      "flags": [
+        {
+          "code": "BIG_LOSS",
+          "ticker": "035720",
+          "company_name": "카카오",
+          "market": null
+        }
+      ],
+      "summary_preview": "포트폴리오의 총자산은 10,015,000원이며, 현금 비중은 52.92%입니다. 가장 큰 비중을 차지하는 종목은 삼성전자로, 비중은 28.31%"
+    },
+    {
+      "id": 1011,
+      "created_at": "2026-10-14T03:26:02.006317+00:00",
+      "source": "llm",
+      "total_asset": 10000000.0,
+      "holdings_count": 2,
+      "flags": [
+        {
+          "code": "FEW_HOLDINGS",
+          "ticker": null,
+          "company_name": null,
+          "market": null
+        },
+        {
+          "code": "MARKET_SKEW",
+          "ticker": null,
+          "company_name": null,
+          "market": "KOSPI"
+        }
+      ],
+      "summary_preview": "포트폴리오 총자산은 10,000,000 원이며, 현금 비중은 65%, 주식 비중은 35%입니다. 삼성전자와 카카오가 비중 상위 2개 종목입니다."
+    }
+  ]
+}
+```
+
+| 필드 | 설명 |
+| --- | --- |
+| `total` | 내 저장된 진단 전체 수(최대 50). `limit`/`offset`은 요청값 그대로 |
+| `items[].id` | 진단 id(`POST` 응답의 `diagnosis_id`와 같은 값) |
+| `items[].created_at` | 저장 시각(ISO 8601, UTC) |
+| `items[].source` | `"llm"` 또는 `"rule_based"` |
+| `items[].total_asset` | 그 시점의 총자산(원). 상세의 `metrics.total_asset`과 같은 값 |
+| `items[].holdings_count` | 그 시점의 보유 종목 수(`metrics.holding_count`) |
+| `items[].flags[]` | 그 진단에서 걸린 플래그 요약: `code`, 그리고 종목/시장 플래그면 `ticker`·`company_name`(BIG_LOSS) 또는 `market`(MARKET_SKEW), 해당 없으면 `null`. 메시지·값·기준은 상세/비교에서 본다. **플래그에는 심각도 구분이 없다**(진단 규칙이 심각도를 계산하지 않는다) |
+| `items[].summary_preview` | `summary`의 앞 80자(잘랐다는 표시는 붙이지 않는다. 80자 이하면 전체) |
+
+목록 응답에는 `disclaimer`가 없다(`GET /api/research` 목록과 같은 관례). 상세·비교에는 있다.
+
+### 에러
+
+| 상태 | 언제 | body |
+| --- | --- | --- |
+| 401 | 토큰 없음/만료/변조 | 위 "인증 에러" |
+| 422 | `limit`/`offset`이 범위 밖이거나 숫자가 아님 | 검증 오류 형식 |
+| 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
+
+`/api/portfolio/diagnosis/history`는 `/api/portfolio/diagnosis/{id}`보다 먼저 정의돼 있어서 `history`가 id로 해석되지 않는다.
+
+---
+
+## GET /api/portfolio/diagnosis/{id}
+
+내 진단 한 건. **저장된 진단 응답 본문 그대로**(`POST /api/portfolio/diagnosis` 응답에서 `diagnosis_id`·`created_at`을 뺀 것)에
+`id`와 `created_at`을 더한 모양이다. 그래서 진단 결과 화면을 `POST` 응답과 같은 코드로 그릴 수 있다. 저장 당시의 값이라 이후에 보유 종목이
+바뀌어도 변하지 않는다. 면책 문구(`disclaimer`)도 저장본에 들어 있다.
+
+```bash
+curl http://localhost:8000/api/portfolio/diagnosis/1012 -H "Authorization: Bearer $TOKEN"
+```
+
+### 응답 200
+
+필드는 `POST /api/portfolio/diagnosis`의 "응답 200" 표와 같다. 다른 점은 맨 끝의 두 필드뿐이다(`POST`의 `diagnosis_id` 자리에 `id`).
+
+| 필드 | 설명 |
+| --- | --- |
+| `id` | 진단 id |
+| `created_at` | 저장 시각(ISO 8601, UTC) |
+
+실제 호출 결과의 맨 끝부분(나머지는 같은 호출의 `POST` 응답과 동일):
+
+```json
+  ...
+  "disclaimer": "...",
+  "id": 1012,
+  "created_at": "2026-10-14T03:26:06.065824+00:00"
+}
+```
+
+### 에러
+
+| 상태 | 언제 | body |
+| --- | --- | --- |
+| 401 | 토큰 없음/만료/변조 | 위 "인증 에러" |
+| 404 | 없는 id이거나 **남의 진단**(구분하지 않는다) | `{"detail": "diagnosis_id=999999999 진단을 찾을 수 없습니다."}` |
+| 422 | `id`가 1 이상의 정수가 아님 | 검증 오류 형식 |
+| 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
+
+---
+
+## GET /api/portfolio/diagnosis/{id}/compare
+
+`{id}` 진단(현재)을 이전 진단과 비교한다. **숫자는 전부 서버 코드가 저장된 두 진단에서 계산**하고 LLM은 쓰지 않는다(그래서 빠르다).
+
+| 쿼리 | 설명 |
+| --- | --- |
+| `base` | 비교 기준이 될 내 다른 진단의 id. 생략하면 `{id}` **바로 이전 진단**(같은 사용자, `created_at` 기준, 같으면 id 기준)을 쓴다. `{id}`보다 새로운 진단을 줘도 되고(변화 방향이 거꾸로 계산된다), 같은 id를 줘도 된다(변화 0). 1 이상의 정수가 아니면 422 |
+
+```bash
+curl http://localhost:8000/api/portfolio/diagnosis/1012/compare -H "Authorization: Bearer $TOKEN"
+curl "http://localhost:8000/api/portfolio/diagnosis/1012/compare?base=1011" -H "Authorization: Bearer $TOKEN"
+```
+
+### 응답 200
+
+```json
+{
+  "current": {
+    "id": 1012,
+    "created_at": "2026-10-14T03:26:06.065824+00:00",
+    "source": "llm",
+    "total_asset": 10015000.0,
+    "holdings_count": 3,
+    "flags": [
+      {
+        "code": "BIG_LOSS",
+        "ticker": "035720",
+        "company_name": "카카오",
+        "market": null
+      }
+    ],
+    "summary_preview": "포트폴리오의 총자산은 10,015,000원이며, 현금 비중은 52.92%입니다. 가장 큰 비중을 차지하는 종목은 삼성전자로, 비중은 28.31%"
+  },
+  "previous": {
+    "id": 1011,
+    "created_at": "2026-10-14T03:26:02.006317+00:00",
+    "source": "llm",
+    "total_asset": 10000000.0,
+    "holdings_count": 2,
+    "flags": [
+      {
+        "code": "FEW_HOLDINGS",
+        "ticker": null,
+        "company_name": null,
+        "market": null
+      },
+      {
+        "code": "MARKET_SKEW",
+        "ticker": null,
+        "company_name": null,
+        "market": "KOSPI"
+      }
+    ],
+    "summary_preview": "포트폴리오 총자산은 10,000,000 원이며, 현금 비중은 65%, 주식 비중은 35%입니다. 삼성전자와 카카오가 비중 상위 2개 종목입니다."
+  },
+  "changes": {
+    "total_asset": {
+      "previous": 10000000.0,
+      "current": 10015000.0,
+      "change_amount": 15000.0,
+      "change_pct": 0.15
+    },
+    "holdings": [
+      {
+        "ticker": "247540",
+        "company_name": "에코프로비엠",
+        "status": "added",
+        "previous_weight_pct": null,
+        "current_weight_pct": 11.98,
+        "weight_change_pp": 11.98
+      },
+      {
+        "ticker": "005930",
+        "company_name": "삼성전자",
+        "status": "kept",
+        "previous_weight_pct": 27.0,
+        "current_weight_pct": 28.31,
+        "weight_change_pp": 1.31
+      },
+      {
+        "ticker": "035720",
+        "company_name": "카카오",
+        "status": "kept",
+        "previous_weight_pct": 8.0,
+        "current_weight_pct": 6.79,
+        "weight_change_pp": -1.21
+      }
+    ],
+    "flags": {
+      "added": [
+        {
+          "code": "BIG_LOSS",
+          "message": "카카오의 손익률이 -15.0%로 기준(-10%) 이하입니다.",
+          "value": -15.0,
+          "threshold": -10.0,
+          "ticker": "035720",
+          "company_name": "카카오",
+          "market": null
+        }
+      ],
+      "resolved": [
+        {
+          "code": "FEW_HOLDINGS",
+          "message": "보유 종목이 2개로 기준(3개) 미만입니다.",
+          "value": 2.0,
+          "threshold": 3.0,
+          "ticker": null,
+          "company_name": null,
+          "market": null
+        },
+        {
+          "code": "MARKET_SKEW",
+          "message": "주식 평가금액의 100.0%가 KOSPI에 몰려 있습니다(기준 80%).",
+          "value": 100.0,
+          "threshold": 80.0,
+          "ticker": null,
+          "company_name": null,
+          "market": "KOSPI"
+        }
+      ]
+    },
+    "returns_20d": [
+      {
+        "ticker": "005930",
+        "company_name": "삼성전자",
+        "previous_return_20d_pct": -2.59,
+        "current_return_20d_pct": -2.59,
+        "change_pp": 0.0
+      },
+      {
+        "ticker": "035720",
+        "company_name": "카카오",
+        "previous_return_20d_pct": -11.35,
+        "current_return_20d_pct": -11.35,
+        "change_pp": 0.0
+      }
+    ]
+  },
+  "disclaimer": "이 서비스는 학습·시연용 모의투자와 AI 리서치입니다. 제공되는 분석과 의견은 투자 권유나 자문이 아니며, 투자 판단과 그에 따른 손익의 책임은 본인에게 있습니다. AI 응답에는 오류가 있을 수 있습니다."
+}
+```
+
+| 필드 | 설명 |
+| --- | --- |
+| `current` / `previous` | 비교한 두 진단의 요약. 이력 목록의 항목과 같은 모양(`id`, `created_at`, `source`, `total_asset`, `holdings_count`, `flags`, `summary_preview`) |
+| `changes.total_asset` | `previous`, `current`(각 진단의 `metrics.total_asset`), `change_amount`(현재 - 이전, 원), `change_pct`(이전 대비 %, 이전 총자산이 0이면 `null`) |
+| `changes.holdings[]` | 종목별 비중 변화. 두 진단에 나온 모든 종목이 한 번씩 들어 있고, **변화 폭(절댓값)이 큰 순**이다(변화를 모르는 종목은 맨 뒤) |
+| `changes.holdings[].status` | `"added"`(이전에 없던 **신규 편입**) / `"removed"`(이번에 없는 **전량 제외**) / `"kept"`(양쪽 모두 보유) |
+| `changes.holdings[].previous_weight_pct` / `current_weight_pct` | 각 진단의 총자산 대비 비중(%). 그 진단에 없던 종목이면 `null` |
+| `changes.holdings[].weight_change_pp` | 비중 변화(%p, 현재 - 이전). `added`는 현재 비중(이전을 0으로 봄), `removed`는 -이전 비중. 현재가를 못 구해 비중이 `null`인 쪽이 있으면 `null` |
+| `changes.flags.added` | **신규** 플래그: 현재 진단에만 있는 것. 항목은 `POST` 응답의 `flags[]`와 같다(`code`, `message`, `value`, `threshold`, `ticker`, `company_name`, `market`) |
+| `changes.flags.resolved` | **해소**된 플래그: 이전 진단에만 있던 것(메시지·값은 이전 진단 기준). 양쪽에 모두 있는 플래그는 어느 쪽에도 나오지 않는다 |
+| `changes.returns_20d[]` | 20거래일 수익률 변화. **양쪽 진단에 모두 있고 두 값 다 `null`이 아닌 종목만**(신규 편입/전량 제외 종목은 없다). `previous_return_20d_pct`, `current_return_20d_pct`, `change_pp`(%p, 현재 - 이전). 변화 폭이 큰 순 |
+| `disclaimer` | 면책 문구. 비교 화면에 함께 보여주세요 |
+
+- 플래그가 "같은 플래그"인지는 `(code, ticker, market)`으로 가른다: `BIG_LOSS`는 종목마다, `MARKET_SKEW`는 시장마다 따로다
+  (카카오의 BIG_LOSS가 해소되고 삼성전자의 BIG_LOSS가 새로 생기면 각각 해소/신규다).
+- `returns_20d`는 **저장된 일별 종가 기준**이라(실시간이 아니다) 두 진단 사이에 새 종가가 쌓이지 않았으면 변화가 0이다(위 예시처럼).
+- 총자산·비중은 현재가를 구한 종목만 포함한 값이다. 어느 한쪽 진단에서 현재가를 못 구한 종목이 있으면(`price_unavailable`) 그만큼 총자산 변화가 실제와 다를 수 있다.
+- 두 진단은 **보유 상태의 스냅샷 비교**다. 비중 변화에는 주문(수량 변화)과 시세 변화가 함께 들어 있고, 둘을 구분해 주지는 않는다.
+
+### 이전 진단이 없을 때 (첫 진단이거나, 이전 것이 이미 삭제/정리됨)
+
+에러가 아니라 **200**이고 `previous`와 `changes`가 `null`이다(`disclaimer`는 그대로). 실제 호출 결과(첫 진단 `1011`):
+
+```json
+{
+  "current": {
+    "id": 1011,
+    "created_at": "2026-10-14T03:26:02.006317+00:00",
+    "source": "llm",
+    "total_asset": 10000000.0,
+    "holdings_count": 2,
+    "flags": [
+      {
+        "code": "FEW_HOLDINGS",
+        "ticker": null,
+        "company_name": null,
+        "market": null
+      },
+      {
+        "code": "MARKET_SKEW",
+        "ticker": null,
+        "company_name": null,
+        "market": "KOSPI"
+      }
+    ],
+    "summary_preview": "포트폴리오 총자산은 10,000,000 원이며, 현금 비중은 65%, 주식 비중은 35%입니다. 삼성전자와 카카오가 비중 상위 2개 종목입니다."
+  },
+  "previous": null,
+  "changes": null,
+  "disclaimer": "이 서비스는 학습·시연용 모의투자와 AI 리서치입니다. 제공되는 분석과 의견은 투자 권유나 자문이 아니며, 투자 판단과 그에 따른 손익의 책임은 본인에게 있습니다. AI 응답에는 오류가 있을 수 있습니다."
+}
+```
+
+### 에러
+
+| 상태 | 언제 | body |
+| --- | --- | --- |
+| 401 | 토큰 없음/만료/변조 | 위 "인증 에러" |
+| 404 | `{id}`가 없거나 남의 진단 / **`base`가 없거나 남의 진단**(구분하지 않는다) | `{"detail": "diagnosis_id=<id> 진단을 찾을 수 없습니다."}` (`<id>`는 못 찾은 쪽의 id) |
+| 422 | `{id}` 또는 `base`가 1 이상의 정수가 아님 | 검증 오류 형식 |
+| 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
+
+---
+
+## DELETE /api/portfolio/diagnosis/{id}
+
+내 진단 한 건을 삭제한다(**되돌릴 수 없다**). 이미 삭제됐거나 없거나 남의 진단이면 404다(그래서 같은 요청을 두 번 보내면 두 번째는 404).
+삭제하면 그 진단은 이력 목록과 "바로 이전 진단" 계산에서도 빠진다.
+
+```bash
+curl -X DELETE http://localhost:8000/api/portfolio/diagnosis/1011 -H "Authorization: Bearer $TOKEN"
+```
+
+### 응답 204
+
+본문 없음(`DELETE /api/research/{report_id}`와 같은 관례).
+
+### 에러
+
+| 상태 | 언제 | body |
+| --- | --- | --- |
+| 401 | 토큰 없음/만료/변조 | 위 "인증 에러" |
+| 404 | 없는 id이거나 남의 진단(구분하지 않는다). 아무것도 지워지지 않는다 | `{"detail": "diagnosis_id=<id> 진단을 찾을 수 없습니다."}` |
+| 422 | `id`가 1 이상의 정수가 아님 | 검증 오류 형식 |
+| 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
 
 ---
 

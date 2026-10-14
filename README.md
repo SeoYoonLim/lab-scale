@@ -32,7 +32,11 @@
 | POST | `/api/portfolio/orders` | 필요 | 모의투자 매수/매도 주문(현재가로 즉시 체결) |
 | GET | `/api/portfolio/trades` | 필요 | 내 체결 내역(최신순, `limit` 기본 50·최대 200, `offset`, `ticker` 필터, `total` 포함) |
 | POST | `/api/portfolio/reset` | 필요 | 내 모의투자 초기화(보유·체결 내역 삭제 + 잔고 1,000만원 복구). 본문 `{"confirm": true}`가 아니면 400. 관심종목·리서치는 유지 |
-| POST | `/api/portfolio/diagnosis` | 필요 | 내 포트폴리오 AI 진단. 비중·집중도(허핀달)·시장별 비중·손익·20거래일 수익률과 규칙 플래그는 코드가 계산하고, llama3.1:8b가 설명만 생성(검증 실패/Ollama 장애 시 규칙 기반 문장으로 폴백, `source`로 구분). 보유 종목이 없으면 400. 결과 저장 안 함 |
+| POST | `/api/portfolio/diagnosis` | 필요 | 내 포트폴리오 AI 진단. 비중·집중도(허핀달)·시장별 비중·손익·20거래일 수익률과 규칙 플래그는 코드가 계산하고, llama3.1:8b가 설명만 생성(검증 실패/Ollama 장애 시 규칙 기반 문장으로 폴백, `source`로 구분). 보유 종목이 없으면 400. 결과는 사용자당 최근 50건 저장하고 응답에 `diagnosis_id`·`created_at` 추가(저장 실패 시 null, 진단은 정상) |
+| GET | `/api/portfolio/diagnosis/history` | 필요 | 내 진단 이력(최신순, `limit` 기본 20·최대 100, `offset`, `total` 포함). 항목: id·created_at·source·total_asset·holdings_count·flags(코드만)·summary_preview(앞 80자) |
+| GET | `/api/portfolio/diagnosis/{id}` | 필요 | 내 진단 한 건(저장된 응답 그대로 + `id`, `created_at`). 남의 것/없는 것은 같은 404 |
+| GET | `/api/portfolio/diagnosis/{id}/compare` | 필요 | 이전 진단과 비교(`base`로 기준 지정, 생략하면 바로 이전). 총자산 증감·종목별 비중 변화·플래그 신규/해소·20거래일 수익률 변화. 코드로만 계산(LLM 없음). 이전 진단이 없으면 200 + `previous`/`changes` null |
+| DELETE | `/api/portfolio/diagnosis/{id}` | 필요 | 내 진단 한 건 삭제(204). 남의 것/없는 것은 404 |
 | GET | `/api/disclaimer` | 공개 | 서비스 면책 문구 `{"text": "..."}`. 같은 문구가 `POST /api/research`·`GET /api/research/{id}` 응답의 `disclaimer` 필드에도 있음(목록에는 없음) |
 | GET | `/api/discovery/trending` | 공개 | 급등/급락/거래량 급증 종목(FR-13, 질문 없이 바로 호출, `category`/`limit` 쿼리) |
 
@@ -45,7 +49,7 @@
 
 ### DB 스키마 개요
 
-PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(`backend/alembic/versions/`, 현재 head `d1bbfc5e2f0f`)입니다.
+PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(`backend/alembic/versions/`, 현재 head `a3f7c1d95b20`)입니다.
 
 | 테이블 | 내용 | 주요 컬럼 |
 | --- | --- | --- |
@@ -56,6 +60,7 @@ PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(
 | `disclosure` | DART 공시 | `company_id`, `title`, `disclosed_at`, `source_url`, `content`(원문), `embedding vector(1024)` |
 | `users` | 로그인 사용자(`user`는 PostgreSQL 예약어라 피함) | `username`(unique, 소문자만 CHECK), `password_hash`(argon2id), `created_at` |
 | `research_report` | 질문/답변 보고서 | `question`, `content`(답변), `summary`, `company_id`, `previous_report_id`(직전 리포트, 자기 참조), `user_id`(소유자, 사용자 삭제 시 cascade, 로그인 도입 전 리포트는 NULL) |
+| `portfolio_diagnosis` | 포트폴리오 AI 진단 저장본(사용자당 최근 50건) | `user_id`(FK `users.id`, 사용자 삭제 시 cascade), `created_at`, `source`(llm/rule_based), `total_asset`, `holdings_count`, `result`(JSONB, 진단 응답 본문 전체). 인덱스 `(user_id, created_at DESC)` |
 | `tool_call_log` | 보고서별 tool 호출 이력 | `report_id`(삭제 시 cascade), `tool_name`, `arguments`/`result`(JSONB) |
 | `watchlist` | 관심종목(FR-12) | `device_id`(소유자 키, 아래 참고), `company_id` (조합 unique) |
 | `virtual_account` | 모의투자 가상 계좌(소유자당 1개) | `device_id`(PK, 소유자 키), `cash_balance`(초기 1,000만원) |
@@ -68,7 +73,7 @@ PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(
 (어떤 사용자에게도 보이지 않음), 사용자를 지워도 이 테이블들의 행은 자동으로 지워지지 않습니다(FK가 아니라 문자열 키이므로).
 
 **서윤님이 설계한 스키마와 실제로 만들어진 스키마를 맞춰봐 주세요.** 최초 설계 스냅샷은 `db/schema.sql`(서윤님 커밋)이고, 임시 DB에 그 파일을 적용해서
-실제 DB와 컬럼·인덱스·FK를 기계적으로 비교했습니다. 컬럼/타입/FK는 모두 같고 **차이는 아래 6가지**입니다(설계와 다른 것이 의도에 맞는지 확인 필요).
+실제 DB와 컬럼·인덱스·FK를 기계적으로 비교했습니다. 컬럼/타입/FK는 모두 같고 **차이는 아래 8가지**입니다(설계와 다른 것이 의도에 맞는지 확인 필요).
 
 1. `market_index` 테이블 추가(FR-06, 설계에 없던 확장)
 2. `research_report.previous_report_id` 컬럼 + 자기 참조 FK(`ON DELETE SET NULL`) 추가(FR-10, 설계에 없던 확장)
@@ -84,6 +89,8 @@ PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(
 7. `users` 테이블 + `research_report.user_id`(FK `users.id`, `ON DELETE CASCADE`, nullable) 추가(2026-10-07, 아이디/비밀번호 로그인).
    테이블 이름은 PostgreSQL 예약어 `user`를 피해 `users`. 관심종목/모의투자 4개 테이블은 스키마를 바꾸지 않고
    `device_id` 컬럼에 로그인 사용자의 소유자 키 `user:{id}`를 저장한다. 기존 리포트(`user_id` NULL)와 기존 디바이스 행은 그대로 보존된다.
+8. `portfolio_diagnosis` 테이블 추가(2026-10-14, 포트폴리오 AI 진단 이력 저장/비교). `research_report.user_id`와 같은 방식으로 `users.id` FK(`ON DELETE CASCADE`)로
+   소유자를 구분하고, 진단 응답 본문을 JSONB로 통째로 저장한다. 사용자당 최근 50건만 보관한다(저장 직후 초과분 삭제).
 
 `db/schema.sql`은 갱신하지 않고 상단에 "최초 설계 스냅샷이며 기준은 Alembic"이라는 안내만 달았습니다.
 
