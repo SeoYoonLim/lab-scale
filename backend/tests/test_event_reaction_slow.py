@@ -7,6 +7,9 @@
  (3) null 추정: 계산되지 않은(표본 0건) 기간에 수치·방향을 붙인 해석 문장
  (4) 템플릿 잔재: 빈칸·자리표시·가린 수치·역할 접두어·중괄호
  (5) 고정 문구 누락: 답변 끝이 이 기능 전용 면책 문구가 아님
+ (6) 수치 되풀이만 있는 해석: '## 해석'이 있는데 모든 문장이 표의 수치·날짜·사유만 담고 비교·주의 표지가 하나도 없음
+ (7) 단위 혼동: 해석 문장에서 초과수익률 값을 %로, 수익률·지수 수익률 값을 %p로 씀
+ (8) 무관 뉴스 사건 포함: 답변에 나온 뉴스 사건의 제목에 종목 이름(별칭 포함)이 없음
 EVENT_SLOW_REPORT 환경변수에 경로를 주면 실행별 결과(답변, 지운 문장, 오류)를 JSON 줄로 덧붙인다.
 """
 
@@ -18,6 +21,7 @@ from decimal import ROUND_HALF_UP, Decimal
 import pytest
 
 from app.agent import MODEL_NAME, _answer
+from app.company_aliases import COMPANY_ALIASES
 from app.event_reaction import DISCLAIMER
 
 pytestmark = [pytest.mark.slow, pytest.mark.integration]
@@ -43,6 +47,8 @@ _CAUSAL = re.compile(r"때문|영향으로|영향을\s*(?:받|주|줬|미)|덕�
 # null 값을 "반응이 없었다"로 메운 서술(측정 정의 보강: 1차 재측정에서 나온 유형)
 _NO_REACTION = re.compile(r"(?:반응|변화|움직임)(?:이|은|는|가)?\s*없|움직이지\s*않")
 _HEDGE = re.compile(r"단정(?:할\s*수\s*없|하기\s*어렵)|볼\s*수\s*(?:는\s*)?없|알\s*수\s*없|인과")
+# 모듈(app.event_answer)과 따로 정한 "새 비교·주의" 표지 - 이게 하나도 없고 수치·사유만 있는 문장을 되풀이로 센다
+_OBSERVATION = re.compile(r"가장|대부분|모두|반면|한편|달리|보다|겹|다른 사건|함께|시장|표본|일반화|단정|엇갈|중 |알 수 없")
 _RESIDUE = re.compile(r"(?m)빈칸|빈 칸|이 섹션은|N/?A|\[수치 생략\]|\{|\}|^assistant\b")
 _HORIZON = re.compile(r"(?<!\d)(1|5|20)\s?(?:거래)?일")
 _MOVE = re.compile(r"%|상승|하락|올랐|내렸|떨어|오른|내린")
@@ -56,9 +62,36 @@ def _variants(x: Decimal) -> set[Decimal]:
     return {x.normalize(), *(x.quantize(Decimal(q), rounding=ROUND_HALF_UP).normalize() for q in ("1", "0.1", "0.01"))}
 
 
+def _events(result: dict) -> list[dict]:
+    return [e for e in result.get("events") or [] if isinstance(e, dict)]
+
+
+def independent_summary_numbers(result: dict) -> set[Decimal]:
+    """요약 문장의 수치를 코드와 따로 계산한다: 같은 반응 시작일은 하나로 세어(첫 사건) 호라이즌별 평균·초과 평균·개수."""
+    out: set[Decimal] = set()
+    evs = _events(result)
+    out |= {Decimal(len(evs))}
+    reps = {}
+    for e in evs:
+        reps.setdefault(e.get("reaction_start_date") or ("p", e["event_at"] or e["event_date"]), e)
+    out.add(Decimal(len(reps)))
+    for h in ("d1", "d5", "d20"):
+        vals = [e["returns"][h] for e in reps.values() if e["returns"][h]["available"] and "가격 조정" not in (e.get("note") or "")]
+        out.add(Decimal(len(vals)))
+        for key in ("pct", "excess_pct"):
+            xs = [v[key] for v in vals if v[key] is not None]
+            out.add(Decimal(len(xs)))
+            if xs:
+                out |= _variants(Decimal(str(sum(xs) / len(xs))))
+        out.add(Decimal(sum(1 for v in vals if v["pct"] > 0)))
+    return out
+
+
 def result_numbers(result: dict) -> set[Decimal]:
-    out = set(_FIXED_NUMBERS)
-    for m in _NUM.findall(json.dumps(result, ensure_ascii=False)):
+    out = set(_FIXED_NUMBERS) | independent_summary_numbers(result)
+    # 요약(summary)은 조회한 전체 사건 기준이라 답변의 요약과 다르다 - 위에서 따로 계산한 값을 쓴다
+    stripped = {k: v for k, v in result.items() if k != "summary"}
+    for m in _NUM.findall(json.dumps(stripped, ensure_ascii=False)):
         try:
             out |= _variants(Decimal(m.replace(",", "")))
         except Exception:
@@ -87,20 +120,49 @@ def count_errors(answer: str, result: dict) -> dict:
 
     sentences = [s for s in re.split(r"(?<=[.!?])\s+|\n", interpretation(answer)) if s.strip()]
     causal = [s for s in sentences if _CAUSAL.search(s) and not _HEDGE.search(s)]
-    summary = result.get("summary") or {}
+    computed = {h: any(e["returns"][f"d{h}"]["available"] for e in _events(result)) for h in (1, 5, 20)}
     null_est = []
     for s in sentences:
         for h in {int(x) for x in _HORIZON.findall(s)}:
-            if summary.get(f"with_d{h}", 0) == 0 and _MOVE.search(s) and not _NOT_YET.search(s):
+            if h in computed and not computed[h] and _MOVE.search(s) and not _NOT_YET.search(s):
                 null_est.append(s)
     null_est += [s for s in sentences if _NO_REACTION.search(s) and not _HEDGE.search(s)]
     residue = _RESIDUE.findall(answer)
+
+    # (6) 모든 해석 문장이 표 내용(수치·날짜·사유)만 되풀이하고 비교·주의 표지가 없음
+    repeat_only = bool(sentences) and all(
+        (re.search(r"\d", s) or _NOT_YET.search(s)) and not _OBSERVATION.search(s) for s in sentences
+    )
+    # (7) 초과수익률(%p)과 수익률(%) 단위 혼동
+    ret_vals, pp_vals = set(), set()
+    for e in _events(result):
+        for h in e["returns"].values():
+            for key, bucket in (("pct", ret_vals), ("index_pct", ret_vals), ("excess_pct", pp_vals)):
+                if h.get(key) is not None:
+                    bucket |= _variants(Decimal(str(h[key])))
+    unit_mix = []
+    for s in sentences:
+        for num, unit in re.findall(r"([+-]?\d[\d,]*(?:\.\d+)?)\s?(%p|%)", s):
+            v = abs(Decimal(num.replace(",", ""))).normalize()
+            if (unit == "%" and v in pp_vals and v not in ret_vals) or (unit == "%p" and v in ret_vals and v not in pp_vals):
+                unit_mix.append(s)
+    # (8) 답변에 나온 뉴스 사건 중 제목에 종목 이름(별칭 포함)이 없는 것
+    name = result.get("company_name") or ""
+    forms = [name] + [a for a, n in COMPANY_ALIASES.items() if n == name]
+    forms += ["코덱스" + name.split()[-1]] if name.startswith("KODEX") else []
+    unrelated = [
+        e["title"] for e in _events(result)
+        if e["event_type"] == "news" and not any(f.replace(" ", "").casefold() in e["title"].replace(" ", "").casefold() for f in forms)
+    ]
     return {
         "numbers": bad_numbers,
         "causal": causal,
         "null_estimate": null_est,
         "residue": residue,
         "disclaimer_missing": not answer.rstrip().endswith("※ " + DISCLAIMER),
+        "repeat_only": repeat_only,
+        "unit_mix": unit_mix,
+        "unrelated_news": unrelated,
     }
 
 

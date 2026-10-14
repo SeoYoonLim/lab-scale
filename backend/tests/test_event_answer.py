@@ -11,6 +11,8 @@ from app.event_answer import (
     SECTION_TITLE,
     check_event_answer,
     compose_event_answer,
+    display_items,
+    display_summary,
     event_result_for_llm,
     format_event_section,
     reason_text,
@@ -164,14 +166,14 @@ def _h(pct=None, idx=None, ex=None, reason=None):
 
 
 def _event(kind="disclosure", day="2026-07-30", at=None, title="특수관계인에대한출자", d1=(-0.72, -1.23, 0.51),
-           d5=(17.99, 16.51, 1.48), d20=(27.58, 22.06, 5.52), others=0, note=None, vol=1.55):
+           d5=(17.99, 16.51, 1.48), d20=(27.58, 22.06, 5.52), others=0, note=None, vol=1.55, start=None):
     def h(v, n):
         return _h(*v) if v else _h(reason=f"{n}거래일 경과 전")
 
     return {
         "event_type": kind, "title": title, "url": f"https://x/{title}", "event_at": at,
         "event_date": None if at else day, "time_known": at is not None,
-        "base_date": "2026-07-29", "base_close": 208500.0, "reaction_start_date": "2026-07-30",
+        "base_date": "2026-07-29", "base_close": 208500.0, "reaction_start_date": start or day,
         "returns": {"d1": h(d1, 1), "d5": h(d5, 5), "d20": h(d20, 20)},
         "volume_ratio": vol, "volume_sample_days": 20, "other_events_in_window": others, "note": note,
     }
@@ -212,7 +214,7 @@ class TestSection:
     def test_no_disclosure_note_for_news_only(self):
         s = format_event_section(_result([_event(kind="news", at="2026-08-13T18:24:00+09:00", title="n")]))
         assert DISCLOSURE_TIME_NOTE not in s and NEWS_DATE_ONLY_NOTE not in s
-        assert "2026-08-13 18:24 · 뉴스 · n" in s
+        assert "2026-08-13 · 뉴스 1건" in s and "  · n" in s and "18:24" not in s  # 묶음 항목은 시각 대신 날짜만
 
     def test_news_without_time_note(self):
         s = format_event_section(_result([_event(kind="news", title="n")]))
@@ -242,20 +244,82 @@ class TestSection:
         assert s == SECTION_TITLE + "\n최근 120일 안에 삼성전자의 공시 사건이 없습니다. 대상 사건이 없습니다."
 
 
+def _news(i, day="2026-08-13", hour=10, start=None, **kw):
+    return _event(kind="news", day=day, at=f"{day}T{hour:02d}:00:00+09:00", title=f"기사{i}", start=start, **kw)
+
+
+class TestGrouping:
+    def test_same_start_news_become_one_item_with_three_titles_and_one_set_of_numbers(self):
+        evs = [_news(i, hour=9 + i) for i in range(5)]
+        s = format_event_section(_result(evs))
+        assert s.count("· 뉴스 5건") == 1
+        assert [f"  · 기사{i}" in s for i in (4, 3, 2)] == [True] * 3  # 최신순 3개
+        assert "  · 기사1" not in s and "  · 기사0" not in s and "  · 외 2건" in s
+        assert s.count("기준 종가 208,500원") == 1 and s.count("1거래일 -0.72%") == 1
+        assert "사건 5건(날짜 1개)" in s
+
+    def test_disclosures_are_never_grouped(self):
+        evs = [_event(title=f"공시{i}") for i in range(3)]
+        items = display_items(_result(evs))
+        assert [i["kind"] for i in items] == ["disclosure"] * 3
+        s = format_event_section(_result(evs))
+        assert s.count("· 공시 ·") == 3 and s.count("기준 종가") == 3
+
+    def test_news_on_different_start_dates_stay_separate_and_sorted_newest_first(self):
+        evs = [_news(1, day="2026-08-10"), _news(2, day="2026-08-12"), _news(3, day="2026-08-11")]
+        s = format_event_section(_result(evs))
+        assert s.index("2026-08-12 · 뉴스 1건") < s.index("2026-08-11 · 뉴스 1건") < s.index("2026-08-10 · 뉴스 1건")
+
+    def test_group_label_spans_event_days_when_start_date_is_shared(self):
+        # 금요일 장후, 토요일, 월요일 장 시작 전 기사는 모두 월요일에 반응이 시작된다
+        evs = [_news(1, day="2026-08-14", hour=18, start="2026-08-18"), _news(2, day="2026-08-15", start="2026-08-18"),
+               _news(3, day="2026-08-18", hour=8, start="2026-08-18")]
+        s = format_event_section(_result(evs))
+        assert "2026-08-14~2026-08-18 · 뉴스 3건" in s
+
+    def test_news_and_disclosure_are_listed_together_by_date(self):
+        evs = [_news(1, day="2026-08-10"), _event(day="2026-08-12", title="공시a"), _news(2, day="2026-08-14")]
+        s = format_event_section(_result(evs))
+        assert s.index("2026-08-14 · 뉴스") < s.index("2026-08-12 · 공시") < s.index("2026-08-10 · 뉴스")
+
+    def test_item_limit_is_per_type_after_grouping(self):
+        evs = [_news(i, day=f"2026-08-{10 + i:02d}") for i in range(8)] + [_event(day=f"2026-07-{10 + i:02d}", title=f"공시{i}") for i in range(8)]
+        r = _result(evs, limit=5)
+        items = display_items(r)
+        assert [i["kind"] for i in items].count("news") == 5 and [i["kind"] for i in items].count("disclosure") == 5
+        # 최신 5개 뉴스 날짜만 남는다
+        assert {i["events"][0]["title"] for i in items if i["kind"] == "news"} == {f"기사{i}" for i in (3, 4, 5, 6, 7)}
+
+    def test_many_same_day_news_still_show_five_dates_when_fetched_more(self):
+        evs = [_news(f"{d}-{k}", day=f"2026-08-{10 + d:02d}", hour=9 + k) for d in range(6) for k in range(3)]
+        assert len(display_items(_result(evs, limit=5))) == 5
+
+    def test_other_events_shown_on_group(self):
+        s = format_event_section(_result([_news(1, others=4), _news(2, others=4)]))
+        assert s.count("(같은 기간 다른 사건 4건)") == 1
+
+
 class TestSummary:
     def test_small_sample_sentence(self):
         r = _result([_event(), _event(day="2026-08-01", title="b", d20=None)])
-        s = summary_sentence(r["summary"])
-        assert "조회한 사건 2건 중" in s and "5거래일 수익률은 2건에서" in s
-        assert "표본이 3건 미만이라 일반화하기 어렵습니다" in s
+        s = summary_sentence(display_summary(r))
+        assert "조회한 사건 2건(날짜 2개) 중" in s and "5거래일 수익률은 2개 날짜에서" in s
+        assert "표본(날짜)이 3개 미만이라 일반화하기 어렵습니다" in s
+
+    def test_same_day_events_count_as_one_date_sample(self):
+        r = _result([_news(i, hour=9 + i) for i in range(5)])
+        sm = display_summary(r)
+        assert sm["event_count"] == 5 and sm["date_count"] == 1 and sm["with_d1"] == 1
+        s = summary_sentence(sm)
+        assert "사건 5건(날짜 1개)" in s and "1개 날짜에서" in s and "일반화하기 어렵습니다" in s
 
     def test_enough_samples_no_warning(self):
         evs = [_event(day=f"2026-08-0{i}", title=str(i)) for i in range(1, 4)]
-        assert "일반화하기 어렵" not in summary_sentence(_result(evs)["summary"])
+        assert "일반화하기 어렵" not in summary_sentence(display_summary(_result(evs)))
 
     def test_nothing_computed(self):
         e = _event(d1=None, d5=None, d20=None)
-        assert "모두 아직 수익률을 계산할 수 없습니다" in summary_sentence(_result([e])["summary"])
+        assert "모두 아직 수익률을 계산할 수 없습니다" in summary_sentence(display_summary(_result([e])))
 
 
 class TestCompose:
@@ -276,9 +340,10 @@ class TestCompose:
 class TestResultForLlm:
     def test_no_urls_no_disclaimer_and_adjusted_returns_hidden(self):
         e = _event(note="가격 조정(분할 등) 가능성")
-        out = event_result_for_llm(_result([e, _event(title="b")]))
-        assert "url" not in out["events"][0] and "disclaimer" not in out
-        assert isinstance(out["events"][0]["returns"], str)
+        out = event_result_for_llm(_result([e, _event(day="2026-08-01", title="b")]))
+        assert all("url" not in x for x in out["events"]) and "disclaimer" not in out
+        adjusted = [x for x in out["events"] if isinstance(x["returns"], str)]
+        assert len(adjusted) == 1 and adjusted[0]["title"] == e["title"]
         assert out["summary"]["with_d1"] == 1
 
     def test_input_not_modified(self):
@@ -301,7 +366,7 @@ class TestChecker:
     R = _result([
         _event(),
         _event(kind="news", at="2026-09-24T18:48:00+09:00", title="성과급 기사", d1=(-5.76, -2.7, -3.06),
-               d5=(-3.66, -1.09, -2.57), d20=None, others=3),
+               d5=(-3.66, -1.09, -2.57), d20=None, others=3, start="2026-09-28"),
     ])
 
     def check(self, text, other=("SK하이닉스", "대상")):
@@ -310,22 +375,99 @@ class TestChecker:
     @pytest.mark.parametrize(
         "sent",
         [
-            "공시 이후 1거래일간 주가는 -0.72% 움직였습니다.",
-            "2026-07-30 공시 이후 5거래일간 17.99% 상승했습니다.",
-            "7월 30일 공시 이후 20거래일간 27.58% 올랐습니다.",
+            # 새 비교나 주의할 점이 있는 문장(수치는 결과에 있는 것)
             "같은 기간 다른 사건이 3건 있어 그 사건만의 움직임으로 볼 수는 없습니다.",
             "이 공시 때문이라고 단정할 수 없습니다.",
-            "코스피 대비 초과수익률은 +1.48%p였습니다.",
-            "뉴스 이후 20거래일 수익률은 아직 계산할 수 없습니다.",
-            "기준 종가는 208,500원이었습니다.",
-            "거래량은 평균의 1.55배였습니다.",
-            "조회한 대상 사건 2건 중 1거래일 수익률이 계산된 사건은 2건입니다.",
+            "공시 이후 1거래일간 -0.72% 움직였지만 다른 사건과 겹쳐 있어 함께 봐야 합니다.",
+            "2026-07-30 공시 이후 5거래일간 17.99% 상승했지만 코스피보다 크게 오르지는 않았습니다.",
+            "조회한 사건 2건 중 1건은 코스피보다 낮았습니다.",
+            "조회한 대상 사건 2건 중 1거래일 수익률이 계산된 사건은 2건입니다.",  # 건수 비교(\"N건 중\")는 새 관찰로 본다
             "시장 전체 흐름과 함께 봐야 합니다.",
+            "표본이 적어 일반화하기 어렵습니다.",
         ],
     )
     def test_allowed_sentences_are_kept(self, sent):
         text, dropped = self.check(sent)
         assert dropped == [] and text == sent
+
+    @pytest.mark.parametrize(
+        "sent",
+        [
+            "공시 이후 1거래일간 주가는 -0.72% 움직였습니다.",
+            "2026-07-30 공시 이후 5거래일간 17.99% 상승했습니다.",
+            "7월 30일 공시 이후 20거래일간 27.58% 올랐습니다.",
+            "코스피 대비 초과수익률은 +1.48%p였습니다.",
+            "뉴스 이후 20거래일 수익률은 아직 계산할 수 없습니다.",
+            "5거래일과 20거래일 값은 아직 계산할 수 없습니다.",
+            "기준 종가는 208,500원이었습니다.",
+            "거래량은 평균의 1.55배였습니다.",
+        ],
+    )
+    def test_table_repeating_sentences_dropped(self, sent):
+        """코드가 쓴 섹션의 수치·사유를 되풀이할 뿐 새 비교·관찰이 없는 문장(검증기 규칙 a)."""
+        text, dropped = self.check(sent)
+        assert text == "" and dropped[0][1] == "표의 수치·사유를 되풀이", dropped
+
+    @pytest.mark.parametrize(
+        "sent",
+        [
+            "최근 5일간 주가는 20거래일 경과 전이므로 수치를 제공할 수 없습니다.",
+            "20일 동안은 20거래일 경과 전입니다.",
+            "5거래일간의 수익률은 경과 전이라 알 수 없습니다.",
+        ],
+    )
+    def test_period_and_reason_mixed_dropped(self, sent):
+        """'N일간 주가는 20거래일 경과 전이므로…'처럼 기간과 사유를 섞어 쓴 문장(규칙 b)."""
+        text, dropped = self.check(sent)
+        assert text == "" and dropped[0][1] == "기간과 사유 문구를 섞어 씀", dropped
+
+    @pytest.mark.parametrize(
+        "sent, why",
+        [
+            ("시장 지수 대비 초과수익률은 5.16%였습니다.", "%"),  # 결과는 5.16%p
+            ("지수 대비 초과 수익은 1.48%였습니다.", "%"),
+            ("5거래일 수익률은 17.99%p였습니다.", "%p"),  # 결과는 17.99%
+            ("코스피는 -1.23%p 움직였지만 다른 사건과 겹칩니다.", "%p"),
+        ],
+    )
+    def test_percent_vs_percent_point_confusion_dropped(self, sent, why):
+        """%p(초과수익률)를 %로, %(수익률)를 %p로 쓴 문장(규칙 c)."""
+        r = _result([_event(d1=(-0.72, -1.23, 0.51), d5=(17.99, 16.51, 1.48), d20=(27.58, 22.06, 5.52)), _news(1, day="2026-08-12", d1=(-0.3, -5.46, 5.16))])
+        text, dropped = check_event_answer(sent, r, ())
+        assert text == "" and dropped and dropped[0][1].startswith("%와 %p를 혼동"), dropped
+
+    def test_percent_and_percent_point_used_correctly_are_kept(self):
+        r = _result([_event()])
+        sent = "초과수익률 +1.48%p는 코스피 +16.51%와 함께 봐야 하고 다른 사건과 겹칩니다."
+        assert check_event_answer(sent, r, ()) == (sent, [])
+
+    @pytest.mark.parametrize(
+        "sent",
+        [
+            "위와 같이 나타났습니다.",
+            "주가 움직임은 공시 이후의 시간 순서를 따랐습니다.",
+            "이상입니다.",
+            "위 표를 참고하세요.",
+            "사건들은 위 내용과 같이 나타났습니다.",
+        ],
+    )
+    def test_empty_closing_sentences_dropped(self, sent):
+        """'위와 같이 나타났습니다'처럼 내용 없는 마무리 문장(규칙 d)."""
+        text, dropped = self.check(sent)
+        assert text == "" and dropped[0][1] == "내용 없는 안내·마무리 문장", dropped
+
+    def test_everything_dropped_gives_empty_text_and_no_interpretation_heading(self):
+        llm = "공시 이후 1거래일간 -0.72% 움직였습니다.\n\n위와 같이 나타났습니다.\n- 5거래일: 아직 계산할 수 없습니다."
+        text, dropped = self.check(llm)
+        assert text == "" and len(dropped) == 3
+        answer = compose_event_answer(text, self.R)
+        assert "## 해석" not in answer and answer.startswith(SECTION_TITLE) and answer.endswith(DISCLAIMER)
+
+    def test_partial_survival_keeps_heading(self):
+        llm = "공시 이후 1거래일간 -0.72% 움직였습니다.\n다른 사건과 겹쳐 있어 단정할 수 없습니다."
+        text, dropped = self.check(llm)
+        assert text == "다른 사건과 겹쳐 있어 단정할 수 없습니다." and len(dropped) == 1
+        assert "## 해석\n다른 사건과 겹쳐" in compose_event_answer(text, self.R)
 
     @pytest.mark.parametrize(
         "sent",
@@ -418,14 +560,14 @@ class TestChecker:
 
     def test_headers_removed_and_good_sentences_kept(self):
         text, dropped = self.check(
-            "## 사건 이후 주가 반응\n공시 이후 1거래일간 -0.72% 움직였습니다. 공시 때문에 올랐습니다.\n- 거래량은 평균의 1.55배였습니다."
+            "## 사건 이후 주가 반응\n다른 사건과 겹쳐 있지만 1거래일간 -0.72% 움직였습니다. 공시 때문에 올랐습니다.\n- 거래량은 평균의 1.55배였지만 다른 사건과 겹칩니다."
         )
-        assert text == "공시 이후 1거래일간 -0.72% 움직였습니다.\n- 거래량은 평균의 1.55배였습니다."
+        assert text == "다른 사건과 겹쳐 있지만 1거래일간 -0.72% 움직였습니다.\n- 거래량은 평균의 1.55배였지만 다른 사건과 겹칩니다."
         assert len(dropped) == 1
 
     def test_quoted_title_numbers_are_not_checked(self):
         r = _result([_event(title="2분기 영업이익 7조원 돌파")])
-        text, dropped = check_event_answer("'2분기 영업이익 7조원 돌파' 공시 이후 1거래일간 -0.72% 움직였습니다.", r, ())
+        text, dropped = check_event_answer("'2분기 영업이익 7조원 돌파' 공시는 다른 사건과 겹치지만 1거래일간 -0.72% 움직였습니다.", r, ())
         assert dropped == []
 
     def test_event_scoped_numbers(self):
@@ -460,25 +602,25 @@ class TestChecker:
             assert dropped[0][1] == reason
 
     def test_relation_hedge_kept(self):
-        sent = "이 공시와 주가 움직임이 관련이 있는지는 알 수 없습니다."
+        sent = "이 공시와 주가 움직임이 관련이 있는지는 알 수 없습니다."  # 규칙 a에도 걸리지 않는다(알 수 없다는 주의 문장)
         assert self.check(sent) == (sent, [])
 
     def test_numbered_list_relisting_titles(self):
         r = _result([_event(title="가평군 재즈페스티벌 성료"), _event(title="b기사", day="2026-08-01")])
         text, dropped = check_event_answer(
-            "다음과 같습니다.\n\n1.\n\n2. \"가평군 재즈페스티벌 성료\"\n3. 공시 이후 1거래일간 -0.72% 움직였습니다.", r, ()
+            "다음과 같습니다.\n\n1.\n\n2. \"가평군 재즈페스티벌 성료\"\n3. 공시 이후 1거래일간 -0.72% 움직였지만 다른 사건과 겹칩니다.", r, ()
         )
-        assert text == "- 공시 이후 1거래일간 -0.72% 움직였습니다."
+        assert text == "- 공시 이후 1거래일간 -0.72% 움직였지만 다른 사건과 겹칩니다."
         assert ("2. \"가평군 재즈페스티벌 성료\"", "사건 제목만 다시 나열") in dropped
 
     def test_decimal_after_event_word_is_not_enumeration(self):
         r = _result([_event(d1=(0.72, 0.1, 0.62))])
-        sent = "공시 이후 0.72% 움직였습니다."
+        sent = "공시 이후 0.72% 움직였지만 다른 사건과 겹칩니다."
         assert check_event_answer(sent, r, ()) == (sent, [])
 
     def test_company_name_digits_are_not_numbers(self):
         r = _result([_event()], company_name="KODEX 200")
-        text, dropped = check_event_answer("KODEX 200 뉴스 이후 1거래일간 -0.72% 움직였습니다.", r, ())
+        text, dropped = check_event_answer("KODEX 200 뉴스는 다른 사건과 겹치지만 1거래일간 -0.72% 움직였습니다.", r, ())
         assert dropped == []
 
     def test_not_found_result_drops_numbers(self):

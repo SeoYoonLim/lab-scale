@@ -43,7 +43,7 @@ class FakeDb:
 @pytest.fixture
 def env(monkeypatch):
     """DB·Ollama 없이: 질문 속 종목은 '삼성전자' 하나, tool 결과는 고정, LLM 최종 답변은 state['llm']."""
-    state = {"llm": "공시 이후 1거래일간 -4.56% 움직였습니다. 이 공시 때문에 주가가 떨어졌습니다.", "chat_calls": [], "tool_args": []}
+    state = {"llm": "다른 사건과 겹쳐 있어 이 공시만의 움직임으로 볼 수는 없습니다. 이 공시 때문에 주가가 떨어졌습니다.", "chat_calls": [], "tool_args": []}
     monkeypatch.setattr(agent, "SessionLocal", lambda: FakeDb())
     monkeypatch.setattr(
         agent, "extract_from_text",
@@ -83,7 +83,7 @@ class TestEventPath:
         a = resp["answer"]
         assert a.startswith(SECTION_TITLE)
         assert "1거래일 -4.56%(코스피 -3.64%, 초과 -0.92%p)" in a
-        assert "공시 이후 1거래일간 -4.56% 움직였습니다." in a
+        assert "## 해석\n다른 사건과 겹쳐 있어 이 공시만의 움직임으로 볼 수는 없습니다." in a
         assert "때문에" not in a.split("## 해석")[1].rsplit("\n\n※ ", 1)[0]
         assert a.endswith("※ " + DISCLAIMER)
         dropped = records[0]["result"]["dropped_sentences"]
@@ -102,6 +102,19 @@ class TestEventPath:
         resp, _ = agent._answer("삼성전자 공시 이후 주가 반응은?", "m")
         assert "## 해석" not in resp["answer"] and resp["answer"].startswith(SECTION_TITLE)
         assert resp["answer"].endswith(DISCLAIMER)
+
+    def test_table_repeating_interpretation_is_omitted_with_its_heading(self, env):
+        env["llm"] = "공시 이후 1거래일간 -4.56% 움직였습니다.\n\n5거래일과 20거래일은 아직 계산할 수 없습니다.\n\n위와 같이 나타났습니다."
+        resp, records = agent._answer("삼성전자 공시 이후 주가 반응은?", "m")
+        assert "## 해석" not in resp["answer"] and resp["answer"].endswith(DISCLAIMER)
+        assert len(records[0]["result"]["dropped_sentences"]) == 3
+
+    def test_result_is_trimmed_to_displayed_events_and_same_day_news_are_grouped(self, env):
+        news = [{**_event(kind="news", title=f"삼성전자 기사{i}"), "url": f"https://n/{i}"} for i in range(5)]
+        env["result"] = {**_result(news), "limit": 5}
+        resp, records = agent._answer("삼성전자 뉴스 이후 주가 반응은?", "m")
+        assert resp["answer"].count("· 뉴스 5건") == 1 and "  · 외 2건" in resp["answer"]
+        assert records[0]["result"]["fetched_event_count"] == 5 and len(resp["sources"]) == 5
 
     def test_no_events_skips_llm(self, env):
         env["result"] = {"found": False, "company_name": "삼성전자", "message": "최근 120일 안에 삼성전자의 공시 사건이 없습니다. 대상 사건이 없습니다."}
@@ -123,7 +136,7 @@ class TestEventPath:
         assert resp["answer"].startswith(SECTION_TITLE) and "## 해석" not in resp["answer"]
 
     def test_role_prefix_and_empty_sections_cleaned(self, env):
-        env["llm"] = "assistant\n\n## 위험요인\n(이 섹션은 빈칸입니다.)\n\n공시 이후 1거래일간 -4.56% 움직였습니다."
+        env["llm"] = "assistant\n\n## 위험요인\n(이 섹션은 빈칸입니다.)\n\n다른 사건과 겹쳐 있어 함께 봐야 합니다."
         resp, _ = agent._answer("삼성전자 공시 이후 주가 반응은?", "m")
         body = resp["answer"].split("## 해석")[1]
         assert "빈칸" not in body and "assistant" not in body and "## 위험요인" not in body
@@ -202,7 +215,11 @@ class TestDevDb:
     def test_tool_equals_api(self, dev_db, ticker, name, event_type):
         from app.tools.event_reaction_tool import TOOL_SINCE_DAYS, event_reaction_tool
 
-        api = client.get(f"/api/stocks/{ticker}/event-reactions?since_days={TOOL_SINCE_DAYS}&limit=5&event_type={event_type}").json()
+        from app.tools.event_reaction_tool import FETCH_FACTOR
+
+        api = client.get(
+            f"/api/stocks/{ticker}/event-reactions?since_days={TOOL_SINCE_DAYS}&limit={5 * FETCH_FACTOR}&event_type={event_type}"
+        ).json()
         tool = event_reaction_tool(name, event_type, 5)
         assert tool["ticker"] == api["ticker"] and tool["market_index"] == api["market_index"]
         assert tool["price_as_of"] == api["price_as_of"]
@@ -212,6 +229,34 @@ class TestDevDb:
         if name == "KODEX 200":
             assert all(e["event_type"] == "news" for e in tool["events"])
             assert all(h["excess_pct"] is None for e in tool["events"] for h in e["returns"].values())
+
+    @pytest.mark.parametrize(
+        "ticker, name, forms",
+        [
+            ("005930", "삼성전자", ["삼성전자", "삼전"]),  # 삼전은 company_aliases의 별칭
+            ("030200", "KT", ["KT"]),
+            ("073240", "금호타이어", ["금호타이어"]),
+            ("069500", "KODEX 200", ["KODEX 200", "KODEX200", "코덱스200", "코덱스 200"]),
+        ],
+    )
+    def test_news_events_mention_the_company_in_the_title(self, dev_db, ticker, name, forms):
+        """뉴스 사건은 제목에 종목 이름이 들어 있는 기사만이다(공시는 거르지 않는다). API도 같다."""
+        for event_type in ("news", "all"):
+            body = client.get(f"/api/stocks/{ticker}/event-reactions?since_days=120&limit=30&event_type={event_type}").json()
+            news = [e for e in body["events"] if e["event_type"] == "news"]
+            assert news, name
+            for e in news:
+                squashed = e["title"].replace(" ", "").casefold()
+                assert any(f.replace(" ", "").casefold() in squashed for f in forms), (name, e["title"])
+
+    def test_name_forms_include_aliases(self, dev_db):
+        from app.company_aliases import COMPANY_ALIASES
+        from app.event_reaction_service import _name_forms
+        from app.models import Company
+
+        alias, registered = next((a, n) for a, n in COMPANY_ALIASES.items() if a != n)
+        company = dev_db.query(Company).filter(Company.name == registered).first()
+        assert company is not None and alias in _name_forms(company) and company.name in _name_forms(company)
 
     def test_keyword_filters_titles(self, dev_db):
         from app.tools.event_reaction_tool import event_reaction_tool

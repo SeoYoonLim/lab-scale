@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 import app.api.stocks as stocks_api
 from app.event_reaction import DISCLAIMER
-from app.event_reaction_service import _dedupe
+from app.event_reaction_service import _dedupe, _name_forms, _title_mentions
 from app.main import app
 
 client = TestClient(app, raise_server_exceptions=False)
@@ -188,3 +188,43 @@ class TestDevDb:
         # 뉴스가 있는 기간의 공시는 유형 필터와 무관하게 다른 사건(뉴스 포함) 수를 센다
         assert all(e["other_events_in_window"] >= 0 for e in evs)
         assert any(e["other_events_in_window"] > 0 for e in evs)
+
+
+class TestNewsNameFilter:
+    """뉴스 사건의 종목 관련도 필터(순수 로직): 제목에 종목 이름(또는 별칭)이 독립된 이름으로 들어 있어야 한다."""
+
+    def _forms(self, name):
+        return _name_forms(SimpleNamespace(name=name))
+
+    def test_title_with_name(self):
+        assert _title_mentions("삼성전자, 신제품 공개", ["삼성전자"], [])
+        assert _title_mentions("[속보] 삼성전자가 신제품을 공개", ["삼성전자"], [])  # 조사가 붙어도 같은 이름
+        assert _title_mentions("SKT·KT 주가 급락", ["KT"], [])
+
+    def test_title_without_name(self):
+        assert not _title_mentions("코스피, 6000선 바닥까지 '추락'", ["삼성전자"], [])
+        assert not _title_mentions("용인 일자리박람회 첫 '반도체관'", ["삼성전자"], [])
+        assert not _title_mentions("SK하이닉스 신고가", ["삼성전자"], [])  # 다른 종목 기사
+
+    def test_other_company_name_that_contains_this_name_does_not_count(self):
+        assert not _title_mentions("삼성전자우 급등", ["삼성전자"], ["삼성전자우"])
+        assert not _title_mentions("SK하이닉스 신고가", ["SK"], ["SK하이닉스"])
+        assert not _title_mentions("KT지니뮤직 적자", ["KT"], [])  # 뒤에 다른 이름이 이어짐
+        assert _title_mentions("삼성전자우와 삼성전자 동반 상승", ["삼성전자"], ["삼성전자우"])
+
+    def test_alias_counts(self):
+        forms = self._forms("삼성전자")
+        assert "삼전" in forms and forms[0] == "삼성전자"
+        assert _title_mentions('"삼전 조정은 매수 기회"라는데', forms, [])
+        assert not _title_mentions('"삼전 조정은 매수 기회"라는데', ["삼성전자"], [])
+
+    def test_unrelated_company_has_only_its_own_name(self):
+        assert self._forms("없는회사") == ["없는회사"]
+
+    def test_title_mentioning_both_companies_counts_for_each(self):
+        t = "삼성전자·SK하이닉스, 반도체 동반 상승"
+        assert _title_mentions(t, ["삼성전자"], []) and _title_mentions(t, ["SK하이닉스"], [])
+
+    def test_etf_name_variants(self):
+        assert _title_mentions("코덱스200 신고가", ["KODEX 200"], [])
+        assert not _title_mentions("KODEX 200TR 순매수", ["KODEX 200"], ["KODEX 200TR"])
