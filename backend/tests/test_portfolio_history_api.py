@@ -14,7 +14,7 @@ OWNER_KEY = f"user:{USER_ID}"
 COMPANY = type("C", (), {"id": 1, "ticker": "005930", "name": "삼성전자"})()
 
 TRADE = {
-    "id": 3, "ticker": "005930", "company_name": "삼성전자", "side": "buy", "quantity": 5,
+    "id": 3, "ticker": "005930", "company_name": "삼성전자", "asset_type": "stock", "side": "buy", "quantity": 5,
     "price": 270000.0, "amount": 1350000.0, "executed_at": "2026-10-07T01:00:00+00:00",
 }
 EMPTY_PORTFOLIO = {

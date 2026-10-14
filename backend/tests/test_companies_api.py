@@ -10,27 +10,30 @@ ITEM = {
     "name": "삼성전자",
     "market": "KOSPI",
     "sector": None,
+    "asset_type": "stock",
     "latest_close": 286500.0,
     "change_pct": 3.24,
 }
 
 
 def mock_search(monkeypatch, result):
-    monkeypatch.setattr(companies_api, "search_companies", lambda db, q, limit: result)
+    monkeypatch.setattr(companies_api, "search_companies", lambda db, q, limit, asset_type=None: result)
 
 
 class TestGetCompanies:
     def test_default_query_params(self, monkeypatch):
         seen = {}
 
-        def fake(db, q, limit):
+        def fake(db, q, limit, asset_type=None):
             seen["args"] = (q, limit)
+            seen["asset_type"] = asset_type
             return []
 
         monkeypatch.setattr(companies_api, "search_companies", fake)
         r = client.get("/api/companies")
         assert r.status_code == 200
         assert seen["args"] == (None, 50)
+        assert seen["asset_type"] is None  # 생략하면 전체(주식 + ETF)
 
     def test_success_response_shape(self, monkeypatch):
         mock_search(monkeypatch, [ITEM])
@@ -41,8 +44,9 @@ class TestGetCompanies:
     def test_passes_q_and_limit_through(self, monkeypatch):
         seen = {}
 
-        def fake(db, q, limit):
+        def fake(db, q, limit, asset_type=None):
             seen["args"] = (q, limit)
+            seen["asset_type"] = asset_type
             return []
 
         monkeypatch.setattr(companies_api, "search_companies", fake)

@@ -10,7 +10,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
-from app.company_aliases import COMPANY_ALIASES
+from app.company_aliases import COMPANY_ALIASES, ETF_BRANDS, ETF_BRANDS_NO_HANGUL_AFTER, ETF_FORMER_BRANDS
 from app.models import Company
 
 # 유사 종목명 보정 임계값. 종목명 오타를 사용 가능한 수준으로 복구하면서, DB에 없는 실제 상장사가
@@ -45,6 +45,33 @@ for _alias, _name in COMPANY_ALIASES.items():
     _ALIASES_BY_NAME.setdefault(_name, []).append(_alias)
 
 
+def _brand_pattern() -> re.Pattern:
+    parts = []
+    for ko in sorted(ETF_BRANDS, key=len, reverse=True):
+        after = r"(?![가-힣])" if ko in ETF_BRANDS_NO_HANGUL_AFTER else ""
+        parts.append(re.escape(ko) + after)
+    for old in ETF_FORMER_BRANDS:
+        parts.append(re.escape(old) + r"(?![A-Za-z0-9])")
+    # 브랜드 앞에 한글/영문/숫자가 붙어 있으면(아이에이스, MYKODEX) 다른 낱말의 일부라서 브랜드가 아니다.
+    return re.compile(r"(?<![가-힣A-Za-z0-9])(?:" + "|".join(parts) + ")", re.IGNORECASE)
+
+
+_BRAND_RE = _brand_pattern()
+_BRAND_REPLACEMENT = {**ETF_BRANDS, **{old.casefold(): new for old, new in ETF_FORMER_BRANDS.items()}}
+
+
+def rewrite_etf_brand(text: str) -> str:
+    """ETF 브랜드의 한글 표기를 영문으로("코덱스 200" -> "KODEX 200"), 이전 브랜드명은 현재 이름으로("KBSTAR 200", "케이비스타 200" -> "RISE 200") 바꾼다.
+
+    브랜드가 없으면 text 그대로다. 종목 이름 뒤에 한글이 붙는 일반 낱말("에이스침대")은 바꾸지 않는다."""
+
+    def sub(s: str) -> str:
+        return _BRAND_RE.sub(lambda m: _BRAND_REPLACEMENT.get(m.group(0), _BRAND_REPLACEMENT.get(m.group(0).casefold(), m.group(0))), s)
+
+    # 두 번 적용한다: 한글 -> 영문(케이비스타 -> KBSTAR) 다음에 이전 이름 -> 현재 이름(KBSTAR -> RISE)
+    return sub(sub(text or ""))
+
+
 @dataclass
 class Resolution:
     company: Company | None = None
@@ -74,11 +101,19 @@ def resolve_company(db, raw) -> Resolution:
     # 3) 별칭 (예: '네이버' -> 'NAVER'). 퍼지 매칭보다 먼저 본다: 퍼지는 못 찾는 데서 끝나지 않고 '삼성SDS' -> 삼성SDI처럼
     #    다른 종목으로 잘못 연결하기도 한다. 별칭의 등록명이 DB에 없으면 아무것도 하지 않고 다음 단계로 넘어간다.
     key = _key(s)
-    alias_name = _ALIAS_BY_KEY.get(key)
-    if alias_name is not None:
-        for c in companies:
-            if c.name == alias_name:
-                return Resolution(company=c, corrected_from=str(raw))
+    branded = rewrite_etf_brand(s)  # ETF: "코덱스200" -> "KODEX200", "타이거 나스닥" -> "TIGER 나스닥"
+    for k in dict.fromkeys((key, _key(branded))):
+        alias_name = _ALIAS_BY_KEY.get(k)
+        if alias_name is not None:
+            for c in companies:
+                if c.name == alias_name:
+                    return Resolution(company=c, corrected_from=str(raw))
+
+    # 3b) ETF 브랜드의 한글 표기/이전 이름을 영문으로 바꾸면 공백/대소문자 일치가 되는 경우 ("코덱스 200" -> 'KODEX 200')
+    if branded != s:
+        by_brand = [c for c in companies if _key(c.name) == _key(branded)]
+        if len(by_brand) == 1:
+            return Resolution(company=by_brand[0], corrected_from=str(raw))
 
     # 4) 유사 종목명 보정
     keys = {}
@@ -117,15 +152,18 @@ def extract_from_text(db, text: str) -> list[Company]:
     - 영문/숫자 이름·티커는 앞뒤가 영문/숫자가 아닐 때만 인정한다 ('DL' -> 'DLNA' 제외).
     - 이름 바로 뒤에 우선주 표기가 붙으면 보통주로 취급하지 않는다 ('삼성전자우' -> 제외).
     - 별칭('네이버' -> NAVER)도 그 회사의 이름처럼 찾는다.
+    - ETF는 브랜드 한글 표기('코덱스 200' -> 'KODEX 200')를 영문으로 바꿔서 찾고, 이름의 공백이 빠진 입력('KODEX200')도 인정한다.
     여러 회사가 언급되면 전부 반환하므로, 어느 것을 쓸지는 호출측이 정한다."""
-    hay = unicodedata.normalize("NFC", text or "").casefold()
+    hay = rewrite_etf_brand(unicodedata.normalize("NFC", text or "")).casefold()
     if not hay:
         return []
 
     hits = []  # (start, end, company)
     for c in db.query(Company).all():
         aliases = ((a, True) for a in _ALIASES_BY_NAME.get(c.name, ()))
-        for token, is_name in ((c.name, True), (c.ticker, False), *aliases):
+        # ETF 이름은 "KODEX 200"처럼 공백이 있어서 "KODEX200"으로 쓰는 사람이 많다. ETF만 공백 없는 표기도 이름으로 본다.
+        spaceless = ((c.name.replace(" ", ""), True),) if getattr(c, "asset_type", None) == "etf" and " " in c.name else ()
+        for token, is_name in ((c.name, True), (c.ticker, False), *aliases, *spaceless):
             t = token.casefold()
             for m in re.finditer(re.escape(t), hay):
                 st, en = m.span()

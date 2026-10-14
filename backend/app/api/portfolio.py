@@ -38,6 +38,7 @@ class OrderRequest(BaseModel):
 class HoldingItem(BaseModel):
     ticker: str
     company_name: str
+    asset_type: Literal["stock", "etf"] = "stock"
     quantity: int
     avg_price: float
     # 상위 소스(네이버)와 DB 폴백 둘 다 실패하면 null이고, 그 종목은 평가손익 계산에서 빠진다(note 참고).
@@ -77,6 +78,7 @@ class TradeItem(BaseModel):
     id: int
     ticker: str
     company_name: str
+    asset_type: Literal["stock", "etf"] = "stock"
     side: Literal["buy", "sell"]
     quantity: int
     price: float

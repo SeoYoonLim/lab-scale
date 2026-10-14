@@ -31,21 +31,23 @@ NOT_FOUND_RESULT = {
 
 
 def mock_trending(monkeypatch, result):
-    monkeypatch.setattr(discovery_api, "get_trending", lambda db, category, limit: result)
+    monkeypatch.setattr(discovery_api, "get_trending", lambda db, category, limit, asset_type="stock": result)
 
 
 class TestGetTrending:
     def test_default_query_params(self, monkeypatch):
         seen = {}
 
-        def fake(db, category, limit):
+        def fake(db, category, limit, asset_type="stock"):
             seen["args"] = (category, limit)
+            seen["asset_type"] = asset_type
             return TRENDING_RESULT
 
         monkeypatch.setattr(discovery_api, "get_trending", fake)
         r = client.get("/api/discovery/trending")
         assert r.status_code == 200
         assert seen["args"] == ("gainers", 10)
+        assert seen["asset_type"] == "stock"  # 기본은 주식만(ETF가 섞이지 않는다)
 
     def test_success_response_shape(self, monkeypatch):
         mock_trending(monkeypatch, TRENDING_RESULT)
@@ -61,8 +63,9 @@ class TestGetTrending:
     def test_passes_category_and_limit_through(self, monkeypatch):
         seen = {}
 
-        def fake(db, category, limit):
+        def fake(db, category, limit, asset_type="stock"):
             seen["args"] = (category, limit)
+            seen["asset_type"] = asset_type
             return {**TRENDING_RESULT, "category": category}
 
         monkeypatch.setattr(discovery_api, "get_trending", fake)

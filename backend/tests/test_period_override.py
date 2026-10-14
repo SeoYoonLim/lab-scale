@@ -134,7 +134,10 @@ _TEMPLATES = [
     "{c} PER이 얼마야?",
     "{c} 관련 소식 있어?",
 ]
-_COMPANIES = sorted(set(COMPANY_ALIASES.values()))  # 등록명 기준(별칭 자체는 기간 표현과 무관)
+# 등록명 기준(별칭 자체는 기간 표현과 무관). ETF 이름("KODEX 200")은 뺀다: 이름 속 "200" 뒤에 "주가"가 오면 period_parser가
+# "200 주"(200주)로 읽는 알려진 문제가 있어서 별도 테스트(TestEtfNameKnownIssue)로 따로 기록한다. 에이전트 수정은 2단계 범위다.
+_ETF_BRANDS = ("KODEX", "TIGER", "ACE", "SOL", "KBSTAR", "ARIRANG", "HANARO", "RISE", "PLUS")
+_COMPANIES = sorted(v for v in set(COMPANY_ALIASES.values()) if not v.startswith(_ETF_BRANDS))
 # 위 템플릿 + 종목명 조합에는 기간 표현을 전혀 넣지 않았다(의도적인 "미매칭이어야 하는" 합성 입력).
 SYNTHETIC_NO_PERIOD_QUESTIONS = [t.format(c=c) for c in _COMPANIES for t in _TEMPLATES]
 
@@ -181,3 +184,22 @@ class TestNoOverrideRegressionOnSyntheticCorpus:
         args = calls[0]["function"]["arguments"]
         assert args["ticker"] == "삼성전자"
         assert set(args) == {"ticker", "period_days"}
+
+
+class TestEtfNameKnownIssue:
+    """ETF 이름에 숫자가 있으면 period_parser가 이름 속 숫자를 기간으로 읽는다(1단계에서 발견, 에이전트 수정은 2단계).
+
+    "KODEX 200 주가 알려줘"의 "200 주"를 200주(약 1000일)로 파싱한다. 고쳐지면 이 테스트가 (strict xfail이라) 실패하므로
+    그때 이 클래스를 일반 테스트로 바꾸고 위 합성 말뭉치에 ETF 이름을 되돌려 넣는다."""
+
+    @pytest.mark.xfail(strict=True, reason="period_parser가 ETF 이름 'KODEX 200'의 '200'과 '주가'의 '주'를 200주로 읽는다")
+    def test_number_in_etf_name_is_not_a_period(self):
+        from app.period_parser import parse_period
+
+        assert parse_period("KODEX 200 주가 알려줘") is None
+
+    def test_current_behaviour_is_recorded(self):
+        from app.period_parser import parse_period
+
+        parsed = parse_period("KODEX 200 주가 알려줘")
+        assert parsed is not None and parsed.matched_text == "200 주"

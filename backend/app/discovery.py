@@ -22,6 +22,7 @@ from app.models import Company, StockPrice
 from app.tools.company_resolver import to_int
 
 CATEGORIES = ("gainers", "losers", "volume_surge")
+ASSET_TYPES = ("stock", "etf")
 # "거래량 급증"으로 인정하는 최소 배수(당일 거래량 / 직전 window_days 평균 거래량).
 VOLUME_SURGE_MIN_RATIO = 2.0
 
@@ -47,8 +48,12 @@ def rank_volume_surge(items: list[dict], limit: int, min_ratio: float = VOLUME_S
 _RANKERS = {"gainers": rank_gainers, "losers": rank_losers, "volume_surge": rank_volume_surge}
 
 
-def get_trending(db, category: str, limit: int = 10, window_days: int = 20) -> dict:
+def get_trending(db, category: str, limit: int = 10, window_days: int = 20, asset_type: str = "stock") -> dict:
     """category별 상위 N 종목을 돌려준다. stock_price에 데이터가 아직 없으면 found=False.
+
+    asset_type('stock'|'etf')에 해당하는 종목만 대상으로 한다(기본 stock이라 ETF가 섞이지 않는다). 최신 거래일과 평균 거래량의
+    직전 거래일도 그 유형의 종목끼리만 계산한다: 유형마다 수집 시점이 다를 수 있어서(ETF만 더 최근까지 수집된 경우 등) 전체의
+    최신 날짜를 쓰면 다른 유형의 결과가 비어 버린다.
 
     category가 CATEGORIES에 없으면 예외 대신 found=False 응답을 돌려준다(LLM이 잘못된 값을 넣을 수 있어서,
     다른 tool들의 "종목을 찾지 못했습니다" 패턴과 같은 처리)."""
@@ -59,17 +64,29 @@ def get_trending(db, category: str, limit: int = 10, window_days: int = 20) -> d
             "message": f"알 수 없는 category입니다. {', '.join(CATEGORIES)} 중 하나를 지정해주세요.",
         }
 
+    if asset_type not in ASSET_TYPES:
+        return {
+            "category": category,
+            "found": False,
+            "message": f"알 수 없는 asset_type입니다. {', '.join(ASSET_TYPES)} 중 하나를 지정해주세요.",
+        }
+
     limit = to_int(limit, default=10, hi=50)
     window_days = to_int(window_days, default=20, lo=5, hi=60)
 
-    latest_date = db.query(func.max(StockPrice.price_date)).scalar()
+    latest_date = (
+        db.query(func.max(StockPrice.price_date))
+        .join(Company, Company.id == StockPrice.company_id)
+        .filter(Company.asset_type == asset_type)
+        .scalar()
+    )
     if latest_date is None:
         return {"category": category, "found": False, "message": "주가 데이터가 아직 수집되지 않았습니다."}
 
     latest_rows = (
         db.query(StockPrice, Company)
         .join(Company, Company.id == StockPrice.company_id)
-        .filter(StockPrice.price_date == latest_date)
+        .filter(StockPrice.price_date == latest_date, Company.asset_type == asset_type)
         .all()
     )
 
@@ -77,7 +94,8 @@ def get_trending(db, category: str, limit: int = 10, window_days: int = 20) -> d
     prior_dates = [
         d
         for (d,) in db.query(StockPrice.price_date)
-        .filter(StockPrice.price_date < latest_date)
+        .join(Company, Company.id == StockPrice.company_id)
+        .filter(StockPrice.price_date < latest_date, Company.asset_type == asset_type)
         .distinct()
         .order_by(StockPrice.price_date.desc())
         .limit(window_days)
@@ -118,6 +136,7 @@ def get_trending(db, category: str, limit: int = 10, window_days: int = 20) -> d
 
     return {
         "category": category,
+        "asset_type": asset_type,
         "found": True,
         "price_date": latest_date.isoformat(),
         "window_days": len(prior_dates),

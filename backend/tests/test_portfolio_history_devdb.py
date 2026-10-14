@@ -65,7 +65,7 @@ class TestTrades:
         assert (sell["side"], sell["quantity"], sell["price"], sell["amount"]) == ("sell", 1, 1000.0, 1000.0)
         assert (buy["side"], buy["quantity"], buy["amount"]) == ("buy", 3, 3000.0)
         assert buy["ticker"] == "005930" and buy["company_name"] == "삼성전자"
-        assert set(buy) == {"id", "ticker", "company_name", "side", "quantity", "price", "amount", "executed_at"}
+        assert set(buy) == {"id", "ticker", "company_name", "asset_type", "side", "quantity", "price", "amount", "executed_at"}
         assert sell["id"] > buy["id"]
 
     def test_pagination_ticker_filter_and_ordering(self, signup, dev_db):

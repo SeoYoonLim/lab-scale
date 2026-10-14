@@ -12,13 +12,14 @@ client = TestClient(app, raise_server_exceptions=False)
 USER_ID = 7
 # 예전에는 X-Device-Id를 보냈다. 이제 인증은 get_current_user가 하고(아래 autouse 픽스처로 가짜 사용자), 헤더는 필요 없다.
 HEADERS = {}
-COMPANY = type("C", (), {"id": 1, "ticker": "005930", "name": "삼성전자"})()
+COMPANY = type("C", (), {"id": 1, "ticker": "005930", "name": "삼성전자", "asset_type": "stock"})()
 WATCHLIST_ROW = type("W", (), {"created_at": datetime(2026, 10, 1)})()
 
 ITEM = {
     "company_id": 1,
     "ticker": "005930",
     "company_name": "삼성전자",
+    "asset_type": "stock",
     "added_at": "2026-10-01T00:00:00+00:00",
     "latest_close": 71000.0,
     "latest_close_date": "2026-09-23",

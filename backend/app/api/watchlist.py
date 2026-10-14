@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Path, Response
 from pydantic import BaseModel, Field
 
@@ -20,6 +22,7 @@ class WatchlistItem(BaseModel):
     company_id: int
     ticker: str
     company_name: str
+    asset_type: Literal["stock", "etf"] = "stock"
     added_at: str
     # 실시간이 아니라 DB에 저장된 가장 최근 종가(일별). 실시간 시세는 /api/stocks/{ticker}/realtime-price를 쓴다.
     latest_close: float | None = None

@@ -67,6 +67,7 @@ def item_dict(w: Watchlist, c: Company, price: StockPrice | None) -> dict:
         "company_id": c.id,
         "ticker": c.ticker,
         "company_name": c.name,
+        "asset_type": c.asset_type,
         "added_at": w.created_at.isoformat(),
         "latest_close": float(price.close_price) if price else None,
         "latest_close_date": price.price_date.isoformat() if price else None,

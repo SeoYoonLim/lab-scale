@@ -119,5 +119,9 @@ class TestGetTrendingDevDB:
             pytest.skip("stock_price가 비어 있음")
 
         r = get_trending(dev_db, "gainers", limit=5)
-        expected = dev_db.execute(text("SELECT MAX(price_date) FROM stock_price")).scalar()
+        # 기본은 주식만 대상이라 최신 거래일도 주식 종목끼리 계산한다(ETF만 더 최근까지 수집돼 있어도 주식 결과가 비지 않는다).
+        expected = dev_db.execute(text(
+            "SELECT MAX(sp.price_date) FROM stock_price sp JOIN company c ON c.id = sp.company_id WHERE c.asset_type = 'stock'"
+        )).scalar()
         assert r["price_date"] == expected.isoformat()
+        assert r["asset_type"] == "stock" and r["items"]

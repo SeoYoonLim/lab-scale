@@ -8,21 +8,24 @@ from sqlalchemy import func
 
 from app.company_aliases import COMPANY_ALIASES
 from app.models import Company, StockPrice
-from app.tools.company_resolver import _key
+from app.tools.company_resolver import _key, rewrite_etf_brand
 
 # q가 별칭 사전의 키와 일치하면 그 등록명도 매칭 대상에 넣는다('네이버' 검색 -> 'NAVER'도 찾게).
 _ALIAS_BY_KEY = {_key(alias): name for alias, name in COMPANY_ALIASES.items()}
 
 
 def _search_targets(q: str | None) -> set[str] | None:
-    """필터링을 안 하면 None, 하면 매칭에 쓸 키 집합(검색어 자체 + 별칭의 등록명)을 돌려준다."""
+    """필터링을 안 하면 None, 하면 매칭에 쓸 키 집합(검색어 자체 + 별칭의 등록명)을 돌려준다.
+
+    ETF 브랜드의 한글 표기('코덱스200', '타이거 나스닥')는 영문('KODEX200', 'TIGER 나스닥')으로 바꾼 키도 함께 쓴다."""
     if not q or not q.strip():
         return None
-    key = _key(q)
-    targets = {key}
-    alias_name = _ALIAS_BY_KEY.get(key)
-    if alias_name is not None:
-        targets.add(_key(alias_name))
+    targets = set()
+    for key in {_key(q), _key(rewrite_etf_brand(q))}:
+        targets.add(key)
+        alias_name = _ALIAS_BY_KEY.get(key)
+        if alias_name is not None:
+            targets.add(_key(alias_name))
     return targets
 
 
@@ -52,9 +55,14 @@ def _latest_prices(db, company_ids: list[int]) -> dict[int, StockPrice]:
     return {row.company_id: row for row in rows}
 
 
-def search_companies(db, q: str | None, limit: int) -> list[dict]:
-    """종목명/티커 부분 일치 검색(대소문자/공백 무시, 별칭 반영) + 최근 종가·등락률. q가 없으면 상위 limit개."""
-    companies = db.query(Company).order_by(Company.id).all()
+def search_companies(db, q: str | None, limit: int, asset_type: str | None = None) -> list[dict]:
+    """종목명/티커 부분 일치 검색(대소문자/공백 무시, 별칭 반영) + 최근 종가·등락률. q가 없으면 상위 limit개.
+
+    asset_type('stock'|'etf')을 주면 그 유형만, 생략하면 전체(주식 + ETF)를 대상으로 한다."""
+    query = db.query(Company)
+    if asset_type is not None:
+        query = query.filter(Company.asset_type == asset_type)
+    companies = query.order_by(Company.id).all()
 
     targets = _search_targets(q)
     if targets is not None:
@@ -72,6 +80,7 @@ def search_companies(db, q: str | None, limit: int) -> list[dict]:
                 "name": c.name,
                 "market": c.market,
                 "sector": c.sector,
+                "asset_type": c.asset_type,
                 "latest_close": float(p.close_price) if p else None,
                 "change_pct": float(p.change_pct) if (p and p.change_pct is not None) else None,
             }

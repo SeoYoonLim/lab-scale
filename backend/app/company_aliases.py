@@ -75,4 +75,34 @@ COMPANY_ALIASES: dict[str, str] = {
     "삼성엔지니어링": "삼성E&A",
     "GC녹십자": "녹십자",
     "코오롱인더스트리": "코오롱인더",
+    # ETF 축약형. 브랜드의 한글 표기("타이거")는 아래 ETF_BRANDS로 영문("TIGER")으로 바꾼 뒤 찾으므로 영문 브랜드로 적는다.
+    # 이름이 여러 상품에 걸치는 것("나스닥" = 미국나스닥100)은 그중 대표 상품(시가총액 최대)으로만 연결한다.
+    "TIGER 나스닥": "TIGER 미국나스닥100",
+    "TIGER 나스닥100": "TIGER 미국나스닥100",
+    "TIGER 미국나스닥": "TIGER 미국나스닥100",
+    "TIGER S&P500": "TIGER 미국S&P500",
+    "TIGER 미국S&P": "TIGER 미국S&P500",
+    "KODEX 나스닥100": "KODEX 미국나스닥100",
+    "KODEX S&P500": "KODEX 미국S&P500",
+    "KODEX 코스피200": "KODEX 200",
+    "TIGER 코스피200": "TIGER 200",
 }
+
+# ETF 브랜드(운용사 상품 이름 앞머리)의 한글 표기 -> 영문 표기. company.name은 영문("KODEX 200")이라 "코덱스200",
+# "타이거 나스닥"처럼 입력하면 이 표로 영문으로 바꿔서 찾는다(company_resolver.rewrite_etf_brand).
+# KBSTAR·ARIRANG는 각각 RISE·PLUS로 이름이 바뀌었다(현재 ETF 목록에 KBSTAR/ARIRANG 상품이 없고 RISE/PLUS가 있다).
+ETF_BRANDS: dict[str, str] = {
+    "코덱스": "KODEX",
+    "타이거": "TIGER",
+    "에이스": "ACE",
+    "쏠": "SOL",
+    "케이비스타": "KBSTAR",
+    "아리랑": "ARIRANG",
+    "하나로": "HANARO",
+    "라이즈": "RISE",
+    "플러스": "PLUS",
+}
+# 이전 브랜드명 -> 현재 브랜드명(영문 입력도 바꾼다).
+ETF_FORMER_BRANDS: dict[str, str] = {"KBSTAR": "RISE", "ARIRANG": "PLUS"}
+# 한글 낱말과 겹치는 브랜드("에이스침대", "쏠쏠하다", "플러스")는 뒤에 한글이 바로 이어지면 브랜드로 보지 않는다.
+ETF_BRANDS_NO_HANGUL_AFTER = frozenset({"에이스", "쏠", "플러스"})
