@@ -10,7 +10,8 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
-from app.company_aliases import COMPANY_ALIASES, ETF_BRANDS, ETF_BRANDS_NO_HANGUL_AFTER, ETF_FORMER_BRANDS
+from app.company_aliases import COMPANY_ALIASES
+from app.etf import rewrite_etf_brand  # noqa: F401  (app.companies 등이 여기서 가져다 쓴다)
 from app.models import Company
 
 # 유사 종목명 보정 임계값. 종목명 오타를 사용 가능한 수준으로 복구하면서, DB에 없는 실제 상장사가
@@ -43,33 +44,6 @@ _ALIAS_BY_KEY = {_key(alias): name for alias, name in COMPANY_ALIASES.items()}
 _ALIASES_BY_NAME: dict[str, list[str]] = {}
 for _alias, _name in COMPANY_ALIASES.items():
     _ALIASES_BY_NAME.setdefault(_name, []).append(_alias)
-
-
-def _brand_pattern() -> re.Pattern:
-    parts = []
-    for ko in sorted(ETF_BRANDS, key=len, reverse=True):
-        after = r"(?![가-힣])" if ko in ETF_BRANDS_NO_HANGUL_AFTER else ""
-        parts.append(re.escape(ko) + after)
-    for old in ETF_FORMER_BRANDS:
-        parts.append(re.escape(old) + r"(?![A-Za-z0-9])")
-    # 브랜드 앞에 한글/영문/숫자가 붙어 있으면(아이에이스, MYKODEX) 다른 낱말의 일부라서 브랜드가 아니다.
-    return re.compile(r"(?<![가-힣A-Za-z0-9])(?:" + "|".join(parts) + ")", re.IGNORECASE)
-
-
-_BRAND_RE = _brand_pattern()
-_BRAND_REPLACEMENT = {**ETF_BRANDS, **{old.casefold(): new for old, new in ETF_FORMER_BRANDS.items()}}
-
-
-def rewrite_etf_brand(text: str) -> str:
-    """ETF 브랜드의 한글 표기를 영문으로("코덱스 200" -> "KODEX 200"), 이전 브랜드명은 현재 이름으로("KBSTAR 200", "케이비스타 200" -> "RISE 200") 바꾼다.
-
-    브랜드가 없으면 text 그대로다. 종목 이름 뒤에 한글이 붙는 일반 낱말("에이스침대")은 바꾸지 않는다."""
-
-    def sub(s: str) -> str:
-        return _BRAND_RE.sub(lambda m: _BRAND_REPLACEMENT.get(m.group(0), _BRAND_REPLACEMENT.get(m.group(0).casefold(), m.group(0))), s)
-
-    # 두 번 적용한다: 한글 -> 영문(케이비스타 -> KBSTAR) 다음에 이전 이름 -> 현재 이름(KBSTAR -> RISE)
-    return sub(sub(text or ""))
 
 
 @dataclass

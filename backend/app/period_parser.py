@@ -17,6 +17,9 @@
 - 질문에 인식 가능한 표현이 여러 개 있으면 **질문에서 가장 먼저 등장한 것 하나만** 쓴다(뒤에 나온 표현은 무시).
 - "N일 전"처럼 **특정 시점**을 가리키는 표현(기간이 아니라 점)은 일부러 인식하지 않는다(숫자+단위 바로 뒤에 "전"이
   오면 제외). "재작년"(작년의 부분 문자열), "지지난달"/"지지난주"도 다른 뜻이라 제외한다.
+- **ETF 이름 속 숫자는 기간이 아니다**: "KODEX 200 주가"의 "200 주"(200주), "KODEX CD1년금리..."의 "1년"처럼 ETF 이름에
+  숫자+단위 모양이 섞여 있다. 그래서 파싱 전에 ETF 이름 구간을 지운다(`app.etf.mask_etf_names`: 브랜드로 시작하는 이름만 지우고,
+  "KODEX 200 3개월"의 "3개월"처럼 이름 뒤의 진짜 기간 표현은 남긴다). 주식 질문은 바뀌지 않는다.
 - **상한**: 비현실적으로 큰 숫자(예: "2024년"의 "2024")는 기간 수량이 아니라 연도 등 다른 의미일 가능성이 높아
   인식하지 않는다(일 3650/주 520/개월 120/년 50까지만).
 
@@ -35,6 +38,8 @@ import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
+
+from app.etf import mask_etf_names
 
 KST = ZoneInfo("Asia/Seoul")
 
@@ -172,7 +177,7 @@ def parse_period(question: str, now: datetime | None = None) -> ParsedPeriod | N
     if not question:
         return None
     today = _today(now)
-    found = _candidates(question, today)
+    found = _candidates(mask_etf_names(question), today)
     if not found:
         return None
 
@@ -202,6 +207,10 @@ def mentions_period(question: str) -> bool:
     나와도 이전처럼 LLM이 추론한 값을 그대로 쓸 뿐이라 안전한 쪽이다. 6자리 종목코드("005930")는 숫자로 치지 않는다."""
     if not question:
         return False
-    if parse_period(question) is not None or _INFORMAL_PERIOD_RE.search(question):
+    if parse_period(question) is not None:
         return True
-    return bool(re.search(r"\d", _TICKER_CODE_RE.sub("", question)))
+    # ETF 이름 속 숫자("KODEX 200", "TIGER 미국S&P500")는 기간을 말한 것이 아니다
+    text = mask_etf_names(question)
+    if _INFORMAL_PERIOD_RE.search(text):
+        return True
+    return bool(re.search(r"\d", _TICKER_CODE_RE.sub("", text)))

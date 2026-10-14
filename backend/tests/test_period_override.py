@@ -134,10 +134,9 @@ _TEMPLATES = [
     "{c} PER이 얼마야?",
     "{c} 관련 소식 있어?",
 ]
-# 등록명 기준(별칭 자체는 기간 표현과 무관). ETF 이름("KODEX 200")은 뺀다: 이름 속 "200" 뒤에 "주가"가 오면 period_parser가
-# "200 주"(200주)로 읽는 알려진 문제가 있어서 별도 테스트(TestEtfNameKnownIssue)로 따로 기록한다. 에이전트 수정은 2단계 범위다.
-_ETF_BRANDS = ("KODEX", "TIGER", "ACE", "SOL", "KBSTAR", "ARIRANG", "HANARO", "RISE", "PLUS")
-_COMPANIES = sorted(v for v in set(COMPANY_ALIASES.values()) if not v.startswith(_ETF_BRANDS))
+# 등록명 기준(별칭 자체는 기간 표현과 무관). ETF 이름("KODEX 200", "TIGER 미국S&P500")도 넣는다: 이름 속 숫자를 기간으로
+# 읽지 않아야 한다(2단계에서 period_parser가 ETF 이름 구간을 지우고 파싱하도록 고침, app.etf.mask_etf_names).
+_COMPANIES = sorted(set(COMPANY_ALIASES.values()))
 # 위 템플릿 + 종목명 조합에는 기간 표현을 전혀 넣지 않았다(의도적인 "미매칭이어야 하는" 합성 입력).
 SYNTHETIC_NO_PERIOD_QUESTIONS = [t.format(c=c) for c in _COMPANIES for t in _TEMPLATES]
 
@@ -186,20 +185,53 @@ class TestNoOverrideRegressionOnSyntheticCorpus:
         assert set(args) == {"ticker", "period_days"}
 
 
-class TestEtfNameKnownIssue:
-    """ETF 이름에 숫자가 있으면 period_parser가 이름 속 숫자를 기간으로 읽는다(1단계에서 발견, 에이전트 수정은 2단계).
+class TestEtfNamesAreNotPeriods:
+    """ETF 이름 속 숫자는 기간이 아니다(1단계에서 strict xfail로 기록했던 문제, 2단계에서 수정).
 
-    "KODEX 200 주가 알려줘"의 "200 주"를 200주(약 1000일)로 파싱한다. 고쳐지면 이 테스트가 (strict xfail이라) 실패하므로
-    그때 이 클래스를 일반 테스트로 바꾸고 위 합성 말뭉치에 ETF 이름을 되돌려 넣는다."""
+    고치기 전에는 "KODEX 200 주가 알려줘"의 "200 주"를 200주(약 1000일)로 읽었고, 이름에 숫자가 있으면 mentions_period가 True라서
+    "최근 흐름" 질문의 기본 기간(20거래일)도 적용되지 않았다."""
 
-    @pytest.mark.xfail(strict=True, reason="period_parser가 ETF 이름 'KODEX 200'의 '200'과 '주가'의 '주'를 200주로 읽는다")
-    def test_number_in_etf_name_is_not_a_period(self):
+    @pytest.mark.parametrize("q", [
+        "KODEX 200 주가 알려줘", "KODEX 200 최근 흐름 알려줘", "TIGER 미국S&P500 어때?", "TIGER 미국나스닥100 어때?",
+        "KODEX 200TR 주가", "KODEX 2X 미국나스닥100 어때", "코덱스 200 주가", "KODEX200 주가",
+        "KODEX CD1년금리플러스액티브(합성) 흐름", "TIGER 200 IT 주가", "KODEX 200이랑 삼성전자 중에 최근 어느 게 더 올랐어?",
+    ])
+    def test_number_in_etf_name_is_neither_parsed_nor_counted_as_a_period(self, q):
+        from app.period_parser import mentions_period, parse_period
+
+        assert parse_period(q) is None
+        assert mentions_period(q) is False
+
+    @pytest.mark.parametrize("q, matched, days", [
+        ("KODEX 200 3개월 추이", "3개월", None),
+        ("KODEX 200TR 3개월 추이", "3개월", None),
+        ("코덱스 200 20일 흐름", "20일", None),
+        ("TIGER 200 IT 1년 수익률", "1년", None),
+        ("KODEX 레버리지 2주 흐름", "2주", 10),
+    ])
+    def test_real_period_after_an_etf_name_still_parses(self, q, matched, days):
         from app.period_parser import parse_period
 
-        assert parse_period("KODEX 200 주가 알려줘") is None
+        p = parse_period(q)
+        assert p is not None and p.matched_text == matched
+        if days is not None:
+            assert p.period_days == days
 
-    def test_current_behaviour_is_recorded(self):
+    @pytest.mark.parametrize("q", ["TIGER 미국S&P500 한 달 흐름", "KODEX 200 일주일 주가", "KODEX 레버리지 하루 등락"])
+    def test_informal_period_after_an_etf_name_is_still_mentioned(self, q):
+        from app.period_parser import mentions_period
+
+        assert mentions_period(q) is True
+
+    @pytest.mark.parametrize("q, matched", [
+        ("삼성전자 200일 주가", "200일"), ("삼성전자 3개월 흐름", "3개월"), ("에이스침대 3일 주가", "3일"), ("카카오 2주간 주가", "2주"),
+    ])
+    def test_stock_questions_are_unchanged(self, q, matched):
         from app.period_parser import parse_period
 
-        parsed = parse_period("KODEX 200 주가 알려줘")
-        assert parsed is not None and parsed.matched_text == "200 주"
+        assert parse_period(q).matched_text == matched
+
+    def test_trend_question_on_etf_gets_the_default_20_days(self):
+        calls = [stock_call(ticker="KODEX 200", period_days=1)]
+        assert agent._apply_default_period(calls, "KODEX 200 최근 흐름 알려줘") == {0: 1}
+        assert calls[0]["function"]["arguments"]["period_days"] == agent.DEFAULT_TREND_PERIOD_DAYS
