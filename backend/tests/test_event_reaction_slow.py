@@ -168,6 +168,12 @@ def count_errors(answer: str, result: dict) -> dict:
     }
 
 
+@pytest.fixture(autouse=True)
+def _interpretation_on(monkeypatch):
+    """이 측정은 LLM 해석을 켠 상태(EVENT_REACTION_LLM_INTERPRETATION=1)의 품질을 본다. 기본(꺼짐)에서는 모델을 부르지 않는다."""
+    monkeypatch.setenv("EVENT_REACTION_LLM_INTERPRETATION", "1")
+
+
 @pytest.mark.parametrize("rep", range(REPS))
 @pytest.mark.parametrize("question", QUESTIONS)
 def test_event_question(question, rep):

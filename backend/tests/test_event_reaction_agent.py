@@ -50,6 +50,8 @@ def env(monkeypatch):
         lambda db, text: [SimpleNamespace(name=n) for n in ("삼성전자", "SK하이닉스") if n in (text or "")],
     )
     monkeypatch.setattr(agent, "_company_names", lambda: ["삼성전자", "SK하이닉스"])
+    # 이 파일의 기존 테스트는 LLM 해석을 켠 상태(플래그 on)의 동작을 고정한다. 꺼진 기본 동작은 TestInterpretationOff가 본다.
+    monkeypatch.setenv(agent.EVENT_LLM_INTERPRETATION_ENV, "1")
 
     def tool(**kw):
         state["tool_args"].append(kw)
@@ -154,6 +156,64 @@ class TestEventPath:
         env["llm"] = ""
         resp, _ = agent._answer("삼성전자 뉴스 이후 주가 반응", "m")
         assert "복리 효과" in resp["answer"] and resp["answer"].endswith(DISCLAIMER)
+
+
+class TestInterpretationOff:
+    """기본값(플래그 꺼짐): 이 경로에서는 Ollama를 부르지 않고 코드가 쓴 섹션·요약·면책 문구만으로 답한다."""
+
+    @pytest.fixture(autouse=True)
+    def _off(self, env, monkeypatch):
+        monkeypatch.delenv(agent.EVENT_LLM_INTERPRETATION_ENV, raising=False)
+
+    @pytest.mark.parametrize("value", ["1", "true", "TRUE", "on", "yes"])
+    def test_flag_values_that_turn_it_on(self, monkeypatch, value):
+        monkeypatch.setenv(agent.EVENT_LLM_INTERPRETATION_ENV, value)
+        assert agent.event_llm_interpretation_enabled()
+
+    @pytest.mark.parametrize("value", ["", "0", "false", "off", "no", "아니오"])
+    def test_flag_values_that_keep_it_off(self, monkeypatch, value):
+        monkeypatch.setenv(agent.EVENT_LLM_INTERPRETATION_ENV, value)
+        assert not agent.event_llm_interpretation_enabled()
+
+    def test_default_is_off(self, monkeypatch):
+        monkeypatch.delenv(agent.EVENT_LLM_INTERPRETATION_ENV, raising=False)
+        assert not agent.event_llm_interpretation_enabled()
+
+    def test_no_ollama_call_and_complete_answer(self, env):
+        resp, records = agent._answer("삼성전자 공시 이후 주가 반응은?", "m")
+        assert env["chat_calls"] == []
+        a = resp["answer"]
+        assert a.startswith(SECTION_TITLE) and "## 해석" not in a and "요약:" in a and a.endswith("※ " + DISCLAIMER)
+        assert "1거래일 -4.56%(코스피 -3.64%, 초과 -0.92%p)" in a
+        assert resp["used_tools"] == ["event_reaction_tool"] and resp["sources"]
+        assert "dropped_sentences" not in records[0]["result"]
+
+    def test_answer_does_not_need_ollama(self, env, monkeypatch):
+        """Ollama가 꺼져 있어도(호출하면 예외) 답이 나온다: 이 경로는 모델을 부르지 않는다."""
+        env["chat_error"] = ConnectionError("Ollama down")
+        resp, _ = agent._answer("삼성전자 공시 이후 주가 반응은?", "m")
+        assert resp["answer"].startswith(SECTION_TITLE) and resp["answer"].endswith(DISCLAIMER)
+
+    def test_same_code_section_as_when_interpretation_is_on(self, env, monkeypatch):
+        off, _ = agent._answer("삼성전자 공시 이후 주가 반응은?", "m")
+        monkeypatch.setenv(agent.EVENT_LLM_INTERPRETATION_ENV, "1")
+        on, _ = agent._answer("삼성전자 공시 이후 주가 반응은?", "m")
+        assert on["answer"].startswith(off["answer"].rsplit("\n\n※ ", 1)[0])  # 켜면 같은 섹션 뒤에 해석이 붙을 뿐이다
+        assert off["used_tools"] == on["used_tools"] and off["sources"] == on["sources"]
+
+    def test_leveraged_etf_notice_still_added(self, env):
+        r = _result([_event(kind="news", title="KODEX 레버리지 기사")])
+        r.update(company_name="KODEX 레버리지", asset_type="etf", market_index=None)
+        env["result"] = r
+        resp, _ = agent._answer("삼성전자 뉴스 이후 주가 반응", "m")
+        assert "복리 효과" in resp["answer"] and resp["answer"].endswith(DISCLAIMER) and env["chat_calls"] == []
+
+    def test_gate_and_other_paths_unchanged(self, env, monkeypatch):
+        """플래그와 상관없이 게이트를 통과하지 않은 질문은 기존 경로(모델 1차 호출)로 간다."""
+        monkeypatch.setattr(agent, "_answer_event", lambda *a, **k: pytest.fail("사건 경로를 타면 안 된다"))
+        env["llm"] = "개념 설명입니다."
+        resp, _ = agent._answer("삼성전자 최근 뉴스 알려줘", "m")
+        assert len(env["chat_calls"]) >= 1 and "tools" in env["chat_calls"][0]
 
 
 class TestOtherQuestionsUntouched:

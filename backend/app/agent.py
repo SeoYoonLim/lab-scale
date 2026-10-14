@@ -7,6 +7,7 @@ FastAPI 라우트(app/api/research.py)와 CLI 스모크 테스트 스크립트�
 
 import inspect
 import json
+import os
 import re
 import time
 from datetime import datetime, timezone
@@ -945,6 +946,14 @@ def _finish_etf_answer(answer: str, records: list[dict], subjects: list[tuple[st
 # LLM이 고른 stock_tool/news_tool 결과를 함께 쓰지 않는 이유: 사건 구간과 무관한 기간의 수치와 기사 본문(수치·"~때문에 상승"
 # 같은 주장)이 해석 문장으로 섞여 들어와 검증해야 할 범위가 커진다. 이 질문의 답에 필요한 수치는 event_reaction_tool에 다 있다.
 EVENT_TOOL_LIMIT = 5
+# 사건 반응 답변의 LLM 해석(## 해석)은 기본으로 끈다: 검증을 통과한 해석 문장이 30회 중 3~6회만 남고, 남아도 한 줄의 주의 문구 수준이며
+# 어색한 문장이 통과하는 일도 있었다(README "알려진 한계"). 켜려면 환경변수를 1/true/on으로 설정한다. 꺼져 있으면 Ollama를 호출하지 않으므로
+# 이 경로의 답변은 Ollama 없이도 나오고 응답이 빠르다(질문 이해와 tool 선택은 코드 게이트가 한다).
+EVENT_LLM_INTERPRETATION_ENV = "EVENT_REACTION_LLM_INTERPRETATION"
+
+
+def event_llm_interpretation_enabled() -> bool:
+    return os.environ.get(EVENT_LLM_INTERPRETATION_ENV, "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _event_subject(question: str, previous: dict | None = None) -> str | None:
@@ -967,8 +976,9 @@ def _event_subject(question: str, previous: dict | None = None) -> str | None:
 
 
 def _answer_event(question: str, model: str, company: str, previous: dict | None = None) -> tuple[dict, list[dict]]:
-    """사건 반응 질문의 답변. 코드가 event_reaction_tool을 실행하고 섹션을 쓴 뒤, LLM 해석은 검증을 통과한 문장만 붙인다.
-    대상 사건이 없거나 계산된 수익률이 하나도 없으면 LLM을 부르지 않는다(코드가 쓴 섹션만). Ollama가 응답하지 않으면 해석 없이 코드가 쓴 섹션만으로 답한다."""
+    """사건 반응 질문의 답변. 코드가 event_reaction_tool을 실행하고 섹션·요약·면책 문구를 쓴다.
+    LLM 해석은 EVENT_REACTION_LLM_INTERPRETATION이 켜진 경우에만 만들고(기본 꺼짐) 검증(check_event_answer)을 통과한 문장만 붙인다.
+    대상 사건이 없거나 계산된 수익률이 하나도 없으면 켜져 있어도 LLM을 부르지 않는다. Ollama가 응답하지 않아도 코드가 쓴 섹션만으로 답한다."""
     args = {
         "company_name": company,
         "event_type": event_type_for(question),
@@ -994,7 +1004,7 @@ def _answer_event(question: str, model: str, company: str, previous: dict | None
     interpretation = ""
     # 계산된 수익률이 하나도 없으면(사건이 모두 너무 최근) 해석할 수치가 없어서 모델을 부르지 않는다. 이때 모델은 "다른 정보를
     # 제공해드리겠습니다" 같은 내용 없는 문장이나 기사 관련성 추측만 썼다(slow 측정).
-    if result.get("found") and (display_summary(result).get("with_d1") or 0) > 0:
+    if event_llm_interpretation_enabled() and result.get("found") and (display_summary(result).get("with_d1") or 0) > 0:
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             *FEW_SHOT_MESSAGES,
