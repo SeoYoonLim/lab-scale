@@ -39,7 +39,9 @@ REPS = 3
 
 _NUM = re.compile(r"[+-]?\d[\d,]*(?:\.\d+)?")
 _DATE_TIME = re.compile(r"\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:[+-]\d{2}:\d{2})?)?|\d{1,2}월\s?\d{1,2}일|\d{4}년")
-_CAUSAL = re.compile(r"때문|영향으로|영향을\s*(?:받|주|줬|미)|덕분|덕에|탓|원인|(?:으)?로\s*인(?:해|한)|힘입|여파|반영|에\s*반응|호재|악재")
+_CAUSAL = re.compile(r"때문|영향으로|영향을\s*(?:받|주|줬|미)|덕분|덕에|탓|원인|(?:으)?로\s*인(?:해|한)|힘입|여파|반영|에\s*반응|호재|악재|(?:관련|연관)(?:이|은|성이)?\s*(?:없|있)|무관")
+# null 값을 "반응이 없었다"로 메운 서술(측정 정의 보강: 1차 재측정에서 나온 유형)
+_NO_REACTION = re.compile(r"(?:반응|변화|움직임)(?:이|은|는|가)?\s*없|움직이지\s*않")
 _HEDGE = re.compile(r"단정(?:할\s*수\s*없|하기\s*어렵)|볼\s*수\s*(?:는\s*)?없|알\s*수\s*없|인과")
 _RESIDUE = re.compile(r"(?m)빈칸|빈 칸|이 섹션은|N/?A|\[수치 생략\]|\{|\}|^assistant\b")
 _HORIZON = re.compile(r"(?<!\d)(1|5|20)\s?(?:거래)?일")
@@ -91,6 +93,7 @@ def count_errors(answer: str, result: dict) -> dict:
         for h in {int(x) for x in _HORIZON.findall(s)}:
             if summary.get(f"with_d{h}", 0) == 0 and _MOVE.search(s) and not _NOT_YET.search(s):
                 null_est.append(s)
+    null_est += [s for s in sentences if _NO_REACTION.search(s) and not _HEDGE.search(s)]
     residue = _RESIDUE.findall(answer)
     return {
         "numbers": bad_numbers,

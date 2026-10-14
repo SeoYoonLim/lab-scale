@@ -438,6 +438,34 @@ class TestChecker:
         text, dropped = self.check(sent)
         assert text == "" and dropped[0][1] == "임의 번호로 사건 나열"
 
+    @pytest.mark.parametrize(
+        "sent, reason",
+        [
+            # slow 1차 재측정에서 나온 사례들
+            ("금호타이어의 주가 움직임은 이 뉴스와 관련이 없습니다.", "인과 단정"),
+            ("이 뉴스는 주가와 무관합니다.", "인과 단정"),
+            ("- d1: 현재 반응 데이터가 없으므로 반응이 없다고 할 수 있습니다.", None),
+            ("뉴스 이후 주가 변화가 없었습니다.", "계산되지 않은 값을 추정"),
+        ],
+    )
+    def test_relation_claims_and_null_as_no_reaction_dropped(self, sent, reason):
+        text, dropped = self.check(sent)
+        assert text == "" and dropped
+        if reason:
+            assert dropped[0][1] == reason
+
+    def test_relation_hedge_kept(self):
+        sent = "이 공시와 주가 움직임이 관련이 있는지는 알 수 없습니다."
+        assert self.check(sent) == (sent, [])
+
+    def test_numbered_list_relisting_titles(self):
+        r = _result([_event(title="가평군 재즈페스티벌 성료"), _event(title="b기사", day="2026-08-01")])
+        text, dropped = check_event_answer(
+            "다음과 같습니다.\n\n1.\n\n2. \"가평군 재즈페스티벌 성료\"\n3. 공시 이후 1거래일간 -0.72% 움직였습니다.", r, ()
+        )
+        assert text == "- 공시 이후 1거래일간 -0.72% 움직였습니다."
+        assert ("2. \"가평군 재즈페스티벌 성료\"", "사건 제목만 다시 나열") in dropped
+
     def test_company_name_digits_are_not_numbers(self):
         r = _result([_event()], company_name="KODEX 200")
         text, dropped = check_event_answer("KODEX 200 뉴스 이후 1거래일간 -0.72% 움직였습니다.", r, ())

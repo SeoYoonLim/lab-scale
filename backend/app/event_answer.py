@@ -174,7 +174,16 @@ _CAUSAL_RE = re.compile(
     r"|(?:으)?로\s*인(?:해|한|하여)|힘입|여파|견인|촉발|계기로|호재로|악재로|반영(?:해|하|된|돼|되|됐|했)"
     # "주가는 뉴스에 반응했다"처럼 사건에 반응했다고 쓰는 것도 원인 서술이다("공시 이후 주가 반응은 …"은 해당 없음)
     r"|(?:에|에\s*대해|에\s*대한)\s*(?:주가\s*(?:가|는)?\s*)?(?:민감하게\s*|크게\s*|즉각\s*)?반응(?:했|하|한|해|을\s*보)"
+    # "주가 움직임은 이 뉴스와 관련이 없다/있다"도 인과를 (부정 방향으로) 단정하는 서술이다
+    r"|(?:관련|연관)(?:이|은|성이|성은)?\s*(?:없|있|크|적)|무관"
 )
+# 계산되지 않은 값을 "반응이 없었다/변화가 없었다"로 메운 문장(null을 0으로 추정)
+_NO_REACTION_RE = re.compile(r"(?:반응|변화|움직임)(?:이|은|는|가)?\s*없|움직이지\s*않")
+# 결과의 필드 이름(d1/d5/d20 등)을 그대로 쓴 문장
+_FIELD_RE = re.compile(r"(?<![A-Za-z])d(?:1|5|20)(?![0-9])")
+# 줄 앞 목록 표시. 번호 목록("1.")은 번호가 결과에 없는 수치라서 '- '로 바꿔 남긴다.
+_LIST_MARK_RE = re.compile(r"^\s*(?:\d+[.)]|[-*•]+)(?:\s+|$)")
+_PUNCT_ONLY_RE = re.compile(r"[\s\"'“”‘’:·,.\-()\[\]…]+")
 # 인과를 단정하지 않는다고 밝히는 문장은 남긴다("이 공시 때문이라고 단정할 수 없습니다").
 _CAUSAL_HEDGE_RE = re.compile(
     r"단정(?:할\s*수\s*없|하기\s*어렵|하지\s*않|할\s*수는\s*없)|볼\s*수\s*(?:없|는\s*없)|알\s*수\s*없|분리(?:할|하기)|구분(?:할|하기)"
@@ -367,8 +376,16 @@ def check_event_answer(answer: str, result: dict, other_names=()) -> tuple[str, 
             # 번호를 매겨 사건을 다시 나열한 줄은 통째로 지운다("공시 1. 제목"이 문장 경계에서 나뉘어 제목만 남지 않게)
             dropped.append((line.strip(), "임의 번호로 사건 나열"))
             continue
+        mark = _LIST_MARK_RE.match(line)
+        prefix = "- " if mark else ""
+        content = line[mark.end():] if mark else line
+        if mark and not _PUNCT_ONLY_RE.sub("", _strip_titles(content, events)):
+            # 목록 표시만 있거나 사건 제목만 다시 쓴 줄(사건 목록은 코드가 이미 썼다)
+            if content.strip():
+                dropped.append((line.strip(), "사건 제목만 다시 나열"))
+            continue
         kept = []
-        for sent in _sentences(line):
+        for sent in _sentences(content):
             if not sent.strip():
                 continue
             # 사건 제목과 종목명("KODEX 200"의 200) 속 숫자는 수치로 보지 않는다
@@ -382,10 +399,12 @@ def check_event_answer(answer: str, result: dict, other_names=()) -> tuple[str, 
                 reason = "템플릿 잔재"
             elif _FILLER_RE.search(body):
                 reason = "내용 없는 안내 문장"
-            elif _FOREIGN_RE.search(body):
-                reason = "다른 언어 섞임"
+            elif _FOREIGN_RE.search(body) or _FIELD_RE.search(body):
+                reason = "다른 언어·필드 이름 섞임"
             elif _CAUSAL_RE.search(body) and not _CAUSAL_HEDGE_RE.search(body):
                 reason = "인과 단정"
+            elif _NO_REACTION_RE.search(body) and not _CAUSAL_HEDGE_RE.search(body):
+                reason = "계산되지 않은 값을 추정"
             elif _FUTURE_RE.search(body):
                 reason = "미래 예측·일반화·매매 권유"
             elif found and _DENIES_DATA_RE.search(body):
@@ -423,7 +442,8 @@ def check_event_answer(answer: str, result: dict, other_names=()) -> tuple[str, 
                 dropped.append((sent.strip(), reason))
             else:
                 kept.append(sent)
-        out_lines.append(" ".join(s for s in kept if s))
+        joined = " ".join(s for s in kept if s)
+        out_lines.append(prefix + joined if joined else "")
     text = re.sub(r"\n{3,}", "\n\n", "\n".join(out_lines)).strip()
     return text, dropped
 
