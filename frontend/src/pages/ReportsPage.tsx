@@ -2,6 +2,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../api'
 import { queryKeys } from '../api/queryKeys'
+import AnswerSections from '../components/AnswerSections'
 import SourceFootnotes from '../components/SourceFootnotes'
 import type { ReportDetail, ReportListItem } from '../types'
 import { formatDate } from '../utils/format'
@@ -69,7 +70,7 @@ function ReportRow({ item, onDeleted }: { item: ReportListItem; onDeleted: (repo
           {loadError && <p className="notice notice-error">{loadError}</p>}
           {detail && (
             <>
-              <p className="ledger-answer">{detail.answer}</p>
+              <AnswerSections answer={detail.answer} />
               <SourceFootnotes usedTools={detail.used_tools} sources={detail.sources} />
               <p className="disclaimer-note muted small">{detail.disclaimer}</p>
             </>

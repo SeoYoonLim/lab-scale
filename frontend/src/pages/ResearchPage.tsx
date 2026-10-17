@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api'
+import AnswerSections from '../components/AnswerSections'
 import { IconSearch, IconSend, IconSparkle } from '../components/icons'
 import DataToolCards from '../components/DataToolCards'
 import ResearchProgress from '../components/ResearchProgress'
@@ -195,7 +196,7 @@ export default function ResearchPage() {
                       <span className="ai-badge">AI</span>
                       <span className="answer-title">분석 결과</span>
                     </div>
-                    <p className="entry-answer">{entry.answer}</p>
+                    <AnswerSections answer={entry.answer ?? ''} />
                     <SourceFootnotes usedTools={entry.usedTools ?? []} sources={entry.sources ?? []} />
                     {entry.disclaimer && <p className="disclaimer-note muted small">{entry.disclaimer}</p>}
                   </div>

@@ -393,6 +393,7 @@ async function askResearch(question: string, previousReportId?: number | null): 
     COMPANY_META.find((c) => question.includes(c.name) || question.includes(c.ticker)) ??
     (previous ? findCompanyMeta(previous.company_name ?? '') : undefined)
 
+  const wantsWhy = /왜|이유|원인/.test(question)
   const wantsDisclosure = /공시|사업보고서|자사주|공식/.test(question)
   const wantsNews = /뉴스|이슈|왜|소식/.test(question)
   const wantsStock = /주가|등락|거래량|오른|올랐|내렸|내린|하락|상승|시세/.test(question)
@@ -400,15 +401,25 @@ async function askResearch(question: string, previousReportId?: number | null): 
 
   const used_tools: string[] = []
   const sources: Source[] = []
-  const summaryParts: string[] = []
+  // 백엔드는 실제로 호출한 tool이 뒷받침하는 섹션만 "## 제목"으로 구조화한다(backend/app/agent.py의
+  // ANSWER_STRUCTURE_INSTRUCTION - 주가 동향/원인 분석/뉴스·공시 근거/시장 상황/위험요인). mock도
+  // 같은 모양을 흉내 내야 AnswerSections(섹션 파싱·렌더링)를 실제로 검증할 수 있다.
+  const sections: string[] = []
 
   if (useStock && meta) {
     const latest = getPriceSeries(meta.ticker).at(-1)!
     used_tools.push('stock_tool')
-    summaryParts.push(
-      `최근 등락률은 ${latest.change_pct}%, 거래량은 ${latest.volume?.toLocaleString('ko-KR')}주예요.`,
+    sections.push(
+      `## 주가 동향\n${meta.name}의 최근 등락률은 ${latest.change_pct}%, 거래량은 ${latest.volume?.toLocaleString('ko-KR')}주예요.`,
     )
   }
+  if (wantsWhy && meta) {
+    sections.push(
+      '## 원인 분석\n실제 백엔드가 연결되면 llama3.1:8b가 주가·뉴스 조회 결과를 종합해 이 자리에 원인을 서술해요. ' +
+        '샘플 응답에서는 조회한 결과만 보여드려요.',
+    )
+  }
+  const evidenceLines: string[] = []
   if (wantsNews && meta) {
     used_tools.push('news_tool')
     for (const item of makeNews(meta.name, 3)) {
@@ -420,8 +431,8 @@ async function askResearch(question: string, previousReportId?: number | null): 
         company_filter: null,
         url: item.url,
       })
+      evidenceLines.push(`- ${item.title}`)
     }
-    summaryParts.push('관련 뉴스를 확인했어요.')
   }
   if (wantsDisclosure && meta) {
     used_tools.push('disclosure_tool')
@@ -434,14 +445,20 @@ async function askResearch(question: string, previousReportId?: number | null): 
         company_filter: null,
         url: item.url,
       })
+      evidenceLines.push(`- ${item.title}`)
     }
-    summaryParts.push('최근 공시를 확인했어요.')
+  }
+  if (evidenceLines.length > 0) {
+    sections.push(`## 뉴스·공시 근거\n${evidenceLines.join('\n')}`)
   }
 
-  const intro = previous ? `[샘플 응답 · "${previous.question}"에 이어서] ` : '[샘플 응답] '
-  const answer = meta
-    ? `${intro}${meta.name}에 대해 조회했어요. ${summaryParts.join(' ')}\n실제 백엔드가 연결되면 llama3.1:8b가 도구 결과를 바탕으로 만든 답변이 여기에 표시돼요.`
-    : `${intro}도구를 호출하지 않고 바로 답하는 경우예요. 종목명(삼성전자, SK하이닉스, NAVER 등)을 넣어서 질문하면 근거(sources)도 함께 볼 수 있어요.`
+  const intro = previous ? `[샘플 응답 · "${previous.question}"에 이어서]` : '[샘플 응답]'
+  const answer =
+    meta == null
+      ? `${intro} 도구를 호출하지 않고 바로 답하는 경우예요. 종목명(삼성전자, SK하이닉스, NAVER 등)을 넣어서 질문하면 근거(sources)도 함께 볼 수 있어요.`
+      : sections.length > 0
+        ? `${intro}\n\n${sections.join('\n\n')}`
+        : `${intro} ${meta.name}에 대해 조회했어요. 실제 백엔드가 연결되면 llama3.1:8b가 도구 결과를 바탕으로 만든 답변이 여기에 표시돼요.`
 
   const report: ReportDetail = {
     report_id: store.nextReportId++,

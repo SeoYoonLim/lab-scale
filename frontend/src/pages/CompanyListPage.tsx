@@ -75,7 +75,7 @@ export default function CompanyListPage() {
       {data && data.length === 0 && <p className="muted">검색 결과가 없어요.</p>}
 
       {data && data.length > 0 && (
-        <div className="card">
+        <div>
           <div className="company-grid">
             {data.map((company) => (
               <Link key={company.ticker} to={`/companies/${company.ticker}`} className="company-card">

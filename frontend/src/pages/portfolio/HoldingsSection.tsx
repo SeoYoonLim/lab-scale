@@ -189,6 +189,9 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
                 <div className="watch-right">
                   <div className="meta meta-end">
                     <span className="num">{h.current_price != null ? `${formatPrice(h.current_price)}원` : '-'}</span>
+                    {/* 실시간 소스가 실패해 DB 최근 종가로 폴백된 가격은 조용히 숨기지 않고 표시한다
+                        (CompanyPage의 실시간 시세 표시와 같은 패턴, backend/API.md의 holdings[].is_realtime). */}
+                    {h.current_price != null && !h.is_realtime && <span className="muted small">종가 기준</span>}
                     <span className={`num ${trendClass(h.profit_loss_pct)}`}>
                       {h.profit_loss != null ? `${formatPrice(h.profit_loss)}원 (${formatPct(h.profit_loss_pct)})` : '-'}
                     </span>

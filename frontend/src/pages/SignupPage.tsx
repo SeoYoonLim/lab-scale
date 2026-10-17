@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
+import AuthBrand from '../components/AuthBrand'
 
 export default function SignupPage() {
   const { signup } = useAuth()
@@ -29,6 +30,7 @@ export default function SignupPage() {
   return (
     <div className="auth-page">
       <form className="card auth-card" onSubmit={handleSubmit}>
+        <AuthBrand />
         <h1 className="auth-title">회원가입</h1>
         <label className="auth-field">
           <span>아이디</span>

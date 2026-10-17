@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
+import AuthBrand from '../components/AuthBrand'
 
 export default function LoginPage() {
   const { login } = useAuth()
@@ -33,6 +34,7 @@ export default function LoginPage() {
   return (
     <div className="auth-page">
       <form className="card auth-card" onSubmit={handleSubmit}>
+        <AuthBrand />
         <h1 className="auth-title">로그인</h1>
         <label className="auth-field">
           <span>아이디</span>
