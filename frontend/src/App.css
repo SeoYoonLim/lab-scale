@@ -2268,3 +2268,63 @@ body {
     gap: 2px;
   }
 }
+
+/* ---------- 주가 추이 차트(2026-10-19, GET /api/stocks/{ticker}/price-history) ---------- */
+.price-chart-card {
+  margin-top: 20px;
+}
+
+.chart-readout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  min-height: 44px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.price-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: pan-y;
+  border-radius: 12px;
+  cursor: crosshair;
+}
+
+.chart-grid {
+  stroke: var(--rule);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.chart-axis {
+  fill: var(--ink-muted);
+  font-size: 13px;
+}
+
+.chart-bar {
+  fill: var(--ink-muted);
+  opacity: 0.28;
+}
+
+.chart-bar-active {
+  fill: var(--accent);
+  opacity: 0.8;
+}
+
+.chart-cursor {
+  stroke: var(--ink-muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.chart-dot {
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
+.chart-note {
+  margin: 10px 0 0;
+}

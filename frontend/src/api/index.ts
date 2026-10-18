@@ -10,6 +10,7 @@ import type {
   EventTypeFilter,
   OrderResult,
   Portfolio,
+  PriceHistoryResponse,
   ReportDetail,
   ReportList,
   ResearchResponse,
@@ -60,6 +61,8 @@ export interface PublicApi {
   getTrending(category: TrendingCategory, limit?: number, assetType?: AssetType): Promise<TrendingResponse>
   searchCompanies(q?: string, limit?: number, assetType?: AssetType): Promise<Company[]>
   getDisclaimer(): Promise<string>
+  // 주가 추이 차트용 일별 시세. days는 "최근 N거래일"(1~90)이고 데이터가 모자라면 count < days다.
+  getPriceHistory(ticker: string, days?: number): Promise<PriceHistoryResponse>
   // 데이터 기준일(소스별 최신 날짜, 갱신 결과). 종가 기준 DB 값이라 실시간이 아니다.
   getStatus(): Promise<StatusResponse>
   // 뉴스·공시 이후 1/5/20거래일 주가 반응. 코드로 계산한 값이고 인과관계가 아니다. limit은 유형별 건수(1~30).

@@ -24,6 +24,7 @@ import type {
   Holding,
   OrderResult,
   Portfolio,
+  PriceHistoryResponse,
   RealtimePrice,
   ReportDetail,
   ReportListItem,
@@ -693,6 +694,52 @@ async function getEventReactions(
   }
 }
 
+// ---------- 주가 추이(차트) ----------
+
+// 실제 백엔드는 데이터 시작일이 있어서(주식 2026-06-26, ETF 2026-07-16) days=90이어도 개수가 모자란다
+// (2026-10-18 기준 삼성전자 73개, KODEX 200 59개, backend/API.md). mock도 같은 한계를 흉내 내서
+// 차트가 "90개를 가정"하는 코드로 굳지 않게 한다.
+const MOCK_HISTORY_AVAILABLE = { stock: 73, etf: 59 } as const
+
+async function getPriceHistory(ticker: string, days = 90): Promise<PriceHistoryResponse> {
+  await delay(250)
+  const meta = findCompanyMeta(ticker)
+  if (!meta) throw companyNotFound(ticker)
+  if (!Number.isInteger(days) || days < 1 || days > 90) {
+    throw new ApiError('days는 1~90 사이의 정수여야 해요.', 422)
+  }
+
+  const series = getPriceSeries(meta.ticker)
+  const available = series.slice(-MOCK_HISTORY_AVAILABLE[meta.assetType])
+  const rows = available.slice(-days)
+  const rand = mulberry32((Number(meta.ticker) || 1) + 7)
+  const items = rows.map((row, i) => {
+    const prevClose = i > 0 ? rows[i - 1].close_price : row.close_price
+    const open = Math.round((prevClose * (1 + (rand() - 0.5) * 0.01)) / 10) * 10
+    const high = Math.max(open, row.close_price) + Math.round(rand() * row.close_price * 0.008)
+    const low = Math.min(open, row.close_price) - Math.round(rand() * row.close_price * 0.008)
+    return {
+      date: row.price_date,
+      close: row.close_price,
+      volume: row.volume,
+      change_pct: row.change_pct,
+      open,
+      high,
+      low,
+    }
+  })
+
+  return {
+    ticker: meta.ticker,
+    company_name: meta.name,
+    asset_type: meta.assetType,
+    days,
+    count: items.length,
+    price_as_of: items.at(-1)?.date ?? null,
+    items,
+  }
+}
+
 // ---------- 오늘의 관심 종목 ----------
 
 const WINDOW_DAYS = 20
@@ -1354,6 +1401,7 @@ export const mockApi: Api = {
   getDisclaimer,
   getStatus,
   getEventReactions,
+  getPriceHistory,
 
   listWatchlist,
   addWatchlistItem,

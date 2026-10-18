@@ -244,3 +244,36 @@ describe('mockApi 데이터 기준일·사건 반응(2026-10-15 추가)', () => 
     await expect(mockApi.getEventReactions('005930', { limit: 31 })).rejects.toMatchObject({ status: 422 })
   })
 })
+
+describe('mockApi getPriceHistory (2026-10-19 추가)', () => {
+  it('날짜 오름차순이고 count는 실제 items 개수다', async () => {
+    const res = await mockApi.getPriceHistory('005930', 20)
+    expect(res.count).toBe(res.items.length)
+    expect(res.count).toBe(20)
+    expect(res.days).toBe(20)
+    expect(res.price_as_of).toBe(res.items.at(-1)?.date)
+    const dates = res.items.map((i) => i.date)
+    expect([...dates].sort()).toEqual(dates)
+  })
+
+  it('데이터 시작일 때문에 days=90이어도 개수가 모자란다 - 주식 73, ETF 59(backend/API.md 실측)', async () => {
+    const stock = await mockApi.getPriceHistory('005930', 90)
+    expect(stock).toMatchObject({ days: 90, count: 73, asset_type: 'stock' })
+    const etf = await mockApi.getPriceHistory('069500', 90)
+    expect(etf).toMatchObject({ days: 90, count: 59, asset_type: 'etf' })
+  })
+
+  it('모르는 종목은 404, 범위를 벗어난 days는 422', async () => {
+    await expect(mockApi.getPriceHistory('없는종목')).rejects.toMatchObject({ status: 404 })
+    await expect(mockApi.getPriceHistory('005930', 91)).rejects.toMatchObject({ status: 422 })
+    await expect(mockApi.getPriceHistory('005930', 0)).rejects.toMatchObject({ status: 422 })
+  })
+
+  it('고가 >= 종가/시가 >= 저가 관계를 지킨다', async () => {
+    const { items } = await mockApi.getPriceHistory('035720', 60)
+    for (const i of items) {
+      expect(i.high!).toBeGreaterThanOrEqual(Math.max(i.open!, i.close))
+      expect(i.low!).toBeLessThanOrEqual(Math.min(i.open!, i.close))
+    }
+  })
+})

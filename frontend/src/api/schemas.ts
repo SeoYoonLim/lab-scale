@@ -22,6 +22,8 @@ import type {
   EventReaction,
   EventReactionsResponse,
   EventReturn,
+  PriceHistoryItem,
+  PriceHistoryResponse,
   StatusResponse,
   Holding,
   HoldingBrief,
@@ -415,3 +417,23 @@ export const eventReactionsResponseSchema = z.object({
   }),
   disclaimer: z.string(),
 }) satisfies z.ZodType<EventReactionsResponse>
+
+const priceHistoryItemSchema = z.object({
+  date: z.string(),
+  close: z.number(),
+  volume: z.number().nullable(),
+  change_pct: z.number().nullable(),
+  open: z.number().nullable(),
+  high: z.number().nullable(),
+  low: z.number().nullable(),
+}) satisfies z.ZodType<PriceHistoryItem>
+
+export const priceHistoryResponseSchema = z.object({
+  ticker: z.string(),
+  company_name: z.string(),
+  asset_type: assetTypeSchema,
+  days: z.number(),
+  count: z.number(),
+  price_as_of: z.string().nullable(),
+  items: z.array(priceHistoryItemSchema),
+}) satisfies z.ZodType<PriceHistoryResponse>

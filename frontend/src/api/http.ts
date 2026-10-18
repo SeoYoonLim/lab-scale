@@ -11,6 +11,7 @@ import {
   eventReactionsResponseSchema,
   orderResultSchema,
   portfolioSchema,
+  priceHistoryResponseSchema,
   realtimePriceSchema,
   reportDetailSchema,
   reportListSchema,
@@ -36,6 +37,7 @@ import type {
   ReportDetail,
   ReportList,
   ResearchResponse,
+  PriceHistoryResponse,
   RealtimePrice,
   StatusResponse,
   TradeList,
@@ -273,6 +275,12 @@ export const httpApi: Api = {
       })}`,
       {},
       { schema: eventReactionsResponseSchema },
+    ),
+  getPriceHistory: (ticker, days) =>
+    request<PriceHistoryResponse>(
+      `/stocks/${encodeURIComponent(ticker)}/price-history${qs({ days })}`,
+      {},
+      { schema: priceHistoryResponseSchema },
     ),
   getDisclaimer: () =>
     request<{ text: string }>('/disclaimer', {}, { schema: disclaimerResponseSchema }).then((res) => res.text),

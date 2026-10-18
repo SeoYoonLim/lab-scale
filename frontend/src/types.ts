@@ -415,3 +415,28 @@ export interface EventReactionsResponse {
   summary: EventReactionSummary
   disclaimer: string
 }
+
+// GET /api/stocks/{ticker}/price-history (공개, 2026-10-18 추가). 종목 상세 주가 추이 차트용 일별 시세.
+export interface PriceHistoryItem {
+  date: string
+  close: number
+  volume: number | null
+  change_pct: number | null
+  open: number | null
+  high: number | null
+  low: number | null
+}
+
+export interface PriceHistoryResponse {
+  ticker: string
+  company_name: string
+  asset_type: AssetType
+  // 요청한 거래일 수(요청값 그대로). 달력 일이 아니라 "최근 N거래일"이고, 데이터가 모자라도 바뀌지 않는다.
+  days: number
+  // 실제 items 개수(<= days). 주식은 2026-06-26부터, ETF는 2026-07-16부터 시세가 있어 90보다 작을 수 있다(에러 아님).
+  count: number
+  // items 마지막 날짜. 주가가 아직 없으면 null(그때 items=[])
+  price_as_of: string | null
+  // 날짜 오름차순(과거 -> 최근)
+  items: PriceHistoryItem[]
+}

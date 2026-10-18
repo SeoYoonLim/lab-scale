@@ -15,6 +15,7 @@ export const queryKeys = {
   trending: (category: TrendingCategory, assetType: AssetType = 'stock') =>
     ['trending', category, assetType] as const,
   disclaimer: ['disclaimer'] as const,
+  priceHistory: (ticker: string, days: number) => ['priceHistory', ticker, days] as const,
   status: ['status'] as const,
   eventReactions: (ticker: string, eventType: EventTypeFilter) => ['eventReactions', ticker, eventType] as const,
   // 진단 이력(2026-10-14 추가). diagnosisHistory는 부분 키라서 삭제 뮤테이션이 limit/offset 상관없이

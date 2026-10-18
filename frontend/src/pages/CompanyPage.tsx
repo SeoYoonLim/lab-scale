@@ -6,6 +6,7 @@ import { ApiError } from '../api/errors'
 import { queryKeys } from '../api/queryKeys'
 import { useAuth } from '../auth/useAuth'
 import EventReactionsCard from '../components/EventReactionsCard'
+import PriceChartCard from '../components/PriceChartCard'
 import { formatDate, formatPct, formatPrice, trendClass } from '../utils/format'
 
 // backend/API.md: 서버가 종목별로 3~5초 캐싱하므로 이 주기로 폴링해도 안전하다.
@@ -159,6 +160,8 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
           <p className="muted">{isPending ? '불러오는 중…' : ''}</p>
         )}
       </section>
+
+      {realtime && <PriceChartCard ticker={realtime.ticker} />}
 
       {realtime && <EventReactionsCard ticker={realtime.ticker} />}
 
