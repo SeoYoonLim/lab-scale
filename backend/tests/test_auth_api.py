@@ -222,6 +222,7 @@ class TestRouteCoverage:
         ("GET", "/api/stocks/{ticker}/realtime-price"),
         ("GET", "/api/status"),
         ("GET", "/api/stocks/{ticker}/event-reactions"),
+        ("GET", "/api/stocks/{ticker}/price-history"),
     }
     PROTECTED_ROUTES = {
         ("GET", "/api/auth/me"),

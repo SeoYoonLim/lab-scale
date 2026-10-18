@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from app.db.session import SessionLocal
 from app.event_reaction_service import build_event_reactions
+from app.price_history import build_price_history, recent_price_rows
 from app.realtime_price import get_realtime_price_data
 from app.tools.company_resolver import resolve_company
 
@@ -124,5 +125,45 @@ def get_event_reactions(
         if res.company is None:
             raise HTTPException(status_code=404, detail=res.message)
         return build_event_reactions(db, res.company, event_type, limit, since_days)
+    finally:
+        db.close()
+
+
+class PriceHistoryItem(BaseModel):
+    date: date
+    close: float | None
+    volume: int | None
+    change_pct: float | None
+    open: float | None
+    high: float | None
+    low: float | None
+
+
+class PriceHistoryResponse(BaseModel):
+    ticker: str
+    company_name: str
+    asset_type: Literal["stock", "etf"]
+    days: int
+    count: int
+    price_as_of: date | None
+    items: list[PriceHistoryItem]
+
+
+@router.get("/{ticker}/price-history", response_model=PriceHistoryResponse)
+def get_price_history(
+    ticker: str = Path(min_length=1, max_length=50),
+    days: int = Query(90, ge=1, le=90, description="최근 N거래일(달력 일 아님, 그 종목의 저장된 주가 행 수 기준)"),
+) -> dict:
+    """주가 추이 차트용 일별 시세(종가·거래량·등락률·시가·고가·저가). 날짜 오름차순. 공개.
+
+    데이터가 days보다 적으면 있는 만큼만 주고 `count`로 알 수 있다(에러 아님). 주가가 아직 없으면 200에
+    items=[], price_as_of=null. 저장된 일별 데이터라 장중 시세가 아니다(현재가는 realtime-price).
+    """
+    db = SessionLocal()
+    try:
+        res = resolve_company(db, ticker)
+        if res.company is None:
+            raise HTTPException(status_code=404, detail=res.message)
+        return build_price_history(res.company, recent_price_rows(db, res.company.id, days), days)
     finally:
         db.close()
