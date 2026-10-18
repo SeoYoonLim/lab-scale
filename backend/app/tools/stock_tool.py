@@ -1,5 +1,5 @@
 from app.db.session import SessionLocal
-from app.models import StockPrice
+from app.price_history import recent_price_rows
 from app.tools.company_resolver import not_found_response, resolve_company, to_int
 
 
@@ -56,13 +56,7 @@ def stock_tool(ticker: str, period_days: int = 1) -> dict:
         corrected = {"corrected_from": res.corrected_from} if res.corrected_from else {}
 
         # 기간 등락률의 기준(구간 직전 거래일 종가)으로 쓰려고 한 건 더 가져온다. 응답의 prices에는 넣지 않는다.
-        rows = (
-            db.query(StockPrice)
-            .filter(StockPrice.company_id == company.id)
-            .order_by(StockPrice.price_date.desc())
-            .limit(period_days + 1)
-            .all()
-        )
+        rows = recent_price_rows(db, company.id, period_days + 1)
 
         if not rows:
             return {
