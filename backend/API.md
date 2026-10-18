@@ -19,7 +19,7 @@ Authorization: Bearer <access_token>
 | 구분 | 엔드포인트 |
 | --- | --- |
 | **인증 필요** | `/api/auth/me`, `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET) |
-| 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status`, `/api/stocks/{ticker}/event-reactions` |
+| 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status`, `/api/stocks/{ticker}/event-reactions`, `/api/stocks/{ticker}/price-history` |
 
 - 데이터는 **사용자별로 분리**된다. 리서치 리포트 목록/조회/삭제/이어 쓰기(`previous_report_id`)는 본인 것만 대상이고,
   **남의 리포트 ID는 없는 리포트와 똑같이 404**다(403이 아니다 — 그 ID가 존재하는지 드러내지 않기 위해).
@@ -138,6 +138,7 @@ ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응�
 | DELETE | `/api/portfolio/diagnosis/{id}` | 필요 | 내 진단 한 건 삭제 |
 | GET | `/api/disclaimer` | 공개 | 서비스 면책 문구(`{"text": "..."}`) |
 | GET | `/api/status` | 공개 | 데이터 기준일(소스별 최신 날짜, 지수 stale 여부, 마지막 갱신 결과). 푸터의 "데이터 기준일" 표시용 |
+| GET | `/api/stocks/{ticker}/price-history` | 공개 | 주가 추이 차트용 일별 시세(종가·거래량·등락률·시가·고가·저가). `days`는 1~90(기본 90)이고 **최근 N거래일**(달력 일 아님). 날짜 오름차순. 주식은 2026-06-26부터, ETF는 2026-07-16부터 데이터가 있어 90개가 안 될 수 있다(`count`로 확인) |
 | GET | `/api/stocks/{ticker}/event-reactions` | 공개 | 뉴스·공시 이후 주가 반응(1/5/20거래일 수익률, 지수 대비 초과수익률, 거래량 비율)을 코드로 계산. `event_type`/`limit`(1~30, 유형별)/`since_days`(최대 120) 쿼리. 시간적 선후관계일 뿐 인과가 아님 |
 
 아래 각 엔드포인트의 에러 표에는 401을 반복해 적지 않았다. **인증 필요 API는 모두 위 "인증 에러 (401)"가 공통으로 적용된다.**
@@ -2049,6 +2050,69 @@ curl "http://localhost:8000/api/stocks/005930/event-reactions?event_type=disclos
 
 ---
 
+## GET /api/stocks/{ticker}/price-history
+
+종목 상세 화면의 주가 추이 차트용 일별 시세(2026-10-18 추가, 응답 추가만이고 기존 API는 그대로). 로그인 없이 호출할 수 있다.
+`{ticker}`는 티커 또는 종목명(별칭 포함)이고, 주식과 ETF 모두 같은 형태로 돌려준다. 읽기 전용이고 LLM은 쓰지 않는다.
+
+```bash
+curl "http://localhost:8000/api/stocks/005930/price-history?days=90"
+```
+
+| 쿼리 | 기본 | 설명 |
+| --- | --- | --- |
+| `days` | 90 | 정수 1~90. **달력 일이 아니라 최근 N거래일**이다(그 종목의 저장된 일별 주가 행 수 기준, 주말·휴장일은 없는 날). 범위를 벗어나면 422 |
+
+실제 응답(2026-10-18 조회, 삼성전자 `days=90`, `items` 73개 중 앞 2개와 뒤 1개만 발췌):
+
+```json
+{
+  "ticker": "005930",
+  "company_name": "삼성전자",
+  "asset_type": "stock",
+  "days": 90,
+  "count": 73,
+  "price_as_of": "2026-10-14",
+  "items": [
+    {"date": "2026-06-26", "close": 339500.0, "volume": 39735951, "change_pct": -5.3, "open": 354000.0, "high": 356500.0, "low": 321500.0},
+    {"date": "2026-06-29", "close": 323000.0, "volume": 35436521, "change_pct": -4.86, "open": 331000.0, "high": 335500.0, "low": 316000.0},
+    "...",
+    {"date": "2026-10-14", "close": 235000.0, "volume": 17016990, "change_pct": 0.43, "open": 233500.0, "high": 241500.0, "low": 230000.0}
+  ]
+}
+```
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `ticker`, `company_name` | string | 확인된 종목의 티커와 이름 |
+| `asset_type` | string | `stock` / `etf` |
+| `days` | int | 요청한 거래일 수(요청값 그대로, 데이터가 모자라도 바뀌지 않는다) |
+| `count` | int | 실제로 들어 있는 `items` 개수(`<= days`). 데이터가 `days`보다 적으면 `count < days`이고 에러가 아니다 |
+| `price_as_of` | date \| null | `items` 마지막 날짜(가장 최근 거래일). 주가가 없으면 `null` |
+| `items[].date` | date | 거래일(`YYYY-MM-DD`). **날짜 오름차순**(과거 -> 최근)이라 차트에 그대로 그리면 된다 |
+| `items[].close` | number | 종가 |
+| `items[].volume` | int \| null | 거래량(주) |
+| `items[].change_pct` | number \| null | 전일 대비 등락률(%) |
+| `items[].open`, `high`, `low` | number \| null | 시가, 고가, 저가 |
+
+값이 없는 칸은 `null`이다(필드는 항상 있다). 숫자는 DB에 저장된 값 그대로다.
+
+한계:
+
+- **데이터 시작일이 있다.** 2026-10-18 현재 주식은 2026-06-26부터, ETF는 2026-07-16부터 시세가 있어 `days=90`이어도 `count`가 90보다 작을 수 있다
+  (삼성전자 73개, KODEX 200 59개). 날짜가 쌓이면 늘어난다. 화면에는 `count`를 기준으로 그리고 90개를 가정하지 않는다.
+- **일별 저장 데이터**라 장중 시세가 아니다. 마지막 날짜는 `price_as_of`이고, 오늘 현재가는 `GET /api/stocks/{ticker}/realtime-price`를 쓴다.
+- 분할·배당 등에 대한 수정주가 보정은 하지 않는다(수집된 값 그대로).
+- 주가 행이 아직 없는 종목은 200에 `items=[]`, `count=0`, `price_as_of=null`이다.
+
+| 상태 | 원인 | 응답 |
+| --- | --- | --- |
+| 404 | 종목을 찾지 못함 | `{"detail": "..."}` (다른 종목 API와 같은 메시지 형식) |
+| 422 | `days`가 정수가 아니거나 1~90 밖 | 검증 오류 형식 |
+| 503 | DB 연결 불가 | 다른 API와 같음 |
+
+---
+
 ## GET /api/disclaimer
 
 서비스 면책 문구. 로그인 없이 호출할 수 있다. 앱 하단/푸터나 약관 화면에 그대로 보여주면 된다.
@@ -2156,7 +2220,7 @@ PRD 비기능 요구사항은 일반 API P95 500ms 이내다(`POST /api/research
 
 ## 테스트 실행 (백엔드)
 
-`cd backend && pytest` — 빠른 테스트 전체(단위·라우터 mock + dev DB 통합, 2026-10-14 기준 2047개). 단계별로는 `pytest -m "not slow and not integration"`(DB·Ollama 불필요, 1845개), `pytest -m "integration and not slow"`(dev DB 통합 202개, DB가 꺼져 있으면 자동 skip). 사건 반응 slow 측정은 `EVENT_REACTION_LLM_INTERPRETATION`을 스스로 켜고 돈다. LLM을 실제로 호출하는 느린 테스트는 기본 제외이며 `pytest -m slow`로 따로 돌린다(dev DB에 리포트를 만들었다가 지운다). 전부 한 번에: `pytest -m "slow or not slow"`. DB 없이 단위 테스트만: `pytest -m "not integration"`.
+`cd backend && pytest` — 빠른 테스트 전체(단위·라우터 mock + dev DB 통합, 2026-10-18 기준 2074개). 단계별로는 `pytest -m "not slow and not integration"`(DB·Ollama 불필요, 1864개), `pytest -m "integration and not slow"`(dev DB 통합 210개, DB가 꺼져 있으면 자동 skip). 사건 반응 slow 측정은 `EVENT_REACTION_LLM_INTERPRETATION`을 스스로 켜고 돈다. LLM을 실제로 호출하는 느린 테스트는 기본 제외이며 `pytest -m slow`로 따로 돌린다(dev DB에 리포트를 만들었다가 지운다). 전부 한 번에: `pytest -m "slow or not slow"`. DB 없이 단위 테스트만: `pytest -m "not integration"`.
 인증 테스트는 `tests/conftest.py`가 테스트마다 임의 `JWT_SECRET`을 주입하므로 `.env`의 실제 키를 쓰지 않는다. 라우터 테스트는
 `login_as` 픽스처로 `get_current_user`를 가짜 사용자로 바꾸고, dev DB 통합 테스트(`tests/test_auth_devdb.py`)는 실제 가입/토큰으로
 돌린 뒤 만든 사용자를 지운다(`pt_` 접두어).

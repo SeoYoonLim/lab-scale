@@ -7,7 +7,7 @@
 ## 지금 상태 요약 (2026-10-14 기준)
 
 **한 줄 요약:** 백엔드(API + 에이전트 + 데이터 수집·일괄 갱신 + 로그인 + 관심종목/모의투자 + 포트폴리오 AI 진단과 이력 + 환율 영향 분석 +
-시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응)는 동작하고, 빠른 테스트 **2047개**가 통과합니다(`pytest`, 순수 로직 1845 + 개발 DB 통합 202).
+시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응)는 동작하고, 빠른 테스트 **2074개**가 통과합니다(`pytest`, 순수 로직 1864 + 개발 DB 통합 210).
 실제 Ollama를 부르는 slow 테스트 61개는 기본에서 빠지고 `pytest -m slow`로 따로 돌립니다. 백엔드 작업 브랜치는 `feature/backend`(원격 push 완료)이고
 아직 main에 병합하지 않았습니다. 프론트엔드는 서윤님이 `feature/frontend`에서 React + Vite + zod로 진행 중이며, 2026-10-14에 실제 백엔드 응답을
 프론트의 zod 스키마로 검증했을 때 불일치가 없었습니다(프론트 테스트 20개·빌드·lint 통과). 남은 큰 일은 화면 연동과 아래 "알려진 한계"입니다.
@@ -41,6 +41,7 @@
 | DELETE | `/api/portfolio/diagnosis/{id}` | 필요 | 내 진단 한 건 삭제(204). 남의 것/없는 것은 404 |
 | GET | `/api/disclaimer` | 공개 | 서비스 면책 문구 `{"text": "..."}`. 같은 문구가 `POST /api/research`·`GET /api/research/{id}` 응답의 `disclaimer` 필드에도 있음(목록에는 없음) |
 | GET | `/api/status` | 공개 | 데이터 기준일: 소스별 최신 날짜, 지수 `stale`(2영업일 이상 뒤처지면 true), 마지막 `refresh_data` 결과(`last_refresh`, 없으면 null). `is_realtime`은 항상 false |
+| GET | `/api/stocks/{ticker}/price-history` | 공개 | 주가 추이 차트용 일별 시세(종가·거래량·등락률·시가·고가·저가, 날짜 오름차순). 쿼리 `days`는 1~90(기본 90)이고 달력 일이 아니라 **최근 N거래일**. 주식은 2026-06-26부터, ETF는 2026-07-16부터 데이터가 있어 90개가 안 될 수 있으니 `count`로 확인(에러 아님). 주가가 없으면 200에 `items=[]` |
 | GET | `/api/stocks/{ticker}/event-reactions` | 공개 | 뉴스·공시 이후 주가 반응. 기준 종가 대비 1/5/20거래일 수익률, 시장 지수 대비 초과수익률, 거래량 비율, 같은 구간의 다른 사건 수를 코드로 계산(LLM 없음). ETF는 뉴스만. 쿼리 `event_type`(disclosure/news/all)·`limit`(1~30, 유형별)·`since_days`(기본 60, 최대 120). 시간적 선후관계일 뿐 인과가 아니라는 고정 `disclaimer` 포함 |
 | GET | `/api/discovery/trending` | 공개 | 급등/급락/거래량 급증 종목(FR-13, 질문 없이 바로 호출, `category`/`limit` 쿼리). 기본은 주식만, `asset_type=etf`로 ETF |
 
@@ -341,7 +342,7 @@ FastAPI  ──  POST /api/research ─▶ 에이전트(app/agent.py)
                                      └─ event_reaction_tool  뉴스·공시 이후 주가 반응(코드 게이트가   ┘ (LLM에는 노출 안 함)
                                                          직접 실행, LLM 호출 없이 답변 구성)
       그 밖의 REST: 인증 · 관심종목 · 모의투자 · 포트폴리오 AI 진단(+이력) · 종목 검색 · 실시간 시세 ·
-                    급등락 탐색 · 데이터 기준일(/api/status) · 사건 반응(/api/stocks/{ticker}/event-reactions)
+                    급등락 탐색 · 데이터 기준일(/api/status) · 사건 반응(/api/stocks/{ticker}/event-reactions) · 주가 추이(/api/stocks/{ticker}/price-history)
                                              │
                                      PostgreSQL 16 + pgvector (docker)
                                      company · stock_price · market_index · exchange_rate · news · disclosure
@@ -456,7 +457,7 @@ python -m scripts.refresh_data --days 30 --timeout-min 30 # 조회 기간(기본
 `backend/`에서 실행합니다. 세 단계로 나뉩니다(마커: `integration`, `slow`).
 
 ```bash
-pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-14 기준 2047개 통과, 약 15초). slow는 기본 제외
+pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-18 기준 2074개 통과, 약 15초). slow는 기본 제외
 pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 1845개)
 pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(202개). DB가 꺼져 있으면 자동 skip
 pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)를 부르는 테스트(61개, 느리고 비결정적)
