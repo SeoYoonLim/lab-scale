@@ -438,6 +438,16 @@ def _git_commit() -> str | None:
         return None
 
 
+def _git_dirty() -> bool | None:
+    """평가 대상 코드(backend/app, backend/evals)에 커밋되지 않은 변경이 있으면 True."""
+    try:
+        out = subprocess.run(["git", "status", "--porcelain", "--", "../app", "."], capture_output=True, text=True,
+                             cwd=EVALS_DIR, timeout=10).stdout
+        return bool(out.strip())
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="AI 리서치 에이전트 평가")
     ap.add_argument("--mode", choices=["offline", "live", "all"], default="offline")
@@ -463,6 +473,8 @@ def main(argv=None) -> int:
     if args.limit:
         items = items[: args.limit]
 
+    # 커밋은 시작 시점에 읽는다: 실행 도중 HEAD가 바뀌어도(모듈은 시작할 때 이미 로드됨) 측정한 코드의 커밋을 남긴다.
+    git_commit, git_dirty = _git_commit(), _git_dirty()
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_path = Path(args.out) if args.out else RESULTS_DIR / f"summary_{stamp}.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -493,7 +505,8 @@ def main(argv=None) -> int:
             f.write(json.dumps(r, ensure_ascii=False, default=str) + "\n")
 
     summary = {
-        "git_commit": _git_commit(),
+        "git_commit": git_commit,
+        "git_dirty": git_dirty,
         "date": datetime.now().isoformat(timespec="seconds"),
         "model": MODEL_NAME,
         "args": vars(args),
