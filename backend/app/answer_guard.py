@@ -228,3 +228,71 @@ def code_summary(records: list[dict]) -> str | None:
     if news or disclosures:
         sections.append("## 뉴스·공시 근거\n" + "\n".join(news + disclosures))
     return "\n\n".join(sections) if sections else None
+
+
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n")
+
+
+def guard_answer(answer: str, records: list[dict], question: str = "") -> tuple[str, dict]:
+    """(내보낼 답변, 검증 기록). 기록: {"replaced": bool, "violations": [원문 숫자], "mode": "code_summary"|"drop_sentences"|None}."""
+    results = [r.get("result") for r in records]
+    bad = unsupported_numbers(answer, results, question)
+    log = {"replaced": False, "violations": [n.raw for n in bad], "mode": None}
+    if not bad:
+        return answer, log
+    if records:
+        summary = code_summary(records)
+        if summary:
+            log.update(replaced=True, mode="code_summary")
+            return summary, log
+    # 도구 결과가 없거나 요약할 결과가 없으면: 설명되지 않는 값 숫자가 든 문장만 지운다
+    bad_raw = {n.raw for n in bad if n.unit in ("원", "%", "주") or n.value >= 1000}
+    if not bad_raw:
+        return answer, log
+    kept = []
+    for line in answer.split("\n"):
+        sentences = [s for s in _SENTENCE_SPLIT_RE.split(line) if s]
+        sentences = [s for s in sentences if not any(n.raw in bad_raw for n in extract_numbers(s))]
+        if sentences or not line.strip():
+            kept.append(" ".join(sentences))
+    log.update(replaced=True, mode="drop_sentences")
+    return "\n".join(kept).strip(), log
+
+
+# ---------- 단순 시세 질문 ----------
+
+_QUOTE_RE = re.compile(r"주가|가격|시세|현재가|종가|얼마|등락률|등락|거래량|시가|고가|저가")
+# 이런 말이 있으면 단순 시세 질문이 아니다(기존 흐름: 원인·흐름·비교·뉴스 등)
+_NOT_QUOTE_RE = re.compile(
+    r"뉴스|공시|왜|이유|원인|전망|분석|비교|대비|코스피|코스닥|지수|흐름|추이|추세|동향|움직|수익률|어때|어떻|상황|"
+    r"사도|살까|팔까|팔아|사야|투자|배당|실적|매출|이익|PER|PBR|ROE|구성|비중|반응|이후|직후|올랐|내렸|떨어|오른|내린|"
+    r"급등|급락|상승|하락|빠졌|빠진|빠지|빠져|오르|내리|약해|강해|장\s*전체|시장|최고|최저|평균|기간|동안|까지|부터|\?.+\?",
+    re.IGNORECASE,
+)
+# "오늘/지금/현재/최근"은 단순 시세 질문에 흔히 붙는다(기간이 아니라 '가장 최근 값'을 묻는 말)
+_NOW_OK_RE = re.compile(r"오늘|지금|현재|최근|요즘|요새|금일")
+
+
+def is_simple_quote(question: str, mentions_period: bool, period_text: str | None) -> bool:
+    """단일 종목의 현재가·등락률·거래량만 묻는 질문인지(종목 개수는 호출측이 본다).
+    mentions_period/period_text는 app.period_parser의 판정(기간을 말했는지, 인식한 표현)이다."""
+    from app import routing
+
+    q = question or ""
+    if not _QUOTE_RE.search(q) or _NOT_QUOTE_RE.search(q):
+        return False
+    # 기존 라우팅 게이트가 다른 의도로 보는 질문(원인·흐름·시장 비교·사건 반응·시장 탐색·여러 정보 요청)은 단순 시세가 아니다
+    if (routing.is_cause_question(q) or routing.is_trend_question(q) or routing.needs_market_tool(q)
+            or routing.needs_event_reaction_tool(q) or routing.needs_discovery_tool(q)
+            or routing.explicitly_requested_tools(q) or routing.needs_fx_tool(q)):
+        return False
+    if mentions_period and not (period_text in ("오늘",) or (period_text is None and _NOW_OK_RE.search(q))):
+        return False
+    return True
+
+
+def quote_answer(result: dict) -> str | None:
+    """stock_tool(period_days=1) 결과로 만든 단순 시세 답변."""
+    if not isinstance(result, dict) or not result.get("found"):
+        return None
+    return _price_sentence({k: v for k, v in result.items() if k != "summary"})

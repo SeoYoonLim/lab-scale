@@ -478,8 +478,13 @@ class TestAnswerPath:
         assert records == []
 
     def test_normal_answer_is_unchanged(self, monkeypatch):
+        # 2026-10-27부터 답변 숫자는 도구 결과로 검증한다(app/answer_guard). 근거가 있는 답변은 그대로 나간다.
+        # "삼성전자 주가 알려줘" 같은 단순 시세 질문은 LLM 없이 코드가 답하므로(test_answer_guard.py), 흐름 질문으로 본다.
         FakeLLM(monkeypatch, [stock_call()], final="삼성전자의 종가는 263,000원입니다.")
-        assert agent._answer("삼성전자 주가 알려줘", "m")[0]["answer"] == "삼성전자의 종가는 263,000원입니다."
+        monkeypatch.setattr(agent, "_run_tool", lambda name, args: {
+            "found": True, "company_name": "삼성전자",
+            "prices": [{"price_date": "2026-10-14", "close_price": 263000.0, "change_pct": 0.4, "volume": 100}]})
+        assert agent._answer("삼성전자 주가 흐름 알려줘", "m")[0]["answer"] == "삼성전자의 종가는 263,000원입니다."
 
     def test_trend_question_runs_stock_tool_with_twenty_days(self, monkeypatch):
         llm = FakeLLM(monkeypatch, [stock_call(period_days=1)])

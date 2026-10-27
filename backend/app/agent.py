@@ -40,7 +40,7 @@ from app.etf import (
     news_result_for_llm,
     remove_empty_sections,
 )
-from app.answer_guard import code_summary
+from app.answer_guard import code_summary, guard_answer, is_simple_quote, quote_answer
 from app.glossary import concept_answer
 from app.models import Company, StockPrice
 from app.period_parser import KST, mentions_period, parse_period
@@ -1233,6 +1233,35 @@ def _answer_period_scope(question: str, companies: list | None, today=None):
     return _code_answer(answer, [record])
 
 
+def _period_text(question: str) -> str | None:
+    parsed = parse_period(question)
+    return parsed.matched_text if parsed else None
+
+
+def _answer_simple_quote(question: str, companies: list | None):
+    """(B) 단일 종목의 현재가·등락률·거래량만 묻는 질문은 LLM 없이 stock_tool 결과로 코드가 답한다.
+    원인·흐름·비교·뉴스·기간 등이 섞인 질문은 기존 흐름이다(app/answer_guard.is_simple_quote)."""
+    if not companies or len(companies) != 1:
+        return None
+    if not is_simple_quote(question, mentions_period(question), _period_text(question)):
+        return None
+    company = companies[0]
+    called_at = datetime.now(timezone.utc)
+    started = time.perf_counter()
+    args = {"ticker": company.name, "period_days": 1}
+    result = _run_tool("stock_tool", args)
+    answer = quote_answer(result)
+    if answer is None:
+        return None
+    if isinstance(result, dict):
+        result.setdefault("called_via", "simple_quote")
+    if getattr(company, "asset_type", None) == "etf" and (kind := leverage_kind(company.name)):
+        answer += "\n\n" + leverage_notice(company.name, kind)
+    record = {"tool_name": "stock_tool", "arguments": args, "result": result, "called_at": called_at,
+              "elapsed_ms": round((time.perf_counter() - started) * 1000)}
+    return _code_answer(answer, [record])
+
+
 def _llm_fallback(err: LLMUnavailable, records: list[dict], etf_subjects=None) -> tuple[dict, list[dict]]:
     """(A) LLM이 timeout·연결 오류로 답하지 못했을 때: 도구 결과가 있으면 코드 요약, 없으면 LLM_TIMEOUT_ANSWER."""
     _meta()["fallback"] = err.reason
@@ -1243,6 +1272,15 @@ def _llm_fallback(err: LLMUnavailable, records: list[dict], etf_subjects=None) -
     if not answer or answer == FALLBACK_ANSWER:
         answer = LLM_TIMEOUT_ANSWER
     return _code_answer(answer, records)
+
+
+def _guard(answer: str, records: list[dict], question: str) -> str:
+    """(B) 답변 숫자 검증: 도구 결과·질문·단순 계산으로 설명되지 않는 숫자가 있으면 코드 요약으로 바꾼다(app/answer_guard)."""
+    guarded, log = guard_answer(answer, records, question)
+    _meta()["answer_guard"] = log
+    if log["replaced"]:
+        logger.info("답변 숫자 검증: %s로 대체(설명되지 않는 숫자 %s)", log["mode"], log["violations"])
+    return guarded or FALLBACK_ANSWER
 
 
 UNRESOLVED_COMPANY_ANSWER = "해당 종목을 찾지 못했습니다. 종목명 또는 종목코드를 정확히 입력해주세요."
@@ -1295,7 +1333,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
 
     _reset_llm_state()
     companies = _question_companies(question)
-    for handler in (_answer_concept, _answer_etf_constituents, _answer_period_scope):
+    for handler in (_answer_concept, _answer_etf_constituents, _answer_period_scope, _answer_simple_quote):
         handled = handler(question, companies)
         if handled is not None:
             return handled
@@ -1324,7 +1362,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
         subjects = _question_subjects(question, [])
         if not any(t == "etf" for _, t in subjects):
             answer = remove_empty_sections(strip_role_prefix(extract_answer_text(msg["content"])))
-            return {"answer": answer, "used_tools": [], "sources": []}, []
+            return {"answer": _guard(answer, [], question), "used_tools": [], "sources": []}, []
         tool_calls = []
         etf_added = _add_etf_tools(tool_calls, subjects)
         msg = {"role": "assistant", "content": "", "tool_calls": tool_calls}
@@ -1407,6 +1445,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
         answer = remove_empty_sections(answer)
         if etf_mode:
             answer = _finish_etf_answer(answer, records, subjects)
+        answer = _guard(answer, records, question)
     response = {
         "answer": answer,
         "used_tools": [r["tool_name"] for r in records],
