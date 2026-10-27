@@ -1,0 +1,120 @@
+name: CI
+
+# push(모든 브랜치)와 main 대상 PR마다 돈다. 같은 브랜치의 이전 실행은 새 실행이 시작되면 취소한다.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 백엔드 순수 테스트: DB와 Ollama 없이 통과해야 한다.
+  # DATABASE_URL을 닫힌 포트로 둬서, 순수 테스트가 몰래 DB를 쓰면 로컬이 아니라 여기서 바로 실패하게 한다.
+  # CI_FAIL_ON_SKIP=1: skip이 하나라도 있으면 실패(tests/ci_guard.py). 조용히 건너뛴 테스트가 통과처럼 보이지 않게 한다.
+  # ---------------------------------------------------------------------------
+  backend-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      JWT_SECRET: ci-dummy-jwt-secret-not-a-real-value
+      DATABASE_URL: postgresql+psycopg://ci:ci_dummy_pw@127.0.0.1:1/ci_db
+      CI_FAIL_ON_SKIP: "1"
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -m "not slow and not integration" -q
+
+  # ---------------------------------------------------------------------------
+  # 시크릿 검사: 추적 파일 전체 + 이번 push/PR이 추가한 커밋의 변경 줄. 외부 서비스 없이 scripts/secret_scan.py만 쓴다.
+  # 로컬에서도 같은 명령: bash scripts/secret_scan.sh [--history 범위] [--env-file backend/.env]
+  # ---------------------------------------------------------------------------
+  secret-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 추적 파일 검사
+        run: bash scripts/secret_scan.sh
+      - name: 이번 변경이 추가한 커밋 검사
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            range="$PR_BASE..$PR_HEAD"
+          elif [ -n "$PUSH_BEFORE" ] && ! echo "$PUSH_BEFORE" | grep -qE '^0+$' && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+            range="$PUSH_BEFORE..$HEAD_SHA"
+          elif git rev-parse -q --verify origin/main >/dev/null; then
+            range="origin/main..$HEAD_SHA"   # 새 브랜치 첫 push: main에 없는 커밋 전부
+          else
+            range=""
+          fi
+          if [ -z "$range" ]; then
+            echo "검사할 커밋 범위를 정하지 못해 추적 파일 검사만 했습니다."
+          else
+            echo "커밋 범위: $range"
+            bash scripts/secret_scan.sh --history "$range"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # 프론트엔드: frontend/package.json이 있을 때만 돈다. feature/backend에는 frontend가 없어서 skipped가 정상이고,
+  # frontend가 들어 있는 브랜치(feature/frontend, 합쳐진 main)에서 동작한다.
+  # (hashFiles는 job 수준 if에서 쓸 수 없어서 감지 job을 따로 둔다.)
+  # ---------------------------------------------------------------------------
+  detect-frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      present: ${{ steps.detect.outputs.present }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: detect
+        run: |
+          if [ -f frontend/package.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+
+  frontend:
+    needs: detect-frontend
+    if: needs.detect-frontend.outputs.present == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      # Node 24: jsdom 30이 ^22.22.2 || ^24.15.0 || >=26, vitest 5가 ^22.12 || ^24, Vite 8이 ^20.19 || >=22.12를 요구한다.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: 타입 검사
+        run: npx tsc -b
+      - name: 린트
+        run: npm run lint --if-present
+      - name: 테스트
+        run: npx vitest run
+      - name: 빌드
+        run: npx vite build

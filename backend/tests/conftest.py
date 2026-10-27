@@ -3,7 +3,16 @@ import secrets
 import pytest
 from sqlalchemy import text
 
+import ci_guard
 from app.models import Company
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item, call):
+    """CI_FAIL_ON_SKIP=1이면 skip을 실패로 바꾼다(tests/ci_guard.py). 환경변수가 없으면 아무것도 하지 않는다."""
+    report = yield
+    ci_guard.skip_to_failure(report)
+    return report
 
 
 @pytest.fixture(autouse=True)

@@ -75,10 +75,21 @@ class TestApplyPeriodOverride:
         assert calls[0]["function"]["arguments"] == {"ticker": "삼성전자", "period_days": 1}
 
 
+def _no_db(monkeypatch):
+    """_answer()가 부르는 DB 조회 도우미를 가짜로 바꾼다. 이 테스트들은 기간 덮어쓰기만 보는 순수 테스트인데, 종목 보정
+    (_repair_company_args)이 DB를 직접 조회해서 개발 DB가 켜져 있을 때만 통과했다(CI의 DB 없는 환경에서 처음 드러남)."""
+    monkeypatch.setattr(agent, "_question_companies", lambda q: [])
+    monkeypatch.setattr(agent, "_event_subject", lambda q, previous=None: None)
+    monkeypatch.setattr(agent, "_repair_company_args", lambda *a, **k: {})
+    monkeypatch.setattr(agent, "_question_subjects", lambda q, calls: [])
+    monkeypatch.setattr(agent, "_unresolved_company_answer", lambda *a, **k: None)
+
+
 class TestAnswerAppliesPeriodOverride:
     """_answer()의 실행 경로에서 실제로 period_days가 덮어써지는지(LLM이 추론한 값보다 우선하는지) 확인한다."""
 
     def _run(self, monkeypatch, question, llm_period_days=999):
+        _no_db(monkeypatch)
         seen = {}
 
         def fake_first_call(model, messages, tools=None):
@@ -104,6 +115,7 @@ class TestAnswerAppliesPeriodOverride:
         assert args["period_days"] == 7
 
     def test_correction_metadata_is_attached_to_the_tool_result(self, monkeypatch):
+        _no_db(monkeypatch)
         captured = {}
 
         def fake_first_call(model, messages, tools=None):
