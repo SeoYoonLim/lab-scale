@@ -1,0 +1,471 @@
+"""AI 리서치 에이전트 평가 실행기.
+
+    cd backend
+    python -m evals.run_eval --mode offline|live|all --split dev|holdout|all --repeats N --only 카테고리 --limit N --out 결과파일
+
+offline은 DB만 쓰고(Ollama 불필요), live는 captest_ 평가 계정을 만들어 app.agent.ask_question을 실제로 호출한 뒤
+끝에 그 계정과 리포트를 지운다. 채점 규칙은 evals/metrics.py, 방법과 한계는 evals/README.md.
+"""
+
+import argparse
+import json
+import os
+import secrets
+import subprocess
+import sys
+import time
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
+from datetime import datetime, time as dtime
+from pathlib import Path
+
+from evals import metrics as M
+
+EVALS_DIR = Path(__file__).resolve().parent
+DATASET = EVALS_DIR / "dataset.jsonl"
+RESULTS_DIR = EVALS_DIR / "results"
+LIVE_TIMEOUT_S = 120
+SOURCE_TOOLS = {"news_tool", "disclosure_tool", "rag_search_tool", "event_reaction_tool"}
+SPLITS = ("dev", "holdout", "all")
+
+
+def load_dataset(path: Path = DATASET) -> list[dict]:
+    with open(path, encoding="utf-8") as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
+def _fail(rec: dict, check: str, expected, actual) -> None:
+    rec["failures"].append({"check": check, "expected": expected, "actual": actual})
+
+
+def _record(item: dict, run: int = 0) -> dict:
+    return {k: item[k] for k in ("id", "split", "category", "mode", "question")} | {
+        "run": run, "flags": {}, "failures": [], "detail": {}}
+
+
+# ---------- offline ----------
+
+
+def eval_entity(db, item: dict) -> dict:
+    from app.tools.company_resolver import resolve_company
+
+    rec = _record(item)
+    expected = (item["expect"].get("companies") or [None])[0]
+    for mode, fuzzy in (("default", True), ("strict", False)):
+        res = resolve_company(db, item["question"], allow_fuzzy=fuzzy)
+        got = res.company.name if res.company else None
+        outcome = M.classify_entity(expected, got, res.candidates)
+        rec["detail"][mode] = {"outcome": outcome, "got": got, "candidates": res.candidates}
+        rec["flags"][f"entity_{mode}"] = outcome
+        if outcome != "correct":
+            _fail(rec, f"entity_{mode}", expected or "(없음: 거부해야 함)",
+                  f"{outcome}: {got or res.candidates or res.message}")
+    return rec
+
+
+def eval_period(item: dict) -> dict:
+    from app.period_parser import KST, parse_period
+
+    rec = _record(item)
+    exp = item["expect"]
+    now = datetime.combine(datetime.fromisoformat(exp["ref_date"]).date(), dtime(12, 0), tzinfo=KST)
+    p = parse_period(item["question"], now=now)
+    got = None if p is None else {"period_days": p.period_days, "start": p.start_date.isoformat(),
+                                  "end": p.end_date.isoformat(), "matched": p.matched_text}
+    ok = M.period_matches(p and p.period_days, exp["period_days"], cap=10**6)
+    if ok and p is not None:
+        ok = exp.get("start") in (None, got["start"]) and exp.get("end") in (None, got["end"])
+    rec["flags"]["period_ok"] = ok
+    rec["detail"]["parsed"] = got
+    if not ok:
+        _fail(rec, "period_parse", {k: exp.get(k) for k in ("period_days", "start", "end")}, got)
+    return rec
+
+
+def eval_gate(item: dict) -> dict:
+    from app import routing
+
+    rec = _record(item)
+    wrong = {}
+    for name, expected in item["expect"]["gates"].items():
+        got = getattr(routing, name)(item["question"])
+        rec["detail"][name] = got
+        if got != expected:
+            wrong[name] = (expected, got)
+    rec["flags"]["gate_ok"] = not wrong
+    for name, (e, g) in wrong.items():
+        _fail(rec, f"gate:{name}", e, g)
+    return rec
+
+
+def run_offline(items: list[dict]) -> list[dict]:
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        out = []
+        for it in items:
+            if it["category"] == "entity":
+                out.append(eval_entity(db, it))
+            elif it["category"] == "period":
+                out.append(eval_period(it))
+            elif it["category"] == "routing_gate":
+                out.append(eval_gate(it))
+        return out
+    finally:
+        db.close()
+
+
+# ---------- live ----------
+
+
+def ollama_status(model: str) -> tuple[bool, str]:
+    host = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+    if not host.startswith("http"):
+        host = "http://" + host
+    try:
+        with urllib.request.urlopen(host + "/api/tags", timeout=5) as r:
+            names = [m["name"] for m in json.load(r).get("models", [])]
+    except Exception as e:  # noqa: BLE001 - 연결 실패는 사유만 보고한다
+        return False, f"Ollama 연결 실패({host}): {type(e).__name__}"
+    if model not in names and f"{model}:latest" not in names:
+        return False, f"Ollama에 모델 {model}이 없음 (있는 모델: {names})"
+    return True, "ok"
+
+
+def _expected_period(expect_value, question: str):
+    if expect_value == "parser":
+        from app.period_parser import parse_period
+
+        p = parse_period(question)
+        return p.period_days if p else None
+    return expect_value
+
+
+def score_live(item: dict, rec: dict, response: dict | None, calls: list[dict]) -> None:
+    """ask_question 응답과 tool_call_log 기록(calls: [{tool_name, arguments, result}])으로 채점한다."""
+    exp = item["expect"]
+    flags = rec["flags"]
+    answer = (response or {}).get("answer") or ""
+    called = [c["tool_name"] for c in calls]
+    resolved = {c["result"].get("company_name") for c in calls
+                if isinstance(c["result"], dict) and c["result"].get("found") and c["result"].get("company_name")}
+    rec["detail"].update({
+        "answer": answer, "tools": [{"name": c["tool_name"], "args": c["arguments"]} for c in calls],
+        "resolved_companies": sorted(resolved), "n_sources": len((response or {}).get("sources") or []),
+    })
+
+    if "tools_all" in exp or "tools_forbidden" in exp:
+        ok = M.tool_selection_ok(called, exp.get("tools_all"), exp.get("tools_forbidden"))
+        flags["tool_ok"] = ok
+        if not ok:
+            _fail(rec, "tool_selection", {"all": exp.get("tools_all"), "forbidden": exp.get("tools_forbidden")}, called)
+
+    if exp.get("companies") or exp.get("must_not_companies"):
+        missing = [c for c in exp.get("companies", []) if c not in resolved]
+        bad = [c for c in exp.get("must_not_companies", []) if c in resolved]
+        flags["company_ok"] = not missing and not bad
+        if bad:
+            flags["company_wrong"] = True
+        if missing or bad:
+            _fail(rec, "company", {"companies": exp.get("companies"), "must_not": exp.get("must_not_companies")},
+                  sorted(resolved))
+
+    if "period_days" in exp:
+        want = _expected_period(exp["period_days"], item["question"])
+        got = [c["arguments"].get("period_days") for c in calls if c["tool_name"] in ("stock_tool", "market_tool")]
+        ok = any(M.period_matches(M_int(g), want) for g in got) if want is not None else not got
+        flags["live_period_ok"] = ok
+        if not ok:
+            _fail(rec, "live_period", want, got)
+
+    # 숫자 일치: 근거 = 도구 결과 전체 + 질문
+    evidence = [c["result"] for c in calls] + [item["question"]]
+    matched, unmatched = M.match_numbers(answer, evidence)
+    rec["detail"]["numbers"] = {"matched": [n.raw for n in matched], "unmatched": [n.raw for n in unmatched]}
+    if item["category"] == "grounding" and response is not None:
+        rec["num_counts"] = (len(matched), len(matched) + len(unmatched))
+        if matched or unmatched:
+            flags["numbers_all_supported"] = not unmatched
+        if unmatched:
+            _fail(rec, "number_support", "답변 숫자 전부 도구 결과로 설명", [n.raw for n in unmatched])
+
+    used_docs = any(c["tool_name"] in SOURCE_TOOLS and isinstance(c["result"], dict) and c["result"].get("found")
+                    for c in calls)
+    if used_docs:
+        flags["sources_ok"] = rec["detail"]["n_sources"] > 0
+        if not flags["sources_ok"]:
+            _fail(rec, "sources", "뉴스/공시 사용 시 sources 있음", 0)
+
+    if exp.get("must_refuse"):
+        ok = M.is_refusal(answer) and not unmatched and not (set(exp.get("must_not_companies", [])) & resolved)
+        flags["refusal_ok"] = ok
+        if not ok:
+            _fail(rec, "refusal", "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+                  {"refusal_phrase": M.is_refusal(answer), "unmatched": [n.raw for n in unmatched],
+                   "answer": answer[:200]})
+
+    if exp.get("must_contain") or exp.get("must_not_contain"):
+        fails = M.regex_checks(answer, exp.get("must_contain"), exp.get("must_not_contain"))
+        flags["contain_ok"] = not fails
+        if fails:
+            _fail(rec, "contain", {"must": exp.get("must_contain"), "must_not": exp.get("must_not_contain")}, fails)
+
+    if response is not None:
+        hits = M.forbidden_hits(answer)
+        flags["forbidden"] = bool(hits)
+        if hits:
+            _fail(rec, "forbidden_expression", "직접 매수/매도 지시 없음", hits)
+
+
+def M_int(v):
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return None
+
+
+def _create_eval_user(db):
+    from app.auth import create_user
+
+    username = f"captest_{secrets.token_hex(6)}"
+    user = create_user(db, username, secrets.token_urlsafe(16))  # 비밀번호는 저장도 출력도 하지 않는다
+    return user
+
+
+def _delete_eval_user(db, user) -> int:
+    """평가 계정과 그 리포트(tool_call_log는 리포트 FK CASCADE)를 지운다. 지운 리포트 수를 돌려준다."""
+    from app.models import ResearchReport, User, VirtualAccount, Watchlist
+
+    db.rollback()
+    n = db.query(ResearchReport).filter(ResearchReport.user_id == user.id).delete()
+    db.query(Watchlist).filter(Watchlist.device_id == user.owner_key).delete()
+    db.query(VirtualAccount).filter(VirtualAccount.device_id == user.owner_key).delete()
+    db.query(User).filter(User.id == user.id).delete()
+    db.commit()
+    return n
+
+
+def run_live(items: list[dict], repeats: int, model: str, log=print) -> tuple[list[dict], dict]:
+    from app.agent import ask_question
+    from app.db.session import SessionLocal
+    from app.models import ToolCallLog
+
+    db = SessionLocal()
+    user = _create_eval_user(db)
+    log(f"[live] 평가 계정 {user.username} (id={user.id}) 생성")
+    out, info = [], {"eval_user": user.username, "deleted_reports": 0}
+    started_all = time.perf_counter()
+    try:
+        for run in range(repeats):
+            for it in items:
+                rec = _record(it, run)
+                pool = ThreadPoolExecutor(max_workers=1)
+                t0 = time.perf_counter()
+                response, error = None, None
+                try:
+                    response = pool.submit(ask_question, it["question"], model=model, user_id=user.id).result(
+                        timeout=LIVE_TIMEOUT_S)
+                except FutureTimeout:
+                    error = f"timeout>{LIVE_TIMEOUT_S}s"
+                except Exception as e:  # noqa: BLE001 - 예외도 결과(오류율)로 남긴다
+                    error = f"{type(e).__name__}: {str(e)[:200]}"
+                finally:
+                    pool.shutdown(wait=False)
+                rec["latency_s"] = round(time.perf_counter() - t0, 2)
+                rec["flags"]["error"] = error is not None
+                rec["error"] = error
+                calls = []
+                if response and response.get("report_id"):
+                    db.expire_all()
+                    calls = [{"tool_name": r.tool_name, "arguments": r.arguments or {}, "result": r.result}
+                             for r in db.query(ToolCallLog).filter(ToolCallLog.report_id == response["report_id"])
+                             .order_by(ToolCallLog.id)]
+                elif response:
+                    rec["detail"]["warning"] = "report_id 없음(저장 실패): 도구 결과 없이 채점"
+                if response is not None:
+                    from app.agent import FALLBACK_ANSWER
+
+                    rec["flags"]["fallback"] = response.get("answer") == FALLBACK_ANSWER
+                if error:
+                    _fail(rec, "error", "정상 응답", error)
+                score_live(it, rec, response, calls)
+                out.append(rec)
+                log(f"[live] {it['id']} run{run} {rec['latency_s']}s fail={[f['check'] for f in rec['failures']]}")
+    finally:
+        info["deleted_reports"] = _delete_eval_user(db, user)
+        db.close()
+        log(f"[live] 평가 계정과 리포트 {info['deleted_reports']}건 삭제")
+    info["elapsed_s"] = round(time.perf_counter() - started_all, 1)
+    return out, info
+
+
+# ---------- 집계 ----------
+
+# (지표 이름, 계산 방식, 인자, 높을수록 좋은가)
+METRICS = [
+    ("entity_default_accuracy", "entity", ("entity_default", "accuracy"), True),
+    ("entity_default_wrong_rate", "entity", ("entity_default", "wrong_rate"), False),
+    ("entity_default_miss_rate", "entity", ("entity_default", "miss_rate"), False),
+    ("entity_default_ambiguous_rate", "entity", ("entity_default", "ambiguous_rate"), False),
+    ("entity_strict_accuracy", "entity", ("entity_strict", "accuracy"), True),
+    ("entity_strict_wrong_rate", "entity", ("entity_strict", "wrong_rate"), False),
+    ("entity_strict_miss_rate", "entity", ("entity_strict", "miss_rate"), False),
+    ("entity_strict_ambiguous_rate", "entity", ("entity_strict", "ambiguous_rate"), False),
+    ("period_parse_rate", "flag", "period_ok", True),
+    ("routing_gate_accuracy", "flag", "gate_ok", True),
+    ("tool_selection_accuracy", "flag", "tool_ok", True),
+    ("live_company_accuracy", "flag", "company_ok", True),
+    ("live_company_wrong_rate", "company_wrong", None, False),
+    ("live_period_rate", "flag", "live_period_ok", True),
+    ("number_match_rate", "numbers", None, True),
+    ("number_full_support_rate", "flag", "numbers_all_supported", True),
+    ("source_rate", "flag", "sources_ok", True),
+    ("refusal_accuracy", "flag", "refusal_ok", True),
+    ("must_contain_rate", "flag", "contain_ok", True),
+    ("forbidden_violation_rate", "flag", "forbidden", False),
+    ("fallback_rate", "flag", "fallback", False),
+    ("error_rate", "flag", "error", False),
+    ("latency_p50_s", "latency", 50, False),
+    ("latency_p95_s", "latency", 95, False),
+]
+HIGHER_IS_BETTER = {name: hib for name, _, _, hib in METRICS}
+
+
+def _metric(records: list[dict], kind: str, arg) -> tuple[float | None, int]:
+    if kind == "entity":
+        key, field = arg
+        outcomes = [r["flags"][key] for r in records if key in r["flags"]]
+        return M.entity_rates(outcomes)[field], len(outcomes)
+    if kind == "flag":
+        vals = [r["flags"][arg] for r in records if arg in r["flags"]]
+        return M.rate(vals), len(vals)
+    if kind == "company_wrong":
+        vals = [bool(r["flags"].get("company_wrong")) for r in records if "company_ok" in r["flags"]]
+        return M.rate(vals), len(vals)
+    if kind == "numbers":
+        counts = [r["num_counts"] for r in records if "num_counts" in r]
+        total = sum(t for _, t in counts)
+        return (sum(m for m, _ in counts) / total if total else None), total
+    if kind == "latency":
+        vals = [r["latency_s"] for r in records if "latency_s" in r]
+        return M.percentile(vals, arg), len(vals)
+    raise ValueError(kind)
+
+
+def summarize(records: list[dict]) -> dict:
+    out = {}
+    for name, kind, arg, _ in METRICS:
+        row, ns = {}, {}
+        for split in SPLITS:
+            sub = records if split == "all" else [r for r in records if r["split"] == split]
+            v, n = _metric(sub, kind, arg)
+            row[split] = None if v is None else round(v, 4)
+            ns[split] = n
+        if ns["all"]:
+            out[name] = {**row, "n": ns}
+    return out
+
+
+_CHECK_PRIORITY = ["entity_default", "company", "entity_strict", "refusal", "number_support", "forbidden_expression",
+                   "tool_selection", "contain", "live_period", "period_parse", "sources", "error"]
+
+
+def failure_list(records: list[dict]) -> list[dict]:
+    rows = [{"id": r["id"], "split": r["split"], "category": r["category"], "run": r["run"],
+             "question": r["question"], **f} for r in records for f in r["failures"]]
+
+    def prio(f):
+        c = f["check"].split(":")[0]
+        wrong = isinstance(f["actual"], str) and f["actual"].startswith("wrong")
+        return (0 if wrong else 1, _CHECK_PRIORITY.index(c) if c in _CHECK_PRIORITY else 99, f["id"])
+
+    return sorted(rows, key=prio)
+
+
+def _git_commit() -> str | None:
+    try:
+        return subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=EVALS_DIR,
+                              timeout=10).stdout.strip() or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description="AI 리서치 에이전트 평가")
+    ap.add_argument("--mode", choices=["offline", "live", "all"], default="offline")
+    ap.add_argument("--split", choices=["dev", "holdout", "all"], default="all")
+    ap.add_argument("--repeats", type=int, default=1, help="live 질문 반복 횟수(offline은 결정적이라 1회)")
+    ap.add_argument("--only", help="카테고리 하나만(쉼표로 여러 개)")
+    ap.add_argument("--limit", type=int, help="필터 후 앞에서 N개만")
+    ap.add_argument("--out", help="summary JSON 경로(기본: evals/results/summary_<시각>.json)")
+    args = ap.parse_args(argv)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
+    from app.agent import MODEL_NAME
+
+    items = load_dataset()
+    if args.split != "all":
+        items = [i for i in items if i["split"] == args.split]
+    if args.only:
+        cats = set(args.only.split(","))
+        items = [i for i in items if i["category"] in cats]
+    if args.mode != "all":
+        items = [i for i in items if i["mode"] == args.mode]
+    if args.limit:
+        items = items[: args.limit]
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_path = Path(args.out) if args.out else RESULTS_DIR / f"summary_{stamp}.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    records: list[dict] = []
+    live_info: dict = {"ran": False}
+    t0 = time.perf_counter()
+    offline_items = [i for i in items if i["mode"] == "offline"]
+    live_items = [i for i in items if i["mode"] == "live"]
+    if offline_items:
+        records += run_offline(offline_items)
+        print(f"[offline] {len(offline_items)}개 채점")
+    if live_items:
+        ok, why = ollama_status(MODEL_NAME)
+        if not ok:
+            live_info = {"ran": False, "skipped_reason": why}
+            print(f"[live] 건너뜀: {why}")
+        else:
+            recs, info = run_live(live_items, max(1, args.repeats), MODEL_NAME)
+            records += recs
+            live_info = {"ran": True, "repeats": max(1, args.repeats), **info}
+
+    raw_path = out_path.with_name(out_path.name.replace("summary_", "raw_", 1).replace(".json", ".jsonl"))
+    if raw_path == out_path:
+        raw_path = out_path.with_suffix(".raw.jsonl")
+    with open(raw_path, "w", encoding="utf-8") as f:
+        for r in records:
+            f.write(json.dumps(r, ensure_ascii=False, default=str) + "\n")
+
+    summary = {
+        "git_commit": _git_commit(),
+        "date": datetime.now().isoformat(timespec="seconds"),
+        "model": MODEL_NAME,
+        "args": vars(args),
+        "n_items": {"offline": len(offline_items), "live": len(live_items), "records": len(records)},
+        "live": live_info,
+        "elapsed_s": round(time.perf_counter() - t0, 1),
+        "metrics": summarize(records),
+        "failures": failure_list(records),
+    }
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, ensure_ascii=False, indent=2, default=str)
+
+    print(f"\n| metric | dev | holdout | all | n(all) |\n|---|---|---|---|---|")
+    for name, m in summary["metrics"].items():
+        print(f"| {name} | {m['dev']} | {m['holdout']} | {m['all']} | {m['n']['all']} |")
+    print(f"\n실패 {len(summary['failures'])}건 · summary: {out_path} · raw: {raw_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

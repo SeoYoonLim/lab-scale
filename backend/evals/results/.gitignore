@@ -1,0 +1,4 @@
+# 원본 결과(raw_*.jsonl, 임시 summary)는 커밋하지 않는다. 기준선 등 남길 summary_*.json만 커밋한다.
+*
+!.gitignore
+!summary_*.json
