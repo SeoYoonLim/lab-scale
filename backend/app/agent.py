@@ -37,6 +37,7 @@ from app.etf import (
     news_result_for_llm,
     remove_empty_sections,
 )
+from app.glossary import concept_answer
 from app.models import Company, StockPrice
 from app.period_parser import KST, mentions_period, parse_period
 from app.reports import save_report as save_report_row
@@ -1068,6 +1069,14 @@ def _question_companies(question: str) -> list | None:
         return None
 
 
+def _answer_concept(question: str, companies: list | None):
+    """(C) 종목이 없는 정의 질문("PER이 뭐야?")은 용어 사전으로 답한다. 사전에 없는 용어면 모른다고 답한다."""
+    if companies is None or companies:
+        return None
+    text = concept_answer(question)
+    return _code_answer(text) if text else None
+
+
 def _answer_etf_constituents(question: str, companies: list | None):
     """(B) ETF 구성종목·편입 비중 질문은 데이터를 제공하지 않는다고 답한다(구성종목을 지어내지 않는다)."""
     etfs = [c.name for c in companies or [] if getattr(c, "asset_type", None) == "etf"]
@@ -1172,7 +1181,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
         return _answer_event(question, model, event_company, previous)
 
     companies = _question_companies(question)
-    for handler in (_answer_etf_constituents, _answer_period_scope):
+    for handler in (_answer_concept, _answer_etf_constituents, _answer_period_scope):
         handled = handler(question, companies)
         if handled is not None:
             return handled

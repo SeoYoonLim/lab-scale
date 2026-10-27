@@ -229,7 +229,7 @@ class TestOtherQuestionsUntouched:
 
     @pytest.mark.parametrize(
         "q",
-        ["삼성전자 최근 뉴스 알려줘", "삼성전자 공시 알려줘", "삼성전자 뉴스랑 주가 움직임 같이 알려줘", "PER이 뭐야?",
+        ["삼성전자 최근 뉴스 알려줘", "삼성전자 공시 알려줘", "삼성전자 뉴스랑 주가 움직임 같이 알려줘", "PER이 높으면 좋은 거야?",
          "삼성전자 왜 올랐어?", "KODEX 200 최근 흐름 알려줘"],
     )
     def test_non_gate_questions_go_through_existing_path(self, env, monkeypatch, q):
