@@ -27,9 +27,11 @@ from app.event_answer import (
 from app import period_scope
 from app.etf import (
     ETF_ANSWER_RULES,
+    asks_constituents,
     check_etf_answer,
     comparison_sentence,
     compose_etf_answer,
+    constituents_answer,
     leverage_kind,
     leverage_notice,
     news_result_for_llm,
@@ -1066,6 +1068,14 @@ def _question_companies(question: str) -> list | None:
         return None
 
 
+def _answer_etf_constituents(question: str, companies: list | None):
+    """(B) ETF 구성종목·편입 비중 질문은 데이터를 제공하지 않는다고 답한다(구성종목을 지어내지 않는다)."""
+    etfs = [c.name for c in companies or [] if getattr(c, "asset_type", None) == "etf"]
+    if not etfs or not asks_constituents(question):
+        return None
+    return _code_answer(constituents_answer(etfs))
+
+
 def _price_dict(row) -> dict:
     return {
         "price_date": row.price_date.isoformat(),
@@ -1162,7 +1172,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
         return _answer_event(question, model, event_company, previous)
 
     companies = _question_companies(question)
-    for handler in (_answer_period_scope,):
+    for handler in (_answer_etf_constituents, _answer_period_scope):
         handled = handler(question, companies)
         if handled is not None:
             return handled
