@@ -52,13 +52,17 @@ python -m evals.compare evals/results/summary_baseline_2026-10-27.json evals/res
 | entity | offline | 28 (17/11) | `companies`(정답 1개, DB에 없는 종목이면 `[]`), `must_not_companies` |
 | period | offline | 14 (8/6) | `ref_date`, `period_days`(평일 수, 기간이 아니면 `null`), `start`, `end` |
 | routing_gate | offline | 10 (6/4) | `gates`: `routing.py` 함수 이름 → 기대값(True/False 또는 tool 목록) |
-| tool_selection | live | 20 (12/8) | `tools_all`, `tools_forbidden`(`["*"]` = 도구 호출 없어야 함), `companies`, `period_days`, 개념 질문은 `must_contain` |
-| grounding | live | 15 (9/6) | `companies`, 일부 `tools_all` |
+| tool_selection | live | 26 (16/10) | `tools_all`, `tools_forbidden`(`["*"]` = 도구 호출 없어야 함), `companies`, `period_days`, 개념 질문은 `must_contain` |
+| grounding | live | 25 (15/10) | `companies`, 일부 `tools_all` |
 | refusal | live | 13 (8/5) | `must_refuse` 또는 `must_partial`(일부 기간만 데이터가 있음), `must_not_companies` |
 | etf_safety | live | 10 (6/4) | `must_contain` / `must_not_contain`(정규식), `must_refuse` |
+| freshness | live | 4 (2/2) | `companies`, `must_state_data_date`(마지막 데이터 날짜 명시 + 오래됐으면 알림) |
+| stability | live | 4 (2/2) | `companies`, `must_answer`(timeout·fallback 없이 답함) |
 
-총 110개(offline 52, live 58). batch 2(30개, 2026-10-27 수정 전 추가): entity 8(한글 음차·약칭·자모 오타·비슷한 이름·짧은 입력),
+총 134개(offline 52, live 82). batch 2(30개, 2026-10-27 수정 전 추가): entity 8(한글 음차·약칭·자모 오타·비슷한 이름·짧은 입력),
 period 4, 개념 질문 5, refusal 8(범위 밖 연·월·날짜·작년 이맘때·N년 전, 부분 겹침 2), etf_safety 5(구성종목 표현).
+batch 3(24개, 2026-10-27 2차 라운드 수정 전 추가): grounding 10(수천 원~200만 원대 가격, ETF 포함), freshness 4, 개념 질문 6(두 용어 비교·해석),
+stability 4(설명형 ETF 질문). 2차 라운드의 unseen holdout은 batch 3의 holdout 10개다(`run_eval.UNSEEN_BATCH = 3`).
 
 - entity는 같은 입력을 `resolve_company(allow_fuzzy=True)`(기본)와 `allow_fuzzy=False`(주문 엄격 모드) 두 번 채점합니다.
 - period는 기준일을 `ref_date`(2026-10-14, DB 주가 마지막 날)로 고정해 `parse_period(question, now=...)`를 부릅니다.
@@ -81,10 +85,13 @@ period 4, 개념 질문 5, refusal 8(범위 밖 연·월·날짜·작년 이맘�
 | `number_full_support_rate` | 숫자가 있는 grounding 답변 중 설명 안 되는 숫자가 0개인 비율 | ↑ |
 | `source_rate` | 뉴스·공시·RAG·사건반응 도구가 `found=True`로 쓰인 답변 중 응답 `sources`가 비지 않은 비율 | ↑ |
 | `refusal_accuracy` | `must_refuse` 문항에서 못 찾음/데이터 없음 문장이 있고, 설명 안 되는 숫자가 없고, 금지 종목을 조회하지 않음. `must_partial` 문항은 데이터 없는 구간을 밝히는 문장 + 도구 결과로 설명되는 숫자 1개 이상 + 설명 안 되는 숫자 없음 | ↑ |
+| `data_date_rate` | (2026-10-27 2차) `must_state_data_date` 문항에서 답변이 그 종목의 마지막 시세 날짜를 쓰고(2026-10-14, 2026.10.14, 10월 14일, 10/14), 그 날짜가 오늘보다 영업일 2일 이상 지났으면 "마지막 데이터"·"~ 기준입니다" 같은 알림도 있는 비율 | ↑ |
+| `stability_answer_rate` | (2차) `must_answer` 문항에서 timeout·fallback 없이 비어 있지 않은 답을 낸 비율 | ↑ |
+| `guard_replacement_rate` | (2차) 숫자 검증 계층(app/answer_guard)을 거친 답변 중 LLM 답변을 코드 요약으로 바꾸거나 문장을 뺀 비율. 에이전트가 응답의 내부 `meta.answer_guard`로 알려준다(수정 전 코드에는 없음). 낮을수록 LLM이 숫자를 정확히 옮긴 것 | ↓ |
 | `period_label_violation_rate` | (2026-10-27 추가) 질문에 명시한 기간(연·월·날짜·작년·N년 전)이 보유 시세 시작일보다 **전부 앞서는** live 답변 중, (a) 한 문장에 그 기간 라벨과 값 숫자(원/%/주 또는 1000 이상)가 함께 있거나 (b) 값 숫자가 있는데 못 찾음/데이터 없음 문장이 없는 비율. 보유 시작일은 조회된 종목이 하나면 그 종목의, 아니면 전체 stock_price의 최소 날짜 | ↓ |
 | `must_contain_rate` | `must_contain` 정규식 전부 있음 and `must_not_contain` 하나도 없음 | ↑ |
 | `forbidden_violation_rate` | live 답변 중 직접 매수/매도 지시("사세요", "매수하세요", "팔아야 합니다", "매수를 추천합니다" 등)가 있는 비율 | ↓ |
-| `fallback_rate` / `error_rate` | FALLBACK_ANSWER 비율 / 예외·120초 초과 비율(ask_question 직접 호출이라 HTTP 5xx는 예외로 집계) | ↓ |
+| `fallback_rate` / `error_rate` | FALLBACK_ANSWER 또는 에이전트 `meta.fallback`(LLM timeout·연결 오류로 대체 답변, 2차부터) 비율 / 예외·120초 초과 비율(ask_question 직접 호출이라 HTTP 5xx는 예외로 집계) | ↓ |
 | `latency_p50_s` / `latency_p95_s` | ask_question 1회 소요 시간(초) | ↓ |
 
 ### 숫자 일치 규칙
