@@ -207,6 +207,7 @@ class TestMarketToolShape:
 
 @pytest.mark.integration
 class TestMarketToolDevDB:
+    @pytest.mark.needs_collected_data
     def test_real_company_against_real_index_data(self, dev_db):
         from sqlalchemy import text
 

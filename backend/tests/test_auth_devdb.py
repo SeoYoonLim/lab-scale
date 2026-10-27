@@ -107,6 +107,7 @@ class TestReportIsolation:
         assert la["total"] == 2 and {i["report_id"] for i in la["items"]} == a_ids
         assert lb["total"] == 1 and [i["report_id"] for i in lb["items"]] == [b_id]
 
+    @pytest.mark.needs_collected_data
     def test_legacy_reports_without_owner_are_hidden(self, signup, dev_db):
         user = signup()
         legacy = dev_db.execute(text("SELECT id FROM research_report WHERE user_id IS NULL LIMIT 1")).scalar()

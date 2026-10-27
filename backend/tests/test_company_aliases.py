@@ -173,6 +173,7 @@ class TestAgainstDevDB:
         assert sorted(a for a in COMPANY_ALIASES if _key(a) in real) == []
 
     @pytest.mark.parametrize("alias, name", REQUIRED.items())
+    @pytest.mark.needs_collected_data
     def test_tools_accept_the_alias(self, dev_db, alias, name):
         from app.tools.disclosure_tool import disclosure_tool
         from app.tools.market_tool import market_tool

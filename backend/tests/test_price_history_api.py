@@ -150,6 +150,7 @@ class TestDevDb:
         ]
 
     @pytest.mark.parametrize("ticker,name,asset_type", [("005930", "삼성전자", "stock"), ("069500", None, "etf")])
+    @pytest.mark.needs_collected_data
     def test_matches_stock_price_table(self, dev_db, ticker, name, asset_type):
         b = client.get(f"/api/stocks/{ticker}/price-history?days=30").json()
         expected = self._sql_rows(dev_db, ticker, 30)
@@ -163,6 +164,7 @@ class TestDevDb:
         assert dates == sorted(dates) and len(set(dates)) == len(dates)
 
     @pytest.mark.parametrize("ticker", ["005930", "069500"])
+    @pytest.mark.needs_collected_data
     def test_boundaries_days_1_and_90(self, dev_db, ticker):
         one = client.get(f"/api/stocks/{ticker}/price-history?days=1").json()
         assert one["count"] == 1 and one["items"] == self._sql_rows(dev_db, ticker, 1)

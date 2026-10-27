@@ -106,6 +106,7 @@ class TestFxToolShape:
 
 @pytest.mark.integration
 class TestFxToolDevDB:
+    @pytest.mark.needs_collected_data
     def test_real_data_has_a_recent_rate(self, dev_db):
         from sqlalchemy import text
 

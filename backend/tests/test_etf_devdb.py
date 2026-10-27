@@ -75,6 +75,7 @@ class TestSchemaAndData:
         for ticker, name in REPRESENTATIVE.items():
             assert rows.get(ticker) == name
 
+    @pytest.mark.needs_collected_data
     def test_etf_rows_have_no_market_sector_or_disclosures_but_have_prices_and_news(self, dev_db):
         q = lambda s: dev_db.execute(text(s)).scalar()
         assert q("SELECT count(*) FROM company WHERE asset_type = 'etf' AND (market IS NOT NULL OR sector IS NOT NULL)") == 0
@@ -134,6 +135,7 @@ class TestSearch:
         items = client.get("/api/companies", params={"q": q, "asset_type": "etf"}).json()
         assert ticker in [i["ticker"] for i in items], q
 
+    @pytest.mark.needs_collected_data
     def test_etf_item_has_latest_close(self):
         (item,) = [i for i in client.get("/api/companies", params={"q": "069500", "asset_type": "etf"}).json()
                    if i["ticker"] == "069500"]
@@ -182,6 +184,7 @@ class TestDiscovery:
         return {t for (t,) in dev_db.execute(text("SELECT ticker FROM company WHERE asset_type = :a"), {"a": asset_type})}
 
     @pytest.mark.parametrize("category", ["gainers", "losers", "volume_surge"])
+    @pytest.mark.needs_collected_data
     def test_default_is_stock_only_and_not_empty(self, dev_db, category):
         r = get_trending(dev_db, category, limit=50)
         assert r["found"] and r["asset_type"] == "stock"
@@ -190,11 +193,13 @@ class TestDiscovery:
         if category != "volume_surge":
             assert r["items"], "ETF가 더 최근까지 수집돼도 주식 결과는 비면 안 된다"
 
+    @pytest.mark.needs_collected_data
     def test_stock_latest_date_is_not_pulled_forward_by_etf_dates(self, dev_db):
         stock_max = dev_db.execute(text(
             "SELECT MAX(sp.price_date) FROM stock_price sp JOIN company c ON c.id = sp.company_id WHERE c.asset_type = 'stock'")).scalar()
         assert get_trending(dev_db, "gainers", 5)["price_date"] == stock_max.isoformat()
 
+    @pytest.mark.needs_collected_data
     def test_etf_option_returns_only_etfs_with_their_own_date(self, dev_db):
         etf_max = dev_db.execute(text(
             "SELECT MAX(sp.price_date) FROM stock_price sp JOIN company c ON c.id = sp.company_id WHERE c.asset_type = 'etf'")).scalar()
@@ -202,6 +207,7 @@ class TestDiscovery:
         assert r["found"] and r["asset_type"] == "etf" and r["price_date"] == etf_max.isoformat()
         assert r["items"] and {i["ticker"] for i in r["items"]} <= self._tickers(dev_db, "etf")
 
+    @pytest.mark.needs_collected_data
     def test_api_default_and_etf(self):
         a = client.get("/api/discovery/trending", params={"limit": 50}).json()
         b = client.get("/api/discovery/trending", params={"limit": 50, "asset_type": "etf"}).json()
@@ -213,6 +219,7 @@ class TestTradingFlow:
     def _h(self, user):
         return user["headers"]
 
+    @pytest.mark.needs_collected_data
     def test_search_watchlist_buy_sell_reset_with_an_etf(self, signup, fixed_price_and_llm):
         user = signup()
         h = self._h(user)

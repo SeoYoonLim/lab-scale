@@ -34,6 +34,7 @@ class TestSearchCompaniesDevDB:
     def test_limit_is_respected(self, dev_db):
         assert len(search_companies(dev_db, None, limit=3)) <= 3
 
+    @pytest.mark.needs_collected_data
     def test_latest_close_is_filled_when_price_data_exists(self, dev_db):
         items = search_companies(dev_db, "삼성전자", limit=1)
         assert items[0]["latest_close"] is not None

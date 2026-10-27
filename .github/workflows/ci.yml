@@ -118,3 +118,63 @@ jobs:
         run: npx vitest run
       - name: 빌드
         run: npx vite build
+
+  # ---------------------------------------------------------------------------
+  # 백엔드 통합 테스트: 빈 pgvector DB에 alembic upgrade head + 종목 시드(scripts/ci_seed.py)만 올린 상태.
+  # 시세·뉴스·공시·ETF 시세·환율·시장 지수가 있어야 통과하는 테스트는 needs_collected_data 마커로 명시적으로 제외하고,
+  # 몇 개를 제외했는지 로그와 job summary에 숫자로 남긴다. 그 밖의 skip은 CI_FAIL_ON_SKIP=1 때문에 실패다.
+  # Ollama가 필요한 테스트는 통합 범위에 없다(실제 Ollama를 부르는 건 slow 마커 테스트뿐이고 CI는 slow를 돌리지 않는다).
+  # DB 비밀번호는 이 서비스 컨테이너 전용 더미 값이고, 개발 DB(.env)의 값과 다르다.
+  # ---------------------------------------------------------------------------
+  backend-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci_dummy_pw
+          POSTGRES_DB: ci_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      JWT_SECRET: ci-dummy-jwt-secret-not-a-real-value
+      DATABASE_URL: postgresql+psycopg://ci:ci_dummy_pw@localhost:5432/ci_db
+      CI_FAIL_ON_SKIP: "1"
+      # needs_collected_data 마커로 제외하는 통합 테스트 수의 상한. 마커를 더 붙여 테스트를 슬그머니 빼지 못하게 한다.
+      # 늘려야 하면 이유와 함께 이 값과 README의 숫자를 같이 고친다.
+      MAX_EXCLUDED: "48"
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - name: 스키마 (alembic upgrade head)
+        run: python -m alembic upgrade head
+      - name: 종목 시드 적재
+        run: python -m scripts.ci_seed
+      - name: 제외되는 통합 테스트 수
+        run: |
+          out=$(python -m pytest --collect-only -q -p no:cacheprovider -m "needs_collected_data and not slow" | tail -1)
+          n=$(echo "$out" | grep -oE '^[0-9]+' || echo 0)
+          msg="수집 데이터(시세·뉴스·공시·ETF 시세·환율·시장 지수)가 필요해 CI에서 제외한 통합 테스트: ${n}개 (마커 needs_collected_data, 로컬에서는 전부 실행됨)"
+          echo "$msg"
+          echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$n" -gt "$MAX_EXCLUDED" ]; then
+            echo "::error::제외된 테스트(${n}개)가 상한(${MAX_EXCLUDED}개)을 넘었습니다. 마커를 늘리려면 이유와 함께 ci.yml의 MAX_EXCLUDED와 README 숫자를 고치세요."
+            exit 1
+          fi
+      - name: 통합 테스트
+        run: python -m pytest -m "integration and not slow and not needs_collected_data" -q

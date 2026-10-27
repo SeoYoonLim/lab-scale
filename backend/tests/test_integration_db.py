@@ -29,6 +29,7 @@ def test_fewshot_tool_results_match_real_responses():
     assert news_tool("롯데칠성", limit=5) == news_msg
 
 
+@pytest.mark.needs_collected_data
 def test_stock_tool_found_shape():
     r = stock_tool("삼성전자", period_days=3)
     assert r["found"] is True
@@ -37,6 +38,7 @@ def test_stock_tool_found_shape():
     assert {"price_date", "close_price", "volume", "change_pct"} <= set(r["prices"][0])
 
 
+@pytest.mark.needs_collected_data
 def test_news_tool_found_shape():
     r = news_tool("삼성전자", limit=3)
     assert r["found"] is True
@@ -53,6 +55,7 @@ def test_list_reports_envelope(dev_db):
     assert len(items) <= 1
 
 
+@pytest.mark.needs_collected_data
 def test_stock_tool_single_day_response_is_unchanged():
     """하루치 조회에는 기간 요약 키가 붙지 않는다(few-shot 예시·기존 프롬프트와 같은 모양)."""
     r = stock_tool("삼성전자", period_days=1)
@@ -60,6 +63,7 @@ def test_stock_tool_single_day_response_is_unchanged():
     assert len(r["prices"]) == 1 and r["change_pct"] == r["prices"][0]["change_pct"]
 
 
+@pytest.mark.needs_collected_data
 def test_stock_tool_period_summary_matches_the_stored_closes(dev_db):
     """여러 거래일 조회의 기간 등락률은 '구간 직전 거래일 종가 대비'이고, 진단의 20거래일 수익률과 같은 값이다."""
     from app.diagnosis import RETURN_WINDOW_DAYS, _recent_returns

@@ -112,6 +112,7 @@ class TestDedupe:
 
 @pytest.mark.integration
 class TestDevDb:
+    @pytest.mark.needs_collected_data
     def test_samsung_real_response(self, dev_db):
         r = client.get("/api/stocks/005930/event-reactions?since_days=120&limit=30")
         assert r.status_code == 200
@@ -138,6 +139,7 @@ class TestDevDb:
             days = [(e["event_at"] or e["event_date"])[:10] for e in b["events"] if e["event_type"] == kind]
             assert days == sorted(days, reverse=True)
 
+    @pytest.mark.needs_collected_data
     def test_event_type_filter_and_limit(self, dev_db):
         d = client.get("/api/stocks/005930/event-reactions?event_type=disclosure&limit=3").json()
         assert 0 < len(d["events"]) <= 3 and {e["event_type"] for e in d["events"]} == {"disclosure"}
@@ -183,6 +185,7 @@ class TestDevDb:
             event.remove(engine, "before_cursor_execute", listener)
         assert len(n) <= 5  # 시세, 지수, 공시, 뉴스(+여유 1)
 
+    @pytest.mark.needs_collected_data
     def test_other_events_counts_include_other_type(self, dev_db):
         evs = client.get("/api/stocks/005930/event-reactions?event_type=disclosure&since_days=120&limit=30").json()["events"]
         # 뉴스가 있는 기간의 공시는 유형 필터와 무관하게 다른 사건(뉴스 포함) 수를 센다

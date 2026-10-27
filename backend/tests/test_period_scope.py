@@ -92,6 +92,7 @@ class TestAgentScopeDevDB:
 
         return extract_from_text(dev_db, q)
 
+    @pytest.mark.needs_collected_data
     def test_outside_answer_uses_db_range_and_latest_close(self, dev_db):
         q = "삼성전자 2024년 3월 주가 알려줘"
         resp, records = agent._answer_period_scope(q, self._companies(dev_db, q), TODAY)
@@ -101,6 +102,7 @@ class TestAgentScopeDevDB:
         assert f"{r['latest']['close_price']:,.0f}원" in resp["answer"]
         assert period_label_violation(q, resp["answer"], date.fromisoformat(r["data_start"]), TODAY) is False
 
+    @pytest.mark.needs_collected_data
     def test_partial_answer_values_come_from_overlap_rows(self, dev_db):
         q = "LG전자 2026년 6월 주가 흐름 알려줘"
         resp, records = agent._answer_period_scope(q, self._companies(dev_db, q), TODAY)

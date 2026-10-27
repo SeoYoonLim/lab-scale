@@ -299,6 +299,7 @@ class TestDevDb:
             ("069500", "KODEX 200", ["KODEX 200", "KODEX200", "코덱스200", "코덱스 200"]),
         ],
     )
+    @pytest.mark.needs_collected_data
     def test_news_events_mention_the_company_in_the_title(self, dev_db, ticker, name, forms):
         """뉴스 사건은 제목에 종목 이름이 들어 있는 기사만이다(공시는 거르지 않는다). API도 같다."""
         for event_type in ("news", "all"):
@@ -318,6 +319,7 @@ class TestDevDb:
         company = dev_db.query(Company).filter(Company.name == registered).first()
         assert company is not None and alias in _name_forms(company) and company.name in _name_forms(company)
 
+    @pytest.mark.needs_collected_data
     def test_keyword_filters_titles(self, dev_db):
         from app.tools.event_reaction_tool import event_reaction_tool
 
@@ -337,6 +339,7 @@ class TestDevDb:
         r = event_reaction_tool("KODEX 200", "disclosure", 5)
         assert r["found"] is False and "대상 사건이 없습니다" in r["message"]
 
+    @pytest.mark.needs_collected_data
     def test_full_answer_with_real_tool_and_fake_llm(self, dev_db, monkeypatch):
         monkeypatch.setattr(
             agent.ollama, "chat",

@@ -141,6 +141,7 @@ class TestRouter:
 class TestDevDb:
     """마이그레이션이 적용된 개발 DB의 실제 응답(읽기 전용). DB가 꺼져 있으면 건너뛴다."""
 
+    @pytest.mark.needs_collected_data
     def test_real_response(self, dev_db):
         r = client.get("/api/status")
         assert r.status_code == 200
