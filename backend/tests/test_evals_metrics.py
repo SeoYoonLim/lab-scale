@@ -33,6 +33,9 @@ class TestExtractNumbers:
     def test_numbers_glued_to_names_are_excluded(self):
         assert raws("S&P500, 코스닥150, TOP10, 2차전지") == []
 
+    def test_count_exclusion_takes_whole_comma_number(self):
+        assert raws("거래량은 3,494,666 건입니다.") == []
+
     def test_dollar_amount_is_not_a_month(self):
         assert raws("100달러") == ["100"]
 
@@ -85,7 +88,8 @@ class TestForbidden:
 
 class TestRefusal:
     @pytest.mark.parametrize("text", ["'롯데칠성' 종목을 찾지 못했습니다.", "해당 기간의 주가 데이터가 없습니다.",
-                                      "구성종목 정보는 확인할 수 없습니다.", "등록되어 있지 않은 종목입니다."])
+                                      "구성종목 정보는 확인할 수 없습니다.", "등록되어 있지 않은 종목입니다.",
+                                      "2025년 1월의 거래량은 존재하지 않습니다.", "애플의 현재 주가가 unavailable합니다."])
     def test_refusals(self, text):
         assert M.is_refusal(text)
 
