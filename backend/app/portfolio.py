@@ -147,10 +147,18 @@ def place_order(db, device_id: str, company: Company, side: str, quantity: int) 
 
         trade = Trade(device_id=device_id, company_id=company_id, side=side, quantity=quantity, price=price)
         db.add(trade)
-        db.commit()
+        # 응답에 쓸 값은 커밋 "전", 계좌 행 잠금이 걸려 있는 동안 확정한다. 커밋하면 잠금이 풀려서, 그 직후에 겹친 초기화
+        # (reset_portfolio)가 보유·거래 행을 지울 수 있다. 그때 커밋 뒤에 객체를 새로고침하면(db.refresh, 또는 커밋으로 만료된
+        # 속성 접근) 이미 체결된 주문이 InvalidRequestError("Could not refresh instance")로 실패했다(CI의 동시성 테스트에서 발견).
+        db.flush()
         db.refresh(account)
+        db.refresh(trade)
         if holding is not None:
             db.refresh(holding)
+        executed_at = trade.executed_at.isoformat()
+        cash_balance = float(account.cash_balance)
+        holding_view = None if holding is None else {"quantity": holding.quantity, "avg_price": float(holding.avg_price)}
+        db.commit()
     except Exception:
         db.rollback()
         raise
@@ -161,9 +169,9 @@ def place_order(db, device_id: str, company: Company, side: str, quantity: int) 
         "side": side,
         "quantity": quantity,
         "price": price,
-        "executed_at": trade.executed_at.isoformat(),
-        "cash_balance": float(account.cash_balance),
-        "holding": None if holding is None else {"quantity": holding.quantity, "avg_price": float(holding.avg_price)},
+        "executed_at": executed_at,
+        "cash_balance": cash_balance,
+        "holding": holding_view,
     }
 
 
