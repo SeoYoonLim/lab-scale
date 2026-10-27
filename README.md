@@ -7,7 +7,7 @@
 ## 지금 상태 요약 (2026-10-14 기준)
 
 **한 줄 요약:** 백엔드(API + 에이전트 + 데이터 수집·일괄 갱신 + 로그인 + 관심종목/모의투자 + 포트폴리오 AI 진단과 이력 + 환율 영향 분석 +
-시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응)는 동작하고, 빠른 테스트 **2074개**가 통과합니다(`pytest`, 순수 로직 1864 + 개발 DB 통합 210).
+시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응)는 동작하고, 빠른 테스트 **2130개**가 통과합니다(`pytest`, 순수 로직 1887 + 개발 DB 통합 243).
 실제 Ollama를 부르는 slow 테스트 61개는 기본에서 빠지고 `pytest -m slow`로 따로 돌립니다. 백엔드 작업 브랜치는 `feature/backend`(원격 push 완료)이고
 아직 main에 병합하지 않았습니다. 프론트엔드는 서윤님이 `feature/frontend`에서 React + Vite + zod로 진행 중이며, 2026-10-14에 실제 백엔드 응답을
 프론트의 zod 스키마로 검증했을 때 불일치가 없었습니다(프론트 테스트 20개·빌드·lint 통과). 남은 큰 일은 화면 연동과 아래 "알려진 한계"입니다.
@@ -457,9 +457,9 @@ python -m scripts.refresh_data --days 30 --timeout-min 30 # 조회 기간(기본
 `backend/`에서 실행합니다. 세 단계로 나뉩니다(마커: `integration`, `slow`).
 
 ```bash
-pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-18 기준 2074개 통과, 약 15초). slow는 기본 제외
-pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 1845개)
-pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(202개). DB가 꺼져 있으면 자동 skip
+pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-27 기준 2130개 통과, 약 20초). slow는 기본 제외
+pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 1887개)
+pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(243개). DB가 꺼져 있으면 자동 skip
 pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)를 부르는 테스트(61개, 느리고 비결정적)
 ```
 
@@ -562,6 +562,12 @@ pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)
   매수는 가중평균으로 평균단가를 다시 계산하고 매도는 평균단가를 바꾸지 않으며, 전량 매도되면 보유 레코드를 지워서
   재매수가 과거 평균단가에 영향받지 않게 함. 잔고 부족/수량 초과는 400, 가격 조회 실패(실시간+DB 폴백 둘 다 실패)는 503.
   호가 단위·장 시간 체크는 범위 밖(장외에도 체결됨, 가격은 `app/realtime_price.py` 폴백 규칙을 그대로 따름)
+  - 동시 주문 보호(2026-10-27): 주문·초기화는 계좌 행을 `SELECT ... FOR UPDATE`로 잠근 뒤 처리해서, 같은 계정의 동시 주문으로 잔고·보유가
+    어긋나거나(이중 체결) 첫 매수/첫 요청에서 중복 키 500이 나던 문제를 막았다. 계좌 생성은 `INSERT ... ON CONFLICT DO NOTHING`.
+    수정 전 코드에서 5개 시나리오가 모두 재현됐고(`tests/test_portfolio_concurrency_devdb.py`), 수정 후 통과한다.
+  - 주문 종목 엄격 매칭(2026-10-27): 주문만 유사 이름 보정(difflib)을 끈다(`resolve_company(..., allow_fuzzy=False)`). 정확한 코드/종목명,
+    공백·대소문자 차이, 등록된 별칭만 주문되고, 비슷한 이름만 있으면 404 + "정확한 종목을 찾지 못했습니다. 혹시 A, B 중 하나인가요?"(후보 최대 3개).
+    다른 경로의 보정은 그대로. 한계: 같은 계정에서 지연이 큰 주문 하나가 뒤따르는 주문을 기다리게 한다(보통 수 ms)
 - [x] 데이터 일괄 갱신: `python -m scripts.refresh_data`(6단계, 단계별 기록, `GET /api/status`로 기준일 확인). 실행은 수동이고 스케줄러는 없다(자동화 여부 논의 필요)
 - [x] ETF(2026-10-14): 종목 50개, 리서치·진단 처리 규칙과 레버리지/인버스 고정 문구(위 "ETF 처리 규칙")
 - [x] 뉴스·공시 이후 주가 반응(2026-10-14): `GET /api/stocks/{ticker}/event-reactions` + 리서치 에이전트 연동(코드가 수치를 쓰고 LLM 해석은 기본 꺼짐, 위 절)
