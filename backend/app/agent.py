@@ -13,6 +13,7 @@ import time
 from datetime import datetime, timezone
 
 import ollama
+from sqlalchemy import func
 
 from app.db.session import SessionLocal
 from app.event_answer import (
@@ -23,6 +24,7 @@ from app.event_answer import (
     event_result_for_llm,
     trim_result,
 )
+from app import period_scope
 from app.etf import (
     ETF_ANSWER_RULES,
     check_etf_answer,
@@ -33,8 +35,8 @@ from app.etf import (
     news_result_for_llm,
     remove_empty_sections,
 )
-from app.models import Company
-from app.period_parser import mentions_period, parse_period
+from app.models import Company, StockPrice
+from app.period_parser import KST, mentions_period, parse_period
 from app.reports import save_report as save_report_row
 from app.sources import build_sources
 from app.tools.company_resolver import extract_from_text, normalize_name, resolve_company
@@ -56,7 +58,7 @@ from app.tools.fx_tool import fx_tool
 from app.tools.market_tool import market_data_is_current, market_tool
 from app.tools.news_tool import news_tool
 from app.tools.rag_search_tool import rag_search_tool
-from app.tools.stock_tool import stock_tool
+from app.tools.stock_tool import stock_tool, summarize_period
 from app.utils import extract_answer_text
 
 # 벤치마크(scripts/benchmark_models.py, few-shot 오염 제거 후 재실행) 결과 llama3.1:8b로 확정:
@@ -1035,6 +1037,119 @@ def _answer_event(question: str, model: str, company: str, previous: dict | None
     return response, [record]
 
 
+# ---------- LLM 전에 코드가 답을 만드는 질문 ----------
+# 평가 기준선(backend/evals, 2026-10-27)에서 LLM이 숫자·정의를 지어낸 유형은 LLM을 부르지 않고 코드가 답한다:
+# (C) 종목 없는 용어 정의 질문 -> app/glossary.py, (B) ETF 구성종목·비중 질문 -> 제공하지 않음 안내,
+# (A) 보유 시세보다 앞선 기간의 시세 질문 -> 범위 밖 안내 또는 겹치는 구간만 코드가 요약(app/period_scope.py).
+# 셋 다 해당하지 않는 질문은 이전과 같은 흐름이다(사건 반응 경로가 이보다 먼저다).
+
+
+def _code_answer(answer: str, records: list[dict] | None = None) -> tuple[dict, list[dict]]:
+    records = records or []
+    response = {
+        "answer": answer,
+        "used_tools": [r["tool_name"] for r in records],
+        "sources": build_sources((r["tool_name"], r["result"]) for r in records),
+    }
+    return response, records
+
+
+def _question_companies(question: str) -> list | None:
+    """질문 원문의 종목들. DB 오류면 None(코드 답변 경로를 모두 건너뛰고 기존 흐름으로 간다)."""
+    try:
+        db = SessionLocal()
+        try:
+            return extract_from_text(db, question)
+        finally:
+            db.close()
+    except Exception:
+        return None
+
+
+def _price_dict(row) -> dict:
+    return {
+        "price_date": row.price_date.isoformat(),
+        "close_price": float(row.close_price),
+        "volume": row.volume,
+        "change_pct": float(row.change_pct) if row.change_pct is not None else None,
+    }
+
+
+def _answer_period_scope(question: str, companies: list | None, today=None):
+    """(A) 질문에 명시한 기간이 그 종목의 보유 시세보다 앞서면 코드가 답한다. 범위 안이거나 기간이 없으면 None(기존 흐름).
+
+    종목이 정확히 하나이고 시세를 묻는 질문일 때만 본다. 기록은 stock_tool 이름으로 남기되 result.called_via="period_scope"다."""
+    if not companies or len(companies) != 1 or not period_scope.PRICE_INTENT_RE.search(question or ""):
+        return None
+    requested = period_scope.requested_period(question, today or datetime.now(KST).date())
+    if requested is None:
+        return None
+    company = companies[0]
+    called_at = datetime.now(timezone.utc)
+    try:
+        db = SessionLocal()
+        try:
+            data_start, data_end = (
+                db.query(func.min(StockPrice.price_date), func.max(StockPrice.price_date))
+                .filter(StockPrice.company_id == company.id)
+                .one()
+            )
+            scope = period_scope.classify(requested, data_start, data_end)
+            if scope is None:
+                return None
+            result = {
+                "found": True,
+                "ticker": company.ticker,
+                "company_name": company.name,
+                "requested_start": requested.start.isoformat(),
+                "requested_end": requested.end.isoformat(),
+                "data_start": data_start.isoformat(),
+                "data_end": data_end.isoformat(),
+                "scope": scope.kind,
+                "called_via": "period_scope",
+            }
+            if scope.kind == "outside":
+                row = (
+                    db.query(StockPrice).filter(StockPrice.company_id == company.id)
+                    .order_by(StockPrice.price_date.desc()).first()
+                )
+                latest = _price_dict(row) if row is not None else None
+                result["latest"] = latest
+                answer = period_scope.outside_answer(company.name, scope, latest)
+            else:
+                rows = (
+                    db.query(StockPrice)
+                    .filter(StockPrice.company_id == company.id,
+                            StockPrice.price_date >= max(requested.start, data_start),
+                            StockPrice.price_date <= min(requested.end, data_end))
+                    .order_by(StockPrice.price_date).all()
+                )
+                prices = [_price_dict(r) for r in rows]
+                if not prices:
+                    return None
+                summary = summarize_period(company.name, prices)
+                result.update({**summary, "prices": prices})
+                text = summary.get("summary") or (
+                    f"{company.name}의 {prices[-1]['price_date']} 종가는 {prices[-1]['close_price']:,.0f}원입니다."
+                )
+                answer = period_scope.partial_answer(company.name, scope, prices, text)
+        finally:
+            db.close()
+    except Exception:
+        return None
+    if getattr(company, "asset_type", None) == "etf" and (kind := leverage_kind(company.name)):
+        answer += "\n\n" + leverage_notice(company.name, kind)
+    record = {
+        "tool_name": "stock_tool",
+        "arguments": {"ticker": company.name, "start_date": requested.start.isoformat(),
+                      "end_date": requested.end.isoformat()},
+        "result": result,
+        "called_at": called_at,
+        "elapsed_ms": 0,
+    }
+    return _code_answer(answer, [record])
+
+
 def _answer(question: str, model: str, previous: dict | None = None) -> tuple[dict, list[dict]]:
     """답변을 만든다. (응답 dict, tool 실행 기록 목록)을 돌려준다.
 
@@ -1045,6 +1160,12 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     event_company = _event_subject(question, previous)
     if event_company is not None:
         return _answer_event(question, model, event_company, previous)
+
+    companies = _question_companies(question)
+    for handler in (_answer_period_scope,):
+        handled = handler(question, companies)
+        if handled is not None:
+            return handled
 
     system_prompt, tools = build_request(question)
     messages = [
