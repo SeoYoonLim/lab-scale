@@ -104,6 +104,19 @@ stability 4(설명형 ETF 질문). 2차 라운드의 unseen holdout은 batch 3�
   영문·한글에 붙은 숫자(`S&P500`, `코스닥150`, `TOP10`, `2차전지` — 종목·지수 이름의 일부).
 - 설명 안 되는 숫자는 summary `failures`의 `number_support` 항목에 원문 그대로 남깁니다.
 
+## CI에서의 평가 (GitHub Actions `eval-offline`)
+
+- **무엇을**: 종목 시드(`backend/scripts/ci_seed_companies.json`, company 350개: 종목명·코드·시장·자산 유형만)만 올린 빈 pgvector DB에서
+  `python -m evals.run_eval --mode offline --split all`(entity 28 + period 14 + routing_gate 10 = 52문항)을 돌리고, `python -m evals.ci_gate`가 summary를 판정한다.
+- **게이트**: `entity_default_wrong_rate`, `entity_strict_wrong_rate`가 모든 split에서 0이 아니면 실패(오매칭은 못 찾는 것보다 나쁘다). 지표가 없거나 표본이 0이어도 실패다.
+  나머지 지표(정확도, 미탐, 기간 파싱, 라우팅 게이트 등)는 게이트가 아니라 job summary 표와 아티팩트(`eval-offline-results`: summary JSON + raw JSONL)로만 남는다.
+- **live는 CI에서 돌지 않는다**: `--mode live`는 실제 Ollama(llama3.1:8b)가 있어야 하고(질문당 수 초~수십 초), 같은 질문도 호출마다 답이 달라 게이트로 쓸 수 없다.
+  live 평가는 로컬에서 `python -m evals.run_eval --mode live`로 돌리고 `evals.compare`로 기준선과 비교한다.
+- **시드가 판정을 바꾸지 않는다**: offline 문항은 company 테이블만 본다(entity는 `resolve_company`, period는 `parse_period`, routing_gate는 `routing.py`).
+  같은 52문항을 시드 DB(2026-10-27)와 개발 DB에서 돌려 비교했더니 **모든 지표 값과 실패 문항(11건, 전부 엄격 모드 entity)이 같았다**(영향받는 문항 0). 그래서 시세가 필요한 문항을 게이트에서 따로 뺄 필요가 없었다.
+  평가기 `metrics.py`의 판정은 바꾸지 않았다. 시드를 다시 만들면(`python -m scripts.ci_seed --export`, 개발 DB를 읽기만 함) 이 비교를 한 번 더 확인할 것.
+- 게이트가 실제로 막는 경우는 `tests/test_evals_ci_gate.py`가 확인한다(0이 아닌 오매칭, 미측정, 종료 코드, 커밋된 기준선 summary가 게이트를 통과).
+
 ## 기준선 (baseline)
 
 `results/summary_baseline_2026-10-27.json` (커밋 `6921260`, 모델 `llama3.1:8b`, `--mode all --repeats 1`).

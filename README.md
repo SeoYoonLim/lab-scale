@@ -1,5 +1,8 @@
 # lab-scale — AI 투자 리서치 에이전트
 
+[![CI (main)](https://github.com/SeoYoonLim/lab-scale/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SeoYoonLim/lab-scale/actions/workflows/ci.yml)
+[![CI (feature/backend)](https://github.com/SeoYoonLim/lab-scale/actions/workflows/ci.yml/badge.svg?branch=feature%2Fbackend)](https://github.com/SeoYoonLim/lab-scale/actions/workflows/ci.yml?query=branch%3Afeature%2Fbackend)
+
 한국 상장사(시가총액 상위 300종목)에 대해 "삼성전자 오늘 왜 올랐어? 주가랑 뉴스 같이 확인해줘" 같은 자연어 질문을 받으면,
 로컬 LLM이 필요한 조회(주가·뉴스·공시·의미 검색)를 스스로 골라 실행하고 그 결과로 답변과 근거 링크를 돌려주는 리서치 서비스입니다.
 2인 팀 프로젝트로, 백엔드/데이터/에이전트와 프론트엔드를 나눠서 진행하고 있습니다.
@@ -7,7 +10,7 @@
 ## 지금 상태 요약 (2026-10-14 기준)
 
 **한 줄 요약:** 백엔드(API + 에이전트 + 데이터 수집·일괄 갱신 + 로그인 + 관심종목/모의투자 + 포트폴리오 AI 진단과 이력 + 환율 영향 분석 +
-시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응)는 동작하고, 빠른 테스트 **2580개**가 통과합니다(`pytest`, 순수 로직 2273 + 개발 DB 통합 307).
+시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응)는 동작하고, 빠른 테스트 **2656개**가 통과합니다(`pytest`, 순수 로직 2349 + 개발 DB 통합 307).
 실제 Ollama를 부르는 slow 테스트 61개는 기본에서 빠지고 `pytest -m slow`로 따로 돌립니다. 백엔드 작업 브랜치는 `feature/backend`(원격 push 완료)이고
 아직 main에 병합하지 않았습니다. 프론트엔드는 서윤님이 `feature/frontend`에서 React + Vite + zod로 진행 중이며, 2026-10-14에 실제 백엔드 응답을
 프론트의 zod 스키마로 검증했을 때 불일치가 없었습니다(프론트 테스트 20개·빌드·lint 통과). 남은 큰 일은 화면 연동과 아래 "알려진 한계"입니다.
@@ -457,8 +460,8 @@ python -m scripts.refresh_data --days 30 --timeout-min 30 # 조회 기간(기본
 `backend/`에서 실행합니다. 세 단계로 나뉩니다(마커: `integration`, `slow`).
 
 ```bash
-pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-27 기준 2580개 통과, 약 20초). slow는 기본 제외
-pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 2273개)
+pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-27 기준 2656개 통과, 약 20초). slow는 기본 제외
+pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 2349개)
 pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(307개). DB가 꺼져 있으면 자동 skip
 pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)를 부르는 테스트(61개, 느리고 비결정적)
 ```
@@ -471,6 +474,46 @@ pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)
 구성과 옵션은 [backend/API.md](backend/API.md)의 "테스트 실행" 절을 참고하세요. `scripts/test_tool_calling.py`는 실제 Ollama로 에이전트를 몇 번 호출해보는
 수동 스모크 스크립트이고, `scripts/benchmark_models.py`·`scripts/benchmark_routing.py`는 tool 호출 벤치마크입니다(pytest 대상이 아닙니다).
 프론트엔드 테스트는 `lab-scale-frontend/frontend`에서 `npm test`(vitest)입니다.
+
+## CI (GitHub Actions)
+
+`.github/workflows/ci.yml` 하나에 job이 나뉘어 있고, **push(모든 브랜치)와 main 대상 PR**마다 돕니다. 같은 브랜치의 이전 실행은 새 실행이 시작되면 취소됩니다.
+(main에는 워크플로 파일이 아직 없어서 첫 번째 뱃지는 `feature/backend`가 병합된 뒤에 채워집니다.)
+
+| job | 무엇을 검사하나 | 로컬에서 같은 검사 |
+|---|---|---|
+| `backend-unit` | Python 3.13에서 `pytest -m "not slow and not integration"`(DB·Ollama 없이 통과해야 함, skip 0) | `cd backend && pytest -m "not slow and not integration"` |
+| `secret-scan` | 추적 파일과 이번 push/PR이 추가한 커밋에서 `.env` 추적, `raw_*.jsonl`·서버 로그 추적, JWT·Bearer·개인 키·비밀번호/키 대입·URL 속 비밀번호 | `bash scripts/secret_scan.sh [--history origin/main..HEAD] [--env-file backend/.env]` |
+| `frontend` | `frontend/package.json`이 있을 때만: `npm ci`, `tsc -b`, `npm run lint`, `vitest run`, `vite build` (Node 24) | `cd frontend && npm ci && npx tsc -b && npm run lint && npx vitest run && npx vite build` |
+| `backend-integration` | 빈 pgvector DB에 `alembic upgrade head` + 종목 시드만 올린 상태에서 `pytest -m "integration and not slow and not needs_collected_data"` | 아래 "로컬에서 CI 통합 환경 재현" |
+| `eval-offline` | 같은 DB에서 `python -m evals.run_eval --mode offline --split all`(entity·period·routing_gate 52문항). **종목 오매칭률이 0이 아니면 실패**, 나머지 지표는 job summary 표와 아티팩트 | 아래와 같은 DB에서 `python -m evals.run_eval --mode offline --split all --out /tmp/s.json && python -m evals.ci_gate /tmp/s.json` |
+
+`secret-scan`은 값을 출력하지 않고 `파일:줄 [규칙]`만 알려주며, 허용 목록(로컬 개발 DB 기본값 `postgres:postgres@localhost`, `alembic.ini` 자리표시, 테스트·문서의 가짜 비밀번호)은
+`scripts/secret_scan.py` 머리말에 이유와 함께 있습니다. 모든 job에는 `timeout-minutes`가 있고, CI의 DB 비밀번호·JWT 값은 임시 서비스 컨테이너용 더미 값입니다(실제 `.env` 값과 다릅니다).
+
+**CI에서 제외되는 테스트(숫자로)**
+
+- `integration` 307개 중 **48개는 CI에서 제외**됩니다(`needs_collected_data` 마커). 수집된 시세·뉴스·공시·ETF 시세·환율·시장 지수(또는 인증 도입 전 옛 리포트)가 DB에 있어야 통과하는
+  테스트라서, 종목 목록만 시드한 CI의 빈 DB에서는 통과할 수 없습니다. 나머지 259개는 CI에서 실제로 돕니다. 로컬 dev DB에서는 마커가 있어도 **307개 전부** 평소처럼 돕니다.
+  제외 개수는 CI 로그와 job summary에 숫자로 찍히고, 상한(`MAX_EXCLUDED=48`)을 넘으면 CI가 실패합니다(마커로 테스트를 슬그머니 늘려 빼지 못하게).
+- 분류(빈 DB 기준): **a** 스스로 데이터를 만들어 통과 63, **b** 종목 시드로 해결 196, **c** 수집 데이터 필요 48(위 제외), **d** Ollama 필요 0.
+- 그 밖의 skip은 조용히 통과로 보이지 않게 CI에서 **실패**로 바뀝니다(`CI_FAIL_ON_SKIP=1`, `backend/tests/ci_guard.py`).
+- `slow` 61개(실제 Ollama 호출)와 `evals` live 모드는 CI에서 돌지 않습니다: Ollama(llama3.1:8b)가 필요하고 느리며 비결정적이기 때문입니다. 로컬에서 `pytest -m slow`, `python -m evals.run_eval --mode live`.
+
+**로컬에서 CI 통합 환경 재현** (개발 DB `ai_investment_db`와 별도 컨테이너·포트를 씁니다)
+
+```bash
+docker run -d --name ci_check_db -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci_dummy_pw -e POSTGRES_DB=ci_db -p 25432:5432 pgvector/pgvector:pg16
+cd backend
+export DATABASE_URL=postgresql+psycopg://ci:ci_dummy_pw@localhost:25432/ci_db   # PowerShell: $env:DATABASE_URL="..."
+python -m alembic upgrade head && python -m scripts.ci_seed
+CI_FAIL_ON_SKIP=1 pytest -m "integration and not slow and not needs_collected_data"      # 259개 통과, skip 0
+docker rm -f ci_check_db
+```
+
+**저장소 관리자가 GitHub 설정에서 직접 해야 할 일:** "main 병합 전에 CI 통과 요구"는 코드로 켤 수 없고 Settings → Branches → main 보호 규칙(Require status checks to pass before merging)에서
+`backend-unit`, `secret-scan`, `backend-integration`, `eval-offline`을 필수 체크로 지정해야 합니다(체크 이름은 워크플로가 한 번 돈 뒤에 목록에 나타납니다). `frontend`는 frontend가 없는 브랜치에서는 skipped가 정상이라 필수로 지정해도 되지만(skipped는 통과로 취급됨),
+프론트가 합쳐진 뒤에 지정하는 것을 권장합니다. 이 저장소는 Actions가 켜져 있어야 합니다.
 
 ## AI 평가
 
