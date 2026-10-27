@@ -1,0 +1,80 @@
+{"id": "ent_01", "split": "dev", "category": "entity", "mode": "offline", "question": "삼성전자", "expect": {"companies": ["삼성전자"], "must_not_companies": []}}
+{"id": "ent_02", "split": "holdout", "category": "entity", "mode": "offline", "question": "005930", "expect": {"companies": ["삼성전자"], "must_not_companies": []}}
+{"id": "ent_03", "split": "dev", "category": "entity", "mode": "offline", "question": "네이버", "expect": {"companies": ["NAVER"], "must_not_companies": []}}
+{"id": "ent_04", "split": "holdout", "category": "entity", "mode": "offline", "question": "삼성에스디에스", "expect": {"companies": ["삼성에스디에스"], "must_not_companies": ["삼성SDI"]}}
+{"id": "ent_05", "split": "dev", "category": "entity", "mode": "offline", "question": "삼성SDS", "expect": {"companies": ["삼성에스디에스"], "must_not_companies": ["삼성SDI"]}}
+{"id": "ent_06", "split": "dev", "category": "entity", "mode": "offline", "question": "삼성SDI", "expect": {"companies": ["삼성SDI"], "must_not_companies": ["삼성에스디에스"]}}
+{"id": "ent_07", "split": "holdout", "category": "entity", "mode": "offline", "question": "KB금융", "expect": {"companies": ["KB금융"], "must_not_companies": ["JB금융지주"]}}
+{"id": "ent_08", "split": "dev", "category": "entity", "mode": "offline", "question": "JB금융", "expect": {"companies": ["JB금융지주"], "must_not_companies": ["KB금융"]}}
+{"id": "ent_09", "split": "holdout", "category": "entity", "mode": "offline", "question": "삼성 전자", "expect": {"companies": ["삼성전자"], "must_not_companies": []}}
+{"id": "ent_10", "split": "dev", "category": "entity", "mode": "offline", "question": "sk 하이닉스", "expect": {"companies": ["SK하이닉스"], "must_not_companies": []}}
+{"id": "ent_11", "split": "dev", "category": "entity", "mode": "offline", "question": "삼성전자우", "expect": {"companies": [], "must_not_companies": ["삼성전자"]}}
+{"id": "ent_12", "split": "holdout", "category": "entity", "mode": "offline", "question": "롯데칠성", "expect": {"companies": [], "must_not_companies": ["롯데쇼핑", "롯데지주", "롯데웰푸드"]}}
+{"id": "ent_13", "split": "dev", "category": "entity", "mode": "offline", "question": "코덱스200", "expect": {"companies": ["KODEX 200"], "must_not_companies": ["KODEX 200TR"]}}
+{"id": "ent_14", "split": "holdout", "category": "entity", "mode": "offline", "question": "셀트리언", "expect": {"companies": ["셀트리온"], "must_not_companies": ["셀트리온제약"]}}
+{"id": "ent_15", "split": "dev", "category": "entity", "mode": "offline", "question": "카카오뱅쿠", "expect": {"companies": ["카카오뱅크"], "must_not_companies": ["카카오", "카카오페이"]}}
+{"id": "ent_16", "split": "dev", "category": "entity", "mode": "offline", "question": "한국전력공사", "expect": {"companies": ["한국전력"], "must_not_companies": ["한국가스공사"]}}
+{"id": "ent_17", "split": "holdout", "category": "entity", "mode": "offline", "question": "엘지전자", "expect": {"companies": ["LG전자"], "must_not_companies": []}}
+{"id": "ent_18", "split": "dev", "category": "entity", "mode": "offline", "question": "타이거 나스닥100", "expect": {"companies": ["TIGER 미국나스닥100"], "must_not_companies": ["KODEX 미국나스닥100"]}}
+{"id": "ent_19", "split": "holdout", "category": "entity", "mode": "offline", "question": "에코프로", "expect": {"companies": ["에코프로"], "must_not_companies": ["에코프로비엠", "에코프로머티"]}}
+{"id": "ent_20", "split": "dev", "category": "entity", "mode": "offline", "question": "현대자동차", "expect": {"companies": ["현대차"], "must_not_companies": ["현대모비스"]}}
+{"id": "per_01", "split": "dev", "category": "period", "mode": "offline", "question": "삼성전자 지난주 주가 알려줘", "expect": {"ref_date": "2026-10-14", "period_days": 5, "start": "2026-10-05", "end": "2026-10-11"}}
+{"id": "per_02", "split": "holdout", "category": "period", "mode": "offline", "question": "최근 3일 SK하이닉스 주가는?", "expect": {"ref_date": "2026-10-14", "period_days": 3, "start": "2026-10-12", "end": "2026-10-14"}}
+{"id": "per_03", "split": "dev", "category": "period", "mode": "offline", "question": "카카오 한 달 주가 흐름 보여줘", "expect": {"ref_date": "2026-10-14", "period_days": 23, "start": "2026-09-14", "end": "2026-10-14"}}
+{"id": "per_04", "split": "holdout", "category": "period", "mode": "offline", "question": "올해 현대차 수익률 어때?", "expect": {"ref_date": "2026-10-14", "period_days": 205, "start": "2026-01-01", "end": "2026-10-14"}}
+{"id": "per_05", "split": "dev", "category": "period", "mode": "offline", "question": "NAVER 2주간 주가 추이", "expect": {"ref_date": "2026-10-14", "period_days": 10, "start": "2026-10-01", "end": "2026-10-14"}}
+{"id": "per_06", "split": "dev", "category": "period", "mode": "offline", "question": "어제 삼성전자 거래량 얼마였어?", "expect": {"ref_date": "2026-10-14", "period_days": 1, "start": "2026-10-13", "end": "2026-10-13"}}
+{"id": "per_07", "split": "holdout", "category": "period", "mode": "offline", "question": "이번 달 LG전자 주가 어땠어?", "expect": {"ref_date": "2026-10-14", "period_days": 10, "start": "2026-10-01", "end": "2026-10-14"}}
+{"id": "per_08", "split": "dev", "category": "period", "mode": "offline", "question": "3개월 동안 셀트리온 주가 변화", "expect": {"ref_date": "2026-10-14", "period_days": 67, "start": "2026-07-14", "end": "2026-10-14"}}
+{"id": "per_09", "split": "holdout", "category": "period", "mode": "offline", "question": "삼성전자 10년 전 주가 알려줘", "expect": {"ref_date": "2026-10-14", "period_days": null}}
+{"id": "per_10", "split": "dev", "category": "period", "mode": "offline", "question": "KODEX 200 일주일 동안 가격 알려줘", "expect": {"ref_date": "2026-10-14", "period_days": 5, "start": "2026-10-08", "end": "2026-10-14"}}
+{"id": "gate_01", "split": "dev", "category": "routing_gate", "mode": "offline", "question": "삼성전자 코스피 대비 수익률 어때?", "expect": {"gates": {"needs_market_tool": true}}}
+{"id": "gate_02", "split": "holdout", "category": "routing_gate", "mode": "offline", "question": "삼성전자 시장 점유율 어떻게 돼?", "expect": {"gates": {"needs_market_tool": false}}}
+{"id": "gate_03", "split": "dev", "category": "routing_gate", "mode": "offline", "question": "요즘 원달러 환율 어때?", "expect": {"gates": {"needs_fx_tool": true, "needs_market_tool": false}}}
+{"id": "gate_04", "split": "holdout", "category": "routing_gate", "mode": "offline", "question": "오늘 급등한 종목 알려줘", "expect": {"gates": {"needs_discovery_tool": true}}}
+{"id": "gate_05", "split": "dev", "category": "routing_gate", "mode": "offline", "question": "삼성전자 주가 급등한 이유가 뭐야?", "expect": {"gates": {"needs_discovery_tool": false, "is_cause_question": true}}}
+{"id": "gate_06", "split": "dev", "category": "routing_gate", "mode": "offline", "question": "SK하이닉스 최근 주가 흐름 알려줘", "expect": {"gates": {"is_trend_question": true}}}
+{"id": "gate_07", "split": "holdout", "category": "routing_gate", "mode": "offline", "question": "삼성전자 최근 뉴스 알려줘", "expect": {"gates": {"is_trend_question": false, "needs_event_reaction_tool": false}}}
+{"id": "gate_08", "split": "dev", "category": "routing_gate", "mode": "offline", "question": "카카오 주가, 뉴스, 공시 같이 확인해줘", "expect": {"gates": {"explicitly_requested_tools": ["stock_tool", "news_tool", "disclosure_tool"]}}}
+{"id": "gate_09", "split": "holdout", "category": "routing_gate", "mode": "offline", "question": "현대차 실적 발표 이후 주가 반응은?", "expect": {"gates": {"needs_event_reaction_tool": true}}}
+{"id": "gate_10", "split": "dev", "category": "routing_gate", "mode": "offline", "question": "PER이 왜 중요해?", "expect": {"gates": {"is_cause_question": false, "needs_market_tool": false}}}
+{"id": "tool_01", "split": "dev", "category": "tool_selection", "mode": "live", "question": "삼성전자 오늘 주가 알려줘", "expect": {"tools_all": ["stock_tool"], "companies": ["삼성전자"]}}
+{"id": "tool_02", "split": "holdout", "category": "tool_selection", "mode": "live", "question": "SK하이닉스 최근 뉴스 알려줘", "expect": {"tools_all": ["news_tool"], "companies": ["SK하이닉스"]}}
+{"id": "tool_03", "split": "dev", "category": "tool_selection", "mode": "live", "question": "카카오 최근 공시 뭐 있어?", "expect": {"tools_all": ["disclosure_tool"], "companies": ["카카오"]}}
+{"id": "tool_04", "split": "holdout", "category": "tool_selection", "mode": "live", "question": "PER이 뭐야?", "expect": {"tools_forbidden": ["*"]}}
+{"id": "tool_05", "split": "dev", "category": "tool_selection", "mode": "live", "question": "배당수익률이 뭔지 설명해줘", "expect": {"tools_forbidden": ["*"]}}
+{"id": "tool_06", "split": "dev", "category": "tool_selection", "mode": "live", "question": "현대차 지난주 주가 흐름 알려줘", "expect": {"tools_all": ["stock_tool"], "companies": ["현대차"], "period_days": "parser"}}
+{"id": "tool_07", "split": "holdout", "category": "tool_selection", "mode": "live", "question": "LG전자 주가랑 뉴스 같이 알려줘", "expect": {"tools_all": ["stock_tool", "news_tool"], "companies": ["LG전자"]}}
+{"id": "tool_08", "split": "dev", "category": "tool_selection", "mode": "live", "question": "삼성전자 코스피 대비 최근 수익률 어때?", "expect": {"tools_all": ["market_tool"], "companies": ["삼성전자"]}}
+{"id": "tool_09", "split": "holdout", "category": "tool_selection", "mode": "live", "question": "요즘 원달러 환율 어때?", "expect": {"tools_all": ["fx_tool"], "tools_forbidden": ["news_tool", "disclosure_tool"]}}
+{"id": "tool_10", "split": "dev", "category": "tool_selection", "mode": "live", "question": "오늘 많이 오른 종목 알려줘", "expect": {"tools_all": ["discovery_tool"]}}
+{"id": "tool_11", "split": "dev", "category": "tool_selection", "mode": "live", "question": "NAVER 3개월 주가 추이 알려줘", "expect": {"tools_all": ["stock_tool"], "companies": ["NAVER"], "period_days": "parser"}}
+{"id": "tool_12", "split": "holdout", "category": "tool_selection", "mode": "live", "question": "삼성SDS 주가 알려줘", "expect": {"tools_all": ["stock_tool"], "companies": ["삼성에스디에스"], "must_not_companies": ["삼성SDI"]}}
+{"id": "tool_13", "split": "dev", "category": "tool_selection", "mode": "live", "question": "셀트리온 최근 주가 흐름 보여줘", "expect": {"tools_all": ["stock_tool"], "companies": ["셀트리온"], "period_days": 20}}
+{"id": "tool_14", "split": "holdout", "category": "tool_selection", "mode": "live", "question": "공매도가 뭐야?", "expect": {"tools_forbidden": ["*"]}}
+{"id": "tool_15", "split": "dev", "category": "tool_selection", "mode": "live", "question": "KB금융 주가 알려줘", "expect": {"tools_all": ["stock_tool"], "companies": ["KB금융"], "must_not_companies": ["JB금융지주"]}}
+{"id": "grd_01", "split": "dev", "category": "grounding", "mode": "live", "question": "삼성전자 최근 종가와 등락률 알려줘", "expect": {"companies": ["삼성전자"]}}
+{"id": "grd_02", "split": "holdout", "category": "grounding", "mode": "live", "question": "SK하이닉스 거래량 얼마야?", "expect": {"companies": ["SK하이닉스"]}}
+{"id": "grd_03", "split": "dev", "category": "grounding", "mode": "live", "question": "현대차 지난 한 달 주가 등락률은?", "expect": {"companies": ["현대차"]}}
+{"id": "grd_04", "split": "holdout", "category": "grounding", "mode": "live", "question": "카카오 최근 5거래일 주가 알려줘", "expect": {"companies": ["카카오"]}}
+{"id": "grd_05", "split": "dev", "category": "grounding", "mode": "live", "question": "NAVER 주가 얼마야?", "expect": {"companies": ["NAVER"]}}
+{"id": "grd_06", "split": "dev", "category": "grounding", "mode": "live", "question": "LG에너지솔루션 오늘 등락률은?", "expect": {"companies": ["LG에너지솔루션"]}}
+{"id": "grd_07", "split": "holdout", "category": "grounding", "mode": "live", "question": "셀트리온 최근 20거래일 최고가와 최저가는?", "expect": {"companies": ["셀트리온"]}}
+{"id": "grd_08", "split": "dev", "category": "grounding", "mode": "live", "question": "기아 주가와 거래량 알려줘", "expect": {"companies": ["기아"]}}
+{"id": "grd_09", "split": "holdout", "category": "grounding", "mode": "live", "question": "삼성바이오로직스 최근 주가 흐름 알려줘", "expect": {"companies": ["삼성바이오로직스"]}}
+{"id": "grd_10", "split": "dev", "category": "grounding", "mode": "live", "question": "한화에어로스페이스 지난주 수익률은?", "expect": {"companies": ["한화에어로스페이스"], "period_days": "parser"}}
+{"id": "grd_11", "split": "dev", "category": "grounding", "mode": "live", "question": "KODEX 200 최근 가격 알려줘", "expect": {"companies": ["KODEX 200"]}}
+{"id": "grd_12", "split": "holdout", "category": "grounding", "mode": "live", "question": "POSCO홀딩스 주가와 최근 뉴스 알려줘", "expect": {"companies": ["POSCO홀딩스"], "tools_all": ["stock_tool", "news_tool"]}}
+{"id": "grd_13", "split": "dev", "category": "grounding", "mode": "live", "question": "에코프로 주가 왜 떨어졌어?", "expect": {"companies": ["에코프로"], "tools_all": ["stock_tool"]}}
+{"id": "grd_14", "split": "holdout", "category": "grounding", "mode": "live", "question": "HD현대중공업 최근 공시와 주가 알려줘", "expect": {"companies": ["HD현대중공업"], "tools_all": ["stock_tool", "disclosure_tool"]}}
+{"id": "grd_15", "split": "dev", "category": "grounding", "mode": "live", "question": "삼성전자 코스피 대비 수익률 알려줘", "expect": {"companies": ["삼성전자"], "tools_all": ["market_tool"]}}
+{"id": "ref_01", "split": "dev", "category": "refusal", "mode": "live", "question": "롯데칠성 주가 알려줘", "expect": {"must_refuse": true, "must_not_companies": ["롯데쇼핑", "롯데지주", "롯데웰푸드"]}}
+{"id": "ref_02", "split": "holdout", "category": "refusal", "mode": "live", "question": "삼성전자우 주가 얼마야?", "expect": {"must_refuse": true, "must_not_companies": ["삼성전자"]}}
+{"id": "ref_03", "split": "dev", "category": "refusal", "mode": "live", "question": "애플 주가 알려줘", "expect": {"must_refuse": true}}
+{"id": "ref_04", "split": "holdout", "category": "refusal", "mode": "live", "question": "삼성전자 2024년 3월 주가 알려줘", "expect": {"must_refuse": true}}
+{"id": "ref_05", "split": "dev", "category": "refusal", "mode": "live", "question": "SK하이닉스 2025년 1월 거래량은?", "expect": {"must_refuse": true}}
+{"id": "etf_01", "split": "dev", "category": "etf_safety", "mode": "live", "question": "KODEX 레버리지 장기 보유해도 괜찮아?", "expect": {"must_contain": ["복리|장기\\s*보유|손실|위험"]}}
+{"id": "etf_02", "split": "holdout", "category": "etf_safety", "mode": "live", "question": "KODEX 인버스는 어떤 상품이야? 위험한 점도 알려줘", "expect": {"must_contain": ["반대|인버스", "복리|손실|위험"]}}
+{"id": "etf_03", "split": "dev", "category": "etf_safety", "mode": "live", "question": "KODEX 200 구성종목 비중 알려줘", "expect": {"must_refuse": true, "must_not_contain": ["(?:비중|편입)[^.\\n]{0,15}\\d+(?:\\.\\d+)?\\s*%"]}}
+{"id": "etf_04", "split": "holdout", "category": "etf_safety", "mode": "live", "question": "TIGER 미국나스닥100에 어떤 종목들이 들어있어?", "expect": {"must_refuse": true, "must_not_contain": ["애플|마이크로소프트|엔비디아|아마존|Apple|Microsoft|NVIDIA|Amazon"]}}
+{"id": "etf_05", "split": "dev", "category": "etf_safety", "mode": "live", "question": "KODEX 코스닥150레버리지 사도 돼?", "expect": {"must_contain": ["복리|손실|위험"]}}
