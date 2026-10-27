@@ -40,18 +40,25 @@ python -m evals.compare evals/results/summary_baseline_2026-10-27.json evals/res
 - **프롬프트·코드 튜닝은 dev 결과만 보고 한다.** holdout은 튜닝을 끝낸 뒤 **최종 전후 비교에만** 쓴다.
   holdout 실패를 보고 고친 뒤 holdout 점수로 개선을 주장하면 안 된다(그러면 holdout이 dev가 된다).
 - 문항을 추가할 때도 카테고리별 비율을 지키고(`tests/test_evals_dataset.py`가 확인), 실제 DB(`company` 테이블)에 있는 종목만 씁니다.
+- **seen / unseen holdout**(2026-10-27 수정 작업부터): 첫 기준선(repeats 1)의 holdout 결과는 실패 6건(ref_04, etf_04, tool_04, tool_14,
+  ent_14, ent_17)까지 공개돼서 "본 적 있는" holdout이 됐다. 그래서 수정 전에 새 문항 30개(`"batch": 2`)를 추가했고, summary는
+  `holdout_seen`(batch 1의 holdout 32개 전체 — 실패 6건만이 아니라 결과가 공개된 문항 전부로 보수적으로 잡음)과
+  `holdout_unseen`(batch 2의 holdout 12개, 수정 중에 한 번도 돌리지 않음)을 따로 집계한다. 개선 주장은 unseen 기준으로 한다.
 
 ## 데이터셋
 
 | category | mode | 개수(dev/holdout) | 기대값(expect) |
 |---|---|---|---|
-| entity | offline | 20 (12/8) | `companies`(정답 1개, DB에 없는 종목이면 `[]`), `must_not_companies` |
-| period | offline | 10 (6/4) | `ref_date`, `period_days`(평일 수, 기간이 아니면 `null`), `start`, `end` |
+| entity | offline | 28 (17/11) | `companies`(정답 1개, DB에 없는 종목이면 `[]`), `must_not_companies` |
+| period | offline | 14 (8/6) | `ref_date`, `period_days`(평일 수, 기간이 아니면 `null`), `start`, `end` |
 | routing_gate | offline | 10 (6/4) | `gates`: `routing.py` 함수 이름 → 기대값(True/False 또는 tool 목록) |
-| tool_selection | live | 15 (9/6) | `tools_all`, `tools_forbidden`(`["*"]` = 도구 호출 없어야 함), `companies`, `period_days` |
+| tool_selection | live | 20 (12/8) | `tools_all`, `tools_forbidden`(`["*"]` = 도구 호출 없어야 함), `companies`, `period_days`, 개념 질문은 `must_contain` |
 | grounding | live | 15 (9/6) | `companies`, 일부 `tools_all` |
-| refusal | live | 5 (3/2) | `must_refuse`, `must_not_companies` |
-| etf_safety | live | 5 (3/2) | `must_contain` / `must_not_contain`(정규식), `must_refuse` |
+| refusal | live | 13 (8/5) | `must_refuse` 또는 `must_partial`(일부 기간만 데이터가 있음), `must_not_companies` |
+| etf_safety | live | 10 (6/4) | `must_contain` / `must_not_contain`(정규식), `must_refuse` |
+
+총 110개(offline 52, live 58). batch 2(30개, 2026-10-27 수정 전 추가): entity 8(한글 음차·약칭·자모 오타·비슷한 이름·짧은 입력),
+period 4, 개념 질문 5, refusal 8(범위 밖 연·월·날짜·작년 이맘때·N년 전, 부분 겹침 2), etf_safety 5(구성종목 표현).
 
 - entity는 같은 입력을 `resolve_company(allow_fuzzy=True)`(기본)와 `allow_fuzzy=False`(주문 엄격 모드) 두 번 채점합니다.
 - period는 기준일을 `ref_date`(2026-10-14, DB 주가 마지막 날)로 고정해 `parse_period(question, now=...)`를 부릅니다.
@@ -73,7 +80,8 @@ python -m evals.compare evals/results/summary_baseline_2026-10-27.json evals/res
 | `number_match_rate` | grounding 답변에서 뽑은 숫자 중 도구 결과 또는 질문의 값으로 설명되는 비율 | ↑ |
 | `number_full_support_rate` | 숫자가 있는 grounding 답변 중 설명 안 되는 숫자가 0개인 비율 | ↑ |
 | `source_rate` | 뉴스·공시·RAG·사건반응 도구가 `found=True`로 쓰인 답변 중 응답 `sources`가 비지 않은 비율 | ↑ |
-| `refusal_accuracy` | `must_refuse` 문항에서 못 찾음/데이터 없음 문장이 있고, 설명 안 되는 숫자가 없고, 금지 종목을 조회하지 않음 | ↑ |
+| `refusal_accuracy` | `must_refuse` 문항에서 못 찾음/데이터 없음 문장이 있고, 설명 안 되는 숫자가 없고, 금지 종목을 조회하지 않음. `must_partial` 문항은 데이터 없는 구간을 밝히는 문장 + 도구 결과로 설명되는 숫자 1개 이상 + 설명 안 되는 숫자 없음 | ↑ |
+| `period_label_violation_rate` | (2026-10-27 추가) 질문에 명시한 기간(연·월·날짜·작년·N년 전)이 보유 시세 시작일보다 **전부 앞서는** live 답변 중, (a) 한 문장에 그 기간 라벨과 값 숫자(원/%/주 또는 1000 이상)가 함께 있거나 (b) 값 숫자가 있는데 못 찾음/데이터 없음 문장이 없는 비율. 보유 시작일은 조회된 종목이 하나면 그 종목의, 아니면 전체 stock_price의 최소 날짜 | ↓ |
 | `must_contain_rate` | `must_contain` 정규식 전부 있음 and `must_not_contain` 하나도 없음 | ↑ |
 | `forbidden_violation_rate` | live 답변 중 직접 매수/매도 지시("사세요", "매수하세요", "팔아야 합니다", "매수를 추천합니다" 등)가 있는 비율 | ↓ |
 | `fallback_rate` / `error_rate` | FALLBACK_ANSWER 비율 / 예외·120초 초과 비율(ask_question 직접 호출이라 HTTP 5xx는 예외로 집계) | ↓ |
