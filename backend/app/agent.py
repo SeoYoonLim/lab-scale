@@ -7,11 +7,14 @@ FastAPI 라우트(app/api/research.py)와 CLI 스모크 테스트 스크립트�
 
 import inspect
 import json
+import logging
 import os
 import re
+import threading
 import time
 from datetime import datetime, timezone
 
+import httpx
 import ollama
 from sqlalchemy import func
 
@@ -37,6 +40,7 @@ from app.etf import (
     news_result_for_llm,
     remove_empty_sections,
 )
+from app.answer_guard import code_summary
 from app.glossary import concept_answer
 from app.models import Company, StockPrice
 from app.period_parser import KST, mentions_period, parse_period
@@ -70,6 +74,66 @@ from app.utils import extract_answer_text
 # llama는 no_tool 실패(불필요한 tool 호출) 시에도 답변 내용 자체는 사실 왜곡이 없어
 # 금융 정보 서비스 특성상 더 안전한 실패 모드로 판단.
 MODEL_NAME = "llama3.1:8b"
+
+logger = logging.getLogger(__name__)
+
+# ---------- LLM 호출 안정성 (2026-10-27) ----------
+# 평가에서 설명형 ETF 질문(etf_02)이 120초 timeout을 냈고, 한 번은 약 18분 동안 뒤의 요청이 모두 막혔다. LLM 호출에 생성 길이
+# 제한과 요청 timeout이 없었다. 이제 호출마다 timeout(질문 전체 한도 안에서 남은 시간)과 num_predict를 두고, timeout·연결 오류면
+# 예외 대신 도구 결과의 코드 요약(없으면 LLM_TIMEOUT_ANSWER)으로 답한다. 클라이언트 timeout으로 연결을 끊으면 Ollama도 그 생성을 멈춘다.
+# 재현(2026-10-27): 설명형 ETF 질문의 최종 답변이 같은 문장을 반복하며 8192토큰·216초까지 생성됐다(3회 중 2회). 정상 답변은
+# 최대 381토큰·약 10초였다. 그래서 num_predict는 정상 최대치의 약 2.7배(1024, 약 27초)로 두고, 이 한도에서 잘린 답변은 반복 루프로
+# 보고 내보내지 않는다(도구 결과의 코드 요약으로 대체). Ollama는 요청을 하나씩 처리해서 긴 생성 하나가 뒤 요청을 모두 막는다.
+LLM_CALL_TIMEOUT_S = 45
+LLM_QUESTION_BUDGET_S = 90
+LLM_NUM_PREDICT = 1024
+LLM_TIMEOUT_ANSWER = "응답 생성이 지연되어 답변을 만들지 못했습니다. 잠시 후 다시 시도해주세요."
+_LIBRARY_CHAT = ollama.chat  # 테스트가 ollama.chat을 바꿔 두면 그 함수를 그대로 쓴다(_llm_chat)
+_STATE = threading.local()  # 요청(스레드)별 LLM 한도와 응답 메타. ask_question이 응답의 "meta"로 붙인다(API 응답 필드는 아님).
+
+
+class LLMUnavailable(Exception):
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def _reset_llm_state() -> None:
+    _STATE.deadline = time.monotonic() + LLM_QUESTION_BUDGET_S
+    _STATE.meta = {"fallback": None, "llm_truncated": False, "answer_guard": None}
+
+
+def _meta() -> dict:
+    if not hasattr(_STATE, "meta"):
+        _reset_llm_state()
+    return _STATE.meta
+
+
+def _llm_chat(**kwargs):
+    """ollama.chat에 호출별 timeout(질문 한도 안의 남은 시간)과 num_predict를 붙여 부른다.
+    timeout·연결 오류는 LLMUnavailable로 바꾼다. 생성이 num_predict에서 끊기면 meta.llm_truncated를 남긴다."""
+    deadline = getattr(_STATE, "deadline", None) or time.monotonic() + LLM_QUESTION_BUDGET_S
+    remaining = deadline - time.monotonic()
+    if remaining < 2:
+        raise LLMUnavailable("question_budget")
+    kwargs["options"] = {**(kwargs.get("options") or {}), "num_predict": LLM_NUM_PREDICT}
+    try:
+        if ollama.chat is _LIBRARY_CHAT:
+            resp = ollama.Client(timeout=min(LLM_CALL_TIMEOUT_S, remaining)).chat(**kwargs)
+        else:
+            resp = ollama.chat(**kwargs)
+    except httpx.TimeoutException:
+        raise LLMUnavailable("timeout") from None
+    except (ConnectionError, httpx.TransportError):
+        raise LLMUnavailable("connection") from None
+    try:
+        done_reason = resp["done_reason"]
+    except (KeyError, TypeError):
+        done_reason = None
+    if done_reason == "length":
+        _meta()["llm_truncated"] = True
+        logger.warning("LLM 답변이 num_predict(%s)에서 잘림", LLM_NUM_PREDICT)
+    return resp
 
 SYSTEM_PROMPT = (
     "너는 한국 주식 투자자를 돕는 리서치 어시스턴트다. "
@@ -779,7 +843,7 @@ def _first_call(model: str, messages: list[dict], tools: list[dict] | None = Non
     Returns: (assistant message, tool_calls 또는 None). 끝내 실패하면 (None, None).
     """
     for _ in range(2):
-        msg = ollama.chat(model=model, messages=messages, tools=TOOLS if tools is None else tools)["message"]
+        msg = _llm_chat(model=model, messages=messages, tools=TOOLS if tools is None else tools)["message"]
         tool_calls = msg.get("tool_calls")
         if tool_calls:
             return msg, tool_calls
@@ -1169,6 +1233,18 @@ def _answer_period_scope(question: str, companies: list | None, today=None):
     return _code_answer(answer, [record])
 
 
+def _llm_fallback(err: LLMUnavailable, records: list[dict], etf_subjects=None) -> tuple[dict, list[dict]]:
+    """(A) LLM이 timeout·연결 오류로 답하지 못했을 때: 도구 결과가 있으면 코드 요약, 없으면 LLM_TIMEOUT_ANSWER."""
+    _meta()["fallback"] = err.reason
+    logger.warning("LLM 응답 실패(%s): %s", err.reason, "코드 요약으로 답함" if records else "지연 안내로 답함")
+    answer = None
+    if records:
+        answer = _finish_etf_answer("", records, etf_subjects) if etf_subjects else code_summary(records)
+    if not answer or answer == FALLBACK_ANSWER:
+        answer = LLM_TIMEOUT_ANSWER
+    return _code_answer(answer, records)
+
+
 UNRESOLVED_COMPANY_ANSWER = "해당 종목을 찾지 못했습니다. 종목명 또는 종목코드를 정확히 입력해주세요."
 
 
@@ -1217,6 +1293,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     if event_company is not None:
         return _answer_event(question, model, event_company, previous)
 
+    _reset_llm_state()
     companies = _question_companies(question)
     for handler in (_answer_concept, _answer_etf_constituents, _answer_period_scope):
         handled = handler(question, companies)
@@ -1232,7 +1309,10 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     ]
 
     # 1차 호출: 모델이 tool을 쓸지 말지 스스로 판단
-    msg, tool_calls = _first_call(model, messages, tools)
+    try:
+        msg, tool_calls = _first_call(model, messages, tools)
+    except LLMUnavailable as e:
+        return _llm_fallback(e, [])
 
     if msg is None:
         return {"answer": FALLBACK_ANSWER, "used_tools": [], "sources": []}, []
@@ -1312,7 +1392,13 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     # 3. tool 결과를 반영한 최종 답변 생성. 구조화 안내(FR-11)는 이 호출 직전에만 추가한다. ETF 질문이면 ETF 규칙을 덧붙인다.
     instruction = ANSWER_STRUCTURE_INSTRUCTION + (" " + ETF_ANSWER_RULES if etf_mode else "")
     messages.append({"role": "system", "content": instruction})
-    final = ollama.chat(model=model, messages=messages)
+    try:
+        final = _llm_chat(model=model, messages=messages)
+    except LLMUnavailable as e:
+        return _llm_fallback(e, records, subjects if etf_mode else None)
+    if _meta()["llm_truncated"]:
+        # num_predict에서 잘렸다 = 정상 답변 길이를 크게 넘었다(반복 루프). 잘린 글은 내보내지 않는다.
+        return _llm_fallback(LLMUnavailable("length"), records, subjects if etf_mode else None)
     answer = strip_role_prefix(extract_answer_text(final["message"]["content"]))
     if _mentions_tool_call(answer):
         answer = FALLBACK_ANSWER
@@ -1355,7 +1441,10 @@ def ask_question(
         sources는 tool 결과에서 뽑은 근거 문서(news/disclosure) 목록이다.
     """
     previous_id = previous["report_id"] if previous else None
+    _reset_llm_state()
     response, records = _answer(question, model, previous)
+    # 내부 메타(대체·fallback·잘림). API 응답 모델(ResearchResponse)에는 없는 키라 응답에 나가지 않는다.
+    response["meta"] = dict(_meta())
     response["report_id"] = (
         save_report_row(question, response["answer"], records, previous_report_id=previous_id, user_id=user_id)
         if save_report
