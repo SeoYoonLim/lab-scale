@@ -93,8 +93,10 @@ class TestExistingBehaviorUnchanged:
         assert res.company.name == "SK하이닉스" and res.corrected_from == "sk 하이닉스"
         res = resolve_company(make_db("한화에어로스페이스", "삼성화재"), "한화에어로스패이스")  # 오타는 퍼지로 보정
         assert res.company.name == "한화에어로스페이스"
-        # 잘린 이름은 다른 종목일 수 있어 기존 설계대로 보정하지 않는다
-        assert resolve_company(make_db("한화에어로스페이스", "삼성화재"), "한화에어로스페이").company is None
+        # 잘린 이름(앞부분 약칭): 2026-10-27부터 기본 모드에서 그 이름으로 시작하는 종목이 하나뿐이면 채택한다(이전에는 보정하지 않음).
+        # 둘 이상이면 고르지 않고 후보 안내, 엄격 모드는 여전히 보정하지 않는다(tests/test_company_resolver_rules.py).
+        assert resolve_company(make_db("한화에어로스페이스", "삼성화재"), "한화에어로스페이").company.name == "한화에어로스페이스"
+        assert resolve_company(make_db("한화에어로스페이스", "삼성화재"), "한화에어로스페이", allow_fuzzy=False).company is None
 
     def test_preferred_stock_still_not_resolved_to_common(self, make_db):
         assert resolve_company(make_db("삼성전자"), "삼성전자우").company is None

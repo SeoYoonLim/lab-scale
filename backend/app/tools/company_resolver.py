@@ -1,7 +1,8 @@
 """tool 입력 종목명/티커 정규화 및 보정.
 
 LLM이 만든 인자에는 앞뒤 공백, 따옴표, 'null', 깨진 문자열 등이 섞여 들어온다.
-정확 일치 -> 공백/대소문자 무시 일치 -> 별칭(app/company_aliases.py) -> 유사 종목명 보정(difflib) 순으로 시도하고,
+정확 일치 -> 공백/대소문자 무시 일치 -> 별칭(app/company_aliases.py) -> [기본 모드만] 한글 음차(엘지->LG) -> 앞부분 약칭
+-> 자모 한 글자 오타 -> 유사 종목명 보정(difflib) 순으로 시도하고,
 그래도 못 찾으면 예외 대신 "종목을 찾지 못했습니다" 응답을 돌려준다.
 주문처럼 오매칭이 곧 금전 사고인 경로는 allow_fuzzy=False(엄격 모드)로 호출한다: 4단계(유사 보정)를 건너뛰고,
 유사 후보는 보정하지 않고 "혹시 A, B 중 하나인가요?" 안내로만 돌려준다.
@@ -54,6 +55,50 @@ class Resolution:
     corrected_from: str | None = None
     message: str | None = None
     candidates: list[str] | None = None
+
+
+# 기본 모드의 앞부분 약칭 규칙에 쓰는 최소 길이(공백 제외 글자 수). 3자 이하('삼성전', '현대차')는 다른 종목의 앞부분일 때가 많다.
+PREFIX_MIN_LEN = 4
+# 자모 오타 규칙은 한글 3글자 이상에만 쓴다. 2글자 이름('동서'/'동성')은 한 자모 차이로 다른 회사가 되는 경우가 많다.
+JAMO_MIN_HANGUL = 3
+
+# 영문 약어로 시작하는 종목명의 한글 음차(앞부분만 바꾼다). 긴 것부터 시도한다('에스케이씨' 다음에 '에스케이').
+TRANSLIT_PREFIXES = {
+    "엔에이치엔": "NHN", "케이티앤지": "KT&G", "에스케이씨": "SKC", "케이씨씨": "KCC", "비엔케이": "BNK", "비지에프": "BGF",
+    "에이치엠엠": "HMM", "에이치디씨": "HDC", "에이치엘비": "HLB", "오씨아이": "OCI", "에프앤에프": "F&F",
+    "에스케이": "SK", "엘지": "LG", "케이비": "KB", "지에스": "GS", "씨제이": "CJ", "케이티": "KT", "에이치디": "HD",
+    "에이치엘": "HL", "에이치케이": "HK", "에이치제이": "HJ", "엔에이치": "NH", "디비": "DB", "디엘": "DL", "디엔": "DN",
+    "엘에스": "LS", "엘엑스": "LX", "제이비": "JB", "아이엠": "iM", "엔씨": "NC",
+    # "포스코"는 넣지 않는다: 약어 음차가 아니라 한글 브랜드라 POSCO홀딩스/포스코퓨처엠/포스코인터내셔널에 두루 걸린다.
+}
+_TRANSLIT_ORDER = sorted(TRANSLIT_PREFIXES, key=len, reverse=True)
+
+
+def transliterate_prefix(name: str) -> str:
+    """'엘지화학' -> 'LG화학', '에스케이씨' -> 'SKC'. 음차 표로 시작하지 않으면 그대로 돌려준다."""
+    for ko in _TRANSLIT_ORDER:
+        if name.startswith(ko):
+            return TRANSLIT_PREFIXES[ko] + name[len(ko):]
+    return name
+
+
+def _jamo(ch: str) -> tuple | None:
+    """한글 음절 -> (초성, 중성, 종성) 번호. 한글 음절이 아니면 None."""
+    code = ord(ch) - 0xAC00
+    if not 0 <= code < 11172:
+        return None
+    return code // 588, (code % 588) // 28, code % 28
+
+
+def _one_jamo_apart(a: str, b: str) -> bool:
+    """글자 수가 같고 정확히 한 글자만 다르며, 그 글자가 둘 다 한글이고 초성·중성·종성 중 한 자리만 다르면 True(한글 3자 이상)."""
+    if len(a) != len(b) or a == b or sum(1 for ch in a if _jamo(ch)) < JAMO_MIN_HANGUL:
+        return False
+    diff = [(x, y) for x, y in zip(a, b) if x != y]
+    if len(diff) != 1:
+        return False
+    ja, jb = _jamo(diff[0][0]), _jamo(diff[0][1])
+    return ja is not None and jb is not None and sum(p != q for p, q in zip(ja, jb)) == 1
 
 
 def _suggest_message(s: str, key: str, keys: dict) -> Resolution:
@@ -110,12 +155,51 @@ def resolve_company(db, raw, allow_fuzzy: bool = True) -> Resolution:
         if len(by_brand) == 1:
             return Resolution(company=by_brand[0], corrected_from=str(raw))
 
-    # 4) 유사 종목명 보정
     keys = {}
     for c in companies:
         keys.setdefault(_key(c.name), []).append(c)
     if not allow_fuzzy:
         return _suggest_message(s, key, keys)
+
+    # --- 여기부터는 기본 모드(allow_fuzzy=True)에서만. 주문의 엄격 모드는 위에서 이미 후보 안내로 끝났다. ---
+
+    # 3c) 영문 약어의 한글 음차를 영문으로 ('엘지화학' -> 'LG화학', '케이비금융' -> 'KB금융'). 바꾼 이름이 정확히(공백·대소문자
+    #     무시) 등록명이거나 별칭일 때만 채택한다.
+    translit = transliterate_prefix(s)
+    t_key = _key(translit)
+    if translit != s:
+        if t_key in keys and len(keys[t_key]) == 1:
+            return Resolution(company=keys[t_key][0], corrected_from=str(raw))
+        alias_name = _ALIAS_BY_KEY.get(t_key)
+        if alias_name is not None:
+            for c in companies:
+                if c.name == alias_name:
+                    return Resolution(company=c, corrected_from=str(raw))
+    variants = list(dict.fromkeys((key, t_key)))
+
+    # 3d) 앞부분 약칭 ('JB금융' -> 'JB금융지주'): 입력(4자 이상)으로 시작하는 종목이 정확히 하나면 채택, 둘 이상이면 후보 안내.
+    prefixed = {m for v in variants if len(v) >= PREFIX_MIN_LEN for m in keys if m.startswith(v) and m != v}
+    if len(prefixed) == 1:
+        return Resolution(company=keys[prefixed.pop()][0], corrected_from=str(raw))
+    if len(prefixed) > 1:
+        names = sorted(keys[m][0].name for m in prefixed)
+        return Resolution(
+            message=f"'{s}'(으)로 시작하는 종목이 여러 개라 특정할 수 없습니다. 정확한 종목명을 지정해주세요.",
+            candidates=names[:MAX_CANDIDATES],
+        )
+
+    # 3e) 자모 한 글자 오타 ('셀트리언' -> '셀트리온'): 한글 3글자 이상, 글자 수가 같고, 한 글자의 초성·중성·종성 중 하나만 다른
+    #     종목이 정확히 하나면 채택한다(그런 종목이 둘 이상이면 1등과 2등의 차이가 없으니 후보 안내).
+    one_off = {m for v in variants for m in keys if _one_jamo_apart(v, m)}
+    if len(one_off) == 1:
+        return Resolution(company=keys[one_off.pop()][0], corrected_from=str(raw))
+    if len(one_off) > 1:
+        return Resolution(
+            message=f"'{s}'와(과) 비슷한 종목이 여러 개라 특정할 수 없습니다. 정확한 종목명을 지정해주세요.",
+            candidates=sorted(keys[m][0].name for m in one_off)[:MAX_CANDIDATES],
+        )
+
+    # 4) 유사 종목명 보정
     matches = difflib.get_close_matches(key, list(keys), n=MAX_CANDIDATES, cutoff=FUZZY_CUTOFF)
     # 입력이 종목명을 포함하거나 종목명이 입력을 포함하면 오타가 아니라 다른 종목일 가능성이 높다
     # (예: '삼성전자우'(우선주) -> '삼성전자', '현대' -> '현대차'). 잘못된 종목으로 답하는 것보다
