@@ -146,3 +146,30 @@ def test_quote_answer_uses_only_tool_values():
     text = G.quote_answer(STOCK["result"])
     assert text == "NAVER의 2026-10-14 종가는 179,200원입니다. 전일 대비 등락률은 +1.30%, 거래량은 592,942주입니다."
     assert G.quote_answer({"found": False}) is None
+
+
+# ---------- (C) 데이터 기준일 ----------
+
+TODAY = date(2026, 10, 27)
+
+
+@pytest.mark.parametrize("q, period_text, expected", [
+    ("NAVER 지금 얼마야?", None, "마지막 데이터는 2026-10-14 기준입니다."),
+    ("NAVER 오늘 주가 얼마야?", "오늘", "마지막 데이터는 2026-10-14 기준입니다."),
+    ("NAVER 현재가 알려줘", None, "마지막 데이터는 2026-10-14 기준입니다."),
+    ("NAVER 주가 얼마야?", None, None),  # 현재 시점 표현 없음
+    ("NAVER 최근 3개월 주가", "3개월", None),  # 기간을 명시한 질문은 대상 아님
+    ("NAVER 지금 뉴스 알려줘", None, None),  # 시세 질문이 아님
+])
+def test_freshness_note(q, period_text, expected):
+    assert G.freshness_note(q, [STOCK], TODAY, period_text) == expected
+
+
+def test_freshness_note_not_added_when_data_is_current():
+    assert G.freshness_note("NAVER 지금 얼마야?", [STOCK], date(2026, 10, 15), None) is None  # 1영업일 차이
+    assert G.freshness_note("NAVER 지금 얼마야?", [], TODAY, None) is None
+
+
+def test_freshness_note_satisfies_the_evaluator():
+    answer = G.quote_answer(STOCK["result"]) + "\n\n" + G.freshness_note("NAVER 지금 얼마야?", [STOCK], TODAY, None)
+    assert M.data_date_ok(answer, date(2026, 10, 14), TODAY) is True

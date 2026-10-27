@@ -40,7 +40,7 @@ from app.etf import (
     news_result_for_llm,
     remove_empty_sections,
 )
-from app.answer_guard import code_summary, guard_answer, is_simple_quote, quote_answer
+from app.answer_guard import code_summary, freshness_note, guard_answer, is_simple_quote, quote_answer
 from app.glossary import concept_answer
 from app.models import Company, StockPrice
 from app.period_parser import KST, mentions_period, parse_period
@@ -1238,6 +1238,12 @@ def _period_text(question: str) -> str | None:
     return parsed.matched_text if parsed else None
 
 
+def _with_freshness(answer: str, question: str, records: list[dict]) -> str:
+    """(C) 현재 시점 시세 질문인데 마지막 데이터가 오래됐으면 "마지막 데이터는 YYYY-MM-DD 기준입니다."를 붙인다."""
+    note = freshness_note(question, records, datetime.now(KST).date(), _period_text(question))
+    return f"{answer}\n\n{note}" if note else answer
+
+
 def _answer_simple_quote(question: str, companies: list | None):
     """(B) 단일 종목의 현재가·등락률·거래량만 묻는 질문은 LLM 없이 stock_tool 결과로 코드가 답한다.
     원인·흐름·비교·뉴스·기간 등이 섞인 질문은 기존 흐름이다(app/answer_guard.is_simple_quote)."""
@@ -1259,7 +1265,7 @@ def _answer_simple_quote(question: str, companies: list | None):
         answer += "\n\n" + leverage_notice(company.name, kind)
     record = {"tool_name": "stock_tool", "arguments": args, "result": result, "called_at": called_at,
               "elapsed_ms": round((time.perf_counter() - started) * 1000)}
-    return _code_answer(answer, [record])
+    return _code_answer(_with_freshness(answer, question, [record]), [record])
 
 
 def _llm_fallback(err: LLMUnavailable, records: list[dict], etf_subjects=None) -> tuple[dict, list[dict]]:
@@ -1445,7 +1451,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
         answer = remove_empty_sections(answer)
         if etf_mode:
             answer = _finish_etf_answer(answer, records, subjects)
-        answer = _guard(answer, records, question)
+        answer = _with_freshness(_guard(answer, records, question), question, records)
     response = {
         "answer": answer,
         "used_tools": [r["tool_name"] for r in records],

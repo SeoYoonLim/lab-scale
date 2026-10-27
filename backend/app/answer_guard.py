@@ -296,3 +296,39 @@ def quote_answer(result: dict) -> str | None:
     if not isinstance(result, dict) or not result.get("found"):
         return None
     return _price_sentence({k: v for k, v in result.items() if k != "summary"})
+
+
+# ---------- 데이터 기준일 표시 ----------
+# "오늘/지금/현재/최근" 같은 현재 시점 표현이 있는 시세 질문에서, 답에 쓴 마지막 시세 날짜가 최근 거래일보다 영업일 기준
+# STALE_BUSINESS_DAYS(app/data_status.py, 2일) 이상 오래됐으면 "마지막 데이터는 YYYY-MM-DD 기준입니다."를 코드가 붙인다.
+# 판정은 GET /api/status와 같은 app.data_status.is_stale을 쓴다. 기간을 명시한 질문("최근 3개월")은 대상이 아니다.
+_NOW_RE = re.compile(r"오늘|지금|현재|최근|요즘|요새|금일|현시점")
+_PRICE_INTENT_RE = re.compile(r"주가|가격|시세|현재가|종가|얼마|등락|거래량")
+
+
+def latest_price_date(records: list[dict]):
+    """stock_tool 결과들의 마지막 시세 날짜 중 가장 이른 것(여러 종목이면 가장 오래된 쪽을 알린다). 없으면 None."""
+    from datetime import date
+
+    dates = []
+    for rec in records:
+        r = rec.get("result")
+        if rec.get("tool_name") == "stock_tool" and isinstance(r, dict) and r.get("found"):
+            prices = r.get("prices") or []
+            d = (prices[-1].get("price_date") if prices else None) or r.get("period_end_date")
+            if d:
+                dates.append(date.fromisoformat(str(d)[:10]))
+    return min(dates) if dates else None
+
+
+def freshness_note(question: str, records: list[dict], today, period_text: str | None) -> str | None:
+    """현재 시점 시세 질문인데 마지막 데이터가 오래됐으면 붙일 문장, 아니면 None. period_text는 parse_period가 인식한 표현."""
+    from app.data_status import is_stale
+
+    q = question or ""
+    if not _NOW_RE.search(q) or not _PRICE_INTENT_RE.search(q) or period_text not in (None, "오늘"):
+        return None
+    latest = latest_price_date(records)
+    if latest is None or not is_stale(latest, today):
+        return None
+    return f"마지막 데이터는 {latest.isoformat()} 기준입니다."
