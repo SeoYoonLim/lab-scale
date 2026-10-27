@@ -38,7 +38,11 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r requirements.txt
-      - run: python -m pytest -m "not slow and not integration" -q
+      - run: python -m pytest -m "not slow and not integration" -q --junitxml="$RUNNER_TEMP/junit.xml"
+      # 실패하면 어떤 테스트가 왜 실패했는지 어노테이션으로 남긴다(로그를 내려받을 권한이 없어도 Actions 화면/API에서 읽힌다).
+      - name: 실패한 테스트 어노테이션
+        if: failure()
+        run: python ../scripts/ci_junit_annotations.py "$RUNNER_TEMP/junit.xml"
 
   # ---------------------------------------------------------------------------
   # 시크릿 검사: 추적 파일 전체 + 이번 push/PR이 추가한 커밋의 변경 줄. 외부 서비스 없이 scripts/secret_scan.py만 쓴다.
@@ -179,7 +183,10 @@ jobs:
             exit 1
           fi
       - name: 통합 테스트
-        run: python -m pytest -m "integration and not slow and not needs_collected_data" -q
+        run: python -m pytest -m "integration and not slow and not needs_collected_data" -q --junitxml="$RUNNER_TEMP/junit.xml"
+      - name: 실패한 테스트 어노테이션
+        if: failure()
+        run: python ../scripts/ci_junit_annotations.py "$RUNNER_TEMP/junit.xml"
 
   # ---------------------------------------------------------------------------
   # AI 평가 offline 게이트: 종목 시드만 올린 DB에서 entity / period / routing_gate 문항(52개)을 채점한다.
