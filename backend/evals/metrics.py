@@ -206,6 +206,93 @@ def regex_checks(text: str, must_contain=None, must_not_contain=None) -> list[st
     return fails
 
 
+# ---------- 기간 라벨 일관성 ----------
+
+# 질문에 명시한 과거 기간(연·월·날짜, 작년, N년 전). (정규식, 범위 함수, 답변에서 같은 기간을 가리키는 라벨 정규식 함수)
+_YMD_RE = re.compile(r"((?:19|20)\d{2})\s*(?:년\s*|[-.]\s*)(\d{1,2})\s*(?:월\s*|[-.]\s*)(\d{1,2})\s*일?")
+_YM_RE = re.compile(r"((?:19|20)\d{2})\s*년\s*(\d{1,2})\s*월")
+_Y_RE = re.compile(r"((?:19|20)\d{2})\s*년")
+_AGO_RE = re.compile(r"(\d{1,2})\s*(년|개월)\s*전")
+
+
+def _month_end(y: int, m: int):
+    from calendar import monthrange
+    from datetime import date
+
+    return date(y, m, monthrange(y, m)[1])
+
+
+def explicit_periods(question: str, today) -> list[tuple]:
+    """질문에 명시된 기간 목록 [(start, end, 답변 속 같은 기간 라벨 정규식)]. 상대 기간("최근 3개월")은 넣지 않는다."""
+    from datetime import date
+
+    q, out = question or "", []
+    taken = []
+
+    def free(m):
+        return all(m.end() <= a or m.start() >= b for a, b in taken)
+
+    for m in _YMD_RE.finditer(q):
+        y, mo, d = map(int, m.groups())
+        try:
+            day = date(y, mo, d)
+        except ValueError:
+            continue
+        taken.append(m.span())
+        out.append((day, day, rf"{y}\s*[-.년]\s*0?{mo}\s*[-.월]\s*0?{d}"))
+    for m in _YM_RE.finditer(q):
+        if free(m) and 1 <= int(m.group(2)) <= 12:
+            y, mo = int(m.group(1)), int(m.group(2))
+            taken.append(m.span())
+            out.append((date(y, mo, 1), _month_end(y, mo), rf"{y}\s*년\s*{mo}\s*월"))
+    for m in _Y_RE.finditer(q):
+        if free(m):
+            y = int(m.group(1))
+            out.append((date(y, 1, 1), date(y, 12, 31), rf"{y}\s*년"))
+    if re.search(r"작년\s*이맘때", q):
+        day = date(today.year - 1, today.month, min(today.day, 28))
+        out.append((day, day, r"작년"))
+    elif re.search(r"(?<!재)작년", q):
+        out.append((date(today.year - 1, 1, 1), date(today.year - 1, 12, 31), r"작년"))
+    if "재작년" in q:
+        out.append((date(today.year - 2, 1, 1), date(today.year - 2, 12, 31), r"재작년"))
+    for m in _AGO_RE.finditer(q):
+        n, unit = int(m.group(1)), m.group(2)
+        months = n * 12 if unit == "년" else n
+        total = today.year * 12 + today.month - 1 - months
+        day = date(total // 12, total % 12 + 1, min(today.day, 28))
+        out.append((day, day, rf"{n}\s*{unit}\s*전"))
+    return out
+
+
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n")
+
+
+def _value_like(n: Number) -> bool:
+    return n.unit in ("원", "%", "주") or n.value >= 1000
+
+
+def period_label_violation(question: str, answer: str, data_start, today) -> bool | None:
+    """질문에 명시한 기간이 보유 데이터 시작일보다 전체가 앞서는데, 답변이 그 기간의 값처럼 보이는 숫자를 내놓았으면 True.
+
+    해당 없음(명시 기간이 없거나 데이터 범위와 겹침)은 None. 위반 판정:
+    (a) 한 문장 안에 그 기간 라벨("2024년 3월")과 값 숫자(원/%/주 또는 1000 이상)가 함께 있거나,
+    (b) 답변에 값 숫자가 있는데 못 찾음/데이터 없음 문장이 없다.
+    """
+    if data_start is None:
+        return None
+    out_of_range = [p for p in explicit_periods(question, today) if p[1] < data_start]
+    if not out_of_range:
+        return None
+    answer = answer or ""
+    for sentence in _SENTENCE_SPLIT_RE.split(answer):
+        if any(re.search(label, sentence) for _, _, label in out_of_range):
+            if any(_value_like(n) for n in extract_numbers(sentence)):
+                return True
+    has_values = any(_value_like(n) for n in extract_numbers(answer))
+    return has_values and not is_refusal(answer)
+
+
 # ---------- 도구 선택 / 기간 ----------
 
 

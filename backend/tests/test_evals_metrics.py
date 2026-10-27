@@ -146,3 +146,37 @@ def test_percentile_and_rate():
     assert M.percentile([10], 95) == 10
     assert M.percentile([], 50) is None
     assert M.rate([True, False]) == 0.5 and M.rate([]) is None
+
+
+class TestPeriodLabel:
+    from datetime import date as _d
+
+    TODAY = _d(2026, 10, 27)
+    START = _d(2026, 6, 26)
+
+    def test_explicit_periods(self):
+        got = [(s.isoformat(), e.isoformat()) for s, e, _ in M.explicit_periods(
+            "2024년 3월, 2023년, 2026-03-15, 작년 이맘때, 3년 전", self.TODAY)]
+        assert got == [("2026-03-15", "2026-03-15"), ("2024-03-01", "2024-03-31"), ("2023-01-01", "2023-12-31"),
+                       ("2025-10-27", "2025-10-27"), ("2023-10-27", "2023-10-27")]
+
+    def test_relative_periods_are_not_explicit(self):
+        assert M.explicit_periods("최근 3개월 주가 추이", self.TODAY) == []
+
+    def test_labelled_current_price_is_violation(self):
+        assert M.period_label_violation("삼성전자 2024년 3월 주가 알려줘", "삼성전자의 2024년 3월 주가는 235,000원입니다.",
+                                         self.START, self.TODAY) is True
+
+    def test_value_without_refusal_is_violation(self):
+        assert M.period_label_violation("삼성전자 2024년 3월 주가", "현재 삼성전자 주가는 235,000 원입니다.",
+                                         self.START, self.TODAY) is True
+
+    def test_refusal_with_separate_recent_value_is_ok(self):
+        answer = ("요청하신 기간(2024년 3월)의 시세 데이터는 제공하지 않습니다. 보유한 데이터는 2026-06-26부터 2026-10-14까지입니다.\n"
+                  "참고로 2026-10-14 종가는 235,000원입니다.")
+        assert M.period_label_violation("삼성전자 2024년 3월 주가", answer, self.START, self.TODAY) is False
+
+    def test_not_applicable_when_in_range_or_no_period(self):
+        assert M.period_label_violation("삼성전자 2026년 9월 주가", "x 235,000원", self.START, self.TODAY) is None
+        assert M.period_label_violation("삼성전자 주가", "235,000원", self.START, self.TODAY) is None
+        assert M.period_label_violation("삼성전자 2024년 주가", "235,000원", None, self.TODAY) is None

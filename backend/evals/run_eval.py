@@ -27,7 +27,19 @@ DATASET = EVALS_DIR / "dataset.jsonl"
 RESULTS_DIR = EVALS_DIR / "results"
 LIVE_TIMEOUT_S = 120
 SOURCE_TOOLS = {"news_tool", "disclosure_tool", "rag_search_tool", "event_reaction_tool"}
-SPLITS = ("dev", "holdout", "all")
+# holdout_seen: batch 1(2026-10-27 첫 데이터셋)의 holdout. 첫 기준선 결과(실패 6건 포함)가 공개돼 있어 "본 적 있는" holdout이다.
+# holdout_unseen: batch 2(수정 전에 추가한 문항)의 holdout. 수정 중에 한 번도 돌리지 않는다.
+SPLITS = ("dev", "holdout", "holdout_seen", "holdout_unseen", "all")
+
+
+def in_split(rec: dict, split: str) -> bool:
+    if split == "all":
+        return True
+    if split == "holdout_seen":
+        return rec["split"] == "holdout" and rec.get("batch", 1) == 1
+    if split == "holdout_unseen":
+        return rec["split"] == "holdout" and rec.get("batch", 1) == 2
+    return rec["split"] == split
 
 
 def load_dataset(path: Path = DATASET) -> list[dict]:
@@ -41,7 +53,7 @@ def _fail(rec: dict, check: str, expected, actual) -> None:
 
 def _record(item: dict, run: int = 0) -> dict:
     return {k: item[k] for k in ("id", "split", "category", "mode", "question")} | {
-        "run": run, "flags": {}, "failures": [], "detail": {}}
+        "batch": item.get("batch", 1), "run": run, "flags": {}, "failures": [], "detail": {}}
 
 
 # ---------- offline ----------
@@ -143,8 +155,10 @@ def _expected_period(expect_value, question: str):
     return expect_value
 
 
-def score_live(item: dict, rec: dict, response: dict | None, calls: list[dict]) -> None:
-    """ask_question 응답과 tool_call_log 기록(calls: [{tool_name, arguments, result}])으로 채점한다."""
+def score_live(item: dict, rec: dict, response: dict | None, calls: list[dict], data_start=None, today=None) -> None:
+    """ask_question 응답과 tool_call_log 기록(calls: [{tool_name, arguments, result}])으로 채점한다.
+
+    data_start는 질문 종목(또는 전체)의 보유 시세 시작일로, 기간 라벨 일관성 판정에만 쓴다."""
     exp = item["expect"]
     flags = rec["flags"]
     answer = (response or {}).get("answer") or ""
@@ -206,6 +220,22 @@ def score_live(item: dict, rec: dict, response: dict | None, calls: list[dict]) 
                   {"refusal_phrase": M.is_refusal(answer), "unmatched": [n.raw for n in unmatched],
                    "answer": answer[:200]})
 
+    if exp.get("must_partial"):
+        # 요청 기간의 일부만 데이터가 있음: 없는 구간을 밝히고(답변 불가 문장), 있는 구간의 값은 도구 결과로 설명돼야 한다
+        ok = M.is_refusal(answer) and bool(matched) and not unmatched
+        flags["refusal_ok"] = ok
+        if not ok:
+            _fail(rec, "partial", "없는 구간 명시 + 있는 구간 값(근거 있음)",
+                  {"refusal_phrase": M.is_refusal(answer), "matched": len(matched),
+                   "unmatched": [n.raw for n in unmatched], "answer": answer[:200]})
+
+    if response is not None:
+        violation = M.period_label_violation(item["question"], answer, data_start, today or datetime.now().date())
+        if violation is not None:
+            flags["period_label_violation"] = violation
+            if violation:
+                _fail(rec, "period_label", "보유 범위 밖 기간의 값처럼 쓴 숫자 없음", answer[:200])
+
     if exp.get("must_contain") or exp.get("must_not_contain"):
         fails = M.regex_checks(answer, exp.get("must_contain"), exp.get("must_not_contain"))
         flags["contain_ok"] = not fails
@@ -245,6 +275,19 @@ def _delete_eval_user(db, user) -> int:
     db.query(User).filter(User.id == user.id).delete()
     db.commit()
     return n
+
+
+def _data_start(db, company_names: list[str]):
+    """보유 시세 시작일: 조회된 종목이 하나면 그 종목의, 아니면 전체 stock_price의 최소 날짜."""
+    from sqlalchemy import func
+
+    from app.models import Company, StockPrice
+
+    q = db.query(func.min(StockPrice.price_date))
+    names = set(company_names)
+    if len(names) == 1:
+        q = q.join(Company, Company.id == StockPrice.company_id).filter(Company.name == names.pop())
+    return q.scalar()
 
 
 def run_live(items: list[dict], repeats: int, model: str, log=print) -> tuple[list[dict], dict]:
@@ -290,7 +333,9 @@ def run_live(items: list[dict], repeats: int, model: str, log=print) -> tuple[li
                     rec["flags"]["fallback"] = response.get("answer") == FALLBACK_ANSWER
                 if error:
                     _fail(rec, "error", "정상 응답", error)
-                score_live(it, rec, response, calls)
+                resolved = [c["result"]["company_name"] for c in calls
+                            if isinstance(c["result"], dict) and c["result"].get("found") and c["result"].get("company_name")]
+                score_live(it, rec, response, calls, data_start=_data_start(db, resolved))
                 out.append(rec)
                 log(f"[live] {it['id']} run{run} {rec['latency_s']}s fail={[f['check'] for f in rec['failures']]}")
     finally:
@@ -323,6 +368,7 @@ METRICS = [
     ("number_full_support_rate", "flag", "numbers_all_supported", True),
     ("source_rate", "flag", "sources_ok", True),
     ("refusal_accuracy", "flag", "refusal_ok", True),
+    ("period_label_violation_rate", "flag", "period_label_violation", False),
     ("must_contain_rate", "flag", "contain_ok", True),
     ("forbidden_violation_rate", "flag", "forbidden", False),
     ("fallback_rate", "flag", "fallback", False),
@@ -359,7 +405,7 @@ def summarize(records: list[dict]) -> dict:
     for name, kind, arg, _ in METRICS:
         row, ns = {}, {}
         for split in SPLITS:
-            sub = records if split == "all" else [r for r in records if r["split"] == split]
+            sub = [r for r in records if in_split(r, split)]
             v, n = _metric(sub, kind, arg)
             row[split] = None if v is None else round(v, 4)
             ns[split] = n
@@ -368,7 +414,7 @@ def summarize(records: list[dict]) -> dict:
     return out
 
 
-_CHECK_PRIORITY = ["entity_default", "company", "entity_strict", "refusal", "number_support", "forbidden_expression",
+_CHECK_PRIORITY = ["entity_default", "company", "entity_strict", "period_label", "refusal", "partial", "number_support", "forbidden_expression",
                    "tool_selection", "contain", "live_period", "period_parse", "sources", "error"]
 
 

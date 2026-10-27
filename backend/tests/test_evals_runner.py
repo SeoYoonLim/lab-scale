@@ -75,3 +75,28 @@ def test_compare_table_marks_direction():
     assert "| entity_default_wrong_rate | dev | 0.1 | 0 | -0.1 ✅ |" in table
     assert "| routing_gate_accuracy | dev | 0.5 | 0.4 | -0.1 ⚠️ |" in table
     assert "| routing_gate_accuracy | holdout | - | - | - |" in table
+
+
+def test_partial_answer_needs_missing_note_and_supported_values():
+    item = _item("refusal", {"must_partial": True})
+    ok = "2026-01-01~2026-06-25 구간은 시세 데이터가 없습니다. 보유 구간 종가는 235,000원입니다."
+    assert _score(item, ok, [STOCK])["flags"]["refusal_ok"] is True
+    assert _score(item, "종가는 235,000원입니다.", [STOCK])["flags"]["refusal_ok"] is False
+    assert _score(item, "데이터가 없습니다.", [STOCK])["flags"]["refusal_ok"] is False
+
+
+def test_period_label_flag_uses_data_start():
+    from datetime import date
+
+    item = {**_item("refusal", {"must_refuse": True}), "question": "삼성전자 2024년 3월 주가 알려줘"}
+    rec = R._record(item)
+    R.score_live(item, rec, {"answer": "현재 주가는 235,000원입니다.", "sources": []}, [STOCK],
+                 data_start=date(2026, 6, 26), today=date(2026, 10, 27))
+    assert rec["flags"]["period_label_violation"] is True
+
+
+def test_seen_unseen_holdout_splits():
+    old = {**R._record(_item(split="holdout")), "flags": {"gate_ok": True}}
+    new = {**R._record({**_item(split="holdout"), "batch": 2}), "flags": {"gate_ok": False}}
+    s = R.summarize([old, new])["routing_gate_accuracy"]
+    assert (s["holdout"], s["holdout_seen"], s["holdout_unseen"]) == (0.5, 1.0, 0.0)
