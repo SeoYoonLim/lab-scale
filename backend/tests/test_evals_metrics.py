@@ -89,7 +89,8 @@ class TestForbidden:
 class TestRefusal:
     @pytest.mark.parametrize("text", ["'롯데칠성' 종목을 찾지 못했습니다.", "해당 기간의 주가 데이터가 없습니다.",
                                       "구성종목 정보는 확인할 수 없습니다.", "등록되어 있지 않은 종목입니다.",
-                                      "2025년 1월의 거래량은 존재하지 않습니다.", "애플의 현재 주가가 unavailable합니다."])
+                                      "2025년 1월의 거래량은 존재하지 않습니다.", "애플의 현재 주가가 unavailable합니다.",
+                                      "애플의 현재 주가 정보는 조회하지 못했습니다."])
     def test_refusals(self, text):
         assert M.is_refusal(text)
 
