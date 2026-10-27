@@ -7,7 +7,7 @@
 ## 지금 상태 요약 (2026-10-14 기준)
 
 **한 줄 요약:** 백엔드(API + 에이전트 + 데이터 수집·일괄 갱신 + 로그인 + 관심종목/모의투자 + 포트폴리오 AI 진단과 이력 + 환율 영향 분석 +
-시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응)는 동작하고, 빠른 테스트 **2130개**가 통과합니다(`pytest`, 순수 로직 1887 + 개발 DB 통합 243).
+시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응)는 동작하고, 빠른 테스트 **2194개**가 통과합니다(`pytest`, 순수 로직 1949 + 개발 DB 통합 245).
 실제 Ollama를 부르는 slow 테스트 61개는 기본에서 빠지고 `pytest -m slow`로 따로 돌립니다. 백엔드 작업 브랜치는 `feature/backend`(원격 push 완료)이고
 아직 main에 병합하지 않았습니다. 프론트엔드는 서윤님이 `feature/frontend`에서 React + Vite + zod로 진행 중이며, 2026-10-14에 실제 백엔드 응답을
 프론트의 zod 스키마로 검증했을 때 불일치가 없었습니다(프론트 테스트 20개·빌드·lint 통과). 남은 큰 일은 화면 연동과 아래 "알려진 한계"입니다.
@@ -457,9 +457,9 @@ python -m scripts.refresh_data --days 30 --timeout-min 30 # 조회 기간(기본
 `backend/`에서 실행합니다. 세 단계로 나뉩니다(마커: `integration`, `slow`).
 
 ```bash
-pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-27 기준 2130개 통과, 약 20초). slow는 기본 제외
-pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 1887개)
-pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(243개). DB가 꺼져 있으면 자동 skip
+pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-27 기준 2194개 통과, 약 20초). slow는 기본 제외
+pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 1949개)
+pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(245개). DB가 꺼져 있으면 자동 skip
 pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)를 부르는 테스트(61개, 느리고 비결정적)
 ```
 
@@ -471,6 +471,21 @@ pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)
 구성과 옵션은 [backend/API.md](backend/API.md)의 "테스트 실행" 절을 참고하세요. `scripts/test_tool_calling.py`는 실제 Ollama로 에이전트를 몇 번 호출해보는
 수동 스모크 스크립트이고, `scripts/benchmark_models.py`·`scripts/benchmark_routing.py`는 tool 호출 벤치마크입니다(pytest 대상이 아닙니다).
 프론트엔드 테스트는 `lab-scale-frontend/frontend`에서 `npm test`(vitest)입니다.
+
+## AI 평가
+
+에이전트 품질을 규칙 기반 지표(종목 오매칭률, 도구 선택 정확도, 기간 준수율, 숫자 일치율, 근거 제시율, 답변 불가 판단, 금지 표현, 응답 시간)로
+재는 도구가 [backend/evals/](backend/evals/README.md)에 있습니다. 데이터셋 80개(offline 40: DB만, live 40: 실제 Ollama)를 카테고리별
+dev 60% / holdout 40%로 나눴고, **튜닝은 dev로만, holdout은 최종 전후 비교에만** 씁니다.
+
+```bash
+cd backend
+python -m evals.run_eval                       # offline(종목 매칭·기간·라우팅 게이트), 몇 초
+python -m evals.run_eval --mode all            # + live 40문항(약 20분), captest_ 평가 계정은 끝에 삭제
+python -m evals.compare evals/results/summary_baseline_2026-10-27.json evals/results/summary_<새 결과>.json
+```
+
+기준선은 `backend/evals/results/summary_baseline_2026-10-27.json`, 지표 정의·제외 규칙·한계는 [backend/evals/README.md](backend/evals/README.md)를 보세요.
 
 ## API
 

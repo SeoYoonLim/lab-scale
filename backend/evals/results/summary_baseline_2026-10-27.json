@@ -1,0 +1,475 @@
+{
+  "git_commit": "6921260b69d0d36c0de4ea9df6f33090fc95ba63",
+  "date": "2026-10-27T16:41:30",
+  "model": "llama3.1:8b",
+  "args": {
+    "mode": "all",
+    "split": "all",
+    "repeats": 1,
+    "only": null,
+    "limit": null,
+    "out": "evals/results/summary_baseline_2026-10-27.json"
+  },
+  "n_items": {
+    "offline": 40,
+    "live": 40,
+    "records": 80
+  },
+  "live": {
+    "ran": true,
+    "repeats": 1,
+    "eval_user": "captest_4fbb5d25693f",
+    "deleted_reports": 40,
+    "elapsed_s": 195.8
+  },
+  "elapsed_s": 198.1,
+  "metrics": {
+    "entity_default_accuracy": {
+      "dev": 0.9167,
+      "holdout": 0.75,
+      "all": 0.85,
+      "n": {
+        "dev": 12,
+        "holdout": 8,
+        "all": 20
+      }
+    },
+    "entity_default_wrong_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 12,
+        "holdout": 8,
+        "all": 20
+      }
+    },
+    "entity_default_miss_rate": {
+      "dev": 0.0833,
+      "holdout": 0.25,
+      "all": 0.15,
+      "n": {
+        "dev": 12,
+        "holdout": 8,
+        "all": 20
+      }
+    },
+    "entity_default_ambiguous_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 12,
+        "holdout": 8,
+        "all": 20
+      }
+    },
+    "entity_strict_accuracy": {
+      "dev": 0.8333,
+      "holdout": 0.75,
+      "all": 0.8,
+      "n": {
+        "dev": 12,
+        "holdout": 8,
+        "all": 20
+      }
+    },
+    "entity_strict_wrong_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 12,
+        "holdout": 8,
+        "all": 20
+      }
+    },
+    "entity_strict_miss_rate": {
+      "dev": 0.0,
+      "holdout": 0.25,
+      "all": 0.1,
+      "n": {
+        "dev": 12,
+        "holdout": 8,
+        "all": 20
+      }
+    },
+    "entity_strict_ambiguous_rate": {
+      "dev": 0.1667,
+      "holdout": 0.0,
+      "all": 0.1,
+      "n": {
+        "dev": 12,
+        "holdout": 8,
+        "all": 20
+      }
+    },
+    "period_parse_rate": {
+      "dev": 0.6667,
+      "holdout": 1.0,
+      "all": 0.8,
+      "n": {
+        "dev": 6,
+        "holdout": 4,
+        "all": 10
+      }
+    },
+    "routing_gate_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 4,
+        "all": 10
+      }
+    },
+    "tool_selection_accuracy": {
+      "dev": 0.9091,
+      "holdout": 0.75,
+      "all": 0.8421,
+      "n": {
+        "dev": 11,
+        "holdout": 8,
+        "all": 19
+      }
+    },
+    "live_company_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 17,
+        "holdout": 10,
+        "all": 27
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 17,
+        "holdout": 10,
+        "all": 27
+      }
+    },
+    "live_period_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "all": 1.0,
+      "n": {
+        "dev": 4,
+        "holdout": 0,
+        "all": 4
+      }
+    },
+    "number_match_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 41,
+        "holdout": 9,
+        "all": 50
+      }
+    },
+    "number_full_support_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 9,
+        "holdout": 5,
+        "all": 14
+      }
+    },
+    "source_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 7,
+        "holdout": 8,
+        "all": 15
+      }
+    },
+    "refusal_accuracy": {
+      "dev": 0.5,
+      "holdout": 0.3333,
+      "all": 0.4286,
+      "n": {
+        "dev": 4,
+        "holdout": 3,
+        "all": 7
+      }
+    },
+    "must_contain_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 3,
+        "holdout": 2,
+        "all": 5
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 24,
+        "holdout": 16,
+        "all": 40
+      }
+    },
+    "fallback_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 24,
+        "holdout": 16,
+        "all": 40
+      }
+    },
+    "error_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 24,
+        "holdout": 16,
+        "all": 40
+      }
+    },
+    "latency_p50_s": {
+      "dev": 3.915,
+      "holdout": 3.45,
+      "all": 3.47,
+      "n": {
+        "dev": 24,
+        "holdout": 16,
+        "all": 40
+      }
+    },
+    "latency_p95_s": {
+      "dev": 9.6785,
+      "holdout": 13.3975,
+      "all": 9.908,
+      "n": {
+        "dev": 24,
+        "holdout": 16,
+        "all": 40
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "ent_08",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "JB금융",
+      "check": "entity_default",
+      "expected": "JB금융지주",
+      "actual": "not_found: 'JB금융' 종목을 찾지 못했습니다. company 테이블에 등록된 종목명 또는 종목코드를 지정해주세요."
+    },
+    {
+      "id": "ent_14",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "셀트리언",
+      "check": "entity_default",
+      "expected": "셀트리온",
+      "actual": "not_found: '셀트리언' 종목을 찾지 못했습니다. company 테이블에 등록된 종목명 또는 종목코드를 지정해주세요."
+    },
+    {
+      "id": "ent_17",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "엘지전자",
+      "check": "entity_default",
+      "expected": "LG전자",
+      "actual": "not_found: '엘지전자' 종목을 찾지 못했습니다. company 테이블에 등록된 종목명 또는 종목코드를 지정해주세요."
+    },
+    {
+      "id": "ent_08",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "JB금융",
+      "check": "entity_strict",
+      "expected": "JB금융지주",
+      "actual": "ambiguous: ['JB금융지주']"
+    },
+    {
+      "id": "ent_14",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "셀트리언",
+      "check": "entity_strict",
+      "expected": "셀트리온",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '셀트리언'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_15",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "카카오뱅쿠",
+      "check": "entity_strict",
+      "expected": "카카오뱅크",
+      "actual": "ambiguous: ['카카오뱅크', '카카오']"
+    },
+    {
+      "id": "ent_17",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "엘지전자",
+      "check": "entity_strict",
+      "expected": "LG전자",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '엘지전자'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "etf_03",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "KODEX 200 구성종목 비중 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\nKODEX 200의 2026-10-14 종가는 94,805원으로, 2026-09-10 종가 111,865원 대비 20거래일간 -15.25%입니다. 이 기간 종가 최고는 113,145원(2026-09-23), 최저는 94,805원(2026-10-14)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 -0.47%, 거래량은 28,394"
+      }
+    },
+    {
+      "id": "etf_04",
+      "split": "holdout",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "TIGER 미국나스닥100에 어떤 종목들이 들어있어?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\nTIGER 미국나스닥100의 2026-10-14 종가는 181,000원으로, 2026-09-10 종가 174,540원 대비 20거래일간 +3.70%입니다. 이 기간 종가 최고는 185,655원(2026-10-01), 최저는 173,050원(2026-09-14)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 -0.08%, 거래량은 "
+      }
+    },
+    {
+      "id": "ref_04",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 0,
+      "question": "삼성전자 2024년 3월 주가 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "현재 삼성전자 주가는 235,000 원입니다."
+      }
+    },
+    {
+      "id": "ref_05",
+      "split": "dev",
+      "category": "refusal",
+      "run": 0,
+      "question": "SK하이닉스 2025년 1월 거래량은?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\n\nSK하이닉스의 2026-10-14 종가는 1,435,000원으로, 2026-07-14 종가 1,913,000원 대비 60거래일간 -24.99%입니다. 이 기간 종가 최고는 2,082,000원(2026-07-15), 최저는 1,322,000원(2026-07-30)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 -1.44%, 거래량"
+      }
+    },
+    {
+      "id": "tool_04",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "PER이 뭐야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_05",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "배당수익률이 뭔지 설명해줘",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_14",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "공매도가 뭐야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "per_03",
+      "split": "dev",
+      "category": "period",
+      "run": 0,
+      "question": "카카오 한 달 주가 흐름 보여줘",
+      "check": "period_parse",
+      "expected": {
+        "period_days": 23,
+        "start": "2026-09-14",
+        "end": "2026-10-14"
+      },
+      "actual": null
+    },
+    {
+      "id": "per_10",
+      "split": "dev",
+      "category": "period",
+      "run": 0,
+      "question": "KODEX 200 일주일 동안 가격 알려줘",
+      "check": "period_parse",
+      "expected": {
+        "period_days": 5,
+        "start": "2026-10-08",
+        "end": "2026-10-14"
+      },
+      "actual": null
+    }
+  ]
+}
