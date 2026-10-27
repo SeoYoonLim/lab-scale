@@ -495,10 +495,19 @@ class TestAnswerPath:
         assert records[0]["result"]["period_days_corrected_via"] == "period_parser"
 
     def test_unparsed_period_keeps_the_llm_guess(self, monkeypatch):
+        # "며칠"은 parse_period가 값으로 바꾸지 못한다("한 달"은 2026-10-27부터 인식한다: 아래 테스트)
         llm = FakeLLM(monkeypatch, [stock_call(period_days=30, ticker="SK하이닉스")])
-        _, records = agent._answer("SK하이닉스 지난 한 달 주가 어땠어?", "m")
+        _, records = agent._answer("SK하이닉스 며칠간 주가 어땠어?", "m")
         assert llm.ran[0][1]["period_days"] == 30
         assert "period_days_corrected_via" not in records[0]["result"]
+
+    def test_native_period_overrides_the_llm_guess(self, monkeypatch):
+        from app.period_parser import parse_period
+
+        llm = FakeLLM(monkeypatch, [stock_call(period_days=30, ticker="SK하이닉스")])
+        _, records = agent._answer("SK하이닉스 지난 한 달 주가 어땠어?", "m")
+        assert llm.ran[0][1]["period_days"] == parse_period("한 달").period_days
+        assert records[0]["result"]["period_days_corrected_via"] == "period_parser"
 
     def test_button_question_runs_all_three_tools_and_builds_sources(self, monkeypatch):
         llm = FakeLLM(monkeypatch, [stock_call(period_days=1)])
