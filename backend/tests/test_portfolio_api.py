@@ -39,7 +39,7 @@ def _logged_in(login_as):
 
 
 def mock_resolution(monkeypatch, res):
-    monkeypatch.setattr(portfolio_api, "resolve_company", lambda db, ticker: res)
+    monkeypatch.setattr(portfolio_api, "resolve_company", lambda db, ticker, **kw: res)
 
 
 class TestAuthRequired:
@@ -151,3 +151,42 @@ class TestCreateOrder:
     def test_blank_ticker_is_422(self):
         r = self._order(ticker="")
         assert r.status_code == 422
+
+
+class TestOrderStrictResolution:
+    """주문은 유사 이름 보정 없이 엄격 모드(allow_fuzzy=False)로 종목을 해석한다."""
+
+    def test_order_resolves_with_allow_fuzzy_false(self, monkeypatch):
+        seen = []
+
+        def fake_resolve(db, ticker, **kw):
+            seen.append(kw)
+            return Resolution(company=COMPANY)
+
+        monkeypatch.setattr(portfolio_api, "resolve_company", fake_resolve)
+        monkeypatch.setattr(portfolio_api, "place_order", lambda *a, **k: ORDER_RESULT)
+        r = client.post("/api/portfolio/orders", json={"ticker": "삼성전자", "side": "buy", "quantity": 5})
+        assert r.status_code == 200
+        assert seen == [{"allow_fuzzy": False}]
+
+    def test_other_lookups_keep_default_fuzzy(self, monkeypatch):
+        seen = []
+
+        def fake_resolve(db, ticker, **kw):
+            seen.append(kw)
+            return Resolution(company=COMPANY)
+
+        monkeypatch.setattr(portfolio_api, "resolve_company", fake_resolve)
+        monkeypatch.setattr(portfolio_api, "list_trades", lambda *a, **k: {"total": 0, "limit": 50, "offset": 0, "items": []})
+        assert client.get("/api/portfolio/trades?ticker=삼성전자").status_code == 200
+        assert seen == [{}]  # 체결 내역 필터는 기존 보정 동작 그대로
+
+    def test_similar_name_is_404_with_candidates_and_no_order(self, monkeypatch):
+        msg = "정확한 종목을 찾지 못했습니다. 혹시 삼성SDI인가요?"
+        mock_resolution(monkeypatch, Resolution(message=msg, candidates=["삼성SDI"]))
+        called = []
+        monkeypatch.setattr(portfolio_api, "place_order", lambda *a, **k: called.append(1))
+        r = client.post("/api/portfolio/orders", json={"ticker": "삼성SDS", "side": "buy", "quantity": 1})
+        assert r.status_code == 404
+        assert r.json() == {"detail": msg}  # 응답 형식은 기존 404와 같고 detail 문구만 안내를 담는다
+        assert called == []

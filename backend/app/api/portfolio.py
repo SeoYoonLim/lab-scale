@@ -29,7 +29,7 @@ MAX_ORDER_QUANTITY = 100_000
 
 
 class OrderRequest(BaseModel):
-    # 종목코드 또는 종목명(별칭/유사 종목명 포함). company_resolver로 해석한다.
+    # 종목코드 또는 종목명(공백·대소문자 차이, 등록된 별칭 포함). company_resolver를 엄격 모드(allow_fuzzy=False)로 해석한다.
     ticker: str = Field(min_length=1, max_length=50)
     side: Literal["buy", "sell"]
     quantity: int = Field(gt=0, le=MAX_ORDER_QUANTITY)
@@ -372,10 +372,14 @@ def delete_my_diagnosis(
 
 @router.post("/orders", response_model=OrderResponse)
 def create_order(request: OrderRequest, owner_key: str = Depends(get_owner_key)) -> OrderResponse:
-    """현재가로 즉시 체결되는 매수/매도 주문(호가 단위·장 시간 체크는 범위 밖)."""
+    """현재가로 즉시 체결되는 매수/매도 주문(호가 단위·장 시간 체크는 범위 밖).
+
+    종목 해석은 엄격 모드다(allow_fuzzy=False): 종목코드/정확한 종목명/공백·대소문자 차이/등록된 별칭만 주문되고,
+    유사 이름은 주문하지 않고 404 + "혹시 A, B 중 하나인가요?" 안내를 돌려준다.
+    """
     db = SessionLocal()
     try:
-        res = resolve_company(db, request.ticker)
+        res = resolve_company(db, request.ticker, allow_fuzzy=False)
         if res.company is None:
             raise HTTPException(status_code=404, detail=res.message)
 

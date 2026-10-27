@@ -162,7 +162,7 @@ class TestPortfolioEtf:
         assert client.get("/api/portfolio").json()["holdings"][0]["asset_type"] == "stock"
 
     def test_order_for_etf_goes_through_the_same_path(self, monkeypatch):
-        monkeypatch.setattr(portfolio_api, "resolve_company", lambda db, t: Resolution(company=ETF_COMPANY))
+        monkeypatch.setattr(portfolio_api, "resolve_company", lambda db, t, **kw: Resolution(company=ETF_COMPANY))
         seen = {}
 
         def fake_order(db, key, company, side, quantity):

@@ -3,6 +3,8 @@
 LLM이 만든 인자에는 앞뒤 공백, 따옴표, 'null', 깨진 문자열 등이 섞여 들어온다.
 정확 일치 -> 공백/대소문자 무시 일치 -> 별칭(app/company_aliases.py) -> 유사 종목명 보정(difflib) 순으로 시도하고,
 그래도 못 찾으면 예외 대신 "종목을 찾지 못했습니다" 응답을 돌려준다.
+주문처럼 오매칭이 곧 금전 사고인 경로는 allow_fuzzy=False(엄격 모드)로 호출한다: 4단계(유사 보정)를 건너뛰고,
+유사 후보는 보정하지 않고 "혹시 A, B 중 하나인가요?" 안내로만 돌려준다.
 """
 
 import difflib
@@ -54,8 +56,27 @@ class Resolution:
     candidates: list[str] | None = None
 
 
-def resolve_company(db, raw) -> Resolution:
-    """종목명 또는 티커 입력을 실제 Company로 해석한다."""
+def _suggest_message(s: str, key: str, keys: dict) -> Resolution:
+    """엄격 모드에서 정확히 못 찾았을 때의 응답. 유사한 종목명(최대 MAX_CANDIDATES개)을 보정 없이 안내만 한다.
+
+    후보는 유사도(FUZZY_CUTOFF) 이상이거나 입력과 포함 관계인 이름('삼성전자우' -> 삼성전자)이고 유사도 순이다.
+    """
+    close = set(difflib.get_close_matches(key, list(keys), n=MAX_CANDIDATES, cutoff=FUZZY_CUTOFF))
+    contained = {m for m in keys if len(key) >= 2 and len(m) >= 2 and (m in key or key in m)}
+    ranked = sorted(close | contained, key=lambda m: -difflib.SequenceMatcher(None, key, m).ratio())
+    names = list(dict.fromkeys(keys[m][0].name for m in ranked))[:MAX_CANDIDATES]
+    if not names:
+        return Resolution(message=f"정확한 종목을 찾지 못했습니다. '{s}'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요.")
+    asked = ", ".join(names) + " 중 하나인가요?" if len(names) > 1 else f"{names[0]}인가요?"
+    return Resolution(message=f"정확한 종목을 찾지 못했습니다. 혹시 {asked}", candidates=names)
+
+
+def resolve_company(db, raw, allow_fuzzy: bool = True) -> Resolution:
+    """종목명 또는 티커 입력을 실제 Company로 해석한다.
+
+    allow_fuzzy=False(엄격 모드)면 정확한 종목코드/종목명, 공백·대소문자만 다른 이름, 등록된 별칭(ETF 브랜드 표기 포함)만
+    인정한다. 그 밖에는 유사 후보가 있어도 company를 돌려주지 않고 message/candidates로 안내만 한다.
+    """
     s = normalize_name(raw)
     if not s:
         return Resolution(message="종목명이 비어 있어 종목을 찾지 못했습니다. 종목명 또는 종목코드를 지정해주세요.")
@@ -93,6 +114,8 @@ def resolve_company(db, raw) -> Resolution:
     keys = {}
     for c in companies:
         keys.setdefault(_key(c.name), []).append(c)
+    if not allow_fuzzy:
+        return _suggest_message(s, key, keys)
     matches = difflib.get_close_matches(key, list(keys), n=MAX_CANDIDATES, cutoff=FUZZY_CUTOFF)
     # 입력이 종목명을 포함하거나 종목명이 입력을 포함하면 오타가 아니라 다른 종목일 가능성이 높다
     # (예: '삼성전자우'(우선주) -> '삼성전자', '현대' -> '현대차'). 잘못된 종목으로 답하는 것보다
