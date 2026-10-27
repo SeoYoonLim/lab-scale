@@ -42,7 +42,7 @@ from app.models import Company, StockPrice
 from app.period_parser import KST, mentions_period, parse_period
 from app.reports import save_report as save_report_row
 from app.sources import build_sources
-from app.tools.company_resolver import extract_from_text, normalize_name, resolve_company
+from app.tools.company_resolver import MAX_CANDIDATES, extract_from_text, normalize_name, resolve_company
 from app.routing import (
     event_keyword_for,
     event_type_for,
@@ -1169,6 +1169,43 @@ def _answer_period_scope(question: str, companies: list | None, today=None):
     return _code_answer(answer, [record])
 
 
+UNRESOLVED_COMPANY_ANSWER = "해당 종목을 찾지 못했습니다. 종목명 또는 종목코드를 정확히 입력해주세요."
+
+
+def _unresolved_company_answer(calls: list[dict]) -> str | None:
+    """(F) 종목을 받는 호출만 있고 그 종목 인자가 하나도 DB 종목으로 해석되지 않으면(보정 후에도) 코드가 답할 문장, 아니면 None.
+
+    모델이 깨진 문자열("한뫸입해")을 넘기거나 없는 종목("롯데칠성")을 조회한 뒤 "종목코드를 알려주시면"처럼 되묻기만 하던
+    경우다. 종목 인자가 없는 호출(환율·시장 탐색, 종목 필터 없는 RAG 검색)이 하나라도 있으면 기존 흐름이다."""
+    raws = []
+    for call in calls:
+        fn_name = call["function"]["name"]
+        key = _COMPANY_ARG.get(fn_name)
+        raw = _as_args(call["function"]["arguments"]).get(key) if key else None
+        if key is None or (fn_name == "rag_search_tool" and not normalize_name(raw)):
+            return None
+        raws.append(raw)
+    if not raws:
+        return None
+    try:
+        db = SessionLocal()
+        try:
+            results = [resolve_company(db, raw) for raw in raws]
+        finally:
+            db.close()
+    except Exception:
+        return None
+    if any(r.company is not None for r in results):
+        return None
+    candidates = list(dict.fromkeys(c for r in results for c in (r.candidates or [])))[:MAX_CANDIDATES]
+    text = UNRESOLVED_COMPANY_ANSWER
+    if len(candidates) == 1:
+        text += f" 혹시 {candidates[0]}인가요?"
+    elif candidates:
+        text += f" 혹시 {', '.join(candidates)} 중 하나인가요?"
+    return text
+
+
 def _answer(question: str, model: str, previous: dict | None = None) -> tuple[dict, list[dict]]:
     """답변을 만든다. (응답 dict, tool 실행 기록 목록)을 돌려준다.
 
@@ -1227,6 +1264,9 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     period_overrides = _apply_period_override(tool_calls, question)
     period_defaults = _apply_default_period(tool_calls, question)
     etf_periods = _apply_etf_period(tool_calls, question) if etf_mode else {}
+    unresolved = _unresolved_company_answer(tool_calls)
+    if unresolved is not None:
+        return _code_answer(unresolved)
     for idx, call in enumerate(tool_calls):
         fn_name = call["function"]["name"]
         fn_args = _as_args(call["function"]["arguments"])
