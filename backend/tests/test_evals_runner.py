@@ -118,3 +118,17 @@ def test_must_answer_and_meta_flags():
     rec = R._record(item)
     R.score_live(item, rec, {"answer": "KODEX 레버리지는 ...", "sources": []}, [])
     assert rec["flags"]["answered_ok"] is True
+
+
+def test_from_raw_merges_records(tmp_path):
+    import json
+
+    a = {**R._record(_item(split="dev")), "flags": {"gate_ok": True}}
+    b = {**R._record(_item(split="holdout")), "flags": {"gate_ok": False}}
+    for name, rec in (("raw_a.jsonl", a), ("raw_b.jsonl", b)):
+        (tmp_path / name).write_text(json.dumps(rec, ensure_ascii=False) + "\n", encoding="utf-8")
+    out = tmp_path / "summary_m.json"
+    assert R.main(["--from-raw", str(tmp_path / "raw_a.jsonl"), str(tmp_path / "raw_b.jsonl"), "--out", str(out),
+                   "--note", "합침"]) == 0
+    s = json.loads(out.read_text(encoding="utf-8"))
+    assert s["metrics"]["routing_gate_accuracy"]["all"] == 0.5 and s["note"] == "합침" and len(s["merged_from"]) == 2

@@ -497,6 +497,29 @@ def _git_dirty() -> bool | None:
         return None
 
 
+def _summarize_raw(args) -> int:
+    """raw 여러 개를 합쳐 summary를 만든다(실행이 중간에 멈춰 카테고리를 나눠 다시 돌린 경우 등)."""
+    records, sources = [], []
+    for path in args.from_raw:
+        with open(path, encoding="utf-8") as f:
+            recs = [json.loads(line) for line in f if line.strip()]
+        records += recs
+        sources.append({"raw": Path(path).name, "records": len(recs)})
+    out_path = Path(args.out) if args.out else RESULTS_DIR / f"summary_merged_{datetime.now():%Y%m%d_%H%M%S}.json"
+    summary = {
+        "merged_from": sources,
+        "note": args.note,
+        "date": datetime.now().isoformat(timespec="seconds"),
+        "n_items": {"records": len(records)},
+        "metrics": summarize(records),
+        "failures": failure_list(records),
+    }
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, ensure_ascii=False, indent=2, default=str)
+    print(f"{len(records)}개 레코드 -> {out_path}")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="AI 리서치 에이전트 평가")
     ap.add_argument("--mode", choices=["offline", "live", "all"], default="offline")
@@ -505,9 +528,15 @@ def main(argv=None) -> int:
     ap.add_argument("--only", help="카테고리 하나만(쉼표로 여러 개)")
     ap.add_argument("--limit", type=int, help="필터 후 앞에서 N개만")
     ap.add_argument("--out", help="summary JSON 경로(기본: evals/results/summary_<시각>.json)")
+    ap.add_argument("--from-raw", nargs="+", metavar="RAW",
+                    help="새로 실행하지 않고 raw_*.jsonl 여러 개를 합쳐 summary만 다시 집계한다(채점은 각 실행 때 한 그대로). "
+                         "--note로 합친 이유를 남긴다")
+    ap.add_argument("--note", help="--from-raw summary에 남길 설명")
     args = ap.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
+    if args.from_raw:
+        return _summarize_raw(args)
 
     from app.agent import MODEL_NAME
 
