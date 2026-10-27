@@ -472,8 +472,8 @@ class TestAnswerPath:
     def test_role_prefix_is_stripped_from_a_no_tool_answer(self, monkeypatch):
         """tool 없이 바로 답한 경로에서도 같은 접두어가 나온 적이 있다(dev DB 리포트 225 'PER이 뭐야?')."""
         FakeLLM(monkeypatch, None, final="assistant\n\n주가수익비율(PER)은 ...")
-        # 정의 질문("PER이 뭐야?")은 2026-10-27부터 용어 사전으로 답한다(tests/test_glossary.py). LLM 경로를 타는 개념 질문으로 본다.
-        response, records = agent._answer("PER이 높으면 좋은 거야?", "m")
+        # 개념 질문("PER이 뭐야?", "PER이 높으면 좋아?")은 용어 사전으로 답한다(tests/test_glossary.py). LLM 경로를 타는 일반 질문으로 본다.
+        response, records = agent._answer("투자를 처음 시작하려면 뭐부터 해야 해?", "m")
         assert response == {"answer": "주가수익비율(PER)은 ...", "used_tools": [], "sources": []}
         assert records == []
 
@@ -613,7 +613,7 @@ class TestResearchRoute:
 
     def test_no_tool_answer_response(self, monkeypatch, client):
         FakeLLM(monkeypatch, None, final="assistant\n\nPER은 주가수익비율입니다.")
-        body = client.post("/api/research", json={"question": "PER이 높으면 좋은 거야?"}).json()
+        body = client.post("/api/research", json={"question": "투자를 처음 시작하려면 뭐부터 해야 해?"}).json()
         assert body["answer"] == "PER은 주가수익비율입니다." and body["used_tools"] == [] and body["sources"] == []
 
     def test_cause_question_response(self, monkeypatch, client):

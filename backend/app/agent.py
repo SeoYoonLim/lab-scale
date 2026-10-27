@@ -41,7 +41,7 @@ from app.etf import (
     remove_empty_sections,
 )
 from app.answer_guard import code_summary, freshness_note, guard_answer, is_simple_quote, quote_answer
-from app.glossary import concept_answer
+from app.glossary import comparison_answer, concept_answer, find_term, term_answer
 from app.models import Company, StockPrice
 from app.period_parser import KST, mentions_period, parse_period
 from app.reports import save_report as save_report_row
@@ -1292,7 +1292,7 @@ def _guard(answer: str, records: list[dict], question: str) -> str:
 UNRESOLVED_COMPANY_ANSWER = "해당 종목을 찾지 못했습니다. 종목명 또는 종목코드를 정확히 입력해주세요."
 
 
-def _unresolved_company_answer(calls: list[dict]) -> str | None:
+def _unresolved_company_answer(calls: list[dict], question: str = "") -> str | None:
     """(F) 종목을 받는 호출만 있고 그 종목 인자가 하나도 DB 종목으로 해석되지 않으면(보정 후에도) 코드가 답할 문장, 아니면 None.
 
     모델이 깨진 문자열("한뫸입해")을 넘기거나 없는 종목("롯데칠성")을 조회한 뒤 "종목코드를 알려주시면"처럼 되묻기만 하던
@@ -1317,6 +1317,10 @@ def _unresolved_company_answer(calls: list[dict]) -> str | None:
         return None
     if any(r.company is not None for r in results):
         return None
+    # (D) 모델이 용어를 종목 인자로 넘긴 경우(stock_tool(ticker="PBR")): 종목을 못 찾았다고 하지 않고 용어 사전으로 답한다
+    terms = list(dict.fromkeys(find_term(normalize_name(raw)) for raw in raws))
+    if terms and all(terms):
+        return concept_answer(question) or (comparison_answer(terms) if len(terms) > 1 else term_answer(terms[0]))
     candidates = list(dict.fromkeys(c for r in results for c in (r.candidates or [])))[:MAX_CANDIDATES]
     text = UNRESOLVED_COMPANY_ANSWER
     if len(candidates) == 1:
@@ -1388,7 +1392,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     period_overrides = _apply_period_override(tool_calls, question)
     period_defaults = _apply_default_period(tool_calls, question)
     etf_periods = _apply_etf_period(tool_calls, question) if etf_mode else {}
-    unresolved = _unresolved_company_answer(tool_calls)
+    unresolved = _unresolved_company_answer(tool_calls, question)
     if unresolved is not None:
         return _code_answer(unresolved)
     for idx, call in enumerate(tool_calls):

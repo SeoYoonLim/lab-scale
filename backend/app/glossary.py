@@ -127,10 +127,11 @@ _ALIAS_INDEX = sorted(((alias, term) for term, (aliases, _) in GLOSSARY.items() 
                       key=lambda x: -len(x[0]))
 
 
-def find_term(question: str) -> str | None:
-    """질문에 나온 사전 용어(표제어). 긴 별칭부터 찾는다. 영문 별칭은 앞뒤가 영문/숫자가 아닐 때만."""
-    q = question or ""
-    low = q.casefold()
+def find_terms(question: str) -> list[str]:
+    """질문에 나온 사전 용어(표제어)들, 등장 순서대로 중복 없이. 긴 별칭부터 찾고 겹치는 구간은 한 번만 센다
+    ("레버리지 ETF"를 ETF로 또 세지 않는다). 영문 별칭은 앞뒤가 영문/숫자가 아닐 때만."""
+    low = (question or "").casefold()
+    hits, taken = [], []
     for alias, term in _ALIAS_INDEX:
         a = alias.casefold()
         for m in re.finditer(re.escape(a), low):
@@ -139,8 +140,17 @@ def find_term(question: str) -> str | None:
                 continue
             if _ASCII.match(a[-1]) and en < len(low) and _ASCII.match(low[en]):
                 continue
-            return term
-    return None
+            if any(not (en <= x or st >= y) for x, y in taken):
+                continue
+            taken.append((st, en))
+            hits.append((st, term))
+    return list(dict.fromkeys(t for _, t in sorted(hits)))
+
+
+def find_term(question: str) -> str | None:
+    """질문에 처음 나온 사전 용어(표제어). 없으면 None."""
+    terms = find_terms(question)
+    return terms[0] if terms else None
 
 
 _UNKNOWN_TERM_RE = re.compile(
@@ -149,17 +159,55 @@ _UNKNOWN_TERM_RE = re.compile(
 )
 
 
+FOOTNOTE = "※ 내장 용어 사전의 일반적인 설명입니다. 특정 종목의 수치나 투자 권유가 아닙니다."
+# 해석 질문("PBR이 1보다 낮으면 저평가야?")에 붙이는 고정 문구. 판단을 대신하거나 권유하지 않는다.
+INTERPRETATION_NOTE = (
+    "다만 이 지표 하나만으로 주가가 싸다·비싸다거나 좋다·나쁘다고 판단하기는 어렵습니다. "
+    "같은 업종의 다른 회사와 비교하고, 이익 추세·재무 상태 같은 다른 정보와 함께 보는 것이 일반적입니다."
+)
+# 비교·해석 질문이라도 시장·종목·시점을 묻는 말이 있으면 기존 흐름이다("PER 낮은 종목 추천해줘").
+_CONTEXT_RE = re.compile(r"오늘|요즘|최근|지금|현재|전망|종목|(?<![가-힣])주가(?!수익|순자산)|시세|추천|왜|이유")
+_COMPARE_RE = re.compile(r"차이|비교|다른\s*점|다르|달라|구분|vs", re.IGNORECASE)
+_INTERPRET_RE = re.compile(
+    r"높으면|낮으면|높을수록|낮을수록|높은\s*게|낮은\s*게|크면|작으면|좋|나쁘|저평가|고평가|싸|비싸|괜찮|\d+\s*보다|몇\s*배|적정"
+)
+
+
+def term_answer(term: str, interpretation: bool = False) -> str:
+    """사전 용어 하나의 답. interpretation=True면 '지표 하나만으로 판단하기 어렵다'는 고정 문구를 붙인다."""
+    parts = [f"**{term}**\n{GLOSSARY[term][1]}"]
+    if interpretation:
+        parts.append(INTERPRETATION_NOTE)
+    parts.append(FOOTNOTE)
+    return "\n\n".join(parts)
+
+
+def comparison_answer(terms: list[str]) -> str:
+    """두 용어(이상) 비교: 사전의 정의를 나란히 보여준다(LLM 설명 없음)."""
+    return "\n\n".join([f"**{t}**\n{GLOSSARY[t][1]}" for t in terms] + [FOOTNOTE])
+
+
 def concept_answer(question: str) -> str | None:
-    """종목이 없는 정의 질문이면 답(사전 정의 또는 '사전에 없음'), 아니면 None. 종목 유무는 호출측이 확인한다."""
+    """종목이 없는 개념 질문이면 답, 아니면 None. 종목 유무는 호출측이 확인한다.
+
+    - 두 용어 비교("PER과 PBR 차이") -> 두 정의를 나란히
+    - 용어 하나의 해석("PBR이 1보다 낮으면 저평가야?") -> 정의 + 지표 하나로 판단하기 어렵다는 고정 문구
+    - 정의("PER이 뭐야?") -> 정의, 사전에 없는 용어면 '사전에 없음'
+    """
     q = (question or "").strip()
-    if not q or not _DEFINITION_RE.search(q) or _NOT_DEFINITION_RE.search(q):
+    if not q:
+        return None
+    if not _CONTEXT_RE.search(q):
+        terms = find_terms(q)
+        if len(terms) >= 2 and _COMPARE_RE.search(q):
+            return comparison_answer(terms[:3])
+        if len(terms) == 1 and _INTERPRET_RE.search(q):
+            return term_answer(terms[0], interpretation=True)
+    if not _DEFINITION_RE.search(q) or _NOT_DEFINITION_RE.search(q):
         return None
     term = find_term(q)
     if term is not None:
-        return (
-            f"**{term}**\n{GLOSSARY[term][1]}\n\n"
-            "※ 내장 용어 사전의 일반적인 설명입니다. 특정 종목의 수치나 투자 권유가 아닙니다."
-        )
+        return term_answer(term)
     m = _UNKNOWN_TERM_RE.match(q)
     if m is None:
         return None

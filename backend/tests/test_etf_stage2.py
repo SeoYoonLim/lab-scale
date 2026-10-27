@@ -281,7 +281,7 @@ class TestAgentEtfPath:
 
     def test_stock_no_tool_answer_is_unchanged(self, fake_agent):
         fake_agent.update(first=[], subjects=[], final="x")
-        resp, records = agent._answer("PER이 높으면 좋은 거야?", "m")  # 정의 질문("뭐야")은 용어 사전 경로
+        resp, records = agent._answer("투자를 처음 시작하려면 뭐부터 해야 해?", "m")  # 개념 질문은 용어 사전 경로
         assert resp["answer"] == "개념 설명입니다." and records == []
 
 
