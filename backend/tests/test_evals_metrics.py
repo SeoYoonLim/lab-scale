@@ -37,7 +37,16 @@ class TestExtractNumbers:
         assert raws("100달러") == ["100"]
 
     def test_time_is_excluded(self):
-        assert raws("08:36 기준") == []
+        assert raws("08:36 기준, 15시에 발표, 9시 공시") == []
+
+    @pytest.mark.parametrize("text,value", [("거래량은 23만 7866주", 237866), ("1조 2,345억원", 1.2345e12),
+                                            ("7만 2,000원", 72000)])
+    def test_compound_korean_numbers_are_one_number(self, text, value):
+        (n,) = M.extract_numbers(text)
+        assert n.value == value
+
+    def test_compound_needs_descending_units(self):
+        assert len(M.extract_numbers("3만 5만원")) == 2
 
 
 class TestMatchNumbers:

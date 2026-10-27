@@ -57,7 +57,7 @@ _EXCLUDE_PATTERNS = [
     r"^\s*[-*]?\s*\(?\d{1,2}[.)](?!\d)",  # 목록 번호 "1." "2)" "(3)" (줄 시작, re.M)
     r"(?<!\d)\d{6}(?!\d)",  # 종목코드 005930
     # 기간·횟수·순서(가격·등락률·거래량이 아님): 20거래일, 5일, 3개월, 2주간, 1년, 3분기, 1위, 3건, 2번째 ...
-    r"\d+\s*(?:거래일|영업일|일간|일|개월|달(?!러)|년간|년|주간|주일|주\s*동안|주\s*연속|분기|시간|분|초|위|번째|차|회|건|개|곳|명|가지|종목|단계)",
+    r"\d+\s*(?:거래일|영업일|일간|일|개월|달(?!러)|년간|년|주간|주일|주\s*동안|주\s*연속|분기|시간|시(?![가-힣])|시에|분|초|위|번째|차|회|건|개|곳|명|가지|종목|단계)",
 ]
 _EXCLUDE_RE = re.compile("|".join(f"(?:{p})" for p in _EXCLUDE_PATTERNS), re.M)
 
@@ -90,6 +90,24 @@ def _parse(m: re.Match) -> Number | None:
     return Number(value=abs(base) * scale, raw=m.group(0).strip(), tolerance=(10 ** -decimals) * scale, unit=unit)
 
 
+# "23만 7866주", "1조 2,345억원"처럼 큰 단위부터 이어 쓴 한 숫자. 뒤에 원/주가 와야 한 숫자로 본다.
+_COMPOUND_RE = re.compile(
+    r"(?<![\w&.,])((?:\d{1,3}(?:,\d{3})+|\d+)\s*(?:조|억|만)\s*){1,2}"
+    r"(\d{1,3}(?:,\d{3})+|\d+)?\s*(?:(조|억|만)\s*)?(원|주)"
+)
+_COMPOUND_PART_RE = re.compile(r"(\d{1,3}(?:,\d{3})+|\d+)\s*(조|억|만)?")
+
+
+def _compound(m: re.Match) -> Number | None:
+    parts = [(float(n.replace(",", "")), _UNIT_SCALE.get(u or "", 1.0))
+             for n, u in _COMPOUND_PART_RE.findall(m.group(0))]
+    scales = [s for _, s in parts]
+    if len(parts) < 2 or scales != sorted(scales, reverse=True) or len(set(scales)) != len(scales):
+        return None  # "3만 5만원"처럼 큰 단위부터가 아니면 합성 표기가 아니다
+    return Number(value=sum(v * s for v, s in parts), raw=m.group(0).strip(), tolerance=scales[-1],
+                  unit=m.group(4))
+
+
 def extract_numbers(text: str, apply_exclusions: bool = True) -> list[Number]:
     """답변(또는 도구 결과 문자열)에서 숫자를 뽑는다. apply_exclusions=True면 날짜·목록 번호·기간·종목코드는 뺀다."""
     if not text:
@@ -98,6 +116,15 @@ def extract_numbers(text: str, apply_exclusions: bool = True) -> list[Number]:
     if apply_exclusions:
         s = _EXCLUDE_RE.sub(lambda m: " " * len(m.group(0)), s)
     out = []
+
+    def take_compound(m):
+        n = _compound(m)
+        if n is None:
+            return m.group(0)
+        out.append(n)
+        return " " * len(m.group(0))
+
+    s = _COMPOUND_RE.sub(take_compound, s)
     for m in _NUM_RE.finditer(s):
         n = _parse(m)
         if n is not None:
