@@ -6,7 +6,14 @@ get_realtime_price_data를 그대로 재사용한다(실시간 실패 시 DB 최
 
 매수/매도의 잔고·수량·평균단가 계산(핵심 로직)은 DB를 전혀 건드리지 않는 apply_buy/apply_sell에 분리해뒀다.
 place_order는 그 계산 결과를 Holding/VirtualAccount/Trade row에 반영하는 DB 오케스트레이션만 한다.
+
+동시 주문 보호: 같은 소유자의 주문/초기화는 계좌 행을 SELECT ... FOR UPDATE로 잠근 뒤에만 보유 종목을 읽고 쓴다(잠금 순서는
+항상 계좌가 먼저). 그래서 잔고·수량 검증 후 갱신 사이에 다른 요청이 끼어들 수 없고, 보유 행이 아직 없는 첫 매수도
+같은 잠금 아래에서 처리돼 중복 보유 행이 생기지 않는다. 외부 호출인 가격 조회는 잠금을 잡기 전에 끝낸다.
 """
+
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.models import Company, Holding, Trade, VirtualAccount
 from app.models.trade import SIDE_BUY
@@ -63,68 +70,94 @@ def apply_sell(cash_balance: float, quantity: int, price: float, holding_qty: in
 
 
 def get_or_create_account(db, device_id: str) -> VirtualAccount:
-    """소유자의 첫 요청이면 초기 잔고(INITIAL_BALANCE)로 계좌를 만든다."""
-    account = db.get(VirtualAccount, device_id)
-    if account is None:
-        account = VirtualAccount(device_id=device_id, cash_balance=INITIAL_BALANCE)
-        db.add(account)
-        db.commit()
-        db.refresh(account)
-    return account
+    """소유자의 첫 요청이면 초기 잔고(INITIAL_BALANCE)로 계좌를 만든다.
+
+    INSERT ... ON CONFLICT DO NOTHING 후 다시 조회하므로, 같은 소유자의 첫 요청이 동시에 와도 중복 키 오류 없이 계좌는 1개다.
+    """
+    db.execute(
+        pg_insert(VirtualAccount)
+        .values(device_id=device_id, cash_balance=INITIAL_BALANCE)
+        .on_conflict_do_nothing(index_elements=["device_id"])
+    )
+    db.commit()
+    return db.execute(
+        select(VirtualAccount).where(VirtualAccount.device_id == device_id).execution_options(populate_existing=True)
+    ).scalar_one()
+
+
+def _lock_account(db, device_id: str) -> VirtualAccount:
+    """계좌를 만들어두고(없으면) 그 행을 FOR UPDATE로 잠근다. 잠금은 트랜잭션이 끝날 때(commit/rollback) 풀린다.
+
+    populate_existing으로 세션에 남은 낡은 값이 아니라 잠금 시점의 최신 값을 읽는다.
+    """
+    get_or_create_account(db, device_id)
+    return db.execute(
+        select(VirtualAccount)
+        .where(VirtualAccount.device_id == device_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one()
 
 
 def place_order(db, device_id: str, company: Company, side: str, quantity: int) -> dict:
     """현재가로 즉시 체결한다. 체결되면 잔고/보유 종목/거래 내역을 한 트랜잭션으로 갱신한다.
 
-    계산 자체는 apply_buy/apply_sell이 하고, 여기서는 그 결과를 row에 반영만 한다.
+    계산 자체는 apply_buy/apply_sell이 하고, 여기서는 그 결과를 row에 반영만 한다. 가격 조회(외부 호출)를 먼저 끝낸 뒤
+    계좌 행을 잠그고, 잠금 아래에서 보유 종목을 읽어 검증·갱신·거래 저장을 한다. 어느 단계든 실패하면 전부 롤백한다.
     """
     price_data = get_realtime_price_data(db, company)
     if price_data is None:
         raise PriceUnavailable(f"'{company.name}'의 가격을 구하지 못해 주문을 체결할 수 없습니다.")
     price = price_data["current_price"]
+    company_id, ticker, company_name = company.id, company.ticker, company.name
 
-    account = get_or_create_account(db, device_id)
-    holding = (
-        db.query(Holding)
-        .filter(Holding.device_id == device_id, Holding.company_id == company.id)
-        .first()
-    )
-
-    if side == SIDE_BUY:
-        result = apply_buy(
-            float(account.cash_balance),
-            quantity,
-            price,
-            holding_qty=holding.quantity if holding else 0,
-            holding_avg_price=float(holding.avg_price) if holding else 0.0,
+    try:
+        account = _lock_account(db, device_id)
+        holding = (
+            db.query(Holding)
+            .filter(Holding.device_id == device_id, Holding.company_id == company_id)
+            .populate_existing()
+            .first()
         )
-        account.cash_balance = result["cash_balance"]
-        if holding is None:
-            holding = Holding(
-                device_id=device_id, company_id=company.id, quantity=result["quantity"], avg_price=result["avg_price"]
-            )
-            db.add(holding)
-        else:
-            holding.quantity = result["quantity"]
-            holding.avg_price = result["avg_price"]
-    else:
-        result = apply_sell(float(account.cash_balance), quantity, price, holding.quantity if holding else 0)
-        account.cash_balance = result["cash_balance"]
-        holding.quantity = result["quantity"]
-        if holding.quantity == 0:
-            db.delete(holding)
-            holding = None
 
-    trade = Trade(device_id=device_id, company_id=company.id, side=side, quantity=quantity, price=price)
-    db.add(trade)
-    db.commit()
-    db.refresh(account)
-    if holding is not None:
-        db.refresh(holding)
+        if side == SIDE_BUY:
+            result = apply_buy(
+                float(account.cash_balance),
+                quantity,
+                price,
+                holding_qty=holding.quantity if holding else 0,
+                holding_avg_price=float(holding.avg_price) if holding else 0.0,
+            )
+            account.cash_balance = result["cash_balance"]
+            if holding is None:
+                holding = Holding(
+                    device_id=device_id, company_id=company_id, quantity=result["quantity"], avg_price=result["avg_price"]
+                )
+                db.add(holding)
+            else:
+                holding.quantity = result["quantity"]
+                holding.avg_price = result["avg_price"]
+        else:
+            result = apply_sell(float(account.cash_balance), quantity, price, holding.quantity if holding else 0)
+            account.cash_balance = result["cash_balance"]
+            holding.quantity = result["quantity"]
+            if holding.quantity == 0:
+                db.delete(holding)
+                holding = None
+
+        trade = Trade(device_id=device_id, company_id=company_id, side=side, quantity=quantity, price=price)
+        db.add(trade)
+        db.commit()
+        db.refresh(account)
+        if holding is not None:
+            db.refresh(holding)
+    except Exception:
+        db.rollback()
+        raise
 
     return {
-        "ticker": company.ticker,
-        "company_name": company.name,
+        "ticker": ticker,
+        "company_name": company_name,
         "side": side,
         "quantity": quantity,
         "price": price,
@@ -229,9 +262,10 @@ def reset_portfolio(db, device_id: str) -> None:
 
     삭제와 잔고 복구는 한 트랜잭션이라 중간에 실패하면 전부 롤백된다. 이 소유자의 행만 대상이고
     관심종목/리서치 기록은 건드리지 않는다. 계좌가 아직 없으면 먼저 만든다(그 생성은 별도 커밋).
+    주문과 같은 계좌 행 잠금을 먼저 잡으므로 진행 중인 주문이 끝난 뒤(또는 이 초기화가 끝난 뒤) 순서대로 처리된다.
     """
-    account = get_or_create_account(db, device_id)
     try:
+        account = _lock_account(db, device_id)
         db.query(Holding).filter(Holding.device_id == device_id).delete(synchronize_session=False)
         db.query(Trade).filter(Trade.device_id == device_id).delete(synchronize_session=False)
         account.cash_balance = INITIAL_BALANCE
