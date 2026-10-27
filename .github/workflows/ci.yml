@@ -163,8 +163,10 @@ jobs:
       - run: pip install -r requirements.txt
       - name: 스키마 (alembic upgrade head)
         run: python -m alembic upgrade head
-      - name: 종목 시드 적재
-        run: python -m scripts.ci_seed
+      - name: 종목 시드 적재 (두 번 적재해서 멱등성 확인)
+        run: |
+          python -m scripts.ci_seed
+          python -m scripts.ci_seed | tee /dev/stderr | grep -q "새로 0개"
       - name: 제외되는 통합 테스트 수
         run: |
           out=$(python -m pytest --collect-only -q -p no:cacheprovider -m "needs_collected_data and not slow" | tail -1)

@@ -50,13 +50,49 @@ def test_seed_file_has_no_secret_like_content():
     assert "eyJ" not in text and "password" not in text.lower() and "secret" not in text.lower()
 
 
-@pytest.mark.integration
-def test_load_is_idempotent_and_leaves_the_dev_db_untouched(dev_db):
-    """같은 트랜잭션에서 두 번 적재하면 두 번째는 0개를 넣는다. 끝나면 롤백해서 개발 DB에는 아무것도 남지 않는다."""
-    total = len(ci_seed.read_seed())
-    try:
-        first_new, first_existing = ci_seed.load_seed(dev_db, commit=False)
-        assert first_new + first_existing == total
-        assert ci_seed.load_seed(dev_db, commit=False) == (0, total)
-    finally:
-        dev_db.rollback()
+class FakeResult:
+    def __init__(self, row):
+        self._row = row
+
+    def first(self):
+        return self._row
+
+
+class FakeSession:
+    """db.execute(insert ... ON CONFLICT DO NOTHING RETURNING ticker)만 흉내낸다: 이미 있는 ticker면 행이 없다."""
+
+    def __init__(self, existing):
+        self.tickers = set(existing)
+        self.commits = 0
+
+    def execute(self, stmt):
+        from sqlalchemy.dialects import postgresql
+
+        ticker = stmt.compile(dialect=postgresql.dialect()).params["ticker"]
+        if ticker in self.tickers:
+            return FakeResult(None)
+        self.tickers.add(ticker)
+        return FakeResult((ticker,))
+
+    def commit(self):
+        self.commits += 1
+
+
+def test_load_counts_new_and_existing_and_is_idempotent(seed):
+    total = len(seed)
+    db = FakeSession(existing={"005930", "000660"})
+    assert ci_seed.load_seed(db) == (total - 2, 2) and db.commits == 1
+    assert ci_seed.load_seed(db) == (0, total) and db.commits == 2  # 두 번째는 아무것도 넣지 않는다
+    assert ci_seed.load_seed(FakeSession(set()), commit=False) == (total, 0)
+
+
+def test_load_does_not_commit_when_told_not_to(seed):
+    db = FakeSession(set())
+    ci_seed.load_seed(db, commit=False)
+    assert db.commits == 0
+
+
+def test_ci_integration_job_checks_idempotency_on_the_real_db():
+    """진짜 DB에서의 멱등성(ON CONFLICT DO NOTHING)은 CI backend-integration job이 시드를 두 번 적재해 확인한다."""
+    workflow = (Path(__file__).resolve().parents[2] / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "새로 0개" in workflow
