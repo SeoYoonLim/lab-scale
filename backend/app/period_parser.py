@@ -13,7 +13,10 @@
   (구분자 공백 유무 둘 다 인식한다 - 실제 질문에 "이번 달"처럼 띄어 쓰는 경우가 있었다,
   `scripts/benchmark_routing.py`의 `market_ho` 참고).
 - **수량 표현**: 아라비아 숫자 + 단위(일/주/개월/년). 예: "3일", "2주간", "3개월 동안", "1년".
-  한글 숫자("삼개월")나 숫자 없는 표현("일주일", "한 달")은 인식하지 않는다.
+- **고유어 수량 표현**(2026-10-27 추가): "한 달"·"두 달"·"석 달"(한/두/세/석/네/넉/다섯/여섯 + 달), "한 주"·"두 주",
+  "일주일", "반년"(6개월), "열흘"(10일), "보름"(15일). "N개월"과 같은 방식으로 범위를 만든다("한 달" = "1개월").
+  "한 달러", "신한 주가"처럼 다른 말의 일부는 제외한다. "하루"는 "하루 만에"처럼 기간이 아닌 경우가 많아 인식하지 않는다.
+  한자어 숫자("삼개월")는 인식하지 않는다.
 - 질문에 인식 가능한 표현이 여러 개 있으면 **질문에서 가장 먼저 등장한 것 하나만** 쓴다(뒤에 나온 표현은 무시).
 - "N일 전"처럼 **특정 시점**을 가리키는 표현(기간이 아니라 점)은 일부러 인식하지 않는다(숫자+단위 바로 뒤에 "전"이
   오면 제외). "재작년"(작년의 부분 문자열), "지지난달"/"지지난주"도 다른 뜻이라 제외한다.
@@ -157,6 +160,18 @@ def _quantity_range(today: date, n: int, unit: str) -> tuple[date, date] | None:
     return start, today
 
 
+# 고유어 수량 표현: (정규식, 수량 함수, 단위). 앞이 한글이면("신한 주가"의 '한') 수량이 아니다.
+_NATIVE_NUM = {"한": 1, "두": 2, "세": 3, "석": 3, "네": 4, "넉": 4, "다섯": 5, "여섯": 6}
+_NATIVE_PATTERNS: list[tuple[re.Pattern, "callable", str]] = [
+    (re.compile(r"(?<![가-힣])(한|두|세|석|네|넉|다섯|여섯)\s?달(?!러)"), lambda m: _NATIVE_NUM[m.group(1)], "개월"),
+    (re.compile(r"(?<![가-힣])(한|두|세|네)\s?주(?![가식주])"), lambda m: _NATIVE_NUM[m.group(1)], "주"),
+    (re.compile(r"일주일"), lambda m: 1, "주"),
+    (re.compile(r"반\s?년"), lambda m: 6, "개월"),
+    (re.compile(r"열흘"), lambda m: 10, "일"),
+    (re.compile(r"보름"), lambda m: 15, "일"),
+]
+
+
 def _candidates(question: str, today: date) -> list[tuple[int, str, tuple[date, date]]]:
     found = []
     for pattern, to_range in _FIXED_PATTERNS:
@@ -167,6 +182,11 @@ def _candidates(question: str, today: date) -> list[tuple[int, str, tuple[date, 
         rng = _quantity_range(today, int(m.group(1)), m.group(2))
         if rng is not None:
             found.append((m.start(), m.group(), rng))
+    for pattern, quantity, unit in _NATIVE_PATTERNS:
+        for m in pattern.finditer(question):
+            rng = _quantity_range(today, quantity(m), unit)
+            if rng is not None:
+                found.append((m.start(), m.group(), rng))
     return found
 
 

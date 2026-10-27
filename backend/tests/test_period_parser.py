@@ -108,9 +108,10 @@ class TestQuantityExpressions:
     def test_out_of_range_quantity_is_not_matched(self, quantity, unit):
         assert parse(f"{quantity}{unit} 동안 주가") is None
 
-    def test_native_korean_number_words_are_not_matched(self):
-        assert parse("일주일 동안 흐름") is None
-        assert parse("한 달 동안 흐름") is None
+    def test_sino_korean_number_words_are_not_matched(self):
+        # 2026-10-27부터 고유어 수량("한 달", "일주일")은 인식한다(TestNativeQuantity). 한자어 숫자는 여전히 아니다.
+        assert parse("삼개월 동안 흐름") is None
+        assert parse("하루 만에 급등") is None
 
     def test_point_in_time_expression_with_jeon_is_not_matched(self):
         # "N년 전"은 기간(범위)이 아니라 특정 시점을 가리키므로 인식하지 않는다.
@@ -177,6 +178,38 @@ class TestMentionsPeriod:
         assert mentions_period(question) is False
 
     def test_unparsed_expressions_are_still_none_for_parse_period(self):
-        """mentions_period가 True여도 parse_period의 지원 범위는 그대로다(값으로 바꾸지 않는다)."""
-        for q in ("한 달 동안 흐름", "일주일 동안 흐름", "삼성전자 하루 주가 움직임"):
+        """mentions_period가 True여도 parse_period가 값으로 바꾸지 못하는 표현이 있다("하루", "며칠", "분기")."""
+        for q in ("삼성전자 하루 주가 움직임", "며칠간 흐름", "최근 분기 주가 흐름"):
             assert parse(q) is None and mentions_period(q) is True
+
+
+class TestNativeQuantity:
+    """고유어 수량 표현(2026-10-27 추가). NOW는 2026-10-01(목)."""
+
+    @pytest.mark.parametrize("q, matched, start", [
+        ("한 달 동안 흐름", "한 달", date(2026, 9, 1)),
+        ("한달 흐름", "한달", date(2026, 9, 1)),
+        ("최근 두 달 주가", "두 달", date(2026, 8, 1)),
+        ("석 달 추이", "석 달", date(2026, 7, 1)),
+        ("일주일 동안 흐름", "일주일", date(2026, 9, 25)),
+        ("한 주 동안 흐름", "한 주", date(2026, 9, 25)),
+        ("두 주 흐름", "두 주", date(2026, 9, 18)),
+        ("반년 흐름", "반년", date(2026, 4, 1)),
+        ("반 년 동안", "반 년", date(2026, 4, 1)),
+        ("열흘 동안", "열흘", date(2026, 9, 22)),
+        ("보름 동안 추이", "보름", date(2026, 9, 17)),
+    ])
+    def test_native_quantity_ranges(self, q, matched, start):
+        r = parse(q)
+        assert r is not None and r.matched_text == matched
+        assert (r.start_date, r.end_date) == (start, NOW.date())
+
+    def test_one_month_equals_1_gaewol(self):
+        assert parse("한 달 흐름").period_days == parse("1개월 흐름").period_days
+
+    @pytest.mark.parametrize("q", ["한 달러에 얼마야?", "신한 주가 흐름", "대한 주식 흐름", "신한지주 한 주식 가격"])
+    def test_not_part_of_other_words(self, q):
+        assert parse(q) is None
+
+    def test_first_expression_still_wins(self):
+        assert parse("지난주랑 한 달 비교").matched_text == "지난주"
