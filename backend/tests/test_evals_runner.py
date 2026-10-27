@@ -97,6 +97,24 @@ def test_period_label_flag_uses_data_start():
 
 def test_seen_unseen_holdout_splits():
     old = {**R._record(_item(split="holdout")), "flags": {"gate_ok": True}}
-    new = {**R._record({**_item(split="holdout"), "batch": 2}), "flags": {"gate_ok": False}}
+    new = {**R._record({**_item(split="holdout"), "batch": R.UNSEEN_BATCH}), "flags": {"gate_ok": False}}
     s = R.summarize([old, new])["routing_gate_accuracy"]
     assert (s["holdout"], s["holdout_seen"], s["holdout_unseen"]) == (0.5, 1.0, 0.0)
+
+
+def test_unseen_holdout_is_the_latest_batch():
+    old = {**R._record({**_item(split="holdout"), "batch": 2}), "flags": {"gate_ok": True}}
+    new = {**R._record({**_item(split="holdout"), "batch": R.UNSEEN_BATCH}), "flags": {"gate_ok": False}}
+    s = R.summarize([old, new])["routing_gate_accuracy"]
+    assert (s["holdout_seen"], s["holdout_unseen"]) == (1.0, 0.0)
+
+
+def test_must_answer_and_meta_flags():
+    item = _item("stability", {"must_answer": True})
+    rec = R._record(item)
+    rec["flags"]["fallback"] = True
+    R.score_live(item, rec, {"answer": "응답 생성이 지연되어...", "sources": [], "meta": {"fallback": "timeout"}}, [])
+    assert rec["flags"]["answered_ok"] is False
+    rec = R._record(item)
+    R.score_live(item, rec, {"answer": "KODEX 레버리지는 ...", "sources": []}, [])
+    assert rec["flags"]["answered_ok"] is True

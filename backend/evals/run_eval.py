@@ -26,9 +26,13 @@ EVALS_DIR = Path(__file__).resolve().parent
 DATASET = EVALS_DIR / "dataset.jsonl"
 RESULTS_DIR = EVALS_DIR / "results"
 LIVE_TIMEOUT_S = 120
+# Ollama가 멈추면 120초 timeout이 줄줄이 이어진다. 연속 이만큼 timeout이면 live 실행을 중단하고 summary에 남긴다.
+ABORT_AFTER_TIMEOUTS = 3
 SOURCE_TOOLS = {"news_tool", "disclosure_tool", "rag_search_tool", "event_reaction_tool"}
-# holdout_seen: batch 1(2026-10-27 첫 데이터셋)의 holdout. 첫 기준선 결과(실패 6건 포함)가 공개돼 있어 "본 적 있는" holdout이다.
-# holdout_unseen: batch 2(수정 전에 추가한 문항)의 holdout. 수정 중에 한 번도 돌리지 않는다.
+# holdout_unseen: 가장 최근 수정 라운드 전에 추가한 batch(UNSEEN_BATCH)의 holdout. 그 라운드의 수정 중에는 한 번도 돌리지 않는다.
+# holdout_seen: 그 밖의 holdout(이전 라운드에서 결과가 공개된 것). 라운드마다 UNSEEN_BATCH를 올린다
+# (batch 2: 2026-10-27 A-F 라운드, batch 3: 2026-10-27 안정성·숫자 검증 라운드).
+UNSEEN_BATCH = 3
 SPLITS = ("dev", "holdout", "holdout_seen", "holdout_unseen", "all")
 
 
@@ -36,9 +40,9 @@ def in_split(rec: dict, split: str) -> bool:
     if split == "all":
         return True
     if split == "holdout_seen":
-        return rec["split"] == "holdout" and rec.get("batch", 1) == 1
+        return rec["split"] == "holdout" and rec.get("batch", 1) != UNSEEN_BATCH
     if split == "holdout_unseen":
-        return rec["split"] == "holdout" and rec.get("batch", 1) == 2
+        return rec["split"] == "holdout" and rec.get("batch", 1) == UNSEEN_BATCH
     return rec["split"] == split
 
 
@@ -155,7 +159,8 @@ def _expected_period(expect_value, question: str):
     return expect_value
 
 
-def score_live(item: dict, rec: dict, response: dict | None, calls: list[dict], data_start=None, today=None) -> None:
+def score_live(item: dict, rec: dict, response: dict | None, calls: list[dict], data_start=None, today=None,
+               data_end=None) -> None:
     """ask_question 응답과 tool_call_log 기록(calls: [{tool_name, arguments, result}])으로 채점한다.
 
     data_start는 질문 종목(또는 전체)의 보유 시세 시작일로, 기간 라벨 일관성 판정에만 쓴다."""
@@ -236,6 +241,20 @@ def score_live(item: dict, rec: dict, response: dict | None, calls: list[dict], 
             if violation:
                 _fail(rec, "period_label", "보유 범위 밖 기간의 값처럼 쓴 숫자 없음", answer[:200])
 
+    if exp.get("must_state_data_date") and response is not None:
+        ok = M.data_date_ok(answer, data_end, today or datetime.now().date())
+        if ok is not None:
+            flags["data_date_ok"] = ok
+            if not ok:
+                _fail(rec, "data_date", f"마지막 데이터 날짜({data_end}) 명시 + 오래됐으면 알림", answer[:200])
+
+    if exp.get("must_answer"):
+        meta = (response or {}).get("meta") or {}
+        ok = bool(answer.strip()) and not rec["flags"].get("fallback") and not meta.get("fallback")
+        flags["answered_ok"] = ok
+        if not ok:
+            _fail(rec, "answered", "timeout·fallback 없이 정상 답변", rec.get("error") or meta.get("fallback") or answer[:120])
+
     if exp.get("must_contain") or exp.get("must_not_contain"):
         fails = M.regex_checks(answer, exp.get("must_contain"), exp.get("must_not_contain"))
         flags["contain_ok"] = not fails
@@ -277,6 +296,19 @@ def _delete_eval_user(db, user) -> int:
     return n
 
 
+def _data_end(db, company_names: list[str]):
+    """조회된 종목이 하나면 그 종목의 마지막 시세 날짜, 아니면 None."""
+    from sqlalchemy import func
+
+    from app.models import Company, StockPrice
+
+    names = set(company_names)
+    if len(names) != 1:
+        return None
+    return (db.query(func.max(StockPrice.price_date)).join(Company, Company.id == StockPrice.company_id)
+            .filter(Company.name == names.pop()).scalar())
+
+
 def _data_start(db, company_names: list[str]):
     """보유 시세 시작일: 조회된 종목이 하나면 그 종목의, 아니면 전체 stock_price의 최소 날짜."""
     from sqlalchemy import func
@@ -301,6 +333,7 @@ def run_live(items: list[dict], repeats: int, model: str, log=print) -> tuple[li
     out, info = [], {"eval_user": user.username, "deleted_reports": 0}
     started_all = time.perf_counter()
     try:
+        consecutive_timeouts = 0
         for run in range(repeats):
             for it in items:
                 rec = _record(it, run)
@@ -330,13 +363,26 @@ def run_live(items: list[dict], repeats: int, model: str, log=print) -> tuple[li
                 if response is not None:
                     from app.agent import FALLBACK_ANSWER
 
-                    rec["flags"]["fallback"] = response.get("answer") == FALLBACK_ANSWER
+                    meta = response.get("meta") or {}
+                    # 에이전트가 응답 생성 실패(timeout·연결 오류 등)로 대체 답변을 냈으면 meta.fallback에 사유가 있다
+                    rec["flags"]["fallback"] = response.get("answer") == FALLBACK_ANSWER or bool(meta.get("fallback"))
+                    if meta.get("answer_guard") is not None:
+                        rec["flags"]["guard_replaced"] = bool(meta["answer_guard"].get("replaced"))
+                        rec["detail"]["answer_guard"] = meta["answer_guard"]
                 if error:
                     _fail(rec, "error", "정상 응답", error)
                 resolved = [c["result"]["company_name"] for c in calls
                             if isinstance(c["result"], dict) and c["result"].get("found") and c["result"].get("company_name")]
-                score_live(it, rec, response, calls, data_start=_data_start(db, resolved))
+                score_live(it, rec, response, calls, data_start=_data_start(db, resolved),
+                           data_end=_data_end(db, resolved))
                 out.append(rec)
+                consecutive_timeouts = consecutive_timeouts + 1 if (error or "").startswith("timeout") else 0
+                if consecutive_timeouts >= ABORT_AFTER_TIMEOUTS:
+                    info["aborted"] = f"연속 {consecutive_timeouts}문항 timeout으로 중단({it['id']} run{run}에서)"
+                    log(f"[live] {info['aborted']}")
+                    break
+            if info.get("aborted"):
+                break
                 log(f"[live] {it['id']} run{run} {rec['latency_s']}s fail={[f['check'] for f in rec['failures']]}")
     finally:
         info["deleted_reports"] = _delete_eval_user(db, user)
@@ -371,6 +417,9 @@ METRICS = [
     ("period_label_violation_rate", "flag", "period_label_violation", False),
     ("must_contain_rate", "flag", "contain_ok", True),
     ("forbidden_violation_rate", "flag", "forbidden", False),
+    ("data_date_rate", "flag", "data_date_ok", True),
+    ("stability_answer_rate", "flag", "answered_ok", True),
+    ("guard_replacement_rate", "flag", "guard_replaced", False),
     ("fallback_rate", "flag", "fallback", False),
     ("error_rate", "flag", "error", False),
     ("latency_p50_s", "latency", 50, False),
@@ -414,7 +463,7 @@ def summarize(records: list[dict]) -> dict:
     return out
 
 
-_CHECK_PRIORITY = ["entity_default", "company", "entity_strict", "period_label", "refusal", "partial", "number_support", "forbidden_expression",
+_CHECK_PRIORITY = ["entity_default", "company", "entity_strict", "period_label", "refusal", "partial", "number_support", "data_date", "answered", "forbidden_expression",
                    "tool_selection", "contain", "live_period", "period_parse", "sources", "error"]
 
 

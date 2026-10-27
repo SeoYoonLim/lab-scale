@@ -293,6 +293,43 @@ def period_label_violation(question: str, answer: str, data_start, today) -> boo
     return has_values and not is_refusal(answer)
 
 
+# ---------- 데이터 기준일 명시 (2026-10-27 추가) ----------
+
+STALE_BUSINESS_DAYS = 2  # app/data_status.py와 같은 기준(평가기는 app을 import하지 않고 값을 따로 둔다)
+_STALE_NOTICE_RE = re.compile(r"마지막\s*데이터|기준입니다|기준으로|기준\)|최신\s*데이터|업데이트되지|갱신되지|지연")
+
+
+def _business_days_between(a, b) -> int:
+    """a 다음 날부터 b까지의 평일 수(a < b일 때). a >= b면 0."""
+    from datetime import timedelta
+
+    n, d = 0, a
+    while d < b:
+        d += timedelta(days=1)
+        n += d.weekday() < 5
+    return n
+
+
+def _date_patterns(d) -> list[str]:
+    return [
+        rf"{d.year}\s*[-.]\s*0?{d.month}\s*[-.]\s*0?{d.day}(?!\d)",
+        rf"{d.year}\s*년\s*0?{d.month}\s*월\s*0?{d.day}\s*일",
+        rf"(?<!\d)0?{d.month}\s*월\s*0?{d.day}\s*일",
+        rf"(?<![\d/]){d.month}/{d.day}(?![\d/])",
+    ]
+
+
+def data_date_ok(answer: str, last_date, today) -> bool | None:
+    """현재 시점 질문의 답변이 마지막 데이터 날짜를 밝혔는지. 마지막 데이터가 오늘보다 영업일 2일 이상 오래됐으면
+    그 사실을 알리는 표현("마지막 데이터", "~ 기준입니다" 등)도 있어야 한다. last_date를 모르면 None."""
+    if last_date is None:
+        return None
+    answer = answer or ""
+    mentioned = any(re.search(p, answer) for p in _date_patterns(last_date))
+    stale = _business_days_between(last_date, today) >= STALE_BUSINESS_DAYS
+    return mentioned and (not stale or bool(_STALE_NOTICE_RE.search(answer)))
+
+
 # ---------- 도구 선택 / 기간 ----------
 
 

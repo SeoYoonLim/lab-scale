@@ -180,3 +180,21 @@ class TestPeriodLabel:
         assert M.period_label_violation("삼성전자 2026년 9월 주가", "x 235,000원", self.START, self.TODAY) is None
         assert M.period_label_violation("삼성전자 주가", "235,000원", self.START, self.TODAY) is None
         assert M.period_label_violation("삼성전자 2024년 주가", "235,000원", None, self.TODAY) is None
+
+
+class TestDataDate:
+    from datetime import date as _d
+
+    LAST, TODAY = _d(2026, 10, 14), _d(2026, 10, 27)
+
+    def test_stale_needs_date_and_notice(self):
+        assert M.data_date_ok("2026-10-14 종가는 235,000원입니다.", self.LAST, self.TODAY) is False
+        assert M.data_date_ok("종가는 235,000원입니다. 마지막 데이터는 2026-10-14 기준입니다.", self.LAST, self.TODAY) is True
+        assert M.data_date_ok("10월 14일 종가는 235,000원으로, 이 날짜 기준입니다.", self.LAST, self.TODAY) is True
+
+    def test_fresh_needs_only_date(self):
+        assert M.data_date_ok("2026-10-14 종가는 235,000원", self.LAST, self._d(2026, 10, 15)) is True
+        assert M.data_date_ok("종가는 235,000원", self.LAST, self._d(2026, 10, 15)) is False
+
+    def test_unknown_last_date(self):
+        assert M.data_date_ok("x", None, self.TODAY) is None
