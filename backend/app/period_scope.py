@@ -18,7 +18,8 @@
 import re
 from calendar import monthrange
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from app.period_parser import parse_period
 
@@ -113,7 +114,8 @@ def requested_period(question: str, today: date) -> RequestedPeriod | None:
         if _FROM_RE.match(q[en:]):
             found[i] = (st, en, start, today, label + "부터")
 
-    parsed = parse_period(q)
+    # 호출측이 정한 today를 그대로 쓴다(생략하면 parse_period가 실제 현재 시각을 써서 today와 어긋난다)
+    parsed = parse_period(q, datetime.combine(today, time(12), tzinfo=ZoneInfo("Asia/Seoul")))
     if parsed is not None:
         pos = q.find(parsed.matched_text)
         end_pos = pos + len(parsed.matched_text)
