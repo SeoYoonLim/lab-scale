@@ -27,7 +27,7 @@ from app.event_answer import (
     event_result_for_llm,
     trim_result,
 )
-from app import code_answers, period_scope
+from app import briefing_text, code_answers, period_scope
 from app.etf import (
     ETF_ANSWER_RULES,
     asks_constituents,
@@ -51,9 +51,11 @@ from app.tools.company_resolver import MAX_CANDIDATES, extract_from_text, normal
 from app.routing import (
     event_keyword_for,
     event_type_for,
+    briefing_scope,
     explicitly_requested_tools,
     is_cause_question,
     is_trend_question,
+    needs_briefing,
     needs_discovery_tool,
     needs_event_reaction_tool,
     needs_fx_tool,
@@ -1323,6 +1325,28 @@ def _answer_period_quote(question: str, companies: list | None):
     return _code_answer(answer, records)
 
 
+def _answer_briefing(question: str, user_id: int | None):
+    """(D, 2026-10-28) "오늘 브리핑", "내 보유종목 어때", "관심종목 변화"는 GET /api/briefing과 같은 계산(app.briefing_db)을
+    코드가 문장으로 바꿔 답한다(LLM 없음). 로그인하지 않은 요청은 로그인 안내만 한다. 소유자는 로그인 사용자 본인(user:{id})뿐이다."""
+    if not needs_briefing(question):
+        return None
+    if user_id is None:
+        return _code_answer(briefing_text.LOGIN_REQUIRED)
+    from app.auth import CurrentUser
+    from app.briefing_db import get_briefing
+
+    called_at = datetime.now(timezone.utc)
+    scope = briefing_scope(question)
+    db = SessionLocal()
+    try:
+        brief = get_briefing(db, CurrentUser(id=user_id, username="").owner_key, 3)
+    finally:
+        db.close()
+    record = {"tool_name": "briefing", "arguments": {"scope": scope, "news_limit": 3}, "result": brief,
+              "called_at": called_at, "elapsed_ms": 0}
+    return _code_answer(briefing_text.render(brief, scope), [record])
+
+
 def _llm_fallback(err: LLMUnavailable, records: list[dict], etf_subjects=None) -> tuple[dict, list[dict]]:
     """(A) LLM이 timeout·연결 오류로 답하지 못했을 때: 도구 결과가 있으면 코드 요약, 없으면 LLM_TIMEOUT_ANSWER."""
     _meta()["fallback"] = err.reason
@@ -1391,6 +1415,9 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     previous={"question", "answer", ...}가 있으면 후속 질문으로 보고 그 질문/답변을 few-shot 뒤, 이번 질문 앞에
     대화 기록으로 넣는다. 없으면 메시지 구성이 이전과 완전히 같다.
     tool 실행 기록: {"tool_name", "arguments", "result", "called_at", "elapsed_ms"} (실행 순서대로)."""
+    briefing = _answer_briefing(question, getattr(_STATE, "user_id", None))
+    if briefing is not None:
+        return briefing
     # 사건 이후 주가 반응 질문(게이트 + 종목 하나)만 별도 경로로 간다. 그 밖의 질문은 아래 기존 경로 그대로다.
     event_company = _event_subject(question, previous)
     if event_company is not None:
@@ -1547,6 +1574,7 @@ def ask_question(
     """
     previous_id = previous["report_id"] if previous else None
     _reset_llm_state()
+    _STATE.user_id = user_id  # 채팅 브리핑(_answer_briefing)의 소유자. 요청(스레드)마다 덮어쓴다
     response, records = _answer(question, model, previous)
     # 내부 메타(대체·fallback·잘림). API 응답 모델(ResearchResponse)에는 없는 키라 응답에 나가지 않는다.
     response["meta"] = dict(_meta())

@@ -184,3 +184,41 @@ def event_keyword_for(question: str, allowed) -> str | None:
     q = (question or "").replace("자사주", "자기주식")
     hits = [(q.find(k), k) for k in allowed if k in q]
     return min(hits)[1] if hits else None
+
+
+# ---------- 개인화 브리핑 (2026-10-28 추가: 기존 게이트의 동작은 그대로) ----------
+# "오늘 브리핑", "내 보유종목 어때", "관심종목 뭐 달라졌어"처럼 로그인 사용자 자신의 보유·관심종목을 묻는 질문이면
+# 에이전트가 LLM 없이 app.briefing 계산(GET /api/briefing과 같은 값)으로 답한다. 종목 질문("삼성전자 오늘 어때")은 해당하지 않는다.
+_BRIEFING_WORD_RE = re.compile(r"브리핑")
+_MY_RE = re.compile(r"(?:^|[\s,])(?:내|나의|제|우리)\s*(?:모의\s*투자\s*)?")
+_OWN_LIST_RE = re.compile(r"보유\s*종목|보유한\s*종목|보유\s*주식|가진\s*종목|들고\s*있는\s*종목|관심\s*종목|포트폴리오|계좌|잔고")
+_LIST_ONLY_RE = re.compile(r"보유\s*종목|관심\s*종목")
+_STATUS_RE = re.compile(r"어때|어떻|달라|변화|바뀌|요약|상황|현황|정리|알려|보여|브리핑|움직|소식")
+# 관심종목·주문 조작(추가/삭제/매수)은 브리핑이 아니다
+_BRIEFING_ACTION_RE = re.compile(r"추가|삭제|등록|빼줘|빼 줘|넣어|매수|매도|주문|사줘|팔아줘|초기화|진단")
+_WATCH_SCOPE_RE = re.compile(r"관심\s*종목")
+_HOLD_SCOPE_RE = re.compile(r"보유|가진\s*종목|들고\s*있는|포트폴리오|계좌|잔고")
+
+
+def needs_briefing(question: str) -> bool:
+    """로그인 사용자의 개인화 브리핑을 묻는 질문이면 True."""
+    q = question or ""
+    if _BRIEFING_ACTION_RE.search(q):
+        return False
+    if _BRIEFING_WORD_RE.search(q):
+        return True
+    if not _OWN_LIST_RE.search(q) or not _STATUS_RE.search(q):
+        return False
+    # "포트폴리오 분산이란?"처럼 일반 개념은 소유 표현(내/나의)이나 보유·관심종목이라는 말이 있어야 한다
+    return bool(_MY_RE.search(" " + q) or _LIST_ONLY_RE.search(q))
+
+
+def briefing_scope(question: str) -> str:
+    """브리핑 질문의 범위: 관심종목만 말하면 watchlist, 보유·계좌만 말하면 holdings, 그 밖(브리핑, 둘 다)은 all."""
+    q = question or ""
+    watch, hold = bool(_WATCH_SCOPE_RE.search(q)), bool(_HOLD_SCOPE_RE.search(q))
+    if watch and not hold:
+        return "watchlist"
+    if hold and not watch:
+        return "holdings"
+    return "all"
