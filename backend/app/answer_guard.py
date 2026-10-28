@@ -437,6 +437,10 @@ def code_summary(records: list[dict]) -> str | None:
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n")
 
 
+# 대체했을 때 원래 LLM 답변 앞부분을 기록에 남기는 길이(내부 meta.answer_guard. API 응답에는 나가지 않는다). 오탐 분석용이다.
+ORIGINAL_LOG_CHARS = 600
+
+
 def guard_answer(answer: str, records: list[dict], question: str = "", today=None) -> tuple[str, dict]:
     """(내보낼 답변, 검증 기록). 기록: {"replaced": bool, "violations": [원문 숫자], "mode": "code_summary"|"drop_sentences"|None,
     "kinds": {"number", "date", "target", "period": 건수}}. today(오늘 날짜, 기본 KST 오늘)는 답변에 오늘 날짜를 써도 되게 한다."""
@@ -461,7 +465,7 @@ def guard_answer(answer: str, records: list[dict], question: str = "", today=Non
     if records:
         summary = code_summary(records)
         if summary:
-            log.update(replaced=True, mode="code_summary")
+            log.update(replaced=True, mode="code_summary", original=answer[:ORIGINAL_LOG_CHARS])
             return summary, log
     # 도구 결과가 없거나 요약할 결과가 없으면: 설명되지 않는 값 숫자가 든 문장만 지운다
     bad_raw = {n.raw for n in bad if n.unit in ("원", "%", "주") or n.value >= 1000}
@@ -473,7 +477,7 @@ def guard_answer(answer: str, records: list[dict], question: str = "", today=Non
         sentences = [s for s in sentences if not any(n.raw in bad_raw for n in extract_numbers(s))]
         if sentences or not line.strip():
             kept.append(" ".join(sentences))
-    log.update(replaced=True, mode="drop_sentences")
+    log.update(replaced=True, mode="drop_sentences", original=answer[:ORIGINAL_LOG_CHARS])
     return "\n".join(kept).strip(), log
 
 

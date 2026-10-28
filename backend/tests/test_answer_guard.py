@@ -84,7 +84,8 @@ def test_question_numbers_are_supported():
 def test_wrong_digits_are_replaced_with_code_summary():
     out, log = G.guard_answer("NAVER의 현재 주가는 1,792,000원입니다.", [STOCK], "NAVER 주가 얼마야?")
     assert log == {"replaced": True, "violations": ["1,792,000원"], "mode": "code_summary",
-                   "kinds": {"number": 1, "date": 0, "target": 0, "period": 0}}
+                   "kinds": {"number": 1, "date": 0, "target": 0, "period": 0},
+                   "original": "NAVER의 현재 주가는 1,792,000원입니다."}  # 대체 전 원문(내부 기록, 오탐 분석용)
     assert "179,200원" in out and "1,792,000" not in out
     assert "+1.30%" in out and "592,942주" in out
 
