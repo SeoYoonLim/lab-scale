@@ -10,7 +10,7 @@
 ## 지금 상태 요약 (2026-10-14 기준)
 
 **한 줄 요약:** 백엔드(API + 에이전트 + 데이터 수집·일괄 갱신 + 로그인 + 관심종목/모의투자 + 포트폴리오 AI 진단과 이력 + 환율 영향 분석 +
-시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응 + 오늘의 개인화 브리핑)는 동작하고, 빠른 테스트 **2772개**가 통과합니다(`pytest`, 순수 로직 2460 + 개발 DB 통합 312).
+시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응 + 오늘의 개인화 브리핑(API·채팅))는 동작하고, 빠른 테스트 **2856개**가 통과합니다(`pytest`, 순수 로직 2542 + 개발 DB 통합 314).
 실제 Ollama를 부르는 slow 테스트 61개는 기본에서 빠지고 `pytest -m slow`로 따로 돌립니다. 백엔드 작업 브랜치는 `feature/backend`(원격 push 완료)이고
 아직 main에 병합하지 않았습니다. 프론트엔드는 서윤님이 `feature/frontend`에서 React + Vite + zod로 진행 중이며, 2026-10-14에 실제 백엔드 응답을
 프론트의 zod 스키마로 검증했을 때 불일치가 없었습니다(프론트 테스트 20개·빌드·lint 통과). 남은 큰 일은 화면 연동과 아래 "알려진 한계"입니다.
@@ -461,9 +461,9 @@ python -m scripts.refresh_data --days 30 --timeout-min 30 # 조회 기간(기본
 `backend/`에서 실행합니다. 세 단계로 나뉩니다(마커: `integration`, `slow`).
 
 ```bash
-pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-28 기준 2772개 통과, 약 25초). slow는 기본 제외
-pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 2460개)
-pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(312개). DB가 꺼져 있으면 자동 skip
+pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-28 3차 라운드 후 2856개 통과, 약 27초). slow는 기본 제외
+pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 2542개)
+pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(314개). DB가 꺼져 있으면 자동 skip
 pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)를 부르는 테스트(61개, 느리고 비결정적)
 ```
 
@@ -494,10 +494,10 @@ pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)
 
 **CI에서 제외되는 테스트(숫자로)**
 
-- `integration` 312개 중 **49개는 CI에서 제외**됩니다(`needs_collected_data` 마커). 수집된 시세·뉴스·공시·ETF 시세·환율·시장 지수(또는 인증 도입 전 옛 리포트)가 DB에 있어야 통과하는
-  테스트라서, 종목 목록만 시드한 CI의 빈 DB에서는 통과할 수 없습니다. 나머지 263개는 CI에서 실제로 돕니다. 로컬 dev DB에서는 마커가 있어도 **312개 전부** 평소처럼 돕니다.
-  제외 개수는 CI 로그와 job summary에 숫자로 찍히고, 상한(`MAX_EXCLUDED=49`)을 넘으면 CI가 실패합니다(마커로 테스트를 슬그머니 늘려 빼지 못하게).
-- 분류(빈 DB 기준): **a** 스스로 데이터를 만들어 통과 65, **b** 종목 시드로 해결 198, **c** 수집 데이터 필요 49(위 제외, 49번째는 브리핑 숫자 독립 재계산 대조 테스트), **d** Ollama 필요 0.
+- `integration` 314개 중 **50개는 CI에서 제외**됩니다(`needs_collected_data` 마커). 수집된 시세·뉴스·공시·ETF 시세·환율·시장 지수(또는 인증 도입 전 옛 리포트)가 DB에 있어야 통과하는
+  테스트라서, 종목 목록만 시드한 CI의 빈 DB에서는 통과할 수 없습니다. 나머지 264개는 CI에서 실제로 돕니다. 로컬 dev DB에서는 마커가 있어도 **314개 전부** 평소처럼 돕니다.
+  제외 개수는 CI 로그와 job summary에 숫자로 찍히고, 상한(`MAX_EXCLUDED=50`)을 넘으면 CI가 실패합니다(마커로 테스트를 슬그머니 늘려 빼지 못하게).
+- 분류(빈 DB 기준): **a** 스스로 데이터를 만들어 통과 65, **b** 종목 시드로 해결 199, **c** 수집 데이터 필요 50(위 제외, 49번째는 브리핑 숫자 독립 재계산 대조, 50번째는 채팅 기간 수익률 템플릿의 DB 대조 테스트), **d** Ollama 필요 0.
 - 그 밖의 skip은 조용히 통과로 보이지 않게 CI에서 **실패**로 바뀝니다(`CI_FAIL_ON_SKIP=1`, `backend/tests/ci_guard.py`).
 - `slow` 61개(실제 Ollama 호출)와 `evals` live 모드는 CI에서 돌지 않습니다: Ollama(llama3.1:8b)가 필요하고 느리며 비결정적이기 때문입니다. 로컬에서 `pytest -m slow`, `python -m evals.run_eval --mode live`.
 
@@ -508,7 +508,7 @@ docker run -d --name ci_check_db -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci_dum
 cd backend
 export DATABASE_URL=postgresql+psycopg://ci:ci_dummy_pw@localhost:25432/ci_db   # PowerShell: $env:DATABASE_URL="..."
 python -m alembic upgrade head && python -m scripts.ci_seed
-CI_FAIL_ON_SKIP=1 pytest -m "integration and not slow and not needs_collected_data"      # 263개 통과, skip 0
+CI_FAIL_ON_SKIP=1 pytest -m "integration and not slow and not needs_collected_data"      # 264개 통과, skip 0
 docker rm -f ci_check_db
 ```
 
@@ -629,6 +629,7 @@ python -m evals.compare evals/results/summary_baseline_2026-10-27.json evals/res
     다른 경로의 보정은 그대로. 한계: 같은 계정에서 지연이 큰 주문 하나가 뒤따르는 주문을 기다리게 한다(보통 수 ms)
 - [x] 데이터 일괄 갱신: `python -m scripts.refresh_data`(6단계, 단계별 기록, `GET /api/status`로 기준일 확인). 실행은 수동이고 스케줄러는 없다(자동화 여부 논의 필요)
 - [x] 오늘의 개인화 브리핑: `GET /api/briefing`(LLM 없음, 코드 계산, 읽기 전용). 계산은 `app/briefing.py`(순수), DB 조회는 `app/briefing_db.py`(쿼리 수 고정). 숫자는 `tests/briefing_recompute.py`가 원시 SQL로 독립 재계산해 대조한다
+- [x] 리서치 챗 3차(2026-10-28): 채팅에서 개인화 브리핑("오늘 브리핑", "내 보유종목 어때", LLM 없음), 기간 수익률·기간 최고/최저가·두 종목 비교를 코드 템플릿으로 답함, 숫자 검증기에 날짜·대상·기간 혼동 검사 추가(독립 고정 세트로 재현율 0.57→0.90). 상세는 [backend/API.md](backend/API.md)의 "3차 라운드"와 [backend/evals/README.md](backend/evals/README.md)
 - [x] ETF(2026-10-14): 종목 50개, 리서치·진단 처리 규칙과 레버리지/인버스 고정 문구(위 "ETF 처리 규칙")
 - [x] 뉴스·공시 이후 주가 반응(2026-10-14): `GET /api/stocks/{ticker}/event-reactions` + 리서치 에이전트 연동(코드가 수치를 쓰고 LLM 해석은 기본 꺼짐, 위 절)
 - [x] 데이터 기준일 API(`GET /api/status`), 포트폴리오 진단 이력 저장·비교(2026-10-14)
