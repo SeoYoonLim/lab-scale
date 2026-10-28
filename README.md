@@ -10,7 +10,7 @@
 ## 지금 상태 요약 (2026-10-14 기준)
 
 **한 줄 요약:** 백엔드(API + 에이전트 + 데이터 수집·일괄 갱신 + 로그인 + 관심종목/모의투자 + 포트폴리오 AI 진단과 이력 + 환율 영향 분석 +
-시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응 + 오늘의 개인화 브리핑(API·채팅))는 동작하고, 빠른 테스트 **2943개**가 통과합니다(`pytest`, 순수 로직 2628 + 개발 DB 통합 315).
+시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응 + 오늘의 개인화 브리핑(API·채팅))는 동작하고, 빠른 테스트 **3159개**가 통과합니다(`pytest`, 순수 로직 2766 + 개발 DB 통합 393).
 실제 Ollama를 부르는 slow 테스트 61개는 기본에서 빠지고 `pytest -m slow`로 따로 돌립니다. 백엔드 작업 브랜치는 `feature/backend`(원격 push 완료)이고
 아직 main에 병합하지 않았습니다. 프론트엔드는 서윤님이 `feature/frontend`에서 React + Vite + zod로 진행 중이며, 2026-10-14에 실제 백엔드 응답을
 프론트의 zod 스키마로 검증했을 때 불일치가 없었습니다(프론트 테스트 20개·빌드·lint 통과). 남은 큰 일은 화면 연동과 아래 "알려진 한계"입니다.
@@ -56,6 +56,7 @@
 
 프론트에서 특히 챙길 것: POST는 로컬 LLM이라 **2~25초**(로딩 상태와 60초 이상 타임아웃) / 에러 `detail`은 404·502·503에서는 문자열, 422에서는 배열
 / `report_id`는 저장 실패 시 null / 허용 origin은 기본 `localhost:5173`, `127.0.0.1:5173`(`CORS_ALLOW_ORIGINS`로 변경, 2026-10-28에 3000은 기본에서 빠짐) / 요청이 많으면 429(`Retry-After`, 아래 "운영 설정").
+목록 API 4개(`/api/research`, `/api/portfolio/trades`, `/api/portfolio/diagnosis/history`, `/api/companies`)는 `sort`/`order` 정렬을 지원하고, 앞의 셋은 응답에 `has_next`·`total_pages`를, `/api/companies`는 `offset`과 `X-Total-Count` 헤더를, `/api/research`는 `q` 검색을 더했습니다(2026-10-28, 모두 선택 사항이라 기존 호출은 그대로 동작, 경계값 표는 `backend/API.md`의 "목록 API 공통 규칙").
 단 **뉴스·공시 이후 주가 반응 질문은 LLM 호출이 없어 즉시(0.1초 안팎) 응답**합니다(`EVENT_REACTION_LLM_INTERPRETATION` 기본 꺼짐, 아래 "사건 이후 주가 반응" 절).
 
 ### DB 스키마 개요
@@ -464,9 +465,9 @@ python -m scripts.refresh_data --days 30 --timeout-min 30 # 조회 기간 직접
 `backend/`에서 실행합니다. 세 단계로 나뉩니다(마커: `integration`, `slow`).
 
 ```bash
-pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-28 안정화 후 2943개 통과, 약 30초). slow는 기본 제외
-pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 2628개)
-pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(315개). DB가 꺼져 있으면 자동 skip
+pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-28 목록 API 정렬·페이징·검색 후 3159개 통과, 약 40초). slow는 기본 제외
+pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 2766개)
+pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(393개). DB가 꺼져 있으면 자동 skip
 pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)를 부르는 테스트(61개, 느리고 비결정적)
 ```
 
@@ -497,8 +498,8 @@ pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)
 
 **CI에서 제외되는 테스트(숫자로)**
 
-- `integration` 315개 중 **50개는 CI에서 제외**됩니다(`needs_collected_data` 마커). 수집된 시세·뉴스·공시·ETF 시세·환율·시장 지수(또는 인증 도입 전 옛 리포트)가 DB에 있어야 통과하는
-  테스트라서, 종목 목록만 시드한 CI의 빈 DB에서는 통과할 수 없습니다. 나머지 265개는 CI에서 실제로 돕니다. 로컬 dev DB에서는 마커가 있어도 **315개 전부** 평소처럼 돕니다.
+- `integration` 393개 중 **50개는 CI에서 제외**됩니다(`needs_collected_data` 마커). 수집된 시세·뉴스·공시·ETF 시세·환율·시장 지수(또는 인증 도입 전 옛 리포트)가 DB에 있어야 통과하는
+  테스트라서, 종목 목록만 시드한 CI의 빈 DB에서는 통과할 수 없습니다. 나머지 343개는 CI에서 실제로 돕니다. 로컬 dev DB에서는 마커가 있어도 **393개 전부** 평소처럼 돕니다.
   제외 개수는 CI 로그와 job summary에 숫자로 찍히고, 상한(`MAX_EXCLUDED=50`)을 넘으면 CI가 실패합니다(마커로 테스트를 슬그머니 늘려 빼지 못하게).
 - 분류(빈 DB 기준): **a** 스스로 데이터를 만들어 통과 66, **b** 종목 시드로 해결 199, **c** 수집 데이터 필요 50(위 제외, 49번째는 브리핑 숫자 독립 재계산 대조, 50번째는 채팅 기간 수익률 템플릿의 DB 대조 테스트), **d** Ollama 필요 0.
 - 그 밖의 skip은 조용히 통과로 보이지 않게 CI에서 **실패**로 바뀝니다(`CI_FAIL_ON_SKIP=1`, `backend/tests/ci_guard.py`).
@@ -511,7 +512,7 @@ docker run -d --name ci_check_db -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci_dum
 cd backend
 export DATABASE_URL=postgresql+psycopg://ci:ci_dummy_pw@localhost:25432/ci_db   # PowerShell: $env:DATABASE_URL="..."
 python -m alembic upgrade head && python -m scripts.ci_seed
-CI_FAIL_ON_SKIP=1 pytest -m "integration and not slow and not needs_collected_data"      # 265개 통과, skip 0
+CI_FAIL_ON_SKIP=1 pytest -m "integration and not slow and not needs_collected_data"      # 343개 통과, skip 0
 docker rm -f ci_check_db
 ```
 
@@ -573,6 +574,7 @@ python -m evals.compare evals/results/summary_baseline_2026-10-27.json evals/res
 
 - `APP_ENV`(기본 development): production이면 약한 `JWT_SECRET`(예시 문구·반복 문자)으로 기동하지 않는다. 없거나 32자 미만은 모든 모드에서 거부(기존).
 - `CORS_ALLOW_ORIGINS`(기본 `http://localhost:5173,http://127.0.0.1:5173`). credentials는 쓰지 않는다(Bearer 헤더).
+- `CORS_EXPOSE_HEADERS`(기본 `X-Total-Count`). 브라우저 JS가 읽을 수 있게 노출할 응답 헤더(`GET /api/companies`의 전체 건수).
 - 레이트 리밋(`RATE_LIMIT_*`, 기본 켜짐): 로그인 IP당 분당 10회, 같은 아이디+IP 5회 실패면 5분 잠금, 가입 IP당 시간당 10회, 주문 사용자당 분당 30회, AI 질문 사용자당 분당 6회 + 동시 1건. 초과는 429 + `Retry-After`.
 - 외부 호출(`app/http_retry.py`): (연결, 읽기) timeout, 일시적 오류(연결·timeout·5xx·429)만 최대 2회 지수 백오프 재시도, 4xx는 바로 실패. 실시간 시세는 재시도 없이 최대 약 4초 뒤 DB 종가 폴백(기존 폴백 그대로).
 - `GET /api/health`로 DB·마이그레이션·Ollama·데이터 기준일을 확인한다. 처리되지 않은 예외는 500 `{"detail": "서버 오류가 발생했습니다."}`(상세는 서버 로그만). 요청 로그는 메서드·경로·상태·ms·user id만.

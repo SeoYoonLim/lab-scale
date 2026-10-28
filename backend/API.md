@@ -65,6 +65,52 @@ Authorization: Bearer <access_token>
 인증은 Authorization 헤더(Bearer)라 credentials(쿠키)는 허용하지 않는다. 허용하지 않은 origin의 사전 요청(OPTIONS)은 400이다.
 **프론트가 다른 포트나 도메인에서 뜬다면** `CORS_ALLOW_ORIGINS`에 추가해야 하고, 추가 전에는 브라우저가 CORS 오류로 요청을 막습니다(curl/Postman은 영향 없음).
 
+브라우저 JS는 기본적으로 응답 헤더 몇 개만 읽을 수 있어서, `GET /api/companies`의 `X-Total-Count`는 `Access-Control-Expose-Headers`로 노출한다(2026-10-28).
+노출할 헤더 목록은 환경변수 `CORS_EXPOSE_HEADERS`(쉼표 구분, 기본 `X-Total-Count`)로 바꿀 수 있다. 같은 출처 프록시(Vite `/api`)로 부르면 CORS와 상관없이 읽힌다.
+
+## 목록 API 공통 규칙: 정렬·페이징·검색 (2026-10-28)
+
+대상은 목록 API 4개다: `GET /api/research`, `GET /api/portfolio/trades`, `GET /api/portfolio/diagnosis/history`, `GET /api/companies`.
+**하위 호환:** 기존 파라미터·기본값·기본 정렬·기존 응답 필드는 그대로이고, 아래는 전부 **추가**다(선택 파라미터, 응답 필드 2개, 응답 헤더 1개).
+
+| 추가 | 어디에 | 설명 |
+| --- | --- | --- |
+| `sort` | 4개 전부 | 정렬 기준. API마다 허용 값 목록이 있고 그 밖의 값은 422. **대소문자를 구분한다** |
+| `order` | 4개 전부 | `asc` 또는 `desc`(소문자만). 기본값은 지금까지의 정렬 방향이다 |
+| `has_next` | research, trades, diagnosis history 응답 | `offset + limit < total`. 다음 페이지가 있는가 |
+| `total_pages` | 위와 같음 | `ceil(total / limit)`. `total`이 0이면 0 |
+| `q` | `GET /api/research` | 질문·요약·종목명·종목코드 부분 일치 검색 |
+| `offset` | `GET /api/companies` | 건너뛸 건수(기본 0) |
+| `X-Total-Count` 헤더 | `GET /api/companies` | `q`/`asset_type`에 맞는 전체 건수. 본문은 계속 배열 |
+
+- **파라미터를 안 주면 순서가 예전과 같다.** 기본 정렬: research `created_at desc`, trades `executed_at desc`, diagnosis history `created_at desc`, companies `id asc`(수집 순서).
+- **같은 값끼리는 `id`로 정한다.** 정렬 키가 같은 행(같은 시각의 체결 등)이 있어도 페이지를 넘길 때 중복이나 누락이 생기지 않도록 항상 `id`를 보조 키로 붙이고, `id`의 방향은 `order`를 따른다(`order=desc`면 `id`도 내림차순).
+- **키 이름은 snake_case**(`has_next`, `total_pages`)로, 기존 `report_id`, `previous_report_id`와 같다.
+- **검증 오류는 계속 422**(FastAPI 기본 형식, 400으로 바꾸지 않았다). 인증이 필요한 API는 **401이 검증(422)보다 먼저**다: 토큰이 없으면 `limit=0`처럼 잘못된 파라미터를 같이 보내도 401이다.
+
+### 경계값별 동작 (4개 API 공통)
+
+`max`는 API별 `limit` 상한이다(research 100, trades 200, diagnosis history 100, companies 300).
+
+| 요청 | 결과 |
+| --- | --- |
+| `limit=1`, `limit=max` | 200 |
+| `limit=0`, `limit=max+1`, `limit=-1` | 422 (`greater_than_equal`/`less_than_equal`) |
+| `limit=abc`, `limit=1.5`, `limit=`(빈 값) | 422 (`int_parsing`) |
+| `offset=0` | 200 |
+| `offset=-1` | 422 |
+| `offset=abc`, `offset=1.5` | 422 |
+| `offset >= total` (예: `offset=total`, `offset=1000000`) | **200**, `items`가 빈 배열(companies는 `[]`). `total`은 그대로이고 `has_next`는 false |
+| `offset=9223372036854775807`(= DB bigint 최대) | 200, 빈 `items` |
+| `offset=9223372036854775808` 이상 | 422 (`less_than_equal`). 예전에는 DB 오류로 503이 났다 |
+| `sort`가 허용 목록 밖(`bogus`, `CREATED_AT`, 빈 값, 다른 API의 필드, SQL 조각) | 422 (`literal_error`). 쿼리에 들어가지 않는다 |
+| `order`가 `asc`/`desc` 밖(`up`, `DESC`, 빈 값) | 422 (`literal_error`) |
+| `q`가 50자 초과 (`GET /api/research`) | 422 (`string_too_long`). companies의 `q`는 100자 |
+| `q`가 공백뿐이거나 빈 값 | 200, 검색 조건을 적용하지 않는다(= `q` 없음) |
+| 토큰 없음 + 잘못된 파라미터 | **401** (인증 필요 API만) |
+
+다음 페이지는 `has_next`가 true인 동안 `offset += limit`로 이어서 부르면 중복·누락 없이 전체를 훑는다(통합 테스트가 동률 정렬 값 포함해 검증한다).
+
 ## 종목 유형: 주식과 ETF (2026-10-14 추가, 1단계)
 
 ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응답의 **`asset_type`**(`"stock"` 또는 `"etf"`) 하나뿐이고, 검색·관심종목·
@@ -120,21 +166,21 @@ ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응�
 | POST | `/api/auth/login` | 공개 | 로그인 → 200 + access token |
 | GET | `/api/auth/me` | 필요 | 토큰의 사용자 정보 |
 | POST | `/api/research` | 필요 | 질문을 보내 AI 답변 생성(+리포트 저장). `previous_report_id`로 내 직전 보고서를 이어서 후속 질문 가능 |
-| GET | `/api/research` | 필요 | 내 리포트 목록(최신순, 페이지네이션) |
+| GET | `/api/research` | 필요 | 내 리포트 목록(기본 최신순). `limit`/`offset` 페이지네이션(`has_next`, `total_pages`), `sort`/`order` 정렬, `q` 검색 |
 | GET | `/api/research/{report_id}` | 필요 | 내 리포트 한 건 조회 |
 | DELETE | `/api/research/{report_id}` | 필요 | 내 리포트 한 건 삭제(tool 호출 이력 포함) |
 | GET | `/api/stocks/{ticker}/realtime-price` | 공개 | 종목 현재가(비공식 소스 기반 실시간 시세, 장외/장애 시 자동 폴백) |
-| GET | `/api/companies` | 공개 | 종목 목록/검색(`q`로 종목명·티커 부분 일치, 별칭 포함) + 최근 종가·등락률. `asset_type=stock\|etf`로 주식/ETF만 |
+| GET | `/api/companies` | 공개 | 종목 목록/검색(`q`로 종목명·티커 부분 일치, 별칭 포함) + 최근 종가·등락률. `asset_type=stock\|etf`로 주식/ETF만. `offset`, `sort`/`order`, 전체 건수는 `X-Total-Count` 헤더 |
 | GET | `/api/discovery/trending` | 공개 | 급등/급락/거래량 급증 종목(기본은 주식만, `asset_type=etf`로 ETF) |
 | GET | `/api/watchlist` | 필요 | 내 관심종목 목록 |
 | POST | `/api/watchlist` | 필요 | 관심종목 추가 |
 | DELETE | `/api/watchlist/{ticker}` | 필요 | 관심종목 삭제 |
 | GET | `/api/portfolio` | 필요 | 내 모의투자 잔고 + 보유 종목(첫 호출 시 계좌 자동 생성) |
 | POST | `/api/portfolio/orders` | 필요 | 모의투자 매수/매도 주문 |
-| GET | `/api/portfolio/trades` | 필요 | 내 체결 내역(최신순, `limit`/`offset` 페이지네이션, `ticker` 필터) |
+| GET | `/api/portfolio/trades` | 필요 | 내 체결 내역(기본 최신순, `limit`/`offset` 페이지네이션(`has_next`, `total_pages`), `sort`/`order` 정렬, `ticker` 필터) |
 | POST | `/api/portfolio/reset` | 필요 | 내 모의투자 초기화(보유·체결 내역 삭제 + 잔고 초기값). 본문 `{"confirm": true}` 필수 |
 | POST | `/api/portfolio/diagnosis` | 필요 | 내 포트폴리오 AI 진단(지표·플래그는 코드 계산, 설명은 LLM 또는 규칙 기반 폴백). 결과를 저장하고 `diagnosis_id`·`created_at`을 붙인다 |
-| GET | `/api/portfolio/diagnosis/history` | 필요 | 내 진단 이력 목록(최신순, `limit`/`offset` 페이지네이션, 최근 50건 보관) |
+| GET | `/api/portfolio/diagnosis/history` | 필요 | 내 진단 이력 목록(기본 최신순, `limit`/`offset` 페이지네이션(`has_next`, `total_pages`), `sort`/`order` 정렬, 최근 50건 보관) |
 | GET | `/api/portfolio/diagnosis/{id}` | 필요 | 내 진단 한 건(저장된 진단 응답 그대로) |
 | GET | `/api/portfolio/diagnosis/{id}/compare` | 필요 | 이전 진단과 비교(코드로만 계산). `base`로 기준 진단 지정 |
 | DELETE | `/api/portfolio/diagnosis/{id}` | 필요 | 내 진단 한 건 삭제 |
@@ -564,7 +610,7 @@ curl -X POST http://localhost:8000/api/research \
 
 ## GET /api/research
 
-내 리포트 목록(최신순). `total`도 내 리포트 수다.
+내 리포트 목록(기본 최신순). `q`를 주면 검색 결과만이고 `total`도 그 건수다(`q`가 없으면 내 리포트 수).
 
 > **Breaking change:** 응답이 배열이 아니라 `{"total": int, "items": [...]}` envelope이다.
 > 예전처럼 응답을 바로 배열로 다루던 코드는 `response.items`로 바꿔야 한다.
@@ -574,15 +620,29 @@ curl -X POST http://localhost:8000/api/research \
 | 이름 | 기본값 | 범위 | 설명 |
 | --- | --- | --- | --- |
 | `limit` | 20 | 1~100 | 한 페이지 건수 |
-| `offset` | 0 | 0 이상 | 건너뛸 건수 |
+| `offset` | 0 | 0 이상, 9223372036854775807 이하 | 건너뛸 건수 |
+| `sort` | `created_at` | `created_at`, `id` | 정렬 기준 |
+| `order` | `desc` | `asc`, `desc` | 정렬 방향. 기본(`created_at desc`)이 지금까지의 최신순이다 |
+| `q` | 없음 | 최대 50자 | 질문·요약·종목명·종목코드에서 **부분 일치**(대소문자 무시). 공백만이면 무시. 앞뒤 공백은 잘라서 검색 |
 
-범위를 벗어나면 422.
+범위를 벗어나면 422. 경계값은 위 "경계값별 동작" 표.
+
+**`q` 검색 규칙** (리포트의 `question`, `summary`, 그 리포트에 연결된 종목의 이름과 종목코드 중 하나라도 들어 있으면 매칭):
+
+- 대소문자를 구분하지 않는다(`SNAKE_CASE`로 `snake_case`를 찾는다).
+- `%`, `_`, `\`는 **와일드카드가 아니라 글자 그대로**다. `q=%`는 `%`가 든 리포트만, `q=sna_e`는 `snake`에 안 걸린다. 작은따옴표·큰따옴표도 글자 그대로이고 SQL로 해석되지 않는다.
+- **내 리포트만** 검색한다. 다른 사용자의 리포트는 어떤 검색어로도 나오지 않는다.
+- 답변 전문(`content`)은 검색하지 않는다(목록에 보이는 필드 위주).
+- 종목명/종목코드는 `company_name`이 채워지는 경우(질문에서 다룬 종목이 정확히 1개)에만 걸린다.
+- `sort=company_name` 같은 종목명 정렬은 지원하지 않는다(DB 정렬 규칙에 따라 한글 순서가 달라져서 뺐다).
 
 ### 응답 200
 
 ```json
 {
   "total": 16,
+  "has_next": false,
+  "total_pages": 1,
   "items": [
     {
       "report_id": 17,
@@ -599,7 +659,9 @@ curl -X POST http://localhost:8000/api/research \
 
 | 필드 | 설명 |
 | --- | --- |
-| `total` | 저장된 전체 리포트 수(`limit`/`offset`과 무관). 페이지 수 계산용 |
+| `total` | 조건에 맞는 전체 리포트 수(`limit`/`offset`과 무관, `q`가 있으면 검색 결과 수). 페이지 수 계산용 |
+| `has_next` | `offset + limit < total`. 다음 페이지가 있는가 (2026-10-28 추가) |
+| `total_pages` | `ceil(total / limit)`, `total`이 0이면 0 (2026-10-28 추가) |
 | `items[].report_id` | 리포트 ID |
 | `items[].previous_report_id` | 이어받은 직전 리포트 ID. 독립 질문이거나 직전 리포트가 삭제됐으면 null |
 | `items[].question` | 원래 질문 |
@@ -608,17 +670,19 @@ curl -X POST http://localhost:8000/api/research \
 | `items[].created_at` | ISO 8601(UTC, `+00:00`) |
 | `items[].used_tools` | 사용한 tool 이름 목록 |
 
-목록에는 `answer`와 `sources`가 없고 `disclaimer`도 없다(상세 조회에서 제공). 다음 페이지: `offset += limit`, `offset >= total`이면 끝.
-`offset`이 `total` 이상이면 `items`가 빈 배열인 200이다.
+목록에는 `answer`와 `sources`가 없고 `disclaimer`도 없다(상세 조회에서 제공). 다음 페이지: `has_next`가 true인 동안 `offset += limit`.
+`offset`이 `total` 이상이면 `items`가 빈 배열인 200이다. 응답 본문에는 `limit`/`offset`을 싣지 않는다(예전 그대로).
 
 ```bash
-curl "http://localhost:8000/api/research?limit=2&offset=1"
+curl "http://localhost:8000/api/research?limit=2&offset=1" -H "Authorization: Bearer $TOKEN"
+curl "http://localhost:8000/api/research?sort=created_at&order=asc" -H "Authorization: Bearer $TOKEN"   # 오래된 순
+curl -G "http://localhost:8000/api/research" --data-urlencode "q=100%" -H "Authorization: Bearer $TOKEN"  # %가 든 리포트만
 ```
 
 ### 에러
 
-- 401: 토큰 없음/만료/변조 (위 "인증 에러")
-- 422: `limit`/`offset`이 범위 밖이거나 정수가 아님 (검증 오류 형식)
+- 401: 토큰 없음/만료/변조 (위 "인증 에러"). 잘못된 파라미터를 같이 보내도 401이 먼저
+- 422: `limit`/`offset`이 범위 밖이거나 정수가 아님, `sort`/`order`가 허용 값이 아님, `q`가 50자 초과 (검증 오류 형식)
 - 503: DB 연결 불가 (위와 동일한 body)
 
 ---
@@ -803,12 +867,21 @@ curl http://localhost:8000/api/stocks/005930/realtime-price
 | `q` | string | 선택. 종목명 또는 티커 부분 일치 검색어. 생략하면 상위 `limit`개 반환. 최대 100자 |
 | `limit` | int | 선택(기본 50). 1~300 |
 | `asset_type` | string | 선택. `stock`(주식만) 또는 `etf`(ETF만). **생략하면 전체**(주식 + ETF). 다른 값이면 422 |
+| `offset` | int | 선택(기본 0). 0 이상, 9223372036854775807 이하. 정렬한 결과에서 건너뛸 건수 (2026-10-28 추가) |
+| `sort` | string | 선택(기본 `id`). `id`(수집 순서, 예전과 같음), `name`(종목명), `ticker`(종목코드). 이름·코드는 문자 코드 순서라 한글은 가나다순이고 영문 대문자가 한글보다 앞이다 |
+| `order` | string | 선택(기본 `asc`). `asc` 또는 `desc` |
+
+**본문은 계속 배열**이고, `q`/`asset_type`에 맞는 **전체 건수는 `X-Total-Count` 응답 헤더**로 내려온다(`limit`/`offset`과 무관).
+다음 페이지가 있는지는 `offset + 받은 개수 < X-Total-Count`로 판단한다. 브라우저에서 이 헤더를 읽으려면 CORS 노출이 필요하고 서버가 이미 노출한다(위 "CORS").
+`offset >= X-Total-Count`이면 `[]`인 200이다. 같은 값(같은 이름 등)은 `id`로 순서를 정한다.
 
 ```bash
 curl "http://localhost:8000/api/companies?q=삼성전자"
 curl "http://localhost:8000/api/companies?q=네이버"   # 별칭 -> NAVER
 curl "http://localhost:8000/api/companies?limit=10"  # q 없이 상위 10개
 curl "http://localhost:8000/api/companies?q=코덱스200&asset_type=etf"   # ETF만, 한글 브랜드 표기도 된다
+curl -i "http://localhost:8000/api/companies?limit=3&offset=2"             # 응답 헤더 X-Total-Count: 350
+curl "http://localhost:8000/api/companies?sort=name&order=desc&limit=3"    # 종목명 내림차순
 ```
 
 ### 응답 200
@@ -863,7 +936,7 @@ ETF 예시(2026-10-14 실제 호출, `q=코덱스200&asset_type=etf&limit=2`). E
 
 | 상태 | 언제 | body |
 | --- | --- | --- |
-| 422 | `limit`이 1~300 범위 밖, `q`가 100자 초과, 또는 `asset_type`이 `stock`/`etf`가 아님 | 검증 오류 형식 |
+| 422 | `limit`이 1~300 범위 밖, `offset`이 음수이거나 상한 초과, `q`가 100자 초과, `asset_type`이 `stock`/`etf`가 아님, `sort`/`order`가 허용 값이 아님 | 검증 오류 형식 |
 | 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
 
 ---
@@ -1251,12 +1324,14 @@ curl -X POST http://localhost:8000/api/portfolio/orders \
 
 ## GET /api/portfolio/trades
 
-내 모의투자 체결 내역(최신순: 체결 시각 내림차순, 같으면 id 내림차순). 로그인한 사용자 본인 것만 나온다.
+내 모의투자 체결 내역(기본 최신순: 체결 시각 내림차순, 같으면 id 내림차순). 로그인한 사용자 본인 것만 나온다.
 
 | 쿼리 | 기본값 | 규칙 |
 | --- | --- | --- |
 | `limit` | 50 | 1~200. 범위를 벗어나면 422 |
-| `offset` | 0 | 0 이상. 벗어나면 422 |
+| `offset` | 0 | 0 이상, 9223372036854775807 이하. 벗어나면 422 |
+| `sort` | `executed_at` | `executed_at`(체결 시각), `amount`(체결가×수량), `price`(체결가), `quantity`(수량), `ticker`(종목코드). 그 밖은 422 |
+| `order` | `desc` | `asc` 또는 `desc`. 기본(`executed_at desc`)이 지금까지의 최신순이다. 같은 값은 `id`가 `order` 방향으로 정한다 |
 | `ticker` | 없음 | 선택. 종목코드 또는 종목명(별칭 포함)으로 그 종목의 체결만. 종목을 못 찾으면 404, 빈 문자열이면 422 |
 
 ```bash
@@ -1270,6 +1345,8 @@ curl "http://localhost:8000/api/portfolio/trades?limit=20&ticker=005930" -H "Aut
   "total": 2,
   "limit": 50,
   "offset": 0,
+  "has_next": false,
+  "total_pages": 1,
   "items": [
     {
       "id": 12,
@@ -1325,8 +1402,13 @@ ETF 매수 체결 한 건의 실제 `items[]` 항목(2026-10-14):
 ]
 ```
 
-체결이 없으면 오류가 아니라 `{"total": 0, "limit": 50, "offset": 0, "items": []}`인 200이다. 다음 페이지는 `offset += limit`,
-`offset >= total`이면 끝이다.
+`has_next`(`offset + limit < total`)와 `total_pages`(`ceil(total / limit)`, `total`이 0이면 0)는 2026-10-28에 추가된 필드다. `ticker`를 주면 `total`도 그 종목 기준이다.
+체결이 없으면 오류가 아니라 `{"total": 0, "limit": 50, "offset": 0, "has_next": false, "total_pages": 0, "items": []}`인 200이다.
+다음 페이지는 `has_next`가 true인 동안 `offset += limit`이고, `offset >= total`이면 `items`가 빈 배열인 200이다.
+
+```bash
+curl "http://localhost:8000/api/portfolio/trades?sort=amount&order=desc&limit=2" -H "Authorization: Bearer $TOKEN"   # 큰 거래 순
+```
 
 ### 에러
 
@@ -1334,7 +1416,7 @@ ETF 매수 체결 한 건의 실제 `items[]` 항목(2026-10-14):
 | --- | --- | --- |
 | 401 | 토큰 없음/만료/변조 | 위 "인증 에러" |
 | 404 | `ticker`로 종목을 찾지 못함 | `{"detail": "'...' 종목을 찾지 못했습니다. ..."}` |
-| 422 | `limit`/`offset` 범위 밖이거나 정수가 아님, `ticker`가 빈 문자열/50자 초과 | 검증 오류 형식 |
+| 422 | `limit`/`offset` 범위 밖이거나 정수가 아님, `sort`/`order`가 허용 값이 아님, `ticker`가 빈 문자열/50자 초과 | 검증 오류 형식 |
 | 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
 
 ---
@@ -1633,14 +1715,16 @@ LLM 실패는 에러가 아니라 폴백(200)이다.
 
 ## GET /api/portfolio/diagnosis/history
 
-내 진단 이력(최신순). 이력이 없으면 `total: 0`, `items: []`.
+내 진단 이력(기본 최신순). 이력이 없으면 `total: 0`, `items: []`.
 
 ### 쿼리 파라미터
 
 | 이름 | 기본값 | 규칙 |
 | --- | --- | --- |
 | `limit` | 20 | 1~100. 범위 밖이면 422 |
-| `offset` | 0 | 0 이상. 음수면 422 |
+| `offset` | 0 | 0 이상, 9223372036854775807 이하. 음수이거나 상한 초과면 422 |
+| `sort` | `created_at` | `created_at`, `id`, `total_asset`(총자산), `holdings_count`(보유 종목 수). 그 밖은 422 |
+| `order` | `desc` | `asc` 또는 `desc`. 기본(`created_at desc`)이 지금까지의 최신순이다. 같은 값은 `id`가 `order` 방향으로 정한다 |
 
 ```bash
 curl "http://localhost:8000/api/portfolio/diagnosis/history?limit=20&offset=0" -H "Authorization: Bearer $TOKEN"
@@ -1653,6 +1737,8 @@ curl "http://localhost:8000/api/portfolio/diagnosis/history?limit=20&offset=0" -
   "total": 2,
   "limit": 20,
   "offset": 0,
+  "has_next": false,
+  "total_pages": 1,
   "items": [
     {
       "id": 1012,
@@ -1699,6 +1785,8 @@ curl "http://localhost:8000/api/portfolio/diagnosis/history?limit=20&offset=0" -
 | 필드 | 설명 |
 | --- | --- |
 | `total` | 내 저장된 진단 전체 수(최대 50). `limit`/`offset`은 요청값 그대로 |
+| `has_next` | `offset + limit < total` (2026-10-28 추가) |
+| `total_pages` | `ceil(total / limit)`, `total`이 0이면 0 (2026-10-28 추가) |
 | `items[].id` | 진단 id(`POST` 응답의 `diagnosis_id`와 같은 값) |
 | `items[].created_at` | 저장 시각(ISO 8601, UTC) |
 | `items[].source` | `"llm"` 또는 `"rule_based"` |
@@ -1714,7 +1802,7 @@ curl "http://localhost:8000/api/portfolio/diagnosis/history?limit=20&offset=0" -
 | 상태 | 언제 | body |
 | --- | --- | --- |
 | 401 | 토큰 없음/만료/변조 | 위 "인증 에러" |
-| 422 | `limit`/`offset`이 범위 밖이거나 숫자가 아님 | 검증 오류 형식 |
+| 422 | `limit`/`offset`이 범위 밖이거나 숫자가 아님, `sort`/`order`가 허용 값이 아님 | 검증 오류 형식 |
 | 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
 
 `/api/portfolio/diagnosis/history`는 `/api/portfolio/diagnosis/{id}`보다 먼저 정의돼 있어서 `history`가 id로 해석되지 않는다.
@@ -2683,6 +2771,7 @@ curl http://localhost:8000/api/health
 | `APP_ENV` | `development` | `production`이면 약한 `JWT_SECRET`(예시 문구·반복 문자)으로 **기동하지 않는다**. 개발이면 경고 로그만 |
 | `JWT_SECRET` | (없음, 필수) | 32자 이상. 없거나 짧으면 모든 모드에서 기동 거부(기존) |
 | `CORS_ALLOW_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 쉼표 구분 허용 origin. `*`면 전부 허용(credentials는 항상 끔) |
+| `CORS_EXPOSE_HEADERS` | `X-Total-Count` | 쉼표 구분. 브라우저 JS가 읽을 수 있게 노출할 응답 헤더(`GET /api/companies`의 전체 건수) |
 | `RATE_LIMIT_ENABLED` | `1` | `0`/`false`/`off`면 레이트 리밋을 끈다(테스트가 끈다) |
 | `RATE_LIMIT_LOGIN_PER_MIN` | `10` | IP당 분당 로그인 시도 |
 | `LOGIN_LOCK_FAILURES` / `LOGIN_LOCK_SECONDS` | `5` / `300` | 같은 아이디+IP 연속 실패 5회면 300초 잠금(성공하면 초기화) |
@@ -2815,7 +2904,7 @@ PRD 비기능 요구사항은 일반 API P95 500ms 이내다(`POST /api/research
 
 ## 테스트 실행 (백엔드)
 
-`cd backend && pytest` — 빠른 테스트 전체(단위·라우터 mock + dev DB 통합, 2026-10-18 기준 2074개). 단계별로는 `pytest -m "not slow and not integration"`(DB·Ollama 불필요, 1864개), `pytest -m "integration and not slow"`(dev DB 통합 210개, DB가 꺼져 있으면 자동 skip). 사건 반응 slow 측정은 `EVENT_REACTION_LLM_INTERPRETATION`을 스스로 켜고 돈다. LLM을 실제로 호출하는 느린 테스트는 기본 제외이며 `pytest -m slow`로 따로 돌린다(dev DB에 리포트를 만들었다가 지운다). 전부 한 번에: `pytest -m "slow or not slow"`. DB 없이 단위 테스트만: `pytest -m "not integration"`.
+`cd backend && pytest` — 빠른 테스트 전체(단위·라우터 mock + dev DB 통합, 2026-10-28 기준 3159개). 단계별로는 `pytest -m "not slow and not integration"`(DB·Ollama 불필요, 2766개), `pytest -m "integration and not slow"`(dev DB 통합 393개, DB가 꺼져 있으면 자동 skip). 사건 반응 slow 측정은 `EVENT_REACTION_LLM_INTERPRETATION`을 스스로 켜고 돈다. LLM을 실제로 호출하는 느린 테스트는 기본 제외이며 `pytest -m slow`로 따로 돌린다(dev DB에 리포트를 만들었다가 지운다). 전부 한 번에: `pytest -m "slow or not slow"`. DB 없이 단위 테스트만: `pytest -m "not integration"`.
 인증 테스트는 `tests/conftest.py`가 테스트마다 임의 `JWT_SECRET`을 주입하므로 `.env`의 실제 키를 쓰지 않는다. 라우터 테스트는
 `login_as` 픽스처로 `get_current_user`를 가짜 사용자로 바꾸고, dev DB 통합 테스트(`tests/test_auth_devdb.py`)는 실제 가입/토큰으로
 돌린 뒤 만든 사용자를 지운다(`pt_` 접두어).
