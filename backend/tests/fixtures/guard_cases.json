@@ -1,0 +1,136 @@
+{
+  "_doc": "숫자 검증기(app/answer_guard.guard_answer) 평가 세트. 2026-10-28에 검증기 규칙을 보기 전에 손으로 작성했다. scenarios는 도구 실행 기록(tool_name, arguments, result), cases는 'LLM이 쓸 법한 답변'과 정답 라벨(ok = 내보내도 되는 답변, violation = 틀린 숫자가 있어 막아야 하는 답변). violation의 type: digit(자릿수), invented(지어낸 증감·수치), wrong_target(맞는 숫자를 다른 종목·기간에 붙임), unit(만/억/천 단위 오류), date(날짜 오기). 값은 모두 시나리오 안에서 손으로 계산했다.",
+  "scenarios": {
+    "samsung_5d": [
+      {"tool_name": "stock_tool", "arguments": {"ticker": "삼성전자", "period_days": 5},
+       "result": {"ticker": "005930", "company_name": "삼성전자", "period_days": 5, "found": true, "change_pct": 5.39, "volume": 13826473,
+                  "period_start_date": "2026-10-20", "period_end_date": "2026-10-27", "trading_days": 5, "period_change_pct": 7.66,
+                  "summary": "삼성전자의 2026-10-27 종가는 225,000원으로, 2026-10-20 종가 209,000원 대비 5거래일간 +7.66%입니다. 이 기간 종가 최고는 225,000원(2026-10-27), 최저는 212,000원(2026-10-21)입니다. 마지막 거래일(2026-10-27) 하루 등락률은 +5.39%, 거래량은 13,826,473주입니다.",
+                  "prices": [
+                    {"price_date": "2026-10-21", "close_price": 212000.0, "volume": 15200000, "change_pct": 1.44},
+                    {"price_date": "2026-10-22", "close_price": 213500.0, "volume": 14800000, "change_pct": 0.71},
+                    {"price_date": "2026-10-23", "close_price": 216000.0, "volume": 18100000, "change_pct": 1.17},
+                    {"price_date": "2026-10-24", "close_price": 213500.0, "volume": 16900000, "change_pct": -1.16},
+                    {"price_date": "2026-10-27", "close_price": 225000.0, "volume": 13826473, "change_pct": 5.39}
+                  ]}}
+    ],
+    "hynix_1d": [
+      {"tool_name": "stock_tool", "arguments": {"ticker": "SK하이닉스", "period_days": 1},
+       "result": {"ticker": "000660", "company_name": "SK하이닉스", "period_days": 1, "found": true, "change_pct": 6.51, "volume": 3170000,
+                  "prices": [{"price_date": "2026-10-27", "close_price": 1374000.0, "volume": 3170000, "change_pct": 6.51}]}}
+    ],
+    "hyundai_kia_5d": [
+      {"tool_name": "stock_tool", "arguments": {"ticker": "현대차", "period_days": 5},
+       "result": {"ticker": "005380", "company_name": "현대차", "period_days": 5, "found": true, "change_pct": 1.74, "volume": 1204331,
+                  "period_start_date": "2026-10-20", "period_end_date": "2026-10-27", "trading_days": 5, "period_change_pct": 5.85,
+                  "summary": "현대차의 2026-10-27 종가는 262,500원으로, 2026-10-20 종가 248,000원 대비 5거래일간 +5.85%입니다. 이 기간 종가 최고는 262,500원(2026-10-27), 최저는 249,500원(2026-10-22)입니다. 마지막 거래일(2026-10-27) 하루 등락률은 +1.74%, 거래량은 1,204,331주입니다.",
+                  "prices": [
+                    {"price_date": "2026-10-21", "close_price": 251000.0, "volume": 1100000, "change_pct": 1.21},
+                    {"price_date": "2026-10-22", "close_price": 249500.0, "volume": 980000, "change_pct": -0.60},
+                    {"price_date": "2026-10-23", "close_price": 255000.0, "volume": 1350000, "change_pct": 2.20},
+                    {"price_date": "2026-10-24", "close_price": 258000.0, "volume": 1050000, "change_pct": 1.18},
+                    {"price_date": "2026-10-27", "close_price": 262500.0, "volume": 1204331, "change_pct": 1.74}
+                  ]}},
+      {"tool_name": "stock_tool", "arguments": {"ticker": "기아", "period_days": 5},
+       "result": {"ticker": "000270", "company_name": "기아", "period_days": 5, "found": true, "change_pct": 1.39, "volume": 2315880,
+                  "period_start_date": "2026-10-20", "period_end_date": "2026-10-27", "trading_days": 5, "period_change_pct": 3.98,
+                  "summary": "기아의 2026-10-27 종가는 101,900원으로, 2026-10-20 종가 98,000원 대비 5거래일간 +3.98%입니다. 이 기간 종가 최고는 101,900원(2026-10-27), 최저는 97,400원(2026-10-21)입니다. 마지막 거래일(2026-10-27) 하루 등락률은 +1.39%, 거래량은 2,315,880주입니다.",
+                  "prices": [
+                    {"price_date": "2026-10-21", "close_price": 97400.0, "volume": 2050000, "change_pct": -0.61},
+                    {"price_date": "2026-10-22", "close_price": 98800.0, "volume": 1980000, "change_pct": 1.44},
+                    {"price_date": "2026-10-23", "close_price": 99100.0, "volume": 2400000, "change_pct": 0.30},
+                    {"price_date": "2026-10-24", "close_price": 100500.0, "volume": 2210000, "change_pct": 1.41},
+                    {"price_date": "2026-10-27", "close_price": 101900.0, "volume": 2315880, "change_pct": 1.39}
+                  ]}}
+    ],
+    "fx_5d": [
+      {"tool_name": "fx_tool", "arguments": {"period_days": 5},
+       "result": {"pair_name": "원/달러", "period_days": 5, "found": true, "latest_date": "2026-10-27", "latest_rate": 1324.77,
+                  "daily_change_pct": 0.23, "period_change_pct": -0.85, "trend": "하락",
+                  "rates": [
+                    {"price_date": "2026-10-21", "close_rate": 1336.12, "change_pct": -0.12},
+                    {"price_date": "2026-10-22", "close_rate": 1331.40, "change_pct": -0.35},
+                    {"price_date": "2026-10-23", "close_rate": 1327.05, "change_pct": -0.33},
+                    {"price_date": "2026-10-24", "close_rate": 1321.73, "change_pct": -0.40},
+                    {"price_date": "2026-10-27", "close_rate": 1324.77, "change_pct": 0.23}
+                  ]}}
+    ],
+    "samsung_vs_kospi": [
+      {"tool_name": "market_tool", "arguments": {"ticker": "삼성전자", "period_days": 5},
+       "result": {"ticker": "005930", "company_name": "삼성전자", "period_days": 5, "found": true, "market": "KOSPI", "index_code": "KS11",
+                  "index_name": "코스피", "start_date": "2026-10-20", "end_date": "2026-10-27", "stock_change_pct": 7.66,
+                  "market_change_pct": 4.12, "diff_pct_point": 3.54, "relative": "outperform",
+                  "summary": "2026-10-20 종가 대비 2026-10-27까지 5거래일간 삼성전자 +7.66%, 코스피 +4.12%. 시장 대비 3.54%p 더 좋은 흐름입니다."}}
+    ],
+    "samsung_news": [
+      {"tool_name": "news_tool", "arguments": {"company_name": "삼성전자", "limit": 3},
+       "result": {"company_name": "삼성전자", "limit": 3, "found": true,
+                  "news": [{"company_name": "삼성전자", "title": "삼성전자, HBM4 공급 확대…품질 테스트 통과", "source": "www.etnews.com",
+                            "published_at": "2026-10-27T09:10:00+09:00", "url": "https://n.example/1",
+                            "content": "삼성전자가 HBM4 공급을 늘린다고 밝혔다."}]}}
+    ]
+  },
+  "cases": [
+    {"id": "v01", "label": "violation", "type": "digit", "scenario": "samsung_5d", "question": "삼성전자 주가 알려줘", "answer": "삼성전자의 10월 27일 종가는 2,250,000원입니다."},
+    {"id": "v02", "label": "violation", "type": "digit", "scenario": "samsung_5d", "question": "삼성전자 주가 알려줘", "answer": "삼성전자 종가는 22,500원으로 전일 대비 5.39% 올랐습니다."},
+    {"id": "v03", "label": "violation", "type": "digit", "scenario": "samsung_5d", "question": "삼성전자 오늘 얼마나 올랐어?", "answer": "삼성전자는 하루 동안 53.9% 상승했습니다."},
+    {"id": "v04", "label": "violation", "type": "digit", "scenario": "hynix_1d", "question": "SK하이닉스 거래량 알려줘", "answer": "SK하이닉스 거래량은 317,000주입니다."},
+    {"id": "v05", "label": "violation", "type": "digit", "scenario": "hyundai_kia_5d", "question": "현대차랑 기아 주가 비교해줘", "answer": "현대차의 최근 종가는 26,250원입니다."},
+    {"id": "v06", "label": "violation", "type": "digit", "scenario": "fx_5d", "question": "환율 어때?", "answer": "원/달러 환율은 13,247.7원입니다."},
+    {"id": "v07", "label": "violation", "type": "invented", "scenario": "samsung_5d", "question": "삼성전자 거래량 어때?", "answer": "삼성전자 거래량은 전일보다 2,500,000주 늘었습니다."},
+    {"id": "v08", "label": "violation", "type": "invented", "scenario": "samsung_5d", "question": "삼성전자 주가 알려줘", "answer": "삼성전자는 오늘 3.42% 상승했습니다."},
+    {"id": "v09", "label": "violation", "type": "invented", "scenario": "samsung_5d", "question": "삼성전자 최근 5일 흐름 어때?", "answer": "최근 5거래일 동안 삼성전자는 12.3% 올랐습니다."},
+    {"id": "v10", "label": "violation", "type": "invented", "scenario": "hyundai_kia_5d", "question": "기아 요즘 어때?", "answer": "기아는 이번 주 외국인이 350억원을 순매수했습니다."},
+    {"id": "v11", "label": "violation", "type": "invented", "scenario": "samsung_vs_kospi", "question": "삼성전자 시장보다 많이 올랐어?", "answer": "삼성전자는 코스피보다 6.20%p 더 올랐습니다."},
+    {"id": "v12", "label": "violation", "type": "invented", "scenario": "fx_5d", "question": "최근 환율 흐름 알려줘", "answer": "환율은 일주일간 2.4% 상승했습니다."},
+    {"id": "v13", "label": "violation", "type": "wrong_target", "scenario": "hyundai_kia_5d", "question": "현대차 주가 알려줘", "answer": "현대차의 최근 종가는 101,900원입니다."},
+    {"id": "v14", "label": "violation", "type": "wrong_target", "scenario": "hyundai_kia_5d", "question": "기아 최근 5일 수익률은?", "answer": "기아는 최근 5거래일 동안 5.85% 상승했습니다."},
+    {"id": "v15", "label": "violation", "type": "wrong_target", "scenario": "hyundai_kia_5d", "question": "현대차와 기아 거래량 비교해줘", "answer": "현대차 거래량은 2,315,880주입니다. 기아 거래량은 1,204,331주입니다."},
+    {"id": "v16", "label": "violation", "type": "wrong_target", "scenario": "samsung_5d", "question": "삼성전자 오늘 등락률은?", "answer": "삼성전자의 하루 등락률은 +7.66%입니다."},
+    {"id": "v17", "label": "violation", "type": "wrong_target", "scenario": "samsung_5d", "question": "삼성전자 5일 수익률은?", "answer": "삼성전자의 5거래일 수익률은 5.39%입니다."},
+    {"id": "v18", "label": "violation", "type": "wrong_target", "scenario": "hyundai_kia_5d", "question": "기아 오늘 등락률은?", "answer": "기아의 마지막 거래일 등락률은 1.74%입니다."},
+    {"id": "v19", "label": "violation", "type": "unit", "scenario": "samsung_5d", "question": "삼성전자 주가 알려줘", "answer": "삼성전자 종가는 2만 2,500원입니다."},
+    {"id": "v20", "label": "violation", "type": "unit", "scenario": "samsung_5d", "question": "삼성전자 주가 알려줘", "answer": "삼성전자 종가는 225억원입니다."},
+    {"id": "v21", "label": "violation", "type": "unit", "scenario": "samsung_5d", "question": "삼성전자 거래량 알려줘", "answer": "삼성전자 거래량은 약 138만 주입니다."},
+    {"id": "v22", "label": "violation", "type": "unit", "scenario": "hynix_1d", "question": "SK하이닉스 주가 알려줘", "answer": "SK하이닉스 주가는 13만 7,400원입니다."},
+    {"id": "v23", "label": "violation", "type": "unit", "scenario": "hynix_1d", "question": "SK하이닉스 거래량 알려줘", "answer": "SK하이닉스 거래량은 3억 1,700만 주입니다."},
+    {"id": "v24", "label": "violation", "type": "unit", "scenario": "hyundai_kia_5d", "question": "현대차 주가 알려줘", "answer": "현대차는 2,625만원입니다."},
+    {"id": "v25", "label": "violation", "type": "date", "scenario": "samsung_5d", "question": "삼성전자 지난주 금요일 종가는?", "answer": "삼성전자의 10월 24일 종가는 225,000원입니다."},
+    {"id": "v26", "label": "violation", "type": "date", "scenario": "samsung_5d", "question": "삼성전자 주가 알려줘", "answer": "삼성전자는 10월 29일 종가 225,000원입니다."},
+    {"id": "v27", "label": "violation", "type": "date", "scenario": "samsung_5d", "question": "삼성전자 최근 최고가는?", "answer": "이 기간 최고가는 10월 21일의 225,000원이었습니다."},
+    {"id": "v28", "label": "violation", "type": "date", "scenario": "hyundai_kia_5d", "question": "기아 주가 알려줘", "answer": "기아는 10월 20일 101,900원으로 마감했습니다."},
+    {"id": "v29", "label": "violation", "type": "date", "scenario": "fx_5d", "question": "환율 알려줘", "answer": "10월 30일 기준 환율은 1,324.77원입니다."},
+    {"id": "v30", "label": "violation", "type": "date", "scenario": "samsung_5d", "question": "삼성전자 주가 알려줘", "answer": "삼성전자는 2026년 9월 27일 종가 225,000원입니다."},
+
+    {"id": "n01", "label": "ok", "scenario": "samsung_5d", "question": "삼성전자 주가 알려줘", "answer": "삼성전자의 2026-10-27 종가는 225,000원으로 전 거래일 대비 5.39% 상승했습니다."},
+    {"id": "n02", "label": "ok", "scenario": "samsung_5d", "question": "삼성전자 최근 5일 흐름 어때?", "answer": "삼성전자는 최근 5거래일간 7.66% 올랐습니다."},
+    {"id": "n03", "label": "ok", "scenario": "samsung_5d", "question": "삼성전자 거래량 알려줘", "answer": "거래량은 13,826,473주입니다."},
+    {"id": "n04", "label": "ok", "scenario": "samsung_5d", "question": "삼성전자 주가 알려줘", "answer": "삼성전자 종가는 22만 5천원입니다."},
+    {"id": "n05", "label": "ok", "scenario": "samsung_5d", "question": "삼성전자 주가 알려줘", "answer": "삼성전자 종가는 약 22.5만 원입니다."},
+    {"id": "n06", "label": "ok", "scenario": "samsung_5d", "question": "삼성전자 오늘 얼마나 올랐어?", "answer": "하루 등락률은 약 5.4%입니다."},
+    {"id": "n07", "label": "ok", "scenario": "samsung_5d", "question": "삼성전자 최근 최고가 최저가는?", "answer": "이 기간 최고가는 10월 27일 225,000원, 최저가는 10월 21일 212,000원입니다."},
+    {"id": "n08", "label": "ok", "scenario": "samsung_5d", "question": "삼성전자 최근 흐름 어때?", "answer": "10월 24일 213,500원에서 10월 27일 225,000원으로 11,500원 올랐습니다."},
+    {"id": "n09", "label": "ok", "scenario": "samsung_5d", "question": "삼성전자 거래량 알려줘", "answer": "거래량은 약 1,383만 주입니다."},
+    {"id": "n10", "label": "ok", "scenario": "samsung_5d", "question": "삼성전자 최근 5일 흐름 어때?", "answer": "5거래일 중 4일은 상승, 1일은 하락했습니다."},
+    {"id": "n11", "label": "ok", "scenario": "hynix_1d", "question": "SK하이닉스 주가 알려줘", "answer": "SK하이닉스의 종가는 1,374,000원이고 6.51% 상승했습니다."},
+    {"id": "n12", "label": "ok", "scenario": "hynix_1d", "question": "SK하이닉스 주가 알려줘", "answer": "SK하이닉스 주가는 137만 4천원입니다."},
+    {"id": "n13", "label": "ok", "scenario": "hynix_1d", "question": "SK하이닉스 거래량 알려줘", "answer": "SK하이닉스 거래량은 3,170,000주로 약 317만 주입니다."},
+    {"id": "n14", "label": "ok", "scenario": "hynix_1d", "question": "SK하이닉스 주가 알려줘", "answer": "SK하이닉스는 약 137만원 선입니다."},
+    {"id": "n15", "label": "ok", "scenario": "hyundai_kia_5d", "question": "현대차랑 기아 주가 비교해줘", "answer": "현대차의 최근 종가는 262,500원, 기아는 101,900원입니다."},
+    {"id": "n16", "label": "ok", "scenario": "hyundai_kia_5d", "question": "현대차랑 기아 최근 5일 수익률 비교해줘", "answer": "현대차는 5거래일간 5.85%, 기아는 3.98% 올랐습니다."},
+    {"id": "n17", "label": "ok", "scenario": "hyundai_kia_5d", "question": "현대차랑 기아 중 어디가 더 올랐어?", "answer": "현대차의 상승률이 기아보다 1.87%p 높았습니다."},
+    {"id": "n18", "label": "ok", "scenario": "hyundai_kia_5d", "question": "현대차 거래량 알려줘", "answer": "현대차 거래량은 1,204,331주입니다."},
+    {"id": "n19", "label": "ok", "scenario": "hyundai_kia_5d", "question": "기아 오늘 등락률은?", "answer": "기아의 마지막 거래일 등락률은 1.39%입니다."},
+    {"id": "n20", "label": "ok", "scenario": "fx_5d", "question": "환율 어때?", "answer": "원/달러 환율은 1,324.77원으로 전일 대비 0.23% 올랐습니다."},
+    {"id": "n21", "label": "ok", "scenario": "fx_5d", "question": "최근 환율 흐름 알려줘", "answer": "최근 5거래일 동안 환율은 0.85% 내렸습니다."},
+    {"id": "n22", "label": "ok", "scenario": "samsung_vs_kospi", "question": "삼성전자 시장보다 많이 올랐어?", "answer": "삼성전자는 같은 기간 7.66% 올라 코스피(4.12%)보다 3.54%p 더 올랐습니다."},
+    {"id": "n23", "label": "ok", "scenario": "samsung_news", "question": "삼성전자 최근 뉴스 알려줘", "answer": "삼성전자 관련 최근 뉴스로는 'HBM4 공급 확대' 기사가 있습니다."},
+    {"id": "n24", "label": "ok", "scenario": "samsung_5d", "question": "삼성전자 주가 알려줘", "answer": "1. 종가: 225,000원\n2. 등락률: +5.39%\n3. 거래량: 13,826,473주"},
+    {"id": "n25", "label": "ok", "scenario": "samsung_5d", "question": "삼성전자 230,000원 넘었어?", "answer": "아니요, 2026-10-27 종가는 225,000원으로 230,000원보다 낮습니다."},
+    {"id": "n26", "label": "ok", "scenario": "samsung_5d", "question": "삼성전자 오늘 얼마나 올랐어?", "answer": "삼성전자는 전일 대비 11,500원 올랐습니다."},
+    {"id": "n27", "label": "ok", "scenario": "hynix_1d", "question": "SK하이닉스 주가 알려줘", "answer": "SK하이닉스는 전 거래일 대비 +6.51%입니다. 시세는 2026년 10월 27일 기준입니다."},
+    {"id": "n28", "label": "ok", "scenario": "hyundai_kia_5d", "question": "현대차랑 기아 최근 20일 수익률 비교해줘", "answer": "20거래일이 아니라 5거래일 기준으로 비교했습니다. 현대차 5.85%, 기아 3.98%입니다."},
+    {"id": "n29", "label": "ok", "scenario": "fx_5d", "question": "환율 어때?", "answer": "환율은 1,325원 안팎입니다."},
+    {"id": "n30", "label": "ok", "scenario": "samsung_5d", "question": "삼성전자 지난주 목요일 종가는?", "answer": "삼성전자의 10월 23일 종가는 216,000원이었습니다."}
+  ]
+}

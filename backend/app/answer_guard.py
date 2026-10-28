@@ -158,8 +158,204 @@ def is_supported(n: Number, supports: list[float]) -> bool:
 
 
 def unsupported_numbers(answer: str, results: list, question: str = "") -> list[Number]:
-    supports = support_values(results) + support_values(question) + derived_values(results)
-    return [n for n in extract_numbers(answer) if not is_supported(n, supports)]
+    supports = support_values(results) + support_values(question) + derived_values(results) + cross_differences(results)
+    cheon_ok = _supported_cheon_parts(answer, supports)
+    return [n for n in extract_numbers(answer) if not is_supported(n, supports) and n.raw not in cheon_ok]
+
+
+# ---------- 추가 검증 (2026-10-28 3차): 날짜, 다른 종목에 붙인 숫자, 하루/기간 등락률 혼동, 종목 간 차이 ----------
+# tests/fixtures/guard_cases.json(검증기 규칙을 보기 전에 만든 정상 30 + 위반 30)에서 날짜 오기와 다른 대상에 붙인 숫자를
+# 하나도 못 잡았다(0/12). 숫자가 도구 결과 "어딘가에" 있는지만 보던 규칙에 아래를 더한다. 추출 규칙(평가기와 동기화)은 그대로다.
+
+# 종목 간 같은 지표의 차이를 허용하는 키(“현대차가 기아보다 1.87%p 높았다”)
+_CROSS_KEYS = ("period_change_pct", "change_pct", "stock_change_pct", "market_change_pct")
+_CHEON_RE = re.compile(r"(?<![\w&.,])(\d{1,3}(?:,\d{3})+|\d+)\s*만\s*(\d)\s*천\s*(원|주)")
+
+
+def cross_differences(results) -> list[float]:
+    """결과들(종목별) 사이에서 같은 키(등락률 계열) 값의 차이."""
+    vals: dict[str, list[float]] = {}
+    for r in results if isinstance(results, list) else []:
+        if isinstance(r, dict):
+            for k in _CROSS_KEYS:
+                v = r.get(k)
+                if isinstance(v, (int, float)) and not isinstance(v, bool):
+                    vals.setdefault(k, []).append(float(v))
+    return [abs(a - b) for vs in vals.values() for a, b in combinations(vs, 2)]
+
+
+def _supported_cheon_parts(answer: str, supports: list[float]) -> set[str]:
+    """'137만 4천원'은 추출 규칙상 '137만'과 '4천원'으로 나뉜다. 합친 값(1,374,000)이 근거로 설명되면 '4천원'을 위반으로 보지 않는다."""
+    ok = set()
+    for m in _CHEON_RE.finditer(answer or ""):
+        man, cheon, unit = m.groups()
+        value = float(man.replace(",", "")) * 1e4 + int(cheon) * 1e3
+        if is_supported(Number(value, m.group(0), 1e3, unit), supports):
+            ok.add(f"{cheon}천{unit}")
+    return ok
+
+
+_DATE_RE = re.compile(
+    r"(?:(20\d{2})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2}))"  # 2026-10-27, 2026.10.27
+    r"|(?:(?:(20\d{2})\s*년\s*)?(\d{1,2})\s*월\s*(\d{1,2})\s*일)"  # (2026년) 10월 27일
+)
+_ROW_DATE_KEYS = ("price_date", "date")
+
+
+def _dates_in(text: str) -> list[tuple[re.Match, tuple[int, int]]]:
+    out = []
+    for m in _DATE_RE.finditer(text or ""):
+        g = m.groups()
+        month, day = (g[1], g[2]) if g[0] else (g[4], g[5])
+        month, day = int(month), int(day)
+        if 1 <= month <= 12 and 1 <= day <= 31:
+            out.append((m, (month, day)))
+    return out
+
+
+def _known_dates(results, question: str, today) -> set[tuple[int, int]]:
+    """도구 결과(문자열 속 날짜 포함)·질문·오늘의 (월, 일)."""
+    known = {(today.month, today.day)} if today else set()
+
+    def walk(o):
+        if isinstance(o, str):
+            known.update(md for _, md in _dates_in(o))
+        elif isinstance(o, dict):
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, (list, tuple)):
+            for v in o:
+                walk(v)
+
+    walk(results)
+    known.update(md for _, md in _dates_in(question))
+    return known
+
+
+def _row_values_by_date(results) -> dict[tuple[int, int], list[float]]:
+    """시계열 행(price_date가 있는 dict)의 날짜별 숫자 값."""
+    out: dict[tuple[int, int], list[float]] = {}
+
+    def walk(o):
+        if isinstance(o, dict):
+            d = next((o[k] for k in _ROW_DATE_KEYS if isinstance(o.get(k), str)), None)
+            found = _dates_in(d) if d else []
+            if found:
+                out.setdefault(found[0][1], []).extend(
+                    abs(float(v)) for v in o.values() if isinstance(v, (int, float)) and not isinstance(v, bool))
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+
+    walk(results)
+    return out
+
+
+def _value_like(n: Number) -> bool:
+    return n.unit in ("원", "%", "주") or n.value >= 1000
+
+
+def date_violations(answer: str, results: list, question: str = "", today=None) -> list[str]:
+    """(1) 답변의 날짜가 도구 결과·질문·오늘 어디에도 없으면 위반. (2) 날짜 바로 뒤(다음 날짜 전까지)의 첫 값 숫자는,
+    그 날짜의 시계열 행이 있으면 그 행의 값이어야 한다("10월 24일 종가는 225,000원" - 10월 24일 행에 없는 값).
+    날짜가 든 결과가 하나도 없으면(날짜를 말할 근거 자체가 없는 답변) 보지 않는다."""
+    known = _known_dates(results, question, None)
+    if not known:
+        return []
+    if today is not None:
+        known.add((today.month, today.day))
+    rows = _row_values_by_date(results)
+    bad = []
+    for sentence in _SENTENCE_SPLIT_RE.split(answer or ""):
+        dates = _dates_in(sentence)
+        for i, (m, md) in enumerate(dates):
+            if md not in known:
+                bad.append(m.group(0).strip())
+                continue
+            if md not in rows:
+                continue
+            if sentence[:m.start()].rstrip().endswith("("):
+                # "120원(2026-10-28)": 괄호 속 날짜는 바로 앞의 값과 짝이다(stock_tool 요약 문장의 형식)
+                start = dates[i - 1][0].end() if i > 0 else 0
+                values = [n for n in extract_numbers(sentence[start:m.start()]) if _value_like(n)][-1:]
+            else:
+                end = dates[i + 1][0].start() if i + 1 < len(dates) else len(sentence)
+                values = [n for n in extract_numbers(sentence[m.end():end]) if _value_like(n)][:1]
+                # "10월 27일 225,000원(...)"이 아니라 "... 110원(10월 27일)"처럼 그 값이 다음 날짜의 괄호 짝이면 보지 않는다
+                if values and i + 1 < len(dates) and sentence[:dates[i + 1][0].start()].rstrip().endswith("(") and len(
+                        [n for n in extract_numbers(sentence[m.end():dates[i + 1][0].start()]) if _value_like(n)]) == 1:
+                    values = []
+            if values and not is_supported(values[0], rows[md]):
+                bad.append(f"{m.group(0).strip()} {values[0].raw}")
+    return bad
+
+
+def target_violations(answer: str, records: list[dict]) -> list[str]:
+    """한 문장(줄)에 종목명이 하나만 나오면, 그 문장의 값 숫자가 그 종목 결과로는 설명되지 않는데 다른 종목 결과로만
+    설명될 때 위반("현대차 101,900원" - 기아의 종가). 종목이 없는 결과(환율 등)는 모든 종목 공통 근거로 본다.
+    두 종목을 한 문장에 같이 말한 경우(비교)는 보지 않는다."""
+    per: dict[str, list] = {}
+    shared: list = []
+    for rec in records:
+        r = rec.get("result")
+        # 종목 묶음은 시세 결과(가격·등락률이 있는 결과)로만 만든다. 뉴스·공시 결과의 company_name은 시세 숫자의 주인이 아니다.
+        if isinstance(r, dict) and r.get("found") and r.get("company_name") and any(
+                k in r for k in ("prices", "change_pct", "period_change_pct", "stock_change_pct")):
+            per.setdefault(r["company_name"], []).append(r)
+        elif r is not None:
+            shared.append(r)
+    if len(per) < 2:
+        return []
+    names = sorted(per, key=len, reverse=True)
+    bad = []
+    for sentence in _SENTENCE_SPLIT_RE.split(answer or ""):
+        hit, rest = [], sentence
+        for n in names:
+            if n in rest:
+                hit.append(n)
+                rest = rest.replace(n, " ")
+        if len(hit) != 1:
+            continue
+        own = support_values(per[hit[0]] + shared) + derived_values(per[hit[0]])
+        others = support_values([r for k, v in per.items() if k != hit[0] for r in v])
+        for num in extract_numbers(sentence):
+            if _value_like(num) and not is_supported(num, own) and is_supported(num, others):
+                bad.append(f"{hit[0]} {num.raw}")
+    return bad
+
+
+_DAY_WORDS_RE = re.compile(r"하루|오늘|당일|전일|전\s*거래일|전거래일|마지막\s*거래일|마지막\s*날|일간\s*등락")
+_PERIOD_WORDS_RE = re.compile(r"\d+\s*(?:거래일|영업일|일간|일\s*동안|주간|주\s*동안|개월)|한\s*달|일주일|기간|동안")
+
+
+def period_violations(answer: str, records: list[dict]) -> list[str]:
+    """하루 등락률과 기간 등락률의 혼동. 하루를 말하는 문장(하루/오늘/전일 대비)의 %가 기간 등락률(period_change_pct)과만
+    같으면 위반, 기간을 말하는 문장(5거래일간/한 달)의 %가 마지막 날 등락률(change_pct)과만 같으면 위반. 두 말이 함께 있는
+    문장은 보지 않는다."""
+    daily, period = [], []
+    for rec in records:
+        r = rec.get("result")
+        if not isinstance(r, dict) or r.get("period_change_pct") is None:
+            continue
+        period.append(abs(float(r["period_change_pct"])))
+        if r.get("change_pct") is not None:
+            daily.append(abs(float(r["change_pct"])))
+        daily.extend(abs(float(p["change_pct"])) for p in r.get("prices") or []
+                     if isinstance(p, dict) and isinstance(p.get("change_pct"), (int, float)))
+    if not period:
+        return []
+    bad = []
+    for sentence in _SENTENCE_SPLIT_RE.split(answer or ""):
+        is_day, is_period = bool(_DAY_WORDS_RE.search(sentence)), bool(_PERIOD_WORDS_RE.search(sentence))
+        if is_day == is_period:
+            continue
+        right, wrong = (daily, period) if is_day else (period, daily)
+        for num in extract_numbers(sentence):
+            if num.unit == "%" and not is_supported(num, right) and is_supported(num, wrong):
+                bad.append(num.raw)
+    return bad
 
 
 # ---------- 코드 요약 ----------
@@ -233,12 +429,26 @@ def code_summary(records: list[dict]) -> str | None:
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n")
 
 
-def guard_answer(answer: str, records: list[dict], question: str = "") -> tuple[str, dict]:
-    """(내보낼 답변, 검증 기록). 기록: {"replaced": bool, "violations": [원문 숫자], "mode": "code_summary"|"drop_sentences"|None}."""
+def guard_answer(answer: str, records: list[dict], question: str = "", today=None) -> tuple[str, dict]:
+    """(내보낼 답변, 검증 기록). 기록: {"replaced": bool, "violations": [원문 숫자], "mode": "code_summary"|"drop_sentences"|None,
+    "kinds": {"number", "date", "target", "period": 건수}}. today(오늘 날짜, 기본 KST 오늘)는 답변에 오늘 날짜를 써도 되게 한다."""
     results = [r.get("result") for r in records]
     bad = unsupported_numbers(answer, results, question)
-    log = {"replaced": False, "violations": [n.raw for n in bad], "mode": None}
-    if not bad:
+    kinds = {"number": len(bad), "date": 0, "target": 0, "period": 0}
+    extra = []
+    if records:
+        if today is None:
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
+
+            today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+        for kind, found in (("date", date_violations(answer, results, question, today)),
+                            ("target", target_violations(answer, records)),
+                            ("period", period_violations(answer, records))):
+            kinds[kind] = len(found)
+            extra += found
+    log = {"replaced": False, "violations": [n.raw for n in bad] + extra, "mode": None, "kinds": kinds}
+    if not bad and not extra:
         return answer, log
     if records:
         summary = code_summary(records)

@@ -58,11 +58,12 @@ def test_supported_answers_pass_unchanged(answer):
     assert out == answer and log["replaced"] is False and log["violations"] == []
 
 
-def test_known_limit_cheon_compound_is_split_and_replaced():
-    """'17만 9천원'은 평가기와 같은 규칙으로 '17만'과 '9천원'으로 나뉘어 9천원이 설명되지 않는다(알려진 한계).
-    이때는 코드 요약으로 바뀌므로 사용자에게 틀린 숫자가 나가지는 않는다."""
+def test_cheon_compound_is_read_as_one_value():
+    """'17만 9천원'은 추출 규칙(평가기와 동기화)상 '17만'과 '9천원'으로 나뉜다. 2026-10-28부터 검증 단계에서 합친 값
+    (179,000)으로 다시 확인해 정상 답변을 코드 요약으로 바꾸지 않는다. 합친 값도 틀리면 그대로 위반이다."""
     out, log = G.guard_answer("NAVER 종가는 약 17만 9천원입니다.", [STOCK], "NAVER 주가")
-    assert log["violations"] == ["9천원"] and "179,200원" in out
+    assert log["violations"] == [] and out == "NAVER 종가는 약 17만 9천원입니다."
+    assert G.guard_answer("NAVER 종가는 약 17만 5천원입니다.", [STOCK], "NAVER 주가")[1]["violations"] == ["5천원"]
 
 
 def test_derived_difference_and_rate_are_supported():
@@ -82,7 +83,8 @@ def test_question_numbers_are_supported():
 
 def test_wrong_digits_are_replaced_with_code_summary():
     out, log = G.guard_answer("NAVER의 현재 주가는 1,792,000원입니다.", [STOCK], "NAVER 주가 얼마야?")
-    assert log == {"replaced": True, "violations": ["1,792,000원"], "mode": "code_summary"}
+    assert log == {"replaced": True, "violations": ["1,792,000원"], "mode": "code_summary",
+                   "kinds": {"number": 1, "date": 0, "target": 0, "period": 0}}
     assert "179,200원" in out and "1,792,000" not in out
     assert "+1.30%" in out and "592,942주" in out
 
