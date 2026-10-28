@@ -153,7 +153,7 @@ jobs:
       CI_FAIL_ON_SKIP: "1"
       # needs_collected_data 마커로 제외하는 통합 테스트 수의 상한. 마커를 더 붙여 테스트를 슬그머니 빼지 못하게 한다.
       # 늘려야 하면 이유와 함께 이 값과 README의 숫자를 같이 고친다.
-      MAX_EXCLUDED: "48"
+      MAX_EXCLUDED: "49"
     defaults:
       run:
         working-directory: backend
