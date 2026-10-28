@@ -1,4 +1,5 @@
 import logging
+import time
 from contextlib import asynccontextmanager
 
 import ollama
@@ -72,6 +73,27 @@ async def db_unavailable(request: Request, exc: DBAPIError):
     return _error(503, "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.")
 
 SERVER_ERROR_DETAIL = "서버 오류가 발생했습니다."
+
+# ---------- 요청 로그 ----------
+# 메서드, 경로(쿼리스트링 제외), 상태 코드, 처리 시간(ms), user id(인증된 요청만)만 남긴다. 헤더·토큰·본문은 남기지 않는다.
+access_logger = logging.getLogger("app.access")
+SLOW_REQUEST_MS = 3000  # 이 이상이면 WARNING
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    started = time.perf_counter()
+    status = 500
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        return response
+    finally:
+        ms = (time.perf_counter() - started) * 1000
+        user_id = getattr(request.state, "user_id", None)
+        level = logging.WARNING if ms >= SLOW_REQUEST_MS else logging.INFO
+        access_logger.log(level, "%s %s %s %.0fms user=%s", request.method, request.url.path, status, ms,
+                          user_id if user_id is not None else "-")
 
 
 @app.exception_handler(Exception)

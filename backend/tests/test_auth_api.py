@@ -221,6 +221,7 @@ class TestRouteCoverage:
         ("GET", "/api/discovery/trending"),
         ("GET", "/api/stocks/{ticker}/realtime-price"),
         ("GET", "/api/status"),
+        ("GET", "/api/health"),
         ("GET", "/api/stocks/{ticker}/event-reactions"),
         ("GET", "/api/stocks/{ticker}/price-history"),
     }

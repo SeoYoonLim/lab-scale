@@ -36,7 +36,7 @@ def load_user(user_id: int) -> CurrentUser | None:
         db.close()
 
 
-def get_current_user(authorization: str | None = Header(default=None)) -> CurrentUser:
+def get_current_user(request: Request, authorization: str | None = Header(default=None)) -> CurrentUser:
     token = _bearer_token(authorization)
     try:
         user_id = decode_access_token(token)
@@ -45,6 +45,7 @@ def get_current_user(authorization: str | None = Header(default=None)) -> Curren
     user = load_user(user_id)
     if user is None:
         raise unauthorized()
+    request.state.user_id = user.id  # 요청 로그(app.main)에 user id만 남긴다(토큰은 남기지 않음)
     return user
 
 
