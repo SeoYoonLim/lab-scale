@@ -224,7 +224,9 @@ class TestListAndDetail:
 
     def test_empty_history(self, signup):
         user = signup()
-        assert _get(user, "/history").json() == {"total": 0, "limit": 20, "offset": 0, "items": []}
+        assert _get(user, "/history").json() == {
+            "total": 0, "limit": 20, "offset": 0, "has_next": False, "total_pages": 0, "items": [],
+        }
 
     def test_history_is_not_taken_as_an_id(self, signup):
         assert _get(signup(), "/history").status_code == 200

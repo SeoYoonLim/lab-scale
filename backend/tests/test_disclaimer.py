@@ -54,9 +54,9 @@ class TestResearchResponses:
     def test_list_does_not_have_disclaimer(self, monkeypatch):
         keys = ("report_id", "previous_report_id", "question", "summary", "company_name", "created_at", "used_tools")
         item = {k: DETAIL[k] for k in keys}
-        monkeypatch.setattr(research_api, "list_reports", lambda user_id, limit, offset: (1, [item]))
+        monkeypatch.setattr(research_api, "list_reports", lambda user_id, limit, offset, **_: (1, [item]))
         body = client.get("/api/research").json()
-        assert set(body) == {"total", "items"}
+        assert set(body) == {"total", "has_next", "total_pages", "items"}
         assert "disclaimer" not in body["items"][0]
         assert body["items"][0] == item
 

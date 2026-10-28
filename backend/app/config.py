@@ -3,6 +3,7 @@
 | 환경변수 | 기본값 | 뜻 |
 | APP_ENV | development | production이면 약한 JWT_SECRET으로 기동하지 않는다 |
 | CORS_ALLOW_ORIGINS | http://localhost:5173,http://127.0.0.1:5173 | 쉼표로 구분한 허용 origin. credentials는 쓰지 않는다(Bearer 헤더) |
+| CORS_EXPOSE_HEADERS | X-Total-Count | 쉼표로 구분한, 브라우저 JS가 읽을 수 있게 노출할 응답 헤더 |
 """
 
 import logging
@@ -12,6 +13,8 @@ import re
 logger = logging.getLogger(__name__)
 
 DEFAULT_CORS_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
+# GET /api/companies가 전체 매칭 건수를 내려주는 헤더. 브라우저는 노출(expose)된 헤더만 읽을 수 있다.
+DEFAULT_CORS_EXPOSE_HEADERS = ("X-Total-Count",)
 # 알려진 예시·기본값에 흔한 낱말. 들어 있으면 약한 시크릿으로 본다.
 _WEAK_WORDS_RE = re.compile(r"change|replace|example|sample|secret|password|default|dummy|test|교체|비밀", re.IGNORECASE)
 MIN_DISTINCT_CHARS = 10
@@ -35,6 +38,14 @@ def cors_origins() -> list[str]:
         logger.warning("CORS_ALLOW_ORIGINS에 '*'가 있어 모든 origin을 허용합니다(credentials는 허용하지 않음).")
         return ["*"]
     return origins
+
+
+def cors_expose_headers() -> list[str]:
+    """브라우저에 노출할 응답 헤더. 환경변수가 비어 있거나 없으면 기본값(X-Total-Count)."""
+    raw = os.getenv("CORS_EXPOSE_HEADERS")
+    if raw is None or not raw.strip():
+        return list(DEFAULT_CORS_EXPOSE_HEADERS)
+    return [h.strip() for h in raw.split(",") if h.strip()]
 
 
 def jwt_secret_problems(secret: str | None) -> list[str]:

@@ -22,7 +22,7 @@ from app.api.status import router as status_router
 from app.api.stocks import router as stocks_router
 from app.api.watchlist import router as watchlist_router
 from app.auth import get_jwt_secret
-from app.config import check_jwt_secret_for_startup, cors_origins
+from app.config import check_jwt_secret_for_startup, cors_expose_headers, cors_origins
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +111,7 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=cors_expose_headers(),  # 브라우저가 X-Total-Count를 읽으려면 필요(CORS_EXPOSE_HEADERS)
 )
 
 app.include_router(auth_router)

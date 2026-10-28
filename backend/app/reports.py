@@ -13,10 +13,11 @@
 import json
 import logging
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from app.db.session import SessionLocal
 from app.models import Company, ResearchReport, ToolCallLog
+from app.pagination import escape_like, order_by_clauses
 from app.sources import build_sources
 
 logger = logging.getLogger(__name__)
@@ -149,16 +150,34 @@ def delete_report(report_id: int, *, user_id: int | None) -> bool:
         db.close()
 
 
-def list_reports(*, user_id: int | None, limit: int = 20, offset: int = 0) -> tuple[int, list[dict]]:
-    """(user_id의 전체 리포트 수, 최근 리포트 목록(최신순)). 목록에는 sources를 빼고 미리보기(summary)만 담는다."""
+def list_reports(
+    *, user_id: int | None, limit: int = 20, offset: int = 0, sort: str = "created_at", order: str = "desc", q: str | None = None
+) -> tuple[int, list[dict]]:
+    """(조건에 맞는 user_id의 리포트 수, 리포트 목록). 기본 정렬은 최신순(created_at desc, id desc).
+    목록에는 sources를 빼고 미리보기(summary)만 담는다.
+
+    sort는 created_at | id, 같은 값은 id가 방향을 따라 정한다.
+    q(공백만이면 무시)는 질문·요약·종목명·종목코드에서 대소문자 무시 부분 일치로 찾는다. %, _, 백슬래시는 리터럴이다.
+    total도 q를 적용한 건수다(q가 없으면 내 전체 리포트 수)."""
     db = SessionLocal()
     try:
-        total = db.query(func.count(ResearchReport.id)).filter(_owned_by(user_id)).scalar()
+        base = db.query(ResearchReport).outerjoin(Company, Company.id == ResearchReport.company_id).filter(_owned_by(user_id))
+        term = (q or "").strip()
+        if term:
+            pattern = f"%{escape_like(term)}%"
+            base = base.filter(
+                or_(
+                    ResearchReport.question.ilike(pattern, escape="\\"),
+                    ResearchReport.summary.ilike(pattern, escape="\\"),
+                    Company.name.ilike(pattern, escape="\\"),
+                    Company.ticker.ilike(pattern, escape="\\"),
+                )
+            )
+        total = base.with_entities(func.count(ResearchReport.id)).scalar()
+        sort_columns = {"created_at": ResearchReport.created_at, "id": ResearchReport.id}
         rows = (
-            db.query(ResearchReport, Company.name)
-            .outerjoin(Company, Company.id == ResearchReport.company_id)
-            .filter(_owned_by(user_id))
-            .order_by(ResearchReport.created_at.desc(), ResearchReport.id.desc())
+            base.with_entities(ResearchReport, Company.name)
+            .order_by(*order_by_clauses(sort_columns[sort], ResearchReport.id, order))
             .limit(limit)
             .offset(offset)
             .all()

@@ -40,6 +40,7 @@ class Store:
     def __init__(self, monkeypatch):
         self.rows = []  # [{"user_id", "id", "created_at", "result", ...}]
         self.calls = []
+        self.sorts = []  # list에 전달된 (sort, order)
         self._next_id = 1
         monkeypatch.setattr(d, "_chat", lambda m: (_ for _ in ()).throw(ConnectionError("no llm")))  # → 규칙 기반 폴백
         monkeypatch.setattr(history, "list_diagnoses", self.list)
@@ -64,8 +65,9 @@ class Store:
         return sorted((r for r in self.rows if r["user_id"] == user_id), key=lambda r: (r["created_at"], r["id"]),
                       reverse=True)
 
-    def list(self, user_id, limit, offset):
+    def list(self, user_id, limit, offset, sort="created_at", order="desc"):
         self.calls.append(("list", user_id, limit, offset))
+        self.sorts.append((sort, order))
         mine = self._mine(user_id)
         return len(mine), [history.history_item(r) for r in mine[offset: offset + limit]]
 
@@ -131,7 +133,7 @@ class TestRouteOrder:
 
     def test_history_is_not_swallowed_by_the_id_route(self, three):
         r = client.get("/api/portfolio/diagnosis/history")
-        assert r.status_code == 200 and set(r.json()) == {"total", "limit", "offset", "items"}
+        assert r.status_code == 200 and set(r.json()) == {"total", "limit", "offset", "has_next", "total_pages", "items"}
         assert ("get", ME, "history") not in three.calls
 
     def test_non_numeric_id_is_422_not_history(self, three):
@@ -168,7 +170,9 @@ class TestList:
         assert client.get("/api/portfolio/diagnosis/history", params={"offset": 5}).json()["items"] == []
 
     def test_empty_history(self, store):
-        assert client.get("/api/portfolio/diagnosis/history").json() == {"total": 0, "limit": 20, "offset": 0, "items": []}
+        assert client.get("/api/portfolio/diagnosis/history").json() == {
+            "total": 0, "limit": 20, "offset": 0, "has_next": False, "total_pages": 0, "items": [],
+        }
 
     @pytest.mark.parametrize("params", [{"limit": 0}, {"limit": 101}, {"limit": -1}, {"offset": -1}, {"limit": "x"}])
     def test_bad_paging_is_422(self, store, params):

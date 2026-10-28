@@ -8,12 +8,14 @@ from app.agent import ask_question
 from app.api.deps import get_current_user
 from app.auth import CurrentUser
 from app.disclaimer import DISCLAIMER
+from app.pagination import MAX_OFFSET, page_meta
 from app.reports import delete_report, get_report, list_reports
 
 router = APIRouter(prefix="/api", tags=["research"])
 
 BIGINT_MAX = 9223372036854775807
 MAX_QUESTION_LEN = 1000
+MAX_SEARCH_LEN = 50
 
 
 class ResearchRequest(BaseModel):
@@ -75,7 +77,10 @@ class ReportListItem(BaseModel):
 
 
 class ReportList(BaseModel):
+    # total은 q를 적용한 건수다(q가 없으면 내 전체 리포트 수). has_next/total_pages는 total, limit, offset에서 계산한다.
     total: int
+    has_next: bool
+    total_pages: int
     items: list[ReportListItem]
 
 
@@ -103,12 +108,19 @@ def research(request: ResearchRequest, user: CurrentUser = Depends(get_current_u
 @router.get("/research", response_model=ReportList)
 def list_research(
     limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=MAX_OFFSET),
+    sort: Literal["created_at", "id"] = Query("created_at", description="정렬 기준"),
+    order: Literal["asc", "desc"] = Query("desc", description="정렬 방향. 기본은 최신순(desc)"),
+    q: str | None = Query(
+        None,
+        max_length=MAX_SEARCH_LEN,
+        description="질문·요약·종목명·종목코드 부분 일치 검색(대소문자 무시, %/_는 리터럴). 공백만이면 무시",
+    ),
     user: CurrentUser = Depends(get_current_user),
 ) -> ReportList:
-    """내 최근 리포트 목록(최신순). total은 내 전체 리포트 수(페이지네이션용)."""
-    total, items = list_reports(user_id=user.id, limit=limit, offset=offset)
-    return ReportList(total=total, items=[ReportListItem(**r) for r in items])
+    """내 리포트 목록(기본 최신순). total은 q를 적용한 건수(페이지네이션용), has_next/total_pages는 그 total 기준이다."""
+    total, items = list_reports(user_id=user.id, limit=limit, offset=offset, sort=sort, order=order, q=q)
+    return ReportList(total=total, **page_meta(total, limit, offset), items=[ReportListItem(**r) for r in items])
 
 
 @router.get("/research/{report_id}", response_model=ReportDetail)

@@ -11,6 +11,7 @@ from app.auth import CurrentUser
 from app.db.session import SessionLocal
 from app.diagnosis import NoHoldings, diagnose
 from app.disclaimer import DISCLAIMER
+from app.pagination import MAX_OFFSET, page_meta
 from app.portfolio import (
     InsufficientBalance,
     InsufficientQuantity,
@@ -92,6 +93,8 @@ class TradeList(BaseModel):
     total: int
     limit: int
     offset: int
+    has_next: bool
+    total_pages: int
     items: list[TradeItem]
 
 
@@ -108,11 +111,13 @@ def get_my_portfolio(owner_key: str = Depends(get_owner_key)) -> PortfolioRespon
 @router.get("/trades", response_model=TradeList)
 def get_my_trades(
     limit: int = Query(50, ge=1, le=200),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=MAX_OFFSET),
     ticker: str | None = Query(None, min_length=1, max_length=50),
+    sort: Literal["executed_at", "amount", "price", "quantity", "ticker"] = Query("executed_at", description="정렬 기준(amount = 체결가*수량)"),
+    order: Literal["asc", "desc"] = Query("desc", description="정렬 방향. 기본은 최신순(desc)"),
     owner_key: str = Depends(get_owner_key),
 ) -> TradeList:
-    """내 체결 내역(최신순). `ticker`(종목코드 또는 종목명)를 주면 그 종목만. 체결이 없으면 total 0, items []."""
+    """내 체결 내역(기본 최신순). `ticker`(종목코드 또는 종목명)를 주면 그 종목만. 체결이 없으면 total 0, items []."""
     db = SessionLocal()
     try:
         company_id = None
@@ -121,7 +126,8 @@ def get_my_trades(
             if res.company is None:
                 raise HTTPException(status_code=404, detail=res.message)
             company_id = res.company.id
-        return TradeList(**list_trades(db, owner_key, limit, offset, company_id))
+        result = list_trades(db, owner_key, limit, offset, company_id, sort, order)
+        return TradeList(**result, **page_meta(result["total"], limit, offset))
     finally:
         db.close()
 
@@ -245,6 +251,8 @@ class DiagnosisHistoryList(BaseModel):
     total: int
     limit: int
     offset: int
+    has_next: bool
+    total_pages: int
     items: list[DiagnosisHistoryItem]
 
 
@@ -323,12 +331,14 @@ def diagnose_my_portfolio(user: CurrentUser = Depends(get_current_user)) -> Diag
 @router.get("/diagnosis/history", response_model=DiagnosisHistoryList)
 def list_my_diagnoses(
     limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=MAX_OFFSET),
+    sort: Literal["created_at", "id", "total_asset", "holdings_count"] = Query("created_at", description="정렬 기준"),
+    order: Literal["asc", "desc"] = Query("desc", description="정렬 방향. 기본은 최신순(desc)"),
     user: CurrentUser = Depends(get_current_user),
 ) -> DiagnosisHistoryList:
-    """내 진단 이력(최신순, 최근 50건까지 보관). 이력이 없으면 total 0, items []."""
-    total, items = diagnosis_history.list_diagnoses(user.id, limit, offset)
-    return DiagnosisHistoryList(total=total, limit=limit, offset=offset, items=items)
+    """내 진단 이력(기본 최신순, 최근 50건까지 보관). 이력이 없으면 total 0, items []."""
+    total, items = diagnosis_history.list_diagnoses(user.id, limit, offset, sort, order)
+    return DiagnosisHistoryList(total=total, limit=limit, offset=offset, **page_meta(total, limit, offset), items=items)
 
 
 @router.get("/diagnosis/{diagnosis_id}", response_model=DiagnosisDetail, response_model_exclude_none=False)

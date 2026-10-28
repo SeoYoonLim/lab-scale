@@ -18,6 +18,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.models import Company, Holding, Trade, VirtualAccount
 from app.models.trade import SIDE_BUY
 from app.models.virtual_account import INITIAL_BALANCE
+from app.pagination import order_by_clauses
 from app.realtime_price import get_realtime_price_data
 
 
@@ -230,8 +231,11 @@ def get_portfolio(db, device_id: str) -> dict:
     return out
 
 
-def list_trades(db, device_id: str, limit: int, offset: int, company_id: int | None = None) -> dict:
-    """소유자의 체결 내역(최신순: 체결 시각 desc, 같으면 id desc). company는 join 한 번으로 같이 읽는다(N+1 없음).
+def list_trades(
+    db, device_id: str, limit: int, offset: int, company_id: int | None = None, sort: str = "executed_at", order: str = "desc"
+) -> dict:
+    """소유자의 체결 내역(기본 최신순: 체결 시각 desc, 같으면 id desc). company는 join 한 번으로 같이 읽는다(N+1 없음).
+    sort는 executed_at | amount | price | quantity | ticker, 같은 값은 id가 방향을 따라 정한다.
 
     amount는 trade 테이블에 컬럼이 없어서 체결가*수량으로 계산한다(place_order의 잔고 계산과 같은 반올림).
     company_id를 주면 그 종목의 체결만 대상으로 하고 total도 그 기준이다.
@@ -240,10 +244,17 @@ def list_trades(db, device_id: str, limit: int, offset: int, company_id: int | N
     if company_id is not None:
         base = base.filter(Trade.company_id == company_id)
     total = base.count()
+    sort_columns = {
+        "executed_at": Trade.executed_at,
+        "amount": Trade.price * Trade.quantity,
+        "price": Trade.price,
+        "quantity": Trade.quantity,
+        "ticker": Company.ticker,
+    }
     rows = (
         base.join(Company, Company.id == Trade.company_id)
         .with_entities(Trade, Company.ticker, Company.name, Company.asset_type)
-        .order_by(Trade.executed_at.desc(), Trade.id.desc())
+        .order_by(*order_by_clauses(sort_columns[sort], Trade.id, order))
         .limit(limit)
         .offset(offset)
         .all()

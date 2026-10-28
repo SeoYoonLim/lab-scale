@@ -98,7 +98,7 @@ class TestDependencyErrors:
         assert "데이터베이스" in r.json()["detail"]
 
     def test_db_error_on_list_is_503(self, monkeypatch):
-        def boom(user_id, limit, offset):
+        def boom(user_id, limit, offset, **_):
             raise OperationalError("SELECT 1", {}, Exception("connection refused"))
 
         monkeypatch.setattr(research_api, "list_reports", boom)
@@ -109,15 +109,15 @@ class TestReportRoutes:
     def test_list_envelope_and_defaults(self, monkeypatch):
         seen = {}
 
-        def fake(user_id, limit, offset):
-            seen.update(user_id=user_id, limit=limit, offset=offset)
+        def fake(user_id, limit, offset, sort, order, q):
+            seen.update(user_id=user_id, limit=limit, offset=offset, sort=sort, order=order, q=q)
             return 0, []
 
         monkeypatch.setattr(research_api, "list_reports", fake)
         r = client.get("/api/research")
         assert r.status_code == 200
-        assert r.json() == {"total": 0, "items": []}
-        assert seen == {"user_id": USER_ID, "limit": 20, "offset": 0}
+        assert r.json() == {"total": 0, "has_next": False, "total_pages": 0, "items": []}
+        assert seen == {"user_id": USER_ID, "limit": 20, "offset": 0, "sort": "created_at", "order": "desc", "q": None}
 
     @pytest.mark.parametrize("query", ["limit=0", "limit=101", "offset=-1", "limit=abc"])
     def test_list_param_out_of_range_is_422(self, query):
@@ -134,7 +134,7 @@ class TestReportRoutes:
         assert client.get(f"/api/research/{report_id}").status_code == 422
 
     def test_cors_allows_frontend_origin(self, monkeypatch):
-        monkeypatch.setattr(research_api, "list_reports", lambda user_id, limit, offset: (0, []))
+        monkeypatch.setattr(research_api, "list_reports", lambda user_id, limit, offset, **_: (0, []))
         r = client.get("/api/research", headers={"Origin": "http://localhost:5173"})
         assert r.headers["access-control-allow-origin"] == "http://localhost:5173"
         r = client.get("/api/research", headers={"Origin": "http://evil.example"})
@@ -286,7 +286,7 @@ class TestFollowUp:
         assert client.get("/api/research/8").json()["previous_report_id"] == 5
         keys = ("report_id", "previous_report_id", "question", "summary", "company_name", "created_at", "used_tools")
         monkeypatch.setattr(
-            research_api, "list_reports", lambda user_id, limit, offset: (1, [{k: detail[k] for k in keys}])
+            research_api, "list_reports", lambda user_id, limit, offset, **_: (1, [{k: detail[k] for k in keys}])
         )
         assert client.get("/api/research").json()["items"][0]["previous_report_id"] == 5
 

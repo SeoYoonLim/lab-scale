@@ -30,11 +30,12 @@ class TestCompaniesAssetType:
     def seen(self, monkeypatch):
         seen = {}
 
-        def fake(db, q, limit, asset_type=None):
+        def fake(db, q, limit, asset_type=None, offset=0, sort="id", order="asc"):
             seen.update(q=q, limit=limit, asset_type=asset_type)
-            return [i for i in (STOCK_ITEM, ETF_ITEM) if asset_type in (None, i["asset_type"])]
+            items = [i for i in (STOCK_ITEM, ETF_ITEM) if asset_type in (None, i["asset_type"])]
+            return len(items), items
 
-        monkeypatch.setattr(companies_api, "search_companies", fake)
+        monkeypatch.setattr(companies_api, "search_companies_page", fake)
         return seen
 
     def test_no_filter_returns_everything(self, seen):
@@ -68,7 +69,7 @@ class TestCompaniesAssetType:
 
     def test_item_without_asset_type_defaults_to_stock(self, monkeypatch):
         old = {k: v for k, v in STOCK_ITEM.items() if k != "asset_type"}
-        monkeypatch.setattr(companies_api, "search_companies", lambda db, q, limit, asset_type=None: [old])
+        monkeypatch.setattr(companies_api, "search_companies_page", lambda db, q, limit, asset_type=None, offset=0, sort="id", order="asc": (1, [old]))
         assert client.get("/api/companies").json()[0]["asset_type"] == "stock"
 
 
@@ -152,7 +153,7 @@ class TestPortfolioEtf:
 
     def test_trades_carry_asset_type(self, monkeypatch):
         monkeypatch.setattr(portfolio_api, "list_trades",
-                            lambda db, key, limit, offset, company_id=None: {"total": 1, "limit": limit, "offset": offset, "items": [ETF_TRADE]})
+                            lambda db, key, limit, offset, company_id=None, sort=None, order=None: {"total": 1, "limit": limit, "offset": offset, "items": [ETF_TRADE]})
         assert client.get("/api/portfolio/trades").json()["items"] == [ETF_TRADE]
 
     def test_holding_without_asset_type_defaults_to_stock(self, monkeypatch):

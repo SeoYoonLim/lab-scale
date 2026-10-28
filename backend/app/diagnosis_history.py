@@ -17,6 +17,7 @@ from sqlalchemy import and_, delete, func, or_, select
 from app.db.session import SessionLocal
 from app.diagnosis import _pct, _r2
 from app.models import PortfolioDiagnosis
+from app.pagination import order_by_clauses
 
 logger = logging.getLogger(__name__)
 
@@ -229,11 +230,20 @@ def _prune(user_id: int, keep: int = MAX_KEPT_PER_USER) -> None:
         db.close()
 
 
-def list_diagnoses(user_id: int, limit: int, offset: int) -> tuple[int, list[dict]]:
-    """(user_id의 전체 진단 수, 최신순 목록). 목록 항목에 필요한 JSON 조각(flags, summary)만 읽는다."""
+def list_diagnoses(
+    user_id: int, limit: int, offset: int, sort: str = "created_at", order: str = "desc"
+) -> tuple[int, list[dict]]:
+    """(user_id의 전체 진단 수, 목록(기본 최신순)). 목록 항목에 필요한 JSON 조각(flags, summary)만 읽는다.
+    sort는 created_at | id | total_asset | holdings_count, 같은 값은 id가 방향을 따라 정한다."""
     db = SessionLocal()
     try:
         total = db.query(func.count(PortfolioDiagnosis.id)).filter(_owned(user_id)).scalar()
+        sort_columns = {
+            "created_at": PortfolioDiagnosis.created_at,
+            "id": PortfolioDiagnosis.id,
+            "total_asset": PortfolioDiagnosis.total_asset,
+            "holdings_count": PortfolioDiagnosis.holdings_count,
+        }
         rows = db.execute(
             select(
                 PortfolioDiagnosis.id,
@@ -245,7 +255,7 @@ def list_diagnoses(user_id: int, limit: int, offset: int) -> tuple[int, list[dic
                 PortfolioDiagnosis.result["summary"].as_string(),
             )
             .where(_owned(user_id))
-            .order_by(PortfolioDiagnosis.created_at.desc(), PortfolioDiagnosis.id.desc())
+            .order_by(*order_by_clauses(sort_columns[sort], PortfolioDiagnosis.id, order))
             .limit(limit)
             .offset(offset)
         ).all()

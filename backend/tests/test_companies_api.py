@@ -17,19 +17,19 @@ ITEM = {
 
 
 def mock_search(monkeypatch, result):
-    monkeypatch.setattr(companies_api, "search_companies", lambda db, q, limit, asset_type=None: result)
+    monkeypatch.setattr(companies_api, "search_companies_page", lambda db, q, limit, asset_type=None, offset=0, sort="id", order="asc": (len(result), result))
 
 
 class TestGetCompanies:
     def test_default_query_params(self, monkeypatch):
         seen = {}
 
-        def fake(db, q, limit, asset_type=None):
+        def fake(db, q, limit, asset_type=None, offset=0, sort="id", order="asc"):
             seen["args"] = (q, limit)
             seen["asset_type"] = asset_type
-            return []
+            return 0, []
 
-        monkeypatch.setattr(companies_api, "search_companies", fake)
+        monkeypatch.setattr(companies_api, "search_companies_page", fake)
         r = client.get("/api/companies")
         assert r.status_code == 200
         assert seen["args"] == (None, 50)
@@ -44,12 +44,12 @@ class TestGetCompanies:
     def test_passes_q_and_limit_through(self, monkeypatch):
         seen = {}
 
-        def fake(db, q, limit, asset_type=None):
+        def fake(db, q, limit, asset_type=None, offset=0, sort="id", order="asc"):
             seen["args"] = (q, limit)
             seen["asset_type"] = asset_type
-            return []
+            return 0, []
 
-        monkeypatch.setattr(companies_api, "search_companies", fake)
+        monkeypatch.setattr(companies_api, "search_companies_page", fake)
         client.get("/api/companies?q=네이버&limit=20")
         assert seen["args"] == ("네이버", 20)
 
