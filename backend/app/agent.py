@@ -27,7 +27,7 @@ from app.event_answer import (
     event_result_for_llm,
     trim_result,
 )
-from app import period_scope
+from app import code_answers, period_scope
 from app.etf import (
     ETF_ANSWER_RULES,
     asks_constituents,
@@ -44,6 +44,7 @@ from app.answer_guard import code_summary, freshness_note, guard_answer, is_simp
 from app.glossary import comparison_answer, concept_answer, find_term, term_answer
 from app.models import Company, StockPrice
 from app.period_parser import KST, mentions_period, parse_period
+from app.price_history import recent_price_rows
 from app.reports import save_report as save_report_row
 from app.sources import build_sources
 from app.tools.company_resolver import MAX_CANDIDATES, extract_from_text, normalize_name, resolve_company
@@ -1255,7 +1256,9 @@ def _answer_simple_quote(question: str, companies: list | None):
     called_at = datetime.now(timezone.utc)
     started = time.perf_counter()
     args = {"ticker": company.name, "period_days": 1}
-    result = _run_tool("stock_tool", args)
+    # 2026-10-28부터 2일치를 읽어, 장중(평일 15:30 전)에는 오늘 행(장중 값)을 종가로 쓰지 않고 직전 거래일 종가로 답한다
+    # (app.code_answers.latest_of, 브리핑과 같은 장중 규칙). 기록·답변은 1일 결과다. LLM 경로의 stock_tool은 그대로다.
+    result = code_answers.latest_of(_run_tool("stock_tool", {**args, "period_days": 2}), datetime.now(KST))
     answer = quote_answer(result)
     if answer is None:
         return None
@@ -1266,6 +1269,58 @@ def _answer_simple_quote(question: str, companies: list | None):
     record = {"tool_name": "stock_tool", "arguments": args, "result": result, "called_at": called_at,
               "elapsed_ms": round((time.perf_counter() - started) * 1000)}
     return _code_answer(_with_freshness(answer, question, [record]), [record])
+
+
+# 기간 창을 만들 때 시작일 이전(기준 종가)과 연휴로 빈 날을 감안해 더 읽는 행 수
+_WINDOW_SLACK_ROWS = 20
+
+
+def _load_price_rows(company, limit: int) -> list:
+    """종목의 최근 limit개 시세 행(최신순). stock_tool은 60거래일 상한이 있어 기간 템플릿("3개월")은 이 함수로 읽는다."""
+    db = SessionLocal()
+    try:
+        return recent_price_rows(db, company.id, limit)
+    finally:
+        db.close()
+
+
+def _price_window(company, period_days: int, start) -> dict | None:
+    """start 이후의 날짜 창으로 만든 stock_tool 결과 모양의 dict(장중 규칙 적용). 실패하면 None(기존 흐름으로 간다)."""
+    try:
+        rows = _load_price_rows(company, period_days + _WINDOW_SLACK_ROWS)
+    except Exception:
+        return None
+    return code_answers.window_result(company, rows, start, datetime.now(KST), "period_quote")
+
+
+def _answer_period_quote(question: str, companies: list | None):
+    """(B, 2026-10-28) 기간 수익률·기간 최고/최저가(종목 1개), 같은 기간 두 종목 비교는 LLM 없이 코드가 답한다(app/code_answers.py).
+    유형이 애매하거나 두 종목의 시세 날짜가 맞지 않으면 None(기존 LLM 흐름)."""
+    if not companies:
+        return None
+    parsed = parse_period(question)
+    kind = code_answers.classify(question, len(companies), parsed is not None)
+    if kind is None:
+        return None
+    called_at = datetime.now(timezone.utc)
+    results = [_price_window(c, parsed.period_days, parsed.start_date) for c in companies]
+    if any(r is None for r in results):
+        return None
+    if kind == code_answers.KIND_COMPARE:
+        compared = code_answers.compare(results[0], results[1])
+        if compared is None:
+            return None
+        answer, diff = compared
+        for r in results:
+            r["compared_diff_pct_point"] = diff  # 비교 문장의 %p 값도 기록(평가·검증의 근거)에 남긴다
+    else:
+        answer = code_answers.single_answer(kind, results[0])
+    for c in companies:
+        if getattr(c, "asset_type", None) == "etf" and (lk := leverage_kind(c.name)):
+            answer += "\n\n" + leverage_notice(c.name, lk)
+    records = [{"tool_name": "stock_tool", "arguments": {"ticker": c.name, "period_days": parsed.period_days},
+                "result": r, "called_at": called_at, "elapsed_ms": 0} for c, r in zip(companies, results)]
+    return _code_answer(answer, records)
 
 
 def _llm_fallback(err: LLMUnavailable, records: list[dict], etf_subjects=None) -> tuple[dict, list[dict]]:
@@ -1343,7 +1398,8 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
 
     _reset_llm_state()
     companies = _question_companies(question)
-    for handler in (_answer_concept, _answer_etf_constituents, _answer_period_scope, _answer_simple_quote):
+    for handler in (_answer_concept, _answer_etf_constituents, _answer_period_scope, _answer_simple_quote,
+                    _answer_period_quote):
         handled = handler(question, companies)
         if handled is not None:
             return handled
