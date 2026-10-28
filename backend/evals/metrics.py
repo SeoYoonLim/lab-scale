@@ -356,6 +356,42 @@ def period_matches(got_days, expected_days, cap: int = PERIOD_DAYS_CAP) -> bool:
     return min(int(got_days), cap) == min(int(expected_days), cap)
 
 
+# ---------- 숫자 부착 / 면책 문구 (2026-10-28 3차 라운드 추가, 기존 판정은 그대로) ----------
+
+
+def attachment_errors(answer: str, per_company: dict[str, list], shared=()) -> list[str]:
+    """여러 종목을 다룬 답변에서 숫자를 다른 종목에 붙인 경우. per_company: {종목명: 그 종목의 도구 결과 목록}.
+
+    한 문장(또는 한 줄)에 종목명이 정확히 하나만 나오면, 그 문장의 값 숫자(원/%/주 또는 1000 이상)는 그 종목의 결과(+shared:
+    질문 등)로 설명돼야 한다. 그 종목 결과로는 설명되지 않는데 다른 종목 결과로는 설명되면 "종목명: 숫자"로 돌려준다.
+    두 종목을 함께 말한 문장(차이 비교)과 종목명이 없는 문장은 보지 않는다(한계). 어느 결과로도 설명되지 않는 숫자는
+    number_support가 따로 센다."""
+    errors = []
+    names = sorted(per_company, key=len, reverse=True)
+    for sentence in _SENTENCE_SPLIT_RE.split(answer or ""):
+        hit, rest = [], sentence
+        for n in names:  # 긴 이름 먼저: "KODEX 200"이 "KODEX 200TR" 안에서 두 번 세지지 않게
+            if n in rest:
+                hit.append(n)
+                rest = rest.replace(n, " ")
+        if len(hit) != 1:
+            continue
+        own = support_values(list(per_company[hit[0]]) + list(shared))
+        others = support_values([r for k, v in per_company.items() if k != hit[0] for r in v])
+        for num in extract_numbers(sentence):
+            if _value_like(num) and not is_supported(num, own) and is_supported(num, others):
+                errors.append(f"{hit[0]}: {num.raw}")
+    return errors
+
+
+_DISCLAIMER_RE = re.compile(r"투자\s*(?:권유|자문)[^.]{0,20}아니|투자\s*판단[^.]{0,40}책임")
+
+
+def has_disclaimer(text: str) -> bool:
+    """면책 문구(투자 권유가 아니라는 안내 또는 투자 판단의 책임 안내)가 있는지."""
+    return bool(_DISCLAIMER_RE.search(text or ""))
+
+
 # ---------- 집계 ----------
 
 

@@ -132,3 +132,65 @@ def test_from_raw_merges_records(tmp_path):
                    "--note", "합침"]) == 0
     s = json.loads(out.read_text(encoding="utf-8"))
     assert s["metrics"]["routing_gate_accuracy"]["all"] == 0.5 and s["note"] == "합침" and len(s["merged_from"]) == 2
+
+
+# ---------- 3차 라운드(2026-10-28) 추가 지표 ----------
+
+HYNIX = {"tool_name": "stock_tool", "arguments": {"ticker": "SK하이닉스"},
+         "result": {"found": True, "company_name": "SK하이닉스", "change_pct": -1.2, "prices": [{"close_price": 1374000.0}]}}
+
+
+def test_attachment_flags_number_put_on_the_other_company():
+    item = _item("attachment", {"companies": ["삼성전자", "SK하이닉스"], "check_attachment": True})
+    ok = _score(item, "삼성전자는 235,000원(+0.43%)입니다. SK하이닉스는 1,374,000원(-1.2%)입니다.", [STOCK, HYNIX])
+    assert ok["flags"]["attach_ok"] is True
+    bad = _score(item, "삼성전자는 1,374,000원입니다. SK하이닉스는 235,000원입니다.", [STOCK, HYNIX])
+    assert bad["flags"]["attach_ok"] is False
+    assert any(f["check"] == "attachment" for f in bad["failures"])
+    # 두 종목을 한 문장에 함께 말하면 보지 않는다(차이 비교 문장)
+    both = _score(item, "삼성전자 235,000원, SK하이닉스 1,374,000원입니다.", [STOCK, HYNIX])
+    assert both["flags"]["attach_ok"] is True
+    # attachment도 숫자 일치를 채점한다
+    assert bad["flags"]["numbers_all_supported"] is True
+
+
+def test_attachment_needs_two_resolved_companies():
+    item = _item("attachment", {"companies": ["삼성전자", "SK하이닉스"], "check_attachment": True})
+    assert "attach_ok" not in _score(item, "삼성전자는 235,000원입니다.", [STOCK])["flags"]
+
+
+def test_briefing_uses_only_briefing_numbers_and_needs_disclaimer():
+    item = _item("briefing", {"must_briefing": True})
+    briefing = {"portfolio": {"total_asset": 10_000_000.0, "day_profit_loss": 173_200.0},
+                "holdings": [{"name": "삼성전자", "day_change_pct": 5.39}]}
+    disclaimer = " 이 서비스의 분석은 투자 권유나 자문이 아니며, 투자 판단과 그에 따른 손익의 책임은 본인에게 있습니다."
+
+    def score(answer):
+        rec = R._record(item)
+        R.score_live(item, rec, {"answer": answer, "sources": []}, [], briefing=briefing)
+        return rec["flags"]["briefing_ok"]
+
+    assert score("총자산은 10,000,000원이고 전일 대비 173,200원, 삼성전자 +5.39%입니다." + disclaimer) is True
+    assert score("총자산은 10,000,000원입니다.") is False  # 면책 없음
+    assert score("삼성전자 +7.5%입니다." + disclaimer) is False  # 브리핑에 없는 숫자
+    assert score("브리핑을 볼 수 없습니다." + disclaimer) is False  # 숫자 없음
+    rec = R._record(item)
+    R.score_live(item, rec, {"answer": "총자산 10,000,000원" + disclaimer, "sources": []}, [], briefing=None)
+    assert rec["flags"]["briefing_ok"] is False  # 브리핑을 못 구하면 질문 숫자만 근거
+
+
+def test_new_metrics_are_summarized():
+    recs = []
+    for i, flags in enumerate([{"code_answer": True, "llm_truncated": False}, {"code_answer": False, "llm_truncated": True}]):
+        recs.append({**R._record({**_item(), "id": f"x_{i}"}), "flags": flags})
+    s = R.summarize(recs)
+    assert s["code_answer_rate"]["all"] == 0.5 and s["loop_rate"]["all"] == 0.5
+    assert R.HIGHER_IS_BETTER["code_answer_rate"] is True and R.HIGHER_IS_BETTER["loop_rate"] is False
+
+
+def test_has_disclaimer():
+    from evals import metrics as M
+
+    assert M.has_disclaimer("제공되는 분석과 의견은 투자 권유나 자문이 아니며")
+    assert M.has_disclaimer("투자 판단과 그에 따른 손익의 책임은 본인에게 있습니다.")
+    assert not M.has_disclaimer("삼성전자 종가는 225,000원입니다.")

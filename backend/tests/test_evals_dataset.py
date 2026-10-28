@@ -9,12 +9,12 @@ import pytest
 DATASET = Path(__file__).resolve().parents[1] / "evals" / "dataset.jsonl"
 CATEGORY_MODE = {"entity": "offline", "period": "offline", "routing_gate": "offline",
                  "tool_selection": "live", "grounding": "live", "refusal": "live", "etf_safety": "live",
-                 "freshness": "live", "stability": "live"}
-CATEGORY_SIZE = {"entity": 28, "period": 14, "routing_gate": 10, "tool_selection": 26, "grounding": 25,
-                 "refusal": 13, "etf_safety": 10, "freshness": 4, "stability": 4}
+                 "freshness": "live", "stability": "live", "briefing": "live", "attachment": "live"}
+CATEGORY_SIZE = {"entity": 28, "period": 14, "routing_gate": 10, "tool_selection": 26, "grounding": 33,
+                 "refusal": 13, "etf_safety": 10, "freshness": 4, "stability": 10, "briefing": 4, "attachment": 6}
 EXPECT_KEYS = {"companies", "must_not_companies", "tools_all", "tools_forbidden", "period_days", "must_refuse",
                "must_contain", "must_not_contain", "gates", "ref_date", "start", "end", "must_partial",
-               "must_state_data_date", "must_answer"}
+               "must_state_data_date", "must_answer", "must_briefing", "check_attachment"}
 TOOLS = {"stock_tool", "news_tool", "disclosure_tool", "rag_search_tool", "market_tool", "fx_tool",
          "discovery_tool", "event_reaction_tool", "*"}
 
@@ -31,7 +31,7 @@ def test_required_fields(rows):
         assert r["split"] in ("dev", "holdout")
         assert r["mode"] in ("offline", "live")
         assert r["question"].strip()
-        assert r.get("batch", 1) in (1, 2, 3)
+        assert r.get("batch", 1) in (1, 2, 3, 4)
         assert isinstance(r["expect"], dict) and r["expect"], r["id"]
         assert set(r["expect"]) <= EXPECT_KEYS, r["id"]
 
@@ -45,8 +45,8 @@ def test_category_mode_and_size(rows):
     assert Counter(r["category"] for r in rows) == CATEGORY_SIZE
     for r in rows:
         assert r["mode"] == CATEGORY_MODE[r["category"]], r["id"]
-    assert Counter(r["mode"] for r in rows) == {"offline": 52, "live": 82}
-    assert Counter(r.get("batch", 1) for r in rows) == {1: 80, 2: 30, 3: 24}
+    assert Counter(r["mode"] for r in rows) == {"offline": 52, "live": 106}
+    assert Counter(r.get("batch", 1) for r in rows) == {1: 80, 2: 30, 3: 24, 4: 24}
 
 
 def test_split_is_60_40_per_category(rows):
@@ -55,7 +55,7 @@ def test_split_is_60_40_per_category(rows):
         assert holdout == round(size * 0.4), cat
 
 
-@pytest.mark.parametrize("batch", [2, 3])
+@pytest.mark.parametrize("batch", [2, 3, 4])
 def test_added_batch_split_is_60_40_per_category(rows, batch):
     """수정 라운드 전에 추가한 batch 문항도 카테고리별로 holdout 40% 안팎(그 라운드의 unseen holdout)."""
     for cat in CATEGORY_SIZE:
@@ -75,6 +75,10 @@ def test_expectations_are_well_formed(rows):
             assert e["gates"]
         if r["category"] == "refusal":
             assert e.get("must_refuse") is True or e.get("must_partial") is True
+        if r["category"] == "briefing":
+            assert e.get("must_briefing") is True and not e.get("companies")
+        if r["category"] == "attachment":
+            assert e.get("check_attachment") is True and len(e.get("companies", [])) >= 2
         if "period_days" in e and r["mode"] == "live":
             assert e["period_days"] == "parser" or isinstance(e["period_days"], int)
 

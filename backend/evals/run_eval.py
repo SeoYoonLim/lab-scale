@@ -31,8 +31,12 @@ ABORT_AFTER_TIMEOUTS = 3
 SOURCE_TOOLS = {"news_tool", "disclosure_tool", "rag_search_tool", "event_reaction_tool"}
 # holdout_unseen: 가장 최근 수정 라운드 전에 추가한 batch(UNSEEN_BATCH)의 holdout. 그 라운드의 수정 중에는 한 번도 돌리지 않는다.
 # holdout_seen: 그 밖의 holdout(이전 라운드에서 결과가 공개된 것). 라운드마다 UNSEEN_BATCH를 올린다
-# (batch 2: 2026-10-27 A-F 라운드, batch 3: 2026-10-27 안정성·숫자 검증 라운드).
-UNSEEN_BATCH = 3
+# (batch 2: 2026-10-27 A-F 라운드, batch 3: 2026-10-27 안정성·숫자 검증 라운드, batch 4: 2026-10-28 3차 라운드).
+UNSEEN_BATCH = 4
+# 브리핑 문항(must_briefing)용: 평가 계정에 모의 보유종목 1개(종목, 수량)와 관심종목 1개를 만든다. 계정을 지울 때 같이 지워진다.
+EVAL_HOLDING = ("삼성전자", 5)
+EVAL_WATCH = "SK하이닉스"
+NUMBER_CATEGORIES = ("grounding", "attachment")  # 숫자 일치(number_match/full_support)를 채점하는 카테고리
 SPLITS = ("dev", "holdout", "holdout_seen", "holdout_unseen", "all")
 
 
@@ -160,10 +164,11 @@ def _expected_period(expect_value, question: str):
 
 
 def score_live(item: dict, rec: dict, response: dict | None, calls: list[dict], data_start=None, today=None,
-               data_end=None) -> None:
+               data_end=None, briefing: dict | None = None) -> None:
     """ask_question 응답과 tool_call_log 기록(calls: [{tool_name, arguments, result}])으로 채점한다.
 
-    data_start는 질문 종목(또는 전체)의 보유 시세 시작일로, 기간 라벨 일관성 판정에만 쓴다."""
+    data_start는 질문 종목(또는 전체)의 보유 시세 시작일로, 기간 라벨 일관성 판정에만 쓴다.
+    briefing은 평가기가 같은 계정으로 따로 계산한 브리핑(app.briefing_db.get_briefing)으로, must_briefing 판정의 근거다."""
     exp = item["expect"]
     flags = rec["flags"]
     answer = (response or {}).get("answer") or ""
@@ -203,7 +208,7 @@ def score_live(item: dict, rec: dict, response: dict | None, calls: list[dict], 
     evidence = [c["result"] for c in calls] + [item["question"]]
     matched, unmatched = M.match_numbers(answer, evidence)
     rec["detail"]["numbers"] = {"matched": [n.raw for n in matched], "unmatched": [n.raw for n in unmatched]}
-    if item["category"] == "grounding" and response is not None:
+    if item["category"] in NUMBER_CATEGORIES and response is not None:
         rec["num_counts"] = (len(matched), len(matched) + len(unmatched))
         if matched or unmatched:
             flags["numbers_all_supported"] = not unmatched
@@ -255,6 +260,30 @@ def score_live(item: dict, rec: dict, response: dict | None, calls: list[dict], 
         if not ok:
             _fail(rec, "answered", "timeout·fallback 없이 정상 답변", rec.get("error") or meta.get("fallback") or answer[:120])
 
+    if exp.get("check_attachment") and response is not None:
+        # 여러 종목 답변: 한 종목만 말한 문장의 숫자가 다른 종목 결과에서 온 것이면 부착 오류
+        per_company: dict[str, list] = {}
+        for c in calls:
+            r = c["result"]
+            if isinstance(r, dict) and r.get("found") and r.get("company_name"):
+                per_company.setdefault(r["company_name"], []).append(r)
+        if len(per_company) >= 2:
+            errs = M.attachment_errors(answer, per_company, [item["question"]])
+            flags["attach_ok"] = not errs
+            if errs:
+                _fail(rec, "attachment", "숫자를 맞는 종목에 붙임", errs)
+
+    if exp.get("must_briefing"):
+        # 브리핑에서 온 숫자만(근거 = 평가기가 계산한 브리핑 + 질문), 숫자 1개 이상, 면책 문구, 금지 표현 없음
+        b_matched, b_unmatched = M.match_numbers(answer, [briefing, item["question"]] if briefing else [item["question"]])
+        ok = (response is not None and bool(b_matched) and not b_unmatched and M.has_disclaimer(answer)
+              and not M.forbidden_hits(answer))
+        flags["briefing_ok"] = ok
+        if not ok:
+            _fail(rec, "briefing", "브리핑 숫자만 + 숫자 1개 이상 + 면책 + 금지 표현 없음",
+                  {"matched": len(b_matched), "unmatched": [n.raw for n in b_unmatched],
+                   "disclaimer": M.has_disclaimer(answer), "answer": answer[:200]})
+
     if exp.get("must_contain") or exp.get("must_not_contain"):
         fails = M.regex_checks(answer, exp.get("must_contain"), exp.get("must_not_contain"))
         flags["contain_ok"] = not fails
@@ -281,6 +310,54 @@ def _create_eval_user(db):
     username = f"captest_{secrets.token_hex(6)}"
     user = create_user(db, username, secrets.token_urlsafe(16))  # 비밀번호는 저장도 출력도 하지 않는다
     return user
+
+
+def _setup_eval_portfolio(db, user) -> None:
+    """브리핑 문항용 모의 보유종목 1개(DB 최근 종가를 평단으로)와 관심종목 1개. 계좌는 초기 자금에서 매입액을 뺀 현금으로 만든다."""
+    from sqlalchemy import func
+
+    from app.models import Company, Holding, StockPrice, VirtualAccount, Watchlist
+    from app.models.virtual_account import INITIAL_BALANCE
+
+    name, qty = EVAL_HOLDING
+    held = db.query(Company).filter(Company.name == name).one()
+    watch = db.query(Company).filter(Company.name == EVAL_WATCH).one()
+    last = db.query(func.max(StockPrice.price_date)).filter(StockPrice.company_id == held.id).scalar()
+    price = float(db.query(StockPrice.close_price).filter(StockPrice.company_id == held.id,
+                                                          StockPrice.price_date == last).scalar())
+    db.add(VirtualAccount(device_id=user.owner_key, cash_balance=INITIAL_BALANCE - price * qty))
+    db.flush()
+    db.add(Holding(device_id=user.owner_key, company_id=held.id, quantity=qty, avg_price=price))
+    db.add(Watchlist(device_id=user.owner_key, company_id=watch.id))
+    db.commit()
+
+
+def _eval_briefing(db, user) -> dict | None:
+    try:
+        from app.briefing_db import get_briefing
+    except ImportError:  # 브리핑이 없는 옛 코드로 기준선을 돌릴 때
+        return None
+    db.rollback()
+    return get_briefing(db, user.owner_key, 3)
+
+
+class _LLMCallCounter:
+    """ask_question 안의 LLM 호출 수(app.agent._llm_chat 경유)를 센다. 0이면 코드가 답한 것(code_answer).
+    사건 반응 경로의 LLM 해석(EVENT_REACTION_LLM_INTERPRETATION, 기본 꺼짐)은 ollama.chat을 직접 불러 세지 않는다."""
+
+    def __init__(self):
+        import app.agent as agent
+
+        self.agent, self.orig, self.n = agent, agent._llm_chat, 0
+
+        def counted(**kwargs):
+            self.n += 1
+            return self.orig(**kwargs)
+
+        agent._llm_chat = counted
+
+    def restore(self):
+        self.agent._llm_chat = self.orig
 
 
 def _delete_eval_user(db, user) -> int:
@@ -332,11 +409,14 @@ def run_live(items: list[dict], repeats: int, model: str, log=print) -> tuple[li
     log(f"[live] 평가 계정 {user.username} (id={user.id}) 생성")
     out, info = [], {"eval_user": user.username, "deleted_reports": 0}
     started_all = time.perf_counter()
+    counter = _LLMCallCounter()
     try:
+        _setup_eval_portfolio(db, user)
         consecutive_timeouts = 0
         for run in range(repeats):
             for it in items:
                 rec = _record(it, run)
+                counter.n = 0
                 pool = ThreadPoolExecutor(max_workers=1)
                 t0 = time.perf_counter()
                 response, error = None, None
@@ -366,6 +446,10 @@ def run_live(items: list[dict], repeats: int, model: str, log=print) -> tuple[li
                     meta = response.get("meta") or {}
                     # 에이전트가 응답 생성 실패(timeout·연결 오류 등)로 대체 답변을 냈으면 meta.fallback에 사유가 있다
                     rec["flags"]["fallback"] = response.get("answer") == FALLBACK_ANSWER or bool(meta.get("fallback"))
+                    rec["flags"]["llm_truncated"] = bool(meta.get("llm_truncated"))
+                    if not error:
+                        rec["flags"]["code_answer"] = counter.n == 0
+                    rec["detail"]["llm_calls"] = counter.n
                     if meta.get("answer_guard") is not None:
                         rec["flags"]["guard_replaced"] = bool(meta["answer_guard"].get("replaced"))
                         rec["detail"]["answer_guard"] = meta["answer_guard"]
@@ -373,9 +457,11 @@ def run_live(items: list[dict], repeats: int, model: str, log=print) -> tuple[li
                     _fail(rec, "error", "정상 응답", error)
                 resolved = [c["result"]["company_name"] for c in calls
                             if isinstance(c["result"], dict) and c["result"].get("found") and c["result"].get("company_name")]
+                briefing = _eval_briefing(db, user) if it["expect"].get("must_briefing") else None
                 score_live(it, rec, response, calls, data_start=_data_start(db, resolved),
-                           data_end=_data_end(db, resolved))
+                           data_end=_data_end(db, resolved), briefing=briefing)
                 out.append(rec)
+                log(f"[live] {it['id']} run{run} {rec['latency_s']}s fail={[f['check'] for f in rec['failures']]}")
                 consecutive_timeouts = consecutive_timeouts + 1 if (error or "").startswith("timeout") else 0
                 if consecutive_timeouts >= ABORT_AFTER_TIMEOUTS:
                     info["aborted"] = f"연속 {consecutive_timeouts}문항 timeout으로 중단({it['id']} run{run}에서)"
@@ -383,8 +469,8 @@ def run_live(items: list[dict], repeats: int, model: str, log=print) -> tuple[li
                     break
             if info.get("aborted"):
                 break
-                log(f"[live] {it['id']} run{run} {rec['latency_s']}s fail={[f['check'] for f in rec['failures']]}")
     finally:
+        counter.restore()
         info["deleted_reports"] = _delete_eval_user(db, user)
         db.close()
         log(f"[live] 평가 계정과 리포트 {info['deleted_reports']}건 삭제")
@@ -418,6 +504,10 @@ METRICS = [
     ("must_contain_rate", "flag", "contain_ok", True),
     ("forbidden_violation_rate", "flag", "forbidden", False),
     ("data_date_rate", "flag", "data_date_ok", True),
+    ("briefing_link_accuracy", "flag", "briefing_ok", True),
+    ("number_attachment_rate", "flag", "attach_ok", True),
+    ("code_answer_rate", "flag", "code_answer", True),
+    ("loop_rate", "flag", "llm_truncated", False),
     ("stability_answer_rate", "flag", "answered_ok", True),
     ("guard_replacement_rate", "flag", "guard_replaced", False),
     ("fallback_rate", "flag", "fallback", False),
@@ -463,7 +553,8 @@ def summarize(records: list[dict]) -> dict:
     return out
 
 
-_CHECK_PRIORITY = ["entity_default", "company", "entity_strict", "period_label", "refusal", "partial", "number_support", "data_date", "answered", "forbidden_expression",
+_CHECK_PRIORITY = ["entity_default", "company", "entity_strict", "period_label", "refusal", "partial", "number_support",
+                   "attachment", "briefing", "data_date", "answered", "forbidden_expression",
                    "tool_selection", "contain", "live_period", "period_parse", "sources", "error"]
 
 

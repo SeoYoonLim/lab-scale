@@ -132,3 +132,27 @@
 {"id": "stab_02", "split": "holdout", "category": "stability", "mode": "live", "batch": 3, "question": "TIGER 미국나스닥100은 어떤 ETF야? 장단점을 설명해줘", "expect": {"companies": ["TIGER 미국나스닥100"], "must_answer": true}}
 {"id": "stab_03", "split": "dev", "category": "stability", "mode": "live", "batch": 3, "question": "KODEX 코스닥150레버리지는 어떤 구조야? 위험 요소도 알려줘", "expect": {"companies": ["KODEX 코스닥150레버리지"], "must_answer": true}}
 {"id": "stab_04", "split": "holdout", "category": "stability", "mode": "live", "batch": 3, "question": "KODEX 200은 어떤 상품이고 투자할 때 뭘 조심해야 해?", "expect": {"companies": ["KODEX 200"], "must_answer": true}}
+{"id": "grd_26", "batch": 4, "split": "dev", "category": "grounding", "mode": "live", "question": "삼성전자 3개월 수익률 알려줘", "expect": {"companies": ["삼성전자"]}}
+{"id": "grd_27", "batch": 4, "split": "holdout", "category": "grounding", "mode": "live", "question": "SK하이닉스 최근 한 달 동안 최고가와 최저가는 언제 얼마였어?", "expect": {"companies": ["SK하이닉스"]}}
+{"id": "grd_28", "batch": 4, "split": "dev", "category": "grounding", "mode": "live", "question": "삼성전자와 SK하이닉스 중 최근 한 달 동안 어디가 더 올랐어?", "expect": {"companies": ["삼성전자", "SK하이닉스"]}}
+{"id": "grd_29", "batch": 4, "split": "holdout", "category": "grounding", "mode": "live", "question": "NAVER 지난 2주 수익률은 몇 퍼센트야?", "expect": {"companies": ["NAVER"]}}
+{"id": "grd_30", "batch": 4, "split": "dev", "category": "grounding", "mode": "live", "question": "현대차 최근 3개월 중에 가장 비쌌던 날이랑 그 가격 알려줘", "expect": {"companies": ["현대차"]}}
+{"id": "grd_31", "batch": 4, "split": "dev", "category": "grounding", "mode": "live", "question": "KODEX 200 1개월 수익률이랑 그 기간 최저가 알려줘", "expect": {"companies": ["KODEX 200"]}}
+{"id": "grd_32", "batch": 4, "split": "holdout", "category": "grounding", "mode": "live", "question": "카카오랑 NAVER 최근 일주일 등락률 비교해줘", "expect": {"companies": ["카카오", "NAVER"]}}
+{"id": "grd_33", "batch": 4, "split": "dev", "category": "grounding", "mode": "live", "question": "LG에너지솔루션 최근 20거래일 중 거래량이 제일 많았던 날은?", "expect": {"companies": ["LG에너지솔루션"]}}
+{"id": "brf_01", "batch": 4, "split": "dev", "category": "briefing", "mode": "live", "question": "오늘 브리핑 해줘", "expect": {"must_briefing": true}}
+{"id": "brf_02", "batch": 4, "split": "holdout", "category": "briefing", "mode": "live", "question": "내 보유종목 오늘 어때?", "expect": {"must_briefing": true, "must_contain": ["삼성전자"]}}
+{"id": "brf_03", "batch": 4, "split": "dev", "category": "briefing", "mode": "live", "question": "관심종목 뭐 달라졌어?", "expect": {"must_briefing": true, "must_contain": ["SK하이닉스"]}}
+{"id": "brf_04", "batch": 4, "split": "holdout", "category": "briefing", "mode": "live", "question": "오늘 내 포트폴리오 상황 요약해줘", "expect": {"must_briefing": true}}
+{"id": "stab_05", "batch": 4, "split": "dev", "category": "stability", "mode": "live", "question": "TIGER 미국S&P500은 어떤 구조의 상품이고 환율 위험은 어떻게 봐야 하는지 자세히 설명해줘", "expect": {"companies": ["TIGER 미국S&P500"], "must_answer": true}}
+{"id": "stab_06", "batch": 4, "split": "holdout", "category": "stability", "mode": "live", "question": "KODEX 레버리지를 오래 들고 있으면 어떤 위험이 생기는지 길게 설명해줘", "expect": {"companies": ["KODEX 레버리지"], "must_answer": true}}
+{"id": "stab_07", "batch": 4, "split": "dev", "category": "stability", "mode": "live", "question": "삼성전자에 투자할 때 고려해야 할 위험 요인을 전반적으로 정리해줘", "expect": {"companies": ["삼성전자"], "must_answer": true}}
+{"id": "stab_08", "batch": 4, "split": "holdout", "category": "stability", "mode": "live", "question": "KODEX 200과 TIGER 200은 뭐가 다르고 어떤 점을 비교해서 봐야 해?", "expect": {"companies": ["KODEX 200", "TIGER 200"], "must_answer": true}}
+{"id": "stab_09", "batch": 4, "split": "dev", "category": "stability", "mode": "live", "question": "KODEX 2차전지산업 ETF의 특징과 투자할 때 주의할 점을 알려줘", "expect": {"companies": ["KODEX 2차전지산업"], "must_answer": true}}
+{"id": "stab_10", "batch": 4, "split": "dev", "category": "stability", "mode": "live", "question": "현대차와 기아의 사업 구조 차이와 각각의 위험 요인을 설명해줘", "expect": {"companies": ["현대차", "기아"], "must_answer": true}}
+{"id": "att_01", "batch": 4, "split": "dev", "category": "attachment", "mode": "live", "question": "삼성전자와 SK하이닉스의 최근 5일 종가와 등락률을 각각 알려줘", "expect": {"companies": ["삼성전자", "SK하이닉스"], "check_attachment": true}}
+{"id": "att_02", "batch": 4, "split": "holdout", "category": "attachment", "mode": "live", "question": "현대차와 기아 중 지난 한 달 수익률이 더 높은 쪽은 어디고 각각 몇 %야?", "expect": {"companies": ["현대차", "기아"], "check_attachment": true}}
+{"id": "att_03", "batch": 4, "split": "dev", "category": "attachment", "mode": "live", "question": "KODEX 레버리지와 KODEX 인버스의 최근 일주일 움직임을 숫자로 비교해줘", "expect": {"companies": ["KODEX 레버리지", "KODEX 인버스"], "check_attachment": true}}
+{"id": "att_04", "batch": 4, "split": "holdout", "category": "attachment", "mode": "live", "question": "셀트리온과 삼성바이오로직스 최근 2주 최고가를 각각 알려줘", "expect": {"companies": ["셀트리온", "삼성바이오로직스"], "check_attachment": true}}
+{"id": "att_05", "batch": 4, "split": "dev", "category": "attachment", "mode": "live", "question": "LG화학과 삼성SDI의 최근 거래량을 비교해줘", "expect": {"companies": ["LG화학", "삼성SDI"], "check_attachment": true}}
+{"id": "att_06", "batch": 4, "split": "dev", "category": "attachment", "mode": "live", "question": "KB금융과 HMM의 최근 3개월 수익률을 각각 알려줘", "expect": {"companies": ["KB금융", "HMM"], "check_attachment": true}}
