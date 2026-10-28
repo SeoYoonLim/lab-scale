@@ -113,3 +113,11 @@ def test_value_then_parenthesized_date_is_paired_backwards():
     assert G.date_violations("최고는 225,000원(2026-10-21)입니다.", results) == ["2026-10-21 225,000원"]
     summary = results[0]["summary"]
     assert G.guard_answer(summary, S["samsung_5d"], "삼성전자 주가", today=date(2026, 10, 28))[1]["replaced"] is False
+
+
+def test_dates_inside_a_period_span_are_not_paired_with_one_day_value():
+    """dev 평가(2026-10-28)에서 ETF 비교 문장의 기간 등락률이 끝 날짜의 하루 값으로 오인돼 정상 답변이 바뀌었다."""
+    results = [r["result"] for r in S["samsung_5d"]]
+    assert G.date_violations("삼성전자는 2026-10-20~2026-10-27 5거래일간 +7.66%입니다.", results) == []
+    assert G.date_violations("10월 20일 대비 10월 27일까지 7.66% 올랐습니다.", results) == []
+    assert G.date_violations("10월 24일 종가는 225,000원입니다.", results) == ["10월 24일 225,000원"]  # 하루 값 오기는 그대로

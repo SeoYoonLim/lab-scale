@@ -287,9 +287,17 @@ def date_violations(answer: str, results: list, question: str = "", today=None) 
                 if values and i + 1 < len(dates) and sentence[:dates[i + 1][0].start()].rstrip().endswith("(") and len(
                         [n for n in extract_numbers(sentence[m.end():dates[i + 1][0].start()]) if _value_like(n)]) == 1:
                     values = []
+            # 기간 표시 속 날짜("2026-10-21~2026-10-28 5거래일간 +7.96%", "10월 20일 대비")는 하루 값과 짝이 아니다
+            # (dev 평가에서 ETF 비교 문장의 기간 등락률이 끝 날짜의 값으로 오인돼 정상 답변이 바뀌었다)
+            if values and (sentence[:m.start()].rstrip().endswith("~") or _RANGE_WORDS_RE.search(
+                    sentence[m.end():m.end() + sentence[m.end():].find(values[0].raw)])):
+                values = []
             if values and not is_supported(values[0], rows[md]):
                 bad.append(f"{m.group(0).strip()} {values[0].raw}")
     return bad
+
+
+_RANGE_WORDS_RE = re.compile(r"~|부터|까지|대비|거래일|영업일|동안|기간|일간|주간")
 
 
 def target_violations(answer: str, records: list[dict]) -> list[str]:

@@ -1270,7 +1270,13 @@ def _answer_simple_quote(question: str, companies: list | None):
         answer += "\n\n" + leverage_notice(company.name, kind)
     record = {"tool_name": "stock_tool", "arguments": args, "result": result, "called_at": called_at,
               "elapsed_ms": round((time.perf_counter() - started) * 1000)}
-    return _code_answer(_with_freshness(answer, question, [record]), [record])
+    return _code_answer(_with_intraday_note(_with_freshness(answer, question, [record]), [record]), [record])
+
+
+def _with_intraday_note(answer: str, records: list[dict]) -> str:
+    """장중이라 오늘 행(장중 값)을 빼고 답했으면 그 사실을 밝힌다(왜 오늘이 아니라 직전 거래일 종가인지)."""
+    note = code_answers.intraday_note(records)
+    return f"{answer}\n\n{note}" if note else answer
 
 
 # 기간 창을 만들 때 시작일 이전(기준 종가)과 연휴로 빈 날을 감안해 더 읽는 행 수
@@ -1322,7 +1328,7 @@ def _answer_period_quote(question: str, companies: list | None):
             answer += "\n\n" + leverage_notice(c.name, lk)
     records = [{"tool_name": "stock_tool", "arguments": {"ticker": c.name, "period_days": parsed.period_days},
                 "result": r, "called_at": called_at, "elapsed_ms": 0} for c, r in zip(companies, results)]
-    return _code_answer(answer, records)
+    return _code_answer(_with_intraday_note(answer, records), records)
 
 
 def _answer_briefing(question: str, user_id: int | None):

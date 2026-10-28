@@ -17,7 +17,7 @@ import re
 from datetime import date, datetime
 
 from app import routing
-from app.briefing import drop_open_session
+from app.briefing import KST, drop_open_session
 from app.korean import josa
 from app.tools.stock_tool import summarize_period
 
@@ -68,7 +68,9 @@ def window_result(company, rows_desc: list, start: date, now: datetime, called_v
     창은 날짜 기준이다: start(질문 기간의 시작일, parse_period) 이후의 행을 쓰고, start 직전 거래일 종가를 기준으로 삼는다.
     행 수(N거래일) 기준이면 연휴로 행이 없는 날만큼 창이 앞으로 밀린다("한 달"이 9월 중순부터가 됨). rows_desc에는 기준 종가가
     들어갈 만큼 여유 있게(start 이전 행 포함) 넘긴다. 창이 2거래일이 안 되거나 기준 종가가 없으면 None."""
-    rows = drop_open_session(list(rows_desc), now, lambda r: r.price_date)
+    kept = drop_open_session(list(rows_desc), now, lambda r: r.price_date)
+    dropped = len(kept) < len(rows_desc)
+    rows = kept
     inside = [r for r in rows if r.price_date >= start]
     before = [r for r in rows if r.price_date < start]
     base_row = before[0] if before else None
@@ -91,7 +93,22 @@ def window_result(company, rows_desc: list, start: date, now: datetime, called_v
         **summary,
         "prices": prices,
         "called_via": called_via,
+        **({"intraday_excluded": _today_iso(now)} if dropped else {}),
     }
+
+
+def _today_iso(now: datetime) -> str:
+    return now.astimezone(KST).date().isoformat()
+
+
+def intraday_note(records: list[dict]) -> str | None:
+    """장중이라 오늘 행을 뺀 결과가 있으면 그 사실을 밝히는 문장. 없으면 None."""
+    for rec in records:
+        r = rec.get("result")
+        if isinstance(r, dict) and r.get("intraday_excluded") and r.get("prices"):
+            last = r["prices"][-1]["price_date"]
+            return f"오늘({r['intraday_excluded']})은 장 마감(15:30) 전이라 직전 거래일 {last} 종가 기준입니다."
+    return None
 
 
 _PERIOD_KEYS = ("summary", "period_change_pct", "period_start_date", "period_end_date", "trading_days")
@@ -108,6 +125,8 @@ def latest_of(result, now: datetime):
     latest = prices[-1]
     out = {k: v for k, v in result.items() if k not in _PERIOD_KEYS}
     out.update(period_days=1, change_pct=latest.get("change_pct"), volume=latest.get("volume"), prices=[latest])
+    if len(prices) < len(result["prices"]):
+        out["intraday_excluded"] = _today_iso(now)
     return out
 
 

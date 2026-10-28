@@ -129,3 +129,16 @@ class TestAgentPath:
 
     def test_not_a_template_question(self, fake):
         assert agent._answer_period_quote("삼성전자 이틀 동안 왜 올랐어?", [SAMSUNG]) is None
+
+
+def test_intraday_note_is_added_only_when_todays_row_was_dropped():
+    result = {"found": True, "company_name": "삼성전자",
+              "prices": [{"price_date": "2026-10-27", "close_price": 225000.0, "volume": 10, "change_pct": 5.39},
+                         {"price_date": "2026-10-28", "close_price": 238000.0, "volume": 3, "change_pct": 5.78}]}
+    during = C.latest_of(result, DURING)
+    assert C.intraday_note([{"result": during}]) == "오늘(2026-10-28)은 장 마감(15:30) 전이라 직전 거래일 2026-10-27 종가 기준입니다."
+    assert C.intraday_note([{"result": C.latest_of(result, AFTER_CLOSE)}]) is None
+    w = C.window_result(SAMSUNG, rows([100.0, 110.0, 105.0, 120.0]), date(2026, 10, 26), DURING, "t")
+    assert w["intraday_excluded"] == "2026-10-28"
+    assert "intraday_excluded" not in C.window_result(SAMSUNG, rows([100.0, 110.0, 105.0, 120.0]), date(2026, 10, 26),
+                                                      AFTER_CLOSE, "t")
