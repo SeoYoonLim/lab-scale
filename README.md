@@ -10,7 +10,7 @@
 ## 지금 상태 요약 (2026-10-14 기준)
 
 **한 줄 요약:** 백엔드(API + 에이전트 + 데이터 수집·일괄 갱신 + 로그인 + 관심종목/모의투자 + 포트폴리오 AI 진단과 이력 + 환율 영향 분석 +
-시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응 + 오늘의 개인화 브리핑(API·채팅))는 동작하고, 빠른 테스트 **2856개**가 통과합니다(`pytest`, 순수 로직 2542 + 개발 DB 통합 314).
+시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응 + 오늘의 개인화 브리핑(API·채팅))는 동작하고, 빠른 테스트 **2943개**가 통과합니다(`pytest`, 순수 로직 2628 + 개발 DB 통합 315).
 실제 Ollama를 부르는 slow 테스트 61개는 기본에서 빠지고 `pytest -m slow`로 따로 돌립니다. 백엔드 작업 브랜치는 `feature/backend`(원격 push 완료)이고
 아직 main에 병합하지 않았습니다. 프론트엔드는 서윤님이 `feature/frontend`에서 React + Vite + zod로 진행 중이며, 2026-10-14에 실제 백엔드 응답을
 프론트의 zod 스키마로 검증했을 때 불일치가 없었습니다(프론트 테스트 20개·빌드·lint 통과). 남은 큰 일은 화면 연동과 아래 "알려진 한계"입니다.
@@ -44,6 +44,7 @@
 | DELETE | `/api/portfolio/diagnosis/{id}` | 필요 | 내 진단 한 건 삭제(204). 남의 것/없는 것은 404 |
 | GET | `/api/disclaimer` | 공개 | 서비스 면책 문구 `{"text": "..."}`. 같은 문구가 `POST /api/research`·`GET /api/research/{id}` 응답의 `disclaimer` 필드에도 있음(목록에는 없음) |
 | GET | `/api/status` | 공개 | 데이터 기준일: 소스별 최신 날짜, 지수 `stale`(2영업일 이상 뒤처지면 true), 마지막 `refresh_data` 결과(`last_refresh`, 없으면 null). `is_realtime`은 항상 false |
+| GET | `/api/health` | 공개 | 서비스 상태: DB 연결, 마이그레이션 head 일치, Ollama 연결·모델 설치/로딩, 마지막 시세 날짜·stale. 검사마다 2초 상한·병렬, 실패해도 200 + `status: "degraded"` 와 사유(주소·버전 미노출) |
 | GET | `/api/stocks/{ticker}/price-history` | 공개 | 주가 추이 차트용 일별 시세(종가·거래량·등락률·시가·고가·저가, 날짜 오름차순). 쿼리 `days`는 1~90(기본 90)이고 달력 일이 아니라 **최근 N거래일**. 주식은 2026-06-26부터, ETF는 2026-07-16부터 데이터가 있어 90개가 안 될 수 있으니 `count`로 확인(에러 아님). 주가가 없으면 200에 `items=[]` |
 | GET | `/api/stocks/{ticker}/event-reactions` | 공개 | 뉴스·공시 이후 주가 반응. 기준 종가 대비 1/5/20거래일 수익률, 시장 지수 대비 초과수익률, 거래량 비율, 같은 구간의 다른 사건 수를 코드로 계산(LLM 없음). ETF는 뉴스만. 쿼리 `event_type`(disclosure/news/all)·`limit`(1~30, 유형별)·`since_days`(기본 60, 최대 120). 시간적 선후관계일 뿐 인과가 아니라는 고정 `disclaimer` 포함 |
 | GET | `/api/briefing` | 필요 | 오늘의 개인화 브리핑: 보유종목(모의투자)·관심종목 기준으로 코스피/코스닥/환율 요약, 종목별 최신 종가·1일/5거래일 등락률·거래량 배수(직전 20거래일 평균 대비)·최근 7일 뉴스·공시, 규칙 기반 flag(등락 3%·7%, 거래량 2배, 신규 공시, 비중 40%)와 상위 5개 highlights, 포트폴리오 요약(평가금액·비중·손익·전일 대비). **LLM 없이 코드가 DB 값으로 계산**하고 문장은 관찰 사실만 쓴다. 읽기 전용(계좌를 만들지 않음). `news_limit` 1~5. 장 마감(15:30) 전에는 오늘 행을 쓰지 않는다. 응답 필드는 [backend/API.md](backend/API.md) |
@@ -54,7 +55,7 @@
 프론트가 할 일(토큰 저장, 401 처리 등)은 [backend/API.md](backend/API.md)의 "인증" 절에 정리돼 있습니다.
 
 프론트에서 특히 챙길 것: POST는 로컬 LLM이라 **2~25초**(로딩 상태와 60초 이상 타임아웃) / 에러 `detail`은 404·502·503에서는 문자열, 422에서는 배열
-/ `report_id`는 저장 실패 시 null / 허용 origin은 `localhost:5173`, `localhost:3000` 두 개뿐(다른 포트면 알려주세요).
+/ `report_id`는 저장 실패 시 null / 허용 origin은 기본 `localhost:5173`, `127.0.0.1:5173`(`CORS_ALLOW_ORIGINS`로 변경, 2026-10-28에 3000은 기본에서 빠짐) / 요청이 많으면 429(`Retry-After`, 아래 "운영 설정").
 단 **뉴스·공시 이후 주가 반응 질문은 LLM 호출이 없어 즉시(0.1초 안팎) 응답**합니다(`EVENT_REACTION_LLM_INTERPRETATION` 기본 꺼짐, 아래 "사건 이후 주가 반응" 절).
 
 ### DB 스키마 개요
@@ -332,7 +333,7 @@ PRD 비기능 요구(일반 API P95 500ms 이내)는 만족합니다. 조회 API
 
 ```
 브라우저(React + Vite, 서윤님 담당, feature/frontend)
-        │  HTTP/JSON  (CORS: localhost:5173, localhost:3000)
+        │  HTTP/JSON  (CORS: CORS_ALLOW_ORIGINS, 기본 localhost:5173·127.0.0.1:5173)
         ▼
 FastAPI  ──  POST /api/research ─▶ 에이전트(app/agent.py)
 (backend/app)                        │  Ollama llama3.1:8b, tool calling + few-shot
@@ -444,7 +445,9 @@ python -m scripts.refresh_data --dry-run                  # 실제 호출 없이
 python -m scripts.refresh_data                            # 전 단계
 python -m scripts.refresh_data --only prices,index,fx     # 일부 단계만 (prices,index,fx,news,embed,content)
 python -m scripts.refresh_data --skip news,embed,content  # 일부 단계 제외
-python -m scripts.refresh_data --days 30 --timeout-min 30 # 조회 기간(기본 10일), 단계별 제한 시간(기본 30분)
+python -m scripts.refresh_data --days 30 --timeout-min 30 # 조회 기간 직접 지정, 단계별 제한 시간(기본 30분)
+# --days를 생략하면(2026-10-28부터) 마지막 시세 날짜와 최근 30일 안의 빈 평일 중 이른 날부터 오늘 + 3일(최소 10, 상한 60).
+# 예전 기본값(10일 고정)은 갱신을 2주 쉬면 공백이 남았다(10-15, 10-16). 휴장일 달력이 없어 공휴일도 빈 평일로 보여 기간이 한 달쯤 될 수 있다.
 ```
 
 공시 원문은 `disclosure.content`에 저장되어 `rag_search_tool`이 근거 요약문으로 LLM에 보여줍니다. 임베딩 텍스트에는 일부러 넣지 않습니다
@@ -461,9 +464,9 @@ python -m scripts.refresh_data --days 30 --timeout-min 30 # 조회 기간(기본
 `backend/`에서 실행합니다. 세 단계로 나뉩니다(마커: `integration`, `slow`).
 
 ```bash
-pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-28 3차 라운드 후 2856개 통과, 약 27초). slow는 기본 제외
-pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 2542개)
-pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(314개). DB가 꺼져 있으면 자동 skip
+pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-28 안정화 후 2943개 통과, 약 30초). slow는 기본 제외
+pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 2628개)
+pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(315개). DB가 꺼져 있으면 자동 skip
 pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)를 부르는 테스트(61개, 느리고 비결정적)
 ```
 
@@ -494,10 +497,10 @@ pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)
 
 **CI에서 제외되는 테스트(숫자로)**
 
-- `integration` 314개 중 **50개는 CI에서 제외**됩니다(`needs_collected_data` 마커). 수집된 시세·뉴스·공시·ETF 시세·환율·시장 지수(또는 인증 도입 전 옛 리포트)가 DB에 있어야 통과하는
-  테스트라서, 종목 목록만 시드한 CI의 빈 DB에서는 통과할 수 없습니다. 나머지 264개는 CI에서 실제로 돕니다. 로컬 dev DB에서는 마커가 있어도 **314개 전부** 평소처럼 돕니다.
+- `integration` 315개 중 **50개는 CI에서 제외**됩니다(`needs_collected_data` 마커). 수집된 시세·뉴스·공시·ETF 시세·환율·시장 지수(또는 인증 도입 전 옛 리포트)가 DB에 있어야 통과하는
+  테스트라서, 종목 목록만 시드한 CI의 빈 DB에서는 통과할 수 없습니다. 나머지 265개는 CI에서 실제로 돕니다. 로컬 dev DB에서는 마커가 있어도 **315개 전부** 평소처럼 돕니다.
   제외 개수는 CI 로그와 job summary에 숫자로 찍히고, 상한(`MAX_EXCLUDED=50`)을 넘으면 CI가 실패합니다(마커로 테스트를 슬그머니 늘려 빼지 못하게).
-- 분류(빈 DB 기준): **a** 스스로 데이터를 만들어 통과 65, **b** 종목 시드로 해결 199, **c** 수집 데이터 필요 50(위 제외, 49번째는 브리핑 숫자 독립 재계산 대조, 50번째는 채팅 기간 수익률 템플릿의 DB 대조 테스트), **d** Ollama 필요 0.
+- 분류(빈 DB 기준): **a** 스스로 데이터를 만들어 통과 66, **b** 종목 시드로 해결 199, **c** 수집 데이터 필요 50(위 제외, 49번째는 브리핑 숫자 독립 재계산 대조, 50번째는 채팅 기간 수익률 템플릿의 DB 대조 테스트), **d** Ollama 필요 0.
 - 그 밖의 skip은 조용히 통과로 보이지 않게 CI에서 **실패**로 바뀝니다(`CI_FAIL_ON_SKIP=1`, `backend/tests/ci_guard.py`).
 - `slow` 61개(실제 Ollama 호출)와 `evals` live 모드는 CI에서 돌지 않습니다: Ollama(llama3.1:8b)가 필요하고 느리며 비결정적이기 때문입니다. 로컬에서 `pytest -m slow`, `python -m evals.run_eval --mode live`.
 
@@ -508,7 +511,7 @@ docker run -d --name ci_check_db -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci_dum
 cd backend
 export DATABASE_URL=postgresql+psycopg://ci:ci_dummy_pw@localhost:25432/ci_db   # PowerShell: $env:DATABASE_URL="..."
 python -m alembic upgrade head && python -m scripts.ci_seed
-CI_FAIL_ON_SKIP=1 pytest -m "integration and not slow and not needs_collected_data"      # 264개 통과, skip 0
+CI_FAIL_ON_SKIP=1 pytest -m "integration and not slow and not needs_collected_data"      # 265개 통과, skip 0
 docker rm -f ci_check_db
 ```
 
@@ -563,6 +566,22 @@ python -m evals.compare evals/results/summary_baseline_2026-10-27.json evals/res
 - "삼성전자 왜 떨어졌어?" — 원인 질문 경로는 LLM이 기사 속 주장을 그대로 옮기고, 종가를 기사 속 값(23만 2,000원)으로 잘못 쓴 적이 있습니다(DB 값은 235,000원).
 - "삼성전자 최근 뉴스 알려줘" — 사건 반응 경로로 새지는 않지만(`news_tool`) 기사 본문 속 수치("-7.39%")가 그대로 보입니다.
 - 시연 직전에 데이터를 갱신하지 않았다면 사건 반응의 "최근 사건"이 달라집니다.
+
+## 운영 설정과 한계 (2026-10-28 안정화)
+
+설정은 환경변수로 받고 비밀값은 코드에 두지 않는다(`backend/.env`, 예시 `backend/.env.example`). 전체 표와 레이트 리밋 한도는 [backend/API.md](backend/API.md)의 "운영 설정".
+
+- `APP_ENV`(기본 development): production이면 약한 `JWT_SECRET`(예시 문구·반복 문자)으로 기동하지 않는다. 없거나 32자 미만은 모든 모드에서 거부(기존).
+- `CORS_ALLOW_ORIGINS`(기본 `http://localhost:5173,http://127.0.0.1:5173`). credentials는 쓰지 않는다(Bearer 헤더).
+- 레이트 리밋(`RATE_LIMIT_*`, 기본 켜짐): 로그인 IP당 분당 10회, 같은 아이디+IP 5회 실패면 5분 잠금, 가입 IP당 시간당 10회, 주문 사용자당 분당 30회, AI 질문 사용자당 분당 6회 + 동시 1건. 초과는 429 + `Retry-After`.
+- 외부 호출(`app/http_retry.py`): (연결, 읽기) timeout, 일시적 오류(연결·timeout·5xx·429)만 최대 2회 지수 백오프 재시도, 4xx는 바로 실패. 실시간 시세는 재시도 없이 최대 약 4초 뒤 DB 종가 폴백(기존 폴백 그대로).
+- `GET /api/health`로 DB·마이그레이션·Ollama·데이터 기준일을 확인한다. 처리되지 않은 예외는 500 `{"detail": "서버 오류가 발생했습니다."}`(상세는 서버 로그만). 요청 로그는 메서드·경로·상태·ms·user id만.
+
+**한계(막지 못하는 것)**
+- 레이트 리밋은 메모리 기반이라 서버 재시작 시 초기화되고 단일 프로세스에만 유효하다. 프록시 뒤에서는 모든 요청이 같은 IP로 보인다. 여러 IP의 분산 대입은 아이디+IP 잠금으로 막히지 않는다. 공개 조회 API에는 한도가 없다.
+- 토큰 폐기(로그아웃·비밀번호 변경 시 무효화)가 없다: 발급된 토큰은 24시간 동안 유효하다. 리프레시 토큰도 없다.
+- FinanceDataReader는 timeout을 받지 않아 별도 스레드 상한(60초)으로 끊는다. 상한을 넘긴 스레드는 끝날 때까지 남는다(배치 스크립트에서만 씀).
+- HTTPS·보안 헤더·배포용 프로세스 관리는 범위 밖이다(로컬 시연 전제).
 
 ## 알려진 한계 (요약, 2026-10-14 기준)
 

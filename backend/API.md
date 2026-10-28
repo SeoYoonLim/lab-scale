@@ -19,7 +19,7 @@ Authorization: Bearer <access_token>
 | 구분 | 엔드포인트 |
 | --- | --- |
 | **인증 필요** | `/api/auth/me`, `/api/briefing`(GET), `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET) |
-| 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status`, `/api/stocks/{ticker}/event-reactions`, `/api/stocks/{ticker}/price-history` |
+| 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status`, `/api/health`, `/api/stocks/{ticker}/event-reactions`, `/api/stocks/{ticker}/price-history` |
 
 - 데이터는 **사용자별로 분리**된다. 리서치 리포트 목록/조회/삭제/이어 쓰기(`previous_report_id`)는 본인 것만 대상이고,
   **남의 리포트 ID는 없는 리포트와 똑같이 404**다(403이 아니다 — 그 ID가 존재하는지 드러내지 않기 위해).
@@ -55,13 +55,15 @@ Authorization: Bearer <access_token>
 
 ## CORS
 
-허용 origin은 아래 두 개뿐이다.
+허용 origin은 환경변수 `CORS_ALLOW_ORIGINS`(쉼표 구분)로 정한다. 기본값은 아래 두 개다(2026-10-28부터).
 
 - `http://localhost:5173` (Vite)
-- `http://localhost:3000` (CRA / Next)
+- `http://127.0.0.1:5173` (Vite, IP 주소로 열었을 때)
 
-**프론트가 다른 포트나 도메인에서 뜬다면 미리 알려주세요.** `backend/app/main.py`의 `allow_origins`에 추가해야 하고,
-추가 전에는 브라우저가 CORS 오류로 요청을 막습니다(curl/Postman은 영향 없음).
+2026-10-28 전 기본값은 `http://localhost:5173`, `http://localhost:3000`이었다(**3000은 기본에서 빠짐**, 필요하면 `CORS_ALLOW_ORIGINS`에 추가).
+지금 프론트는 Vite 개발 서버의 프록시(`/api` → `http://localhost:8000`)로 같은 출처 요청을 보내 CORS를 거치지 않는다.
+인증은 Authorization 헤더(Bearer)라 credentials(쿠키)는 허용하지 않는다. 허용하지 않은 origin의 사전 요청(OPTIONS)은 400이다.
+**프론트가 다른 포트나 도메인에서 뜬다면** `CORS_ALLOW_ORIGINS`에 추가해야 하고, 추가 전에는 브라우저가 CORS 오류로 요청을 막습니다(curl/Postman은 영향 없음).
 
 ## 종목 유형: 주식과 ETF (2026-10-14 추가, 1단계)
 
@@ -138,6 +140,7 @@ ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응�
 | DELETE | `/api/portfolio/diagnosis/{id}` | 필요 | 내 진단 한 건 삭제 |
 | GET | `/api/disclaimer` | 공개 | 서비스 면책 문구(`{"text": "..."}`) |
 | GET | `/api/status` | 공개 | 데이터 기준일(소스별 최신 날짜, 지수 stale 여부, 마지막 갱신 결과). 푸터의 "데이터 기준일" 표시용 |
+| GET | `/api/health` | 공개 | 서비스 상태(DB·마이그레이션·Ollama·데이터 기준일, 항상 200, `ok`/`degraded`) |
 | GET | `/api/stocks/{ticker}/price-history` | 공개 | 주가 추이 차트용 일별 시세(종가·거래량·등락률·시가·고가·저가). `days`는 1~90(기본 90)이고 **최근 N거래일**(달력 일 아님). 날짜 오름차순. 주식은 2026-06-26부터, ETF는 2026-07-16부터 데이터가 있어 90개가 안 될 수 있다(`count`로 확인) |
 | GET | `/api/briefing` | 필요 | 오늘의 개인화 브리핑(보유·관심종목 기준 시장 요약, 종목별 등락률·거래량 배수·뉴스·공시, flag, 포트폴리오 요약). LLM 없이 코드가 계산하고 읽기 전용(계좌를 만들지 않음). `news_limit` 1~5 |
 | GET | `/api/stocks/{ticker}/event-reactions` | 공개 | 뉴스·공시 이후 주가 반응(1/5/20거래일 수익률, 지수 대비 초과수익률, 거래량 비율)을 코드로 계산. `event_type`/`limit`(1~30, 유형별)/`since_days`(최대 120) 쿼리. 시간적 선후관계일 뿐 인과가 아님 |
@@ -2644,9 +2647,89 @@ curl "http://localhost:8000/api/briefing?news_limit=3" -H "Authorization: Bearer
 
 ---
 
+## GET /api/health
+
+서비스 상태 확인(공개, 로그인 불필요). 발표·시연 전 점검용이다. 검사마다 상한 2초로 **병렬** 실행하고, 하나가 실패하거나 멈춰도
+**항상 200**으로 `status: "degraded"`와 사유를 돌려준다(예외 없음). 응답에는 비밀값·내부 주소·버전(마이그레이션 리비전, 모델 태그)을 넣지 않는다.
+
+```bash
+curl http://localhost:8000/api/health
+```
+
+### 응답 200 (2026-10-28 실제 응답, dev DB)
+
+```json
+{"status": "ok", "checks": {"db": {"ok": true}, "migrations": {"ok": true}, "ollama": {"ok": true, "model_installed": true, "model_loaded": false}, "data": {"ok": true, "latest_date": "2026-10-28", "stale": false}}}
+```
+
+| 검사 | ok 조건 | 추가 필드 | 실패 사유(`reason`) 예 |
+| --- | --- | --- | --- |
+| `db` | `SELECT 1` 성공 | - | "연결 또는 조회 실패(OperationalError)", "응답 시간 초과" |
+| `migrations` | DB의 alembic 리비전 == 코드의 head | - | "DB 스키마가 코드의 최신 마이그레이션과 다릅니다" |
+| `ollama` | 서버 연결 + 기본 모델(llama3.1:8b) 설치 | `model_installed`, `model_loaded`(메모리에 올라가 있는지. false여도 ok - 첫 질문이 몇 초 느릴 뿐) | "기본 모델이 설치되어 있지 않습니다", "연결 또는 조회 실패(ConnectionError)" |
+| `data` | 마지막 시세 날짜가 2영업일 이상 뒤처지지 않음(`GET /api/status`와 같은 규칙) | `latest_date`(null 가능), `stale` | "시세 데이터가 오래됐습니다", "시세 데이터가 없습니다" |
+
+- `status`는 모든 검사가 ok면 `"ok"`, 하나라도 아니면 `"degraded"`. 사유는 예외 **종류만** 쓴다(메시지에는 주소·SQL이 들어갈 수 있어 내보내지 않음).
+- 실패한 검사가 있어도 2초 남짓이면 응답한다. 측정: 정상 23ms(첫 호출 162ms).
+
+---
+
+## 운영 설정 (환경변수, 2026-10-28)
+
+비밀값은 코드에 두지 않는다(`backend/.env`, 커밋 금지, 예시는 `backend/.env.example`). 아래는 비밀값이 아닌 설정과 기본값이다.
+
+| 환경변수 | 기본값 | 뜻 |
+| --- | --- | --- |
+| `APP_ENV` | `development` | `production`이면 약한 `JWT_SECRET`(예시 문구·반복 문자)으로 **기동하지 않는다**. 개발이면 경고 로그만 |
+| `JWT_SECRET` | (없음, 필수) | 32자 이상. 없거나 짧으면 모든 모드에서 기동 거부(기존) |
+| `CORS_ALLOW_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 쉼표 구분 허용 origin. `*`면 전부 허용(credentials는 항상 끔) |
+| `RATE_LIMIT_ENABLED` | `1` | `0`/`false`/`off`면 레이트 리밋을 끈다(테스트가 끈다) |
+| `RATE_LIMIT_LOGIN_PER_MIN` | `10` | IP당 분당 로그인 시도 |
+| `LOGIN_LOCK_FAILURES` / `LOGIN_LOCK_SECONDS` | `5` / `300` | 같은 아이디+IP 연속 실패 5회면 300초 잠금(성공하면 초기화) |
+| `RATE_LIMIT_SIGNUP_PER_HOUR` | `10` | IP당 시간당 가입 |
+| `RATE_LIMIT_ORDERS_PER_MIN` | `30` | 사용자당 분당 모의투자 주문 |
+| `RATE_LIMIT_RESEARCH_PER_MIN` | `6` | 사용자당 분당 AI 질문(`POST /api/research`) |
+| `RATE_LIMIT_RESEARCH_CONCURRENT` | `1` | 사용자당 동시에 처리 중인 AI 질문 |
+| `OLLAMA_HOST` | `http://127.0.0.1:11434` | `/api/health`의 Ollama 검사 주소(에이전트는 ollama 라이브러리 기본값과 같다) |
+
+### 레이트 리밋 (429)
+
+| 대상 | 기준 | 기본 한도 | 순서 |
+| --- | --- | --- | --- |
+| `POST /api/auth/login` | IP | 분당 10회 | 인증 전이라 맨 먼저 |
+| `POST /api/auth/login` 연속 실패 | 아이디 + IP | 5회 실패면 5분 잠금 | IP 한도 다음. 없는 아이디도 똑같이 세서 응답으로 계정 존재 여부가 드러나지 않는다 |
+| `POST /api/auth/signup` | IP | 시간당 10회 | 맨 먼저 |
+| `POST /api/portfolio/orders` | 사용자 | 분당 30회 | 인증(401) 다음 |
+| `POST /api/research` | 사용자 | 분당 6회 + 동시 1건 | 인증(401) 다음. 처리 중인 질문이 있으면 두 번째는 429(`Retry-After: 5`) |
+
+```
+HTTP/1.1 429 Too Many Requests
+Retry-After: 300
+
+{ "detail": "요청이 너무 많습니다. 300초 후 다시 시도해주세요." }
+```
+
+- 막는 것: 한 IP의 로그인·가입 반복, 같은 아이디+IP의 비밀번호 대입, 한 사용자의 주문 폭주와 AI 질문 폭주·동시 질문(Ollama 점유).
+- **못 막는 것(한계)**: 메모리 기반이라 서버를 재시작하면 초기화되고, 워커·인스턴스가 여럿이면 각자 따로 센다(단일 프로세스 가정).
+  IP는 `request.client.host`(직접 연결한 주소)라 프록시 뒤에서는 모든 사용자가 같은 IP로 보여 IP 한도를 함께 쓴다(`X-Forwarded-For`는 위조될 수 있어 믿지 않음).
+  여러 IP에서 한 아이디를 노리는 분산 대입은 아이디+IP 잠금으로 막히지 않는다(정상 사용자를 잠그지 않기 위한 선택). 공개 조회 API(시세·종목 목록 등)에는 한도가 없다.
+- 프론트: 429면 `detail`을 그대로 보여주고 `Retry-After`초 동안 같은 요청 버튼을 막으면 된다.
+
+### 서버 오류 (500)
+
+처리되지 않은 예외는 `500 {"detail": "서버 오류가 발생했습니다."}`다(스택트레이스·내부 경로·SQL 없음, 상세는 서버 로그에만).
+2026-10-28 전에는 같은 경우 평문 `Internal Server Error`였다. 422(FastAPI 기본 형식)와 기존 401/404/409/502/503은 그대로다.
+
+### 로그
+
+요청마다 `app.access` 로거에 `메서드 경로(쿼리 제외) 상태 처리시간ms user=<id 또는 ->`만 남긴다. 3초 이상은 WARNING.
+Authorization 헤더·토큰·비밀번호·본문은 남기지 않는다. DB 오류 로그는 예외 원문 대신 종류와 SQL 문장 앞부분만(파라미터 제외).
+
+---
+
 ## 에러 응답 형식
 
-### 일반 오류 (400 / 401 / 404 / 409 / 502 / 503)
+### 일반 오류 (400 / 401 / 404 / 409 / 429 / 500 / 502 / 503)
 
 항상 `detail`이 **문자열**이다. 사용자에게 그대로 보여줘도 되는 한국어 메시지. 401에는 `WWW-Authenticate: Bearer` 헤더가 붙는다.
 
