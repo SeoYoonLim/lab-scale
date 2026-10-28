@@ -105,8 +105,14 @@ _SERIES_KEYS = ("close_price", "volume", "close_rate", "close")
 MAX_SERIES = 80
 
 
+# 숫자 근거에서 빼는 식별자 필드(2026-10-28): 종목코드 "051910"이 51,910으로 읽혀 "52,000주"가 근거 있는 값으로 통과했다
+# (검증기 holdout hv10). 코드·ID·URL은 값이 아니다. 평가기(evals/metrics.py)의 support_values는 그대로다(판정 불변).
+IDENTIFIER_KEYS = frozenset({"ticker", "code", "index_code", "pair_code", "corp_code", "stock_code", "rcept_no",
+                             "id", "report_id", "company_id", "url", "source_url", "link"})
+
+
 def support_values(obj) -> list[float]:
-    """도구 결과(dict/list/str/숫자)의 모든 숫자 값(절대값). 문자열 속 숫자도 포함한다."""
+    """도구 결과(dict/list/str/숫자)의 모든 숫자 값(절대값). 문자열 속 숫자도 포함한다. 식별자 필드(IDENTIFIER_KEYS)는 뺀다."""
     out: list[float] = []
 
     def walk(o):
@@ -118,8 +124,9 @@ def support_values(obj) -> list[float]:
         elif isinstance(o, str):
             out.extend(n.value for n in extract_numbers(o, apply_exclusions=False))
         elif isinstance(o, dict):
-            for v in o.values():
-                walk(v)
+            for k, v in o.items():
+                if k not in IDENTIFIER_KEYS:
+                    walk(v)
         elif isinstance(o, (list, tuple)):
             for v in o:
                 walk(v)
@@ -438,7 +445,7 @@ _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n")
 
 
 # 대체했을 때 원래 LLM 답변 앞부분을 기록에 남기는 길이(내부 meta.answer_guard. API 응답에는 나가지 않는다). 오탐 분석용이다.
-ORIGINAL_LOG_CHARS = 600
+ORIGINAL_LOG_CHARS = 2000
 
 
 def guard_answer(answer: str, records: list[dict], question: str = "", today=None) -> tuple[str, dict]:

@@ -176,3 +176,43 @@ def test_freshness_note_not_added_when_data_is_current():
 def test_freshness_note_satisfies_the_evaluator():
     answer = G.quote_answer(STOCK["result"]) + "\n\n" + G.freshness_note("NAVER 지금 얼마야?", [STOCK], TODAY, None)
     assert M.data_date_ok(answer, date(2026, 10, 14), TODAY) is True
+
+
+# ---------- 식별자 필드는 숫자 근거가 아니다(2026-10-28) ----------
+
+LGCHEM = {"tool_name": "stock_tool", "arguments": {"ticker": "LG화학", "period_days": 1}, "result": {
+    "found": True, "ticker": "051910", "company_name": "LG화학", "change_pct": -2.34, "volume": 402118,
+    "prices": [{"price_date": "2026-10-27", "close_price": 312500.0, "volume": 402118, "change_pct": -2.34}]}}
+
+
+def test_ticker_code_is_not_evidence():
+    """종목코드 051910이 51,910으로 읽혀 지어낸 '52,000주'가 통과했다(검증기 holdout hv10)."""
+    out, log = G.guard_answer("LG화학 거래량은 전일보다 52,000주 줄었습니다.", [LGCHEM], "LG화학 거래량 어때?")
+    assert log["replaced"] is True and log["violations"] == ["52,000주"]
+
+
+def test_price_equal_to_the_code_still_passes():
+    """가격이 우연히 종목코드와 같은 값이어도 가격 필드에 있으면 근거다(오탐 없음)."""
+    rec = {"tool_name": "stock_tool", "arguments": {}, "result": {
+        "found": True, "ticker": "051910", "company_name": "가상종목",
+        "prices": [{"price_date": "2026-10-27", "close_price": 51910.0, "volume": 1000, "change_pct": 1.0}]}}
+    assert G.guard_answer("가상종목의 종가는 51,910원입니다.", [rec], "")[1]["replaced"] is False
+
+
+def test_numbers_inside_urls_and_ids_are_not_evidence():
+    rec = {"tool_name": "news_tool", "arguments": {}, "result": {"found": True, "company_name": "삼성전자", "news": [
+        {"title": "삼성전자 소식", "url": "https://n.news.naver.com/mnews/article/030/0003479457", "id": 812345}]}}
+    assert G.support_values(rec["result"]) == []  # url 속 030·0003479457, id 812345는 근거가 아니다
+    _, log = G.guard_answer("관련 기사 번호는 3,479,457원입니다.", [rec], "")
+    assert log["violations"] == ["3,479,457원"]
+
+
+def test_evaluator_support_values_is_unchanged():
+    """평가기(evals/metrics.py)의 판정은 바꾸지 않았다: 평가기는 여전히 종목코드도 근거로 센다(서비스가 더 엄격)."""
+    assert 51910.0 in M.support_values(LGCHEM["result"]) and 51910.0 not in G.support_values(LGCHEM["result"])
+
+
+def test_replaced_answer_original_is_logged_up_to_2000_chars():
+    long = "NAVER의 현재 주가는 1,792,000원입니다. " + "가" * 3000
+    _, log = G.guard_answer(long, [STOCK], "NAVER 주가")
+    assert log["replaced"] and len(log["original"]) == G.ORIGINAL_LOG_CHARS == 2000

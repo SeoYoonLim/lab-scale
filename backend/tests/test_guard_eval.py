@@ -48,9 +48,10 @@ def test_holdout_set_recall_and_precision(holdout):
 
 def test_known_misses_are_documented(dev, holdout):
     """못 잡는 유형(한계, evals/README.md): 같은 종목 시계열의 우연한 차이·변화율과 같은 값(v18, v21), 시계열 행이 없는
-    기준일의 값(v28), '하루 동안'처럼 하루·기간 말이 함께 있는 문장(hv09), 종목코드 문자열이 숫자 근거가 됨(hv10)."""
+    기준일의 값(v28), '하루 동안'처럼 하루·기간 말이 함께 있는 문장(hv09). 종목코드 문자열이 숫자 근거가 되던 hv10은
+    2026-10-28 안정화에서 고쳤다(식별자 필드 제외)."""
     assert set(dev["missed"]) <= {"v18", "v21", "v28"}
-    assert set(holdout["missed"]) <= {"hv09", "hv10"}
+    assert set(holdout["missed"]) <= {"hv09"}
 
 
 # ---------- 규칙별 ----------
