@@ -16,6 +16,18 @@ def pytest_runtest_makereport(item, call):
 
 
 @pytest.fixture(autouse=True)
+def rate_limit_off(monkeypatch):
+    """테스트끼리 레이트 리밋에 걸리지 않게 기본은 끈다(RATE_LIMIT_ENABLED=0). 켠 상태는 tests/test_rate_limit.py가
+    이 픽스처의 설정을 덮어써(setenv 1) 따로 검증한다. 메모리 카운터는 테스트마다 비운다."""
+    from app import rate_limit
+
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "0")
+    rate_limit.reset_all()
+    yield
+    rate_limit.reset_all()
+
+
+@pytest.fixture(autouse=True)
 def jwt_secret(monkeypatch):
     """모든 테스트에 테스트마다 새로 만든 임의 JWT_SECRET을 넣는다(.env의 실제 값을 쓰지 않는다)."""
     secret = secrets.token_urlsafe(48)

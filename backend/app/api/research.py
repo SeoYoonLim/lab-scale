@@ -3,6 +3,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
 from pydantic import BaseModel, Field, field_validator
 
+from app import rate_limit
 from app.agent import ask_question
 from app.api.deps import get_current_user
 from app.auth import CurrentUser
@@ -85,14 +86,17 @@ def _report_not_found(report_id: int) -> HTTPException:
 
 @router.post("/research", response_model=ResearchResponse)
 def research(request: ResearchRequest, user: CurrentUser = Depends(get_current_user)) -> ResearchResponse:
-    if request.previous_report_id is None:
-        result = ask_question(request.question, user_id=user.id)
-    else:
-        # 이어 쓰기도 본인 리포트만. 남의 리포트 id면 없는 것과 같은 404다.
-        previous = get_report(request.previous_report_id, user_id=user.id)
-        if previous is None:
-            raise _report_not_found(request.previous_report_id)
-        result = ask_question(request.question, previous=previous, user_id=user.id)
+    # 인증(401) 다음에 사용자당 분당 횟수와 동시 1건을 본다(429). LLM이 Ollama를 오래 점유하기 때문이다(app/rate_limit).
+    rate_limit.check(rate_limit.research, user.owner_key, "RATE_LIMIT_RESEARCH_PER_MIN")
+    with rate_limit.research_slot(user.owner_key):
+        if request.previous_report_id is None:
+            result = ask_question(request.question, user_id=user.id)
+        else:
+            # 이어 쓰기도 본인 리포트만. 남의 리포트 id면 없는 것과 같은 404다.
+            previous = get_report(request.previous_report_id, user_id=user.id)
+            if previous is None:
+                raise _report_not_found(request.previous_report_id)
+            result = ask_question(request.question, previous=previous, user_id=user.id)
     return ResearchResponse(**result)
 
 

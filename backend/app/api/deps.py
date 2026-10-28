@@ -5,7 +5,7 @@
 전부 같은 401(WWW-Authenticate: Bearer)이다. 실패 사유는 응답에 구분해서 드러내지 않는다.
 """
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 
 from app.auth import CurrentUser, InvalidToken, decode_access_token, get_user
 from app.db.session import SessionLocal
@@ -46,6 +46,11 @@ def get_current_user(authorization: str | None = Header(default=None)) -> Curren
     if user is None:
         raise unauthorized()
     return user
+
+
+def client_ip(request: Request) -> str:
+    """요청을 직접 보낸 주소(request.client.host). X-Forwarded-For는 위조될 수 있어 쓰지 않는다(프록시 뒤에서는 모두 같은 IP)."""
+    return request.client.host if request.client else "unknown"
 
 
 def get_owner_key(user: CurrentUser = Depends(get_current_user)) -> str:

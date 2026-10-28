@@ -4,6 +4,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Respon
 from pydantic import BaseModel, Field
 
 import app.diagnosis_history as diagnosis_history
+from app import rate_limit
 from app.api.deps import get_current_user, get_owner_key
 from app.api.research import BIGINT_MAX
 from app.auth import CurrentUser
@@ -375,8 +376,9 @@ def create_order(request: OrderRequest, owner_key: str = Depends(get_owner_key))
     """현재가로 즉시 체결되는 매수/매도 주문(호가 단위·장 시간 체크는 범위 밖).
 
     종목 해석은 엄격 모드다(allow_fuzzy=False): 종목코드/정확한 종목명/공백·대소문자 차이/등록된 별칭만 주문되고,
-    유사 이름은 주문하지 않고 404 + "혹시 A, B 중 하나인가요?" 안내를 돌려준다.
+    유사 이름은 주문하지 않고 404 + "혹시 A, B 중 하나인가요?" 안내를 돌려준다. 사용자당 분당 주문 수를 넘으면 429(app/rate_limit).
     """
+    rate_limit.check(rate_limit.orders, owner_key, "RATE_LIMIT_ORDERS_PER_MIN")
     db = SessionLocal()
     try:
         res = resolve_company(db, request.ticker, allow_fuzzy=False)
