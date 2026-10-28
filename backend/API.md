@@ -18,7 +18,7 @@ Authorization: Bearer <access_token>
 
 | 구분 | 엔드포인트 |
 | --- | --- |
-| **인증 필요** | `/api/auth/me`, `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET) |
+| **인증 필요** | `/api/auth/me`, `/api/briefing`(GET), `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET) |
 | 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status`, `/api/stocks/{ticker}/event-reactions`, `/api/stocks/{ticker}/price-history` |
 
 - 데이터는 **사용자별로 분리**된다. 리서치 리포트 목록/조회/삭제/이어 쓰기(`previous_report_id`)는 본인 것만 대상이고,
@@ -139,6 +139,7 @@ ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응�
 | GET | `/api/disclaimer` | 공개 | 서비스 면책 문구(`{"text": "..."}`) |
 | GET | `/api/status` | 공개 | 데이터 기준일(소스별 최신 날짜, 지수 stale 여부, 마지막 갱신 결과). 푸터의 "데이터 기준일" 표시용 |
 | GET | `/api/stocks/{ticker}/price-history` | 공개 | 주가 추이 차트용 일별 시세(종가·거래량·등락률·시가·고가·저가). `days`는 1~90(기본 90)이고 **최근 N거래일**(달력 일 아님). 날짜 오름차순. 주식은 2026-06-26부터, ETF는 2026-07-16부터 데이터가 있어 90개가 안 될 수 있다(`count`로 확인) |
+| GET | `/api/briefing` | 필요 | 오늘의 개인화 브리핑(보유·관심종목 기준 시장 요약, 종목별 등락률·거래량 배수·뉴스·공시, flag, 포트폴리오 요약). LLM 없이 코드가 계산하고 읽기 전용(계좌를 만들지 않음). `news_limit` 1~5 |
 | GET | `/api/stocks/{ticker}/event-reactions` | 공개 | 뉴스·공시 이후 주가 반응(1/5/20거래일 수익률, 지수 대비 초과수익률, 거래량 비율)을 코드로 계산. `event_type`/`limit`(1~30, 유형별)/`since_days`(최대 120) 쿼리. 시간적 선후관계일 뿐 인과가 아님 |
 
 아래 각 엔드포인트의 에러 표에는 401을 반복해 적지 않았다. **인증 필요 API는 모두 위 "인증 에러 (401)"가 공통으로 적용된다.**
@@ -2208,6 +2209,394 @@ curl http://localhost:8000/api/disclaimer
 
 같은 문구가 `POST /api/research`와 `GET /api/research/{report_id}` 응답의 `disclaimer` 필드에도 들어간다(목록 응답에는 없음).
 기존 필드는 그대로이고 `disclaimer`만 추가됐다.
+
+---
+
+## GET /api/briefing
+
+로그인 사용자의 **보유종목(모의투자)과 관심종목**으로 만드는 "오늘의 개인화 브리핑". **LLM을 쓰지 않는다** - 응답의 모든 숫자(종가, 등락률,
+거래량 배수, 평가금액, 비중, 손익)와 문장을 서버 코드가 DB 값으로 계산하고, 문장은 관찰한 사실만 쓴다(투자 권유 표현 없음, 응답에 면책 문구 포함).
+**읽기 전용**이다: `GET /api/portfolio`와 달리 계좌가 없는 사용자에게 계좌를 만들지 않는다. 외부 네트워크 호출이 없고(시세는 DB의 일별 종가,
+실시간 아님) 쿼리 수는 종목 수와 무관하게 고정(최대 9개)이다.
+
+```bash
+curl "http://localhost:8000/api/briefing?news_limit=3" -H "Authorization: Bearer $TOKEN"
+```
+
+### 요청
+
+| 쿼리 | 타입 | 기본 | 범위 | 설명 |
+| --- | --- | --- | --- | --- |
+| `news_limit` | int | 3 | 1~5 | 종목당 뉴스 수(최근 7일, 최신순, 중복 제거). 범위 밖이거나 정수가 아니면 **422** |
+
+### 응답 200
+
+아래는 실제 개발 DB의 종목으로 만든 응답이다(테스트 계정, 삼성전자 10주 + KODEX 200 20주 보유, SK하이닉스·KODEX 레버리지 관심종목).
+지면 때문에 `holdings`/`watchlist`/`weights`/`highlights`/`news`/`disclosures`는 일부만 남겼다(실제 응답은 전부 담긴다).
+생성 시각이 장중(10:21)이라 오늘(10-28) 행을 쓰지 않고 직전 거래일(10-27) 종가 기준이다("결손 처리와 데이터 기준"의 장중 규칙 참고).
+
+```json
+{
+  "generated_at": "2026-10-28T10:21:42.183599+09:00",
+  "data_date": "2026-10-27",
+  "stale": false,
+  "stale_notice": null,
+  "message": null,
+  "market": {
+    "kospi": {
+      "code": "KS11",
+      "name": "코스피",
+      "date": "2026-10-27",
+      "close": 5638.34,
+      "change_pct": 3.09
+    },
+    "kosdaq": {
+      "code": "KQ11",
+      "name": "코스닥",
+      "date": "2026-10-27",
+      "close": 743.83,
+      "change_pct": 2.29
+    },
+    "usd_krw": {
+      "code": "USD/KRW",
+      "name": "원/달러",
+      "date": "2026-10-27",
+      "close": 1324.77,
+      "change_pct": 0.23
+    }
+  },
+  "portfolio": {
+    "has_account": true,
+    "initial_balance": 10000000.0,
+    "cash_balance": 5971900.0,
+    "holdings_value": 4028100.0,
+    "total_asset": 10000000.0,
+    "profit_loss": 0.0,
+    "profit_loss_pct": 0.0,
+    "day_profit_loss": 173200.0,
+    "top_weight": {
+      "ticker": "005930",
+      "name": "삼성전자",
+      "weight_pct": 22.5
+    },
+    "weights": [
+      {
+        "ticker": "005930",
+        "name": "삼성전자",
+        "weight_pct": 22.5
+      },
+      {
+        "ticker": "069500",
+        "name": "KODEX 200",
+        "weight_pct": 17.78
+      }
+    ],
+    "message": null
+  },
+  "holdings": [
+    {
+      "ticker": "005930",
+      "name": "삼성전자",
+      "asset_type": "stock",
+      "data_available": true,
+      "latest_close": 225000.0,
+      "latest_date": "2026-10-27",
+      "day_change_pct": 5.39,
+      "week_change_pct": 7.66,
+      "volume": 14196879,
+      "avg_volume_20d": 17245003.7,
+      "volume_ratio": 0.82,
+      "news": [
+        {
+          "title": "삼성, 갤럭시 워치·링 '수면 무호흡' 고도화…호흡 장애 3단계 분석",
+          "source": "www.etnews.com",
+          "published_at": "2026-10-28T10:04:00+09:00",
+          "url": "https://n.news.naver.com/mnews/article/030/0003479457?sid=105"
+        }
+      ],
+      "disclosures": [],
+      "disclosure_count": 0,
+      "notice": null,
+      "flags": [
+        {
+          "type": "day_move",
+          "scope": "holding",
+          "ticker": "005930",
+          "name": "삼성전자",
+          "text": "삼성전자의 2026-10-27 종가는 전 거래일 대비 +5.39% 상승했습니다.",
+          "value": 5.39,
+          "threshold": 3.0,
+          "unit": "%",
+          "date": "2026-10-27",
+          "direction": "up"
+        },
+        {
+          "type": "week_move",
+          "scope": "holding",
+          "ticker": "005930",
+          "name": "삼성전자",
+          "text": "삼성전자의 종가는 최근 5거래일간 +7.66% 상승했습니다.",
+          "value": 7.66,
+          "threshold": 7.0,
+          "unit": "%",
+          "date": "2026-10-27",
+          "direction": "up"
+        }
+      ],
+      "quantity": 10,
+      "avg_price": 225000.0,
+      "eval_amount": 2250000.0,
+      "weight_pct": 22.5,
+      "profit_loss": 0.0,
+      "profit_loss_pct": 0.0,
+      "day_profit_loss": 115000.0
+    }
+  ],
+  "watchlist": [
+    {
+      "ticker": "000660",
+      "name": "SK하이닉스",
+      "asset_type": "stock",
+      "data_available": true,
+      "latest_close": 1374000.0,
+      "latest_date": "2026-10-27",
+      "day_change_pct": 6.51,
+      "week_change_pct": 15.46,
+      "volume": 3136495,
+      "avg_volume_20d": 3216308.5,
+      "volume_ratio": 0.98,
+      "news": [
+        {
+          "title": "이천신산업진흥원 설립안, 경기도 심의 통과",
+          "source": "www.sedaily.com",
+          "published_at": "2026-10-28T10:06:00+09:00",
+          "url": "https://n.news.naver.com/mnews/article/011/0004675982?sid=102"
+        }
+      ],
+      "disclosures": [
+        {
+          "title": "수시공시의무관련사항(공정공시)",
+          "disclosure_type": "수시공시의무관련사항(공정공시)",
+          "disclosed_at": "2026-10-28T00:00:00+09:00",
+          "source_url": "https://dart.fss.or.kr/dsaf001/main.do?rcptNo=20261028800040"
+        }
+      ],
+      "disclosure_count": 10,
+      "notice": null,
+      "flags": [
+        {
+          "type": "day_move",
+          "scope": "watchlist",
+          "ticker": "000660",
+          "name": "SK하이닉스",
+          "text": "SK하이닉스의 2026-10-27 종가는 전 거래일 대비 +6.51% 상승했습니다.",
+          "value": 6.51,
+          "threshold": 3.0,
+          "unit": "%",
+          "date": "2026-10-27",
+          "direction": "up"
+        },
+        {
+          "type": "week_move",
+          "scope": "watchlist",
+          "ticker": "000660",
+          "name": "SK하이닉스",
+          "text": "SK하이닉스의 종가는 최근 5거래일간 +15.46% 상승했습니다.",
+          "value": 15.46,
+          "threshold": 7.0,
+          "unit": "%",
+          "date": "2026-10-27",
+          "direction": "up"
+        },
+        {
+          "type": "new_disclosure",
+          "scope": "watchlist",
+          "ticker": "000660",
+          "name": "SK하이닉스",
+          "text": "SK하이닉스의 공시가 최근 7일 안에 10건 있습니다.",
+          "value": 10.0,
+          "threshold": 1.0,
+          "unit": "건",
+          "date": "2026-10-28",
+          "direction": null
+        }
+      ]
+    }
+  ],
+  "highlights": [
+    {
+      "type": "day_move",
+      "scope": "holding",
+      "ticker": "005930",
+      "name": "삼성전자",
+      "text": "삼성전자의 2026-10-27 종가는 전 거래일 대비 +5.39% 상승했습니다.",
+      "value": 5.39,
+      "threshold": 3.0,
+      "unit": "%",
+      "date": "2026-10-27",
+      "direction": "up"
+    },
+    {
+      "type": "day_move",
+      "scope": "holding",
+      "ticker": "069500",
+      "name": "KODEX 200",
+      "text": "KODEX 200의 2026-10-27 종가는 전 거래일 대비 +3.38% 상승했습니다.",
+      "value": 3.38,
+      "threshold": 3.0,
+      "unit": "%",
+      "date": "2026-10-27",
+      "direction": "up"
+    }
+  ],
+  "disclaimer": "이 서비스는 학습·시연용 모의투자와 AI 리서치입니다. 제공되는 분석과 의견은 투자 권유나 자문이 아니며, 투자 판단과 그에 따른 손익의 책임은 본인에게 있습니다. AI 응답에는 오류가 있을 수 있습니다."
+}
+```
+
+### 필드
+
+모든 필드는 **항상 존재**한다(값이 없으면 키를 빼지 않고 `null` 또는 빈 배열). 숫자는 JSON number, 날짜는 문자열이다.
+
+**최상위**
+
+| 필드 | 타입 | null | 설명 |
+| --- | --- | --- | --- |
+| `generated_at` | string | 불가 | 생성 시각(ISO 8601, KST) |
+| `data_date` | string(YYYY-MM-DD) | 가능 | 브리핑에 쓴 시세의 마지막 날짜(종목들 중 가장 최근, 종목이 없으면 코스피/코스닥 지수 날짜). 시세가 전혀 없으면 null |
+| `stale` | boolean | 불가 | `data_date`가 최근 거래일보다 2영업일 이상 뒤처졌거나 `data_date`가 null이면 true(`GET /api/status`와 같은 규칙) |
+| `stale_notice` | string | 가능 | `stale`일 때만: "마지막 데이터는 YYYY-MM-DD 기준입니다." (데이터가 없으면 "수집된 시세 데이터가 없습니다.") |
+| `message` | string | 가능 | 보유종목과 관심종목이 모두 없을 때만: "관심종목을 추가하면 개인화된 브리핑을 볼 수 있습니다." |
+| `market` | object | 불가 | 아래 "market" |
+| `portfolio` | object | 불가 | 아래 "portfolio" |
+| `holdings` | array | 불가 | 보유종목 항목(비중 큰 순, 시세 없는 종목은 뒤). 없으면 `[]` |
+| `watchlist` | array | 불가 | 관심종목 항목(등록 최신순). **보유종목은 여기서 빠진다**. 없으면 `[]` |
+| `highlights` | array&lt;Flag&gt; | 불가 | 전체 flag 중 중요도 순 상위 5개(없으면 `[]`) |
+| `disclaimer` | string | 불가 | 서비스 면책 문구(`GET /api/disclaimer`와 같은 문구). 화면에 같이 보여 준다 |
+
+**`market`**: `kospi`, `kosdaq`, `usd_krw`(원/달러) 세 키가 항상 있고 각각 `Quote | null`이다. 해당 데이터가 DB에 없으면 그 항목만 null이고 전체는 실패하지 않는다.
+
+| `Quote` 필드 | 타입 | null | 설명 |
+| --- | --- | --- | --- |
+| `code` | string | 불가 | `KS11` / `KQ11` / `USD/KRW` |
+| `name` | string | 불가 | 코스피 / 코스닥 / 원/달러 |
+| `date` | string | 불가 | 최신 값의 날짜 |
+| `close` | number | 불가 | 최신 종가(환율은 원) |
+| `change_pct` | number | 가능 | 직전 값 대비 %(저장된 종가에서 계산, 소수 둘째 자리). 직전 값이 없으면 null |
+
+**`portfolio`** (비중은 모두 **총자산 = 현금 + 시세가 있는 보유종목 평가금액** 대비 %, `POST /api/portfolio/diagnosis`와 같은 정의)
+
+| 필드 | 타입 | null | 설명 |
+| --- | --- | --- | --- |
+| `has_account` | boolean | 불가 | 모의투자 계좌가 있는지. false이면 아래 숫자는 모두 null/빈 배열 |
+| `initial_balance` | number | 불가 | 초기 자금(10,000,000) |
+| `cash_balance` | number | 가능 | 현금 |
+| `holdings_value` | number | 가능 | 보유종목 평가금액 합(최신 종가 x 수량) |
+| `total_asset` | number | 가능 | 현금 + 평가금액 |
+| `profit_loss` | number | 가능 | 총자산 - 초기 자금 |
+| `profit_loss_pct` | number | 가능 | `profit_loss` / 초기 자금 x 100 |
+| `day_profit_loss` | number | 가능 | 전일 대비 평가손익 = 보유수량 x (최신 종가 - 직전 종가)의 합(직전 종가가 있는 종목만). 해당 종목이 없으면 null |
+| `top_weight` | object | 가능 | 비중이 가장 큰 종목 `{ticker, name, weight_pct}`. 시세 있는 보유종목이 없으면 null |
+| `weights` | array | 불가 | `{ticker, name, weight_pct}` 비중 큰 순. 시세 없는 종목은 빠진다 |
+| `message` | string | 가능 | 계좌가 없을 때 / 보유종목이 없을 때 / 시세 없는 보유종목이 있어 계산에서 제외했을 때 안내 문구 |
+
+**`holdings[]`, `watchlist[]` 공통 항목**
+
+| 필드 | 타입 | null | 설명 |
+| --- | --- | --- | --- |
+| `ticker`, `name` | string | 불가 | 종목 식별자 |
+| `asset_type` | `"stock"` 또는 `"etf"` | 불가 | |
+| `data_available` | boolean | 불가 | 시세가 하나라도 있는지. **false이면 아래 시세 필드는 모두 null**이고 다른 종목에는 영향이 없다 |
+| `latest_close` | number | 가능 | 최신 종가(원) |
+| `latest_date` | string | 가능 | 그 종가의 날짜 |
+| `day_change_pct` | number | 가능 | 1일 등락률(최신 종가 / 직전 거래일 종가 - 1, %). 시세가 1일치뿐이면 null |
+| `week_change_pct` | number | 가능 | 5거래일 등락률(최신 종가 / 5거래일 전 종가 - 1, %). 6일치 미만이면 null |
+| `volume` | integer | 가능 | 최신 거래량(주) |
+| `avg_volume_20d` | number | 가능 | 직전 20거래일(최신 제외) 평균 거래량. 20일치가 안 되거나 그 중 비어 있는 날이 있으면 null |
+| `volume_ratio` | number | 가능 | `volume` / `avg_volume_20d`. 평균이 null이거나 0이면 null(0으로 나누지 않는다) |
+| `news` | array | 불가 | 최근 7일 뉴스 최대 `news_limit`건 `{title, source(null 가능), published_at(ISO, KST), url(null 가능)}`. 제목이나 URL이 같은 기사는 최신 하나만. ETF는 리서치의 뉴스 도구와 같은 기준(ETF 이름이 직접 나온 기사만) |
+| `disclosures` | array | 불가 | 최근 7일 공시 최대 3건 `{title, disclosure_type(null 가능), disclosed_at, source_url(null 가능)}`. ETF는 공시를 수집하지 않아 항상 `[]` |
+| `disclosure_count` | integer | 불가 | 최근 7일 공시 전체 건수(`disclosures`는 3건까지만 담는다) |
+| `notice` | string | 가능 | 레버리지/인버스 ETF(이름으로 판별)에만 붙는 짧은 주의 문구 |
+| `flags` | array&lt;Flag&gt; | 불가 | 이 종목의 flag(아래). 없으면 `[]` |
+
+**`holdings[]`에만 더 있는 필드**
+
+| 필드 | 타입 | null | 설명 |
+| --- | --- | --- | --- |
+| `quantity` | integer | 불가 | 보유 수량 |
+| `avg_price` | number | 불가 | 평균 매입 단가 |
+| `eval_amount` | number | 가능 | 평가금액 = 최신 종가 x 수량 (시세 없으면 null) |
+| `weight_pct` | number | 가능 | 총자산 대비 비중 % |
+| `profit_loss` | number | 가능 | (최신 종가 - 평단) x 수량 |
+| `profit_loss_pct` | number | 가능 | 최신 종가 / 평단 - 1 (%) |
+| `day_profit_loss` | number | 가능 | 수량 x (최신 종가 - 직전 종가). 직전 종가가 없으면 null |
+
+**`Flag`** (`highlights[]`와 항목의 `flags[]`가 같은 모양)
+
+| 필드 | 타입 | null | 설명 |
+| --- | --- | --- | --- |
+| `type` | string | 불가 | `concentration`, `day_move`, `week_move`, `volume_spike`, `new_disclosure` 중 하나 |
+| `scope` | `"holding"` 또는 `"watchlist"` | 불가 | 어느 목록의 종목인지 |
+| `ticker`, `name` | string | 불가 | 종목 |
+| `text` | string | 불가 | 관찰 사실 한 줄(화면에 그대로 보여 줘도 된다) |
+| `value` | number | 불가 | 근거 수치(`unit` 단위) |
+| `threshold` | number | 불가 | 이 flag가 켜지는 기준값(같은 단위) |
+| `unit` | `"%"`, `"배"`, `"건"` 중 하나 | 불가 | |
+| `date` | string | 가능 | 근거 날짜: 시세 flag는 종가 날짜, `new_disclosure`는 가장 최근 공시일 |
+| `direction` | `"up"` 또는 `"down"` | 가능 | `day_move`/`week_move`만 값이 있다(색 표시용). 나머지는 null |
+
+### flag 종류와 임계값
+
+임계값은 `backend/app/briefing.py` 상단 상수다. 비교는 화면에 보이는 소수 둘째 자리 값으로 하고 **경계값은 포함(이상)** 이다
+(정확히 3.00%면 켜진다).
+
+| `type` | 켜지는 조건 | 상수 | `unit` | 문구 예 |
+| --- | --- | --- | --- | --- |
+| `concentration` | 보유종목 한 종목의 비중 >= 40.0% (보유종목만) | `CONCENTRATION_PCT` | % | "삼성전자의 비중이 총자산의 45.20%입니다(기준 40% 이상)." |
+| `day_move` | 1일 등락률의 절댓값 >= 3.0% | `DAY_MOVE_PCT` | % | "삼성전자의 2026-10-27 종가는 전 거래일 대비 +5.39% 상승했습니다." |
+| `week_move` | 5거래일 등락률의 절댓값 >= 7.0% | `WEEK_MOVE_PCT` | % | "삼성전자의 종가는 최근 5거래일간 +7.66% 상승했습니다." |
+| `volume_spike` | 거래량 배수 >= 2.0 | `VOLUME_SPIKE_RATIO` | 배 | "삼성전자의 거래량이 직전 20거래일 평균의 2.30배입니다." |
+| `new_disclosure` | 최근 7일 공시 >= 1건 | `NEW_DISCLOSURE_MIN`, `RECENT_DAYS` | 건 | "SK하이닉스의 공시가 최근 7일 안에 10건 있습니다." |
+
+한 종목의 `flags`는 위 표의 순서다. **`highlights` 정렬 규칙**(앞이 먼저): (1) 보유종목 flag가 관심종목 flag보다 먼저, (2) 종류 순서 `concentration` >
+`day_move` > `week_move` > `volume_spike` > `new_disclosure`, (3) 기준 대비 크기(value의 절댓값 / threshold)가 큰 것, (4) 종목코드 오름차순. 상위 5개만 담는다.
+문구는 "상승했습니다/하락했습니다/배입니다" 같은 관찰 표현만 쓴다. 매수·매도·추천 등의 표현은 코드에서 만들어질 수 없고, 모든 flag 문구를
+`evals/metrics.py`의 금지 표현 검사로 테스트한다.
+
+### 결손 처리와 데이터 기준
+
+- 시세가 1일치뿐이면 `day_change_pct`/`week_change_pct`/`volume_ratio`가 null. 직전 20거래일이 안 되면 `volume_ratio`와 `avg_volume_20d`가 null.
+  종가가 비어 있거나 0 이하인 행은 없는 것으로 본다.
+- 시세가 아예 없는 종목은 `data_available: false`로 항목에 남는다. 보유종목이면 평가금액·비중·손익이 null이고 총자산 계산에서 빠지며
+  `portfolio.message`에 이름이 안내된다.
+- **장중 규칙**: 평일 15:30(KST) 전에는 **오늘 날짜의 행을 쓰지 않는다**. 장중에 수집한 행은 종가가 아니고, 그날 거래량도 반나절치라서 거래량 배수가
+  실제보다 작게 나온다. 이때 브리핑은 직전 거래일 종가 기준이고 `data_date`가 그 날짜를 보여 준다. 15:30 이후에 `refresh_data`로 수집하면 오늘 종가가 쓰인다.
+- 시장 지수·환율은 DB에 저장된 일별 값이다(실시간 아님). 보통 시세보다 하루쯤 늦을 수 있어 각 `Quote.date`를 같이 보여 주는 편이 좋다.
+- 데이터는 수동 갱신(`python -m scripts.refresh_data`)이라 갱신이 멈추면 `stale`이 true가 된다.
+
+### 에러
+
+| 상태 | 언제 | body |
+| --- | --- | --- |
+| 401 | 토큰 없음/만료/변조 | 위 "인증 에러" |
+| 422 | `news_limit`이 1~5 밖이거나 정수가 아님 | FastAPI 기본 검증 오류(`detail`이 배열) |
+| 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
+
+보유종목도 관심종목도 없는 사용자는 에러가 아니라 **200 + `message`** (`market`은 채워짐, `holdings`/`watchlist`/`highlights`는 `[]`)다.
+
+### 한계
+
+- 숫자는 일별 종가 기준이고 실시간이 아니다. 평가금액·손익도 DB 종가로 계산하므로 `GET /api/portfolio`(실시간 시도)의 값과 다를 수 있다.
+- 뉴스·공시는 제목과 출처만 보여 주며, **기사 내용의 사실 여부는 확인하지 않는다**. 종목과 관련이 적은 기사가 섞일 수 있다(ETF는 이름이 직접 나온 기사로 걸러낸다).
+- "전일 대비 평가손익"은 종목마다 자기 직전 거래일 종가를 쓴다. 종목별 최신 날짜가 다르면(수집이 덜 된 종목) 같은 날의 변화가 아닐 수 있다. 종목별 `latest_date`를 확인한다.
+- 공휴일은 모른다(평일을 영업일로 본다). 연휴 직후에는 `stale`이 실제보다 일찍 true가 될 수 있다.
+- flag 임계값은 종목 변동성과 무관한 고정값이다(레버리지 ETF는 `day_move`가 자주 켜진다 - `notice` 참고).
+
+### 프론트(zod) 메모
+
+`nullable()`로 받아야 하는 필드는 위 표의 "null 가능" 열이 전부다. 배열 필드(`holdings`, `watchlist`, `highlights`, `news`, `disclosures`, `flags`, `weights`)는
+절대 null이 아니다. `holdings[]` 스키마는 공통 항목 스키마를 `extend`해서 만들면 된다. `type`/`scope`/`unit`/`direction`/`asset_type`은 위 값만 오지만, 나중에 flag 종류가 늘 수 있으니
+`type`은 알 수 없는 값을 무시하거나 그대로 보여 주는 쪽을 권한다.
 
 ---
 
