@@ -208,3 +208,53 @@ class TestDryRunDevDb:
     def test_dry_run_with_skip(self, capsys):
         assert rd.main(["--dry-run", "--skip", "news,embed,content"]) == 0
         assert "skipped" in capsys.readouterr().out
+
+
+# ---------- 기본 조회 기간(2026-10-28) ----------
+
+from datetime import date as _date, timedelta as _td  # noqa: E402
+
+from scripts.refresh_data import DAYS_CAP, DAYS_MIN, default_days  # noqa: E402
+
+TODAY = _date(2026, 10, 28)  # 수요일
+
+
+def _weekdays(start, end):
+    d, out = start, set()
+    while d <= end:
+        if d.weekday() < 5:
+            out.add(d)
+        d += _td(days=1)
+    return out
+
+
+class TestDefaultDays:
+    def test_up_to_date_uses_the_minimum(self):
+        assert default_days(_weekdays(_date(2026, 9, 1), _date(2026, 10, 27)), TODAY) == DAYS_MIN
+
+    def test_stale_data_reaches_back_to_the_last_date_plus_slack(self):
+        # 마지막 시세 10-14 -> 14일 + 여유 3일
+        assert default_days(_weekdays(_date(2026, 9, 1), _date(2026, 10, 14)), TODAY) == 17
+
+    def test_interior_gap_is_refilled(self):
+        """마지막 시세가 최신이어도 최근 30일 안에 빈 평일(10-15, 10-16)이 있으면 그날부터 받는다."""
+        present = _weekdays(_date(2026, 9, 1), _date(2026, 10, 28)) - {_date(2026, 10, 15), _date(2026, 10, 16)}
+        assert default_days(present, TODAY) == (TODAY - _date(2026, 10, 15)).days + 3  # 16
+
+    def test_gap_older_than_lookback_is_ignored(self):
+        present = _weekdays(_date(2026, 8, 1), _date(2026, 10, 27)) - {_date(2026, 9, 1)}
+        assert default_days(present, TODAY) == DAYS_MIN
+
+    def test_cap(self):
+        assert default_days({_date(2026, 6, 1)}, TODAY) == DAYS_CAP
+
+    def test_no_data(self):
+        assert default_days(set(), TODAY) == DAYS_CAP
+
+    def test_today_missing_is_not_a_gap(self):
+        assert default_days(_weekdays(_date(2026, 9, 1), _date(2026, 10, 27)), TODAY) == DAYS_MIN
+
+    def test_explicit_days_is_kept(self):
+        from scripts.refresh_data import resolve_days
+
+        assert resolve_days(5, TODAY) == (5, "--days 지정")

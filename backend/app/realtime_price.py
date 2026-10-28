@@ -32,8 +32,9 @@ import requests
 from app.models import Company, StockPrice
 
 NAVER_REALTIME_URL = "https://polling.finance.naver.com/api/realtime/domestic/stock/{ticker}"
-# 상위 소스 장애 시 응답이 오래 걸리지 않도록 짧게 끊는다.
-REQUEST_TIMEOUT_SECONDS = 3
+# 상위 소스 장애 시 응답이 오래 걸리지 않도록 짧게 끊는다. (연결, 읽기) 초 - 사용자 요청 경로라 재시도 없이 최대 약 4초 뒤
+# DB 종가 폴백으로 간다(2026-10-28: 단일 3초는 연결·읽기에 각각 적용돼 최악 6초였다).
+REQUEST_TIMEOUT_SECONDS = (1.5, 2.5)
 # 요구사항: 종목별 3~5초 캐싱.
 CACHE_TTL_SECONDS = 4.0
 

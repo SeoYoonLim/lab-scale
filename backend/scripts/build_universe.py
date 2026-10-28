@@ -13,13 +13,14 @@ from pathlib import Path
 
 import FinanceDataReader as fdr
 
+from app import http_retry
 from app.collectors import get_dart_corp_code
 
 OUT_DIR = Path(__file__).resolve().parent
 
 
 def build_universe(n: int = 300) -> dict:
-    df = fdr.StockListing("KRX")
+    df = http_retry.call_with_retry(lambda: http_retry.with_timeout(lambda: fdr.StockListing("KRX")), label="FDR StockListing")
     df = df[df["Market"] != "KONEX"].sort_values("Marcap", ascending=False)
 
     universe, excluded = [], []

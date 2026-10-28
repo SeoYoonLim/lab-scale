@@ -14,11 +14,13 @@ from zoneinfo import ZoneInfo
 import ollama
 from sqlalchemy.orm import joinedload
 
+from app import http_retry
 from app.db.session import SessionLocal
 from app.models import Disclosure, News
 
 EMBEDDING_MODEL = "bge-m3"
 BATCH_SIZE = 32
+EMBED_BATCH_TIMEOUT_S = 120  # 임베딩 배치 1회 상한(초)
 MAX_TEXT_LEN = 500        # 본문을 이 길이로 잘라서 임베딩 (긴 본문에서 처리 속도 약 4배)
 KST = ZoneInfo("Asia/Seoul")
 
@@ -78,7 +80,10 @@ def _embed_pending(
         for i in range(0, len(rows), batch_size):
             batch = rows[i : i + batch_size]
             texts = [to_text(r) for r in batch]
-            response = ollama.embed(model=EMBEDDING_MODEL, input=texts)
+            # 배치마다 상한 120초 + 일시적 오류(timeout·연결) 최대 2회 재시도(app/http_retry)
+            response = http_retry.call_with_retry(
+                lambda: ollama.Client(timeout=EMBED_BATCH_TIMEOUT_S).embed(model=EMBEDDING_MODEL, input=texts),
+                label="Ollama embed")
             for row, vector in zip(batch, response["embeddings"]):
                 row.embedding = vector
             db.commit()

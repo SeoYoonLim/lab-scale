@@ -24,6 +24,7 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
+from app import http_retry
 from app.db.session import SessionLocal
 from app.models import Disclosure
 
@@ -112,18 +113,12 @@ def extract_text(raw: bytes, title: str = "") -> str:
 def fetch_document_text(rcept_no: str, title: str = "", session: requests.Session | None = None) -> FetchOutcome:
     """접수번호로 원문을 받아 본문 텍스트로 만든다. 호출 1회. QuotaExceeded는 호출측에서 처리한다."""
     key = os.environ["DART_API_KEY"]
-    http = session or requests
-    last = ""
-    for attempt in range(RETRIES + 1):
-        try:
-            resp = http.get(DART_DOCUMENT_URL, params={"crtfc_key": key, "rcept_no": rcept_no}, timeout=60)
-            resp.raise_for_status()
-            break
-        except requests.RequestException as e:
-            last = type(e).__name__
-            if attempt == RETRIES:
-                return FetchOutcome("transient", detail=last)
-            time.sleep(1.5 * (attempt + 1))
+    try:
+        # 일시적 오류(연결·timeout·5xx)만 최대 RETRIES번 재시도(지수 백오프), 4xx는 바로 실패(app/http_retry). 실패는 다음 실행에서 다시 시도
+        resp = http_retry.get(DART_DOCUMENT_URL, params={"crtfc_key": key, "rcept_no": rcept_no}, timeout=(5, 60),
+                              session=session, retries=RETRIES, label="DART document")
+    except requests.RequestException as e:
+        return FetchOutcome("transient", detail=type(e).__name__)
 
     body = resp.content
     if not zipfile.is_zipfile(io.BytesIO(body)):

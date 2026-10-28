@@ -23,7 +23,7 @@ import re
 import sys
 import time
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Callable
 from zoneinfo import ZoneInfo
 
@@ -73,6 +73,34 @@ def select_steps(only: list[str] | None, skip: list[str] | None) -> list[str]:
             raise ValueError(f"알 수 없는 단계 '{name}' (가능: {', '.join(STEP_ORDER)})")
     chosen = set(only) if only else set(STEP_ORDER)
     return [s for s in STEP_ORDER if s in chosen and s not in set(skip or [])]
+
+
+# 기본 조회 기간(--days를 주지 않을 때). 예전 기본값은 10일 고정이라 마지막 데이터가 그보다 오래되면 공백이 남았다
+# (2026-10-14 이후 2주간 갱신하지 않았다가 10-28에 돌렸더니 10-15, 10-16 두 거래일이 비었다).
+DAYS_MIN = 10  # 최소(데이터가 최신이어도 이만큼은 다시 받아 장중 행을 종가로 덮는다)
+DAYS_CAP = 60  # 상한
+DAYS_SLACK = 3  # 여유
+GAP_LOOKBACK_DAYS = 30  # 이 기간 안에서 시세가 없는 평일(공백)을 찾는다
+
+
+def default_days(present: set[date], today: date, *, minimum: int = DAYS_MIN, cap: int = DAYS_CAP,
+                 slack: int = DAYS_SLACK, lookback: int = GAP_LOOKBACK_DAYS) -> int:
+    """기본 조회 기간(달력 일). 마지막 시세 날짜(present의 최댓값)와, 최근 lookback일 안에서 시세가 없는 가장 이른 평일
+    중 더 이른 날부터 오늘까지 + slack일, [minimum, cap]으로 자른다. 시세가 하나도 없으면 cap.
+
+    present는 최근 lookback일 이상의 시세 날짜 집합이다. KRX 휴장일 달력을 모르므로 공휴일도 '시세가 없는 평일'로 보여
+    기간이 길어질 수 있다(종목당 요청 횟수는 같고 받는 행만 늘어난다). 오늘은 공백으로 보지 않는다(아직 수집 전일 수 있음)."""
+    if not present:
+        return cap
+    start = max(present)
+    first = min(present)
+    d = max(today - timedelta(days=lookback), first)
+    while d < today:
+        if d.weekday() < 5 and d not in present:
+            start = min(start, d)
+            break
+        d += timedelta(days=1)
+    return max(minimum, min(cap, (today - start).days + slack))
 
 
 def parse_csv(value: str | None) -> list[str] | None:
@@ -257,6 +285,29 @@ def _scalar(sql: str):
         db.close()
 
 
+def resolve_days(days: int | None, today: date) -> tuple[int, str]:
+    """(조회 기간, 설명). --days를 주면 그대로, 아니면 DB 시세 날짜로 default_days. DB를 못 읽으면 DAYS_MIN."""
+    if days is not None:
+        return days, "--days 지정"
+    try:
+        from sqlalchemy import text
+
+        from app.db.session import SessionLocal
+
+        db = SessionLocal()
+        try:
+            since = today - timedelta(days=max(GAP_LOOKBACK_DAYS, DAYS_CAP))
+            present = {r[0] for r in db.execute(
+                text("SELECT DISTINCT price_date FROM stock_price WHERE price_date >= :d"), {"d": since})}
+        finally:
+            db.close()
+    except Exception as e:  # noqa: BLE001 - 기간 계산 실패가 갱신 전체를 막지 않게
+        return DAYS_MIN, f"DB 시세 날짜를 읽지 못해 기본 {DAYS_MIN}일({type(e).__name__})"
+    n = default_days(present, today)
+    last = max(present).isoformat() if present else "없음"
+    return n, f"자동(마지막 시세 {last}, 최근 {GAP_LOOKBACK_DAYS}일 안의 빈 평일 포함, 상한 {DAYS_CAP}일)"
+
+
 def build_steps(days: int, timeout_min: float) -> list[Step]:
     from app.data_status import _kst_date
 
@@ -368,7 +419,9 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="데이터 갱신 일괄 실행")
     ap.add_argument("--only", help=f"쉼표 구분 단계만 실행 ({','.join(STEP_ORDER)})")
     ap.add_argument("--skip", help="쉼표 구분 단계를 건너뜀")
-    ap.add_argument("--days", type=int, default=10, help="주가/지수/환율 조회 기간(달력 일), 기본 10")
+    ap.add_argument("--days", type=int, default=None,
+                    help=f"주가/지수/환율 조회 기간(달력 일). 생략하면 DB의 마지막 시세 날짜·최근 빈 평일부터 오늘까지 + {DAYS_SLACK}일"
+                         f"(최소 {DAYS_MIN}, 상한 {DAYS_CAP})")
     ap.add_argument("--timeout-min", type=float, default=DEFAULT_TIMEOUT_MIN, help="단계별 제한 시간(분)")
     ap.add_argument("--dry-run", action="store_true", help="실제 호출 없이 계획만 출력")
     args = ap.parse_args(argv)
@@ -382,6 +435,8 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.reconfigure(errors="replace")
 
     now = datetime.now(KST)
+    args.days, days_reason = resolve_days(args.days, now.date())
+    print(f"조회 기간: {args.days}일 ({days_reason})")
     market_warning = (
         "[경고] 장중(평일 09:00~15:30 KST)입니다. 당일 행이 장중 값일 수 있습니다. "
         "15:30 이후 다시 실행하면 같은 날짜가 종가로 덮어써집니다."

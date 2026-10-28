@@ -1,4 +1,8 @@
 import ollama
+
+_LIBRARY_EMBED = ollama.embed  # 테스트가 ollama.embed를 바꿔 두면 그 함수를 쓴다
+# 질문 임베딩(사용자 요청 경로) 상한. 넘기면 예외 -> agent._run_tool이 found=False 결과로 바꾼다(재시도 없음).
+EMBED_TIMEOUT_S = 10
 from sqlalchemy import Text, cast, func
 
 from app.db.session import SessionLocal
@@ -8,7 +12,10 @@ from app.tools.company_resolver import not_found_response, resolve_company, to_i
 
 
 def _embed_query(query: str) -> list[float]:
-    response = ollama.embed(model=EMBEDDING_MODEL, input=[query])
+    if ollama.embed is _LIBRARY_EMBED:
+        response = ollama.Client(timeout=EMBED_TIMEOUT_S).embed(model=EMBEDDING_MODEL, input=[query])
+    else:
+        response = ollama.embed(model=EMBEDDING_MODEL, input=[query])
     return response["embeddings"][0]
 
 

@@ -18,11 +18,11 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 import FinanceDataReader as fdr
-import requests
 from dotenv import load_dotenv
 from sqlalchemy import or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from app import http_retry
 from app.db.session import SessionLocal
 from app.etf import mentions_etf_name
 from app.models import Company, Disclosure, ExchangeRate, MarketIndex, News, StockPrice
@@ -104,8 +104,8 @@ def _load_dart_corp_code_map() -> dict[str, str]:
         return _dart_stock_to_corp_code
 
     key = os.environ["DART_API_KEY"]
-    resp = requests.get(DART_CORP_CODE_URL, params={"crtfc_key": key})
-    resp.raise_for_status()
+    # corpCode.xml은 11만 건이 넘는 zip이라 읽기 timeout을 길게 둔다
+    resp = http_retry.get(DART_CORP_CODE_URL, params={"crtfc_key": key}, timeout=(5, 60), label="DART corpCode")
 
     zf = zipfile.ZipFile(io.BytesIO(resp.content))
     root = ET.fromstring(zf.read("CORPCODE.xml"))
@@ -147,7 +147,7 @@ def fetch_dart_disclosures(corp_code: str, days: int = 90) -> list[dict]:
     items = []
     page_no = 1
     while True:
-        resp = requests.get(
+        resp = http_retry.get(
             DART_DISCLOSURE_LIST_URL,
             params={
                 "crtfc_key": key,
@@ -157,8 +157,8 @@ def fetch_dart_disclosures(corp_code: str, days: int = 90) -> list[dict]:
                 "page_no": page_no,
                 "page_count": 100,
             },
+            label="DART list",
         )
-        resp.raise_for_status()
         data = resp.json()
 
         if data.get("status") != "000":
@@ -231,6 +231,13 @@ class CollectResult:
 _API_KEY_RE = re.compile(r"(crtfc_key=)[^&\s]+")
 
 
+def _read_fdr(reader, symbol: str, start_date: str, end_date: str, retries: int = http_retry.RETRIES):
+    """FinanceDataReader 호출에 상한(http_retry.LIBRARY_TIMEOUT_S)과 일시적 오류 재시도(기본 2회)를 둔다.
+    FDR은 내부에서 timeout 없이 requests를 부르기 때문이다. 일시적 오류가 아닌 예외는 바로 올라간다."""
+    return http_retry.call_with_retry(lambda: http_retry.with_timeout(lambda: reader(symbol, start_date, end_date)),
+                                      retries=retries, label=f"FDR {symbol}")
+
+
 def _safe_error(e: Exception) -> str:
     # requests 예외 메시지에는 요청 URL이 들어가고 DART URL에는 API 키가 있어 마스킹한다.
     return _API_KEY_RE.sub(r"\1***", f"{type(e).__name__}: {e}")
@@ -240,15 +247,15 @@ def fetch_naver_news(company_name: str, display: int = 10, sort: str = "date") -
     client_id = os.environ["NAVER_CLIENT_ID"]
     client_secret = os.environ["NAVER_CLIENT_SECRET"]
 
-    resp = requests.get(
+    resp = http_retry.get(
         NAVER_NEWS_URL,
         params={"query": company_name, "display": display, "start": 1, "sort": sort},
         headers={
             "X-Naver-Client-Id": client_id,
             "X-Naver-Client-Secret": client_secret,
         },
+        label="Naver news",
     )
-    resp.raise_for_status()
     return resp.json().get("items", [])
 
 
@@ -292,7 +299,7 @@ def fetch_and_save_stock(
     print(f"[{name}({ticker})] {start_date} ~ {end_date} 주가 데이터 수집 중...")
 
     try:
-        df = fdr.DataReader(ticker, start_date, end_date)
+        df = _read_fdr(fdr.DataReader, ticker, start_date, end_date)
     except Exception as e:
         msg = _safe_error(e)
         print(f"오류 발생: {msg}")
@@ -381,7 +388,8 @@ def fetch_index_frame(index_code: str, start_date: str, end_date: str, reader=No
     errors = []
     for source, symbol in MARKET_INDEX_SOURCES.get(index_code, ((f"fdr:{index_code}", index_code),)):
         try:
-            df = reader(symbol, start_date, end_date)
+            # 소스 폴백 체인이 재시도 역할을 하므로 소스마다 다시 시도하지 않는다(timeout만)
+            df = _read_fdr(reader, symbol, start_date, end_date, retries=0)
         except Exception as e:
             errors.append(f"{source}: {_safe_error(e)}")
             continue
@@ -453,7 +461,7 @@ def fetch_and_save_exchange_rate(pair_code: str, days: int = 180, dry_run: bool 
     end_date = today.strftime("%Y-%m-%d")
 
     try:
-        df = fdr.DataReader(pair_code, start_date, end_date)
+        df = _read_fdr(fdr.DataReader, pair_code, start_date, end_date)
     except Exception as e:
         return CollectResult(ok=False, error=_safe_error(e))
 
@@ -504,7 +512,8 @@ def backfill_company_market(dry_run: bool = False) -> tuple[int, int]:
 
     이미 값이 같으면 건드리지 않는다. 목록에 없는 종목은 그대로 둔다. (갱신 건수, 목록에 없어 못 채운 건수)를 돌려준다.
     """
-    listing = fdr.StockListing("KRX")
+    listing = http_retry.call_with_retry(lambda: http_retry.with_timeout(lambda: fdr.StockListing("KRX")),
+                                         label="FDR StockListing")
     market_by_ticker = dict(zip(listing["Code"], listing["Market"]))
 
     db = SessionLocal()

@@ -21,6 +21,8 @@ from pathlib import Path
 
 import FinanceDataReader as fdr
 
+from app import http_retry
+
 OUT_DIR = Path(__file__).resolve().parent
 
 # (티커, 이름). 이름이 목록에 없으면 티커로, 그것도 없으면 가장 비슷한 이름으로 대체한다.
@@ -51,7 +53,9 @@ def _find_must(listing, ticker: str, name: str) -> tuple[int | None, str | None]
 
 def build_etf_universe(n: int = 50) -> tuple[dict, list[str]]:
     """({"universe", "excluded_not_in_dart"}, 대체/제외 안내 메시지 목록)."""
-    listing = fdr.StockListing("ETF/KR").sort_values("MarCap", ascending=False).reset_index(drop=True)
+    listing = http_retry.call_with_retry(lambda: http_retry.with_timeout(lambda: fdr.StockListing("ETF/KR")),
+                                         label="FDR StockListing")
+    listing = listing.sort_values("MarCap", ascending=False).reset_index(drop=True)
     notes: list[str] = []
 
     def entry(i: int, must: bool) -> dict:
