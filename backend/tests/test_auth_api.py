@@ -226,6 +226,7 @@ class TestRouteCoverage:
     }
     PROTECTED_ROUTES = {
         ("GET", "/api/auth/me"),
+        ("GET", "/api/briefing"),
         ("POST", "/api/research"),
         ("GET", "/api/research"),
         ("GET", "/api/research/{report_id}"),
