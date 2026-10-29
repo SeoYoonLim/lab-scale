@@ -213,6 +213,11 @@ def needs_briefing(question: str) -> bool:
     return bool(_MY_RE.search(" " + q) or _LIST_ONLY_RE.search(q))
 
 
+def mentions_own(question: str) -> bool:
+    """질문이 "내/나의/제/우리"처럼 질문자 자신의 것을 가리키는지(브리핑 게이트 needs_briefing의 판정은 바꾸지 않는다)."""
+    return bool(_MY_RE.search(" " + (question or "")))
+
+
 def briefing_scope(question: str) -> str:
     """브리핑 질문의 범위: 관심종목만 말하면 watchlist, 보유·계좌만 말하면 holdings, 그 밖(브리핑, 둘 다)은 all."""
     q = question or ""

@@ -57,6 +57,7 @@ from app.routing import (
     explicitly_requested_tools,
     is_cause_question,
     is_trend_question,
+    mentions_own,
     needs_briefing,
     needs_discovery_tool,
     needs_event_reaction_tool,
@@ -1346,10 +1347,18 @@ def _answer_period_quote(question: str, companies: list | None):
     return _code_answer(_with_intraday_note(answer, records), records)
 
 
+def _asks_etf_constituents_not_my_holdings(question: str) -> bool:
+    """"KODEX 200 보유종목 비중 알려줘"처럼 ETF 이름이 있고 "내/나의" 같은 소유 표현이 없으면 그 ETF의 구성종목을 묻는 질문이다.
+    "보유종목"이라는 낱말 때문에 브리핑(내 보유종목)으로 가지 않게 브리핑 분기가 먼저 이것을 본다."""
+    if not asks_constituents(question) or mentions_own(question):
+        return False
+    return any(getattr(c, "asset_type", None) == "etf" for c in _question_companies(question) or [])
+
+
 def _answer_briefing(question: str, user_id: int | None):
     """(D, 2026-10-28) "오늘 브리핑", "내 보유종목 어때", "관심종목 변화"는 GET /api/briefing과 같은 계산(app.briefing_db)을
     코드가 문장으로 바꿔 답한다(LLM 없음). 로그인하지 않은 요청은 로그인 안내만 한다. 소유자는 로그인 사용자 본인(user:{id})뿐이다."""
-    if not needs_briefing(question):
+    if not needs_briefing(question) or _asks_etf_constituents_not_my_holdings(question):
         return None
     if user_id is None:
         return _code_answer(briefing_text.LOGIN_REQUIRED)

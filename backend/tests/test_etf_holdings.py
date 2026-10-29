@@ -703,3 +703,47 @@ class TestAgentWiring:
         assert agent_db._answer_etf_constituents("삼성전자 구성종목", [Co("삼성전자", "stock")]) is None
         assert agent_db._answer_etf_constituents("KODEX 200 주가", [Co("KODEX 200")]) is None
         assert agent_db._answer_etf_constituents("구성종목이 뭐야", None) is None
+
+
+# ---------- 브리핑과의 구분("보유종목") ----------
+
+
+class TestBriefingVsConstituents:
+    """"보유종목"이라는 낱말은 내 보유종목 브리핑과 ETF의 보유종목(구성종목) 둘 다에 쓰인다. ETF 이름이 있고 소유 표현이 없으면 ETF 쪽이다."""
+
+    @pytest.mark.parametrize("q, own", [
+        ("내 보유종목 어때", True), ("나의 포트폴리오 알려줘", True), ("제 계좌 요약", True), ("우리 보유종목", True),
+        ("KODEX 200 보유종목 비중 알려줘", False), ("TIGER 미국S&P500 보유종목 TOP10은?", False), ("", False),
+    ])
+    def test_mentions_own(self, q, own):
+        from app.routing import mentions_own
+        assert mentions_own(q) is own
+
+    def test_etf_named_without_possessive_skips_the_briefing(self, agent_db, monkeypatch):
+        monkeypatch.setattr(agent_db, "_question_companies", lambda q: [Co("KODEX 200")])
+        assert agent_db._answer_briefing("KODEX 200 보유종목 비중 알려줘", 7) is None
+        assert agent_db._answer_briefing("KODEX 200 보유종목 비중 알려줘", None) is None  # 로그인 안내도 아님
+
+    def test_possessive_still_goes_to_the_briefing(self, agent_db, monkeypatch):
+        monkeypatch.setattr(agent_db, "_question_companies", lambda q: [Co("KODEX 200")])
+        assert agent_db._answer_briefing("내 보유종목 어때", None)[0]["answer"] == "로그인하면 개인화 브리핑을 볼 수 있습니다."
+
+    def test_no_etf_in_the_question_still_goes_to_the_briefing(self, agent_db, monkeypatch):
+        monkeypatch.setattr(agent_db, "_question_companies", lambda q: [])
+        assert agent_db._answer_briefing("보유종목 어때", None)[0]["answer"] == "로그인하면 개인화 브리핑을 볼 수 있습니다."
+        monkeypatch.setattr(agent_db, "_question_companies", lambda q: [Co("삼성전자", "stock")])
+        assert agent_db._answer_briefing("삼성전자 보유종목 알려줘", None) is not None  # 주식 이름은 ETF 구성종목이 아니다
+
+    def test_the_briefing_gate_itself_is_unchanged(self):
+        from app.routing import needs_briefing
+        assert needs_briefing("KODEX 200 보유종목 비중 알려줘") is True  # 게이트는 그대로(분기만 agent가 비켜 간다)
+
+
+# ---------- CLI ----------
+
+
+def test_cli_rejects_a_delay_that_would_hammer_the_sites():
+    import scripts.collect_etf_holdings as cli
+
+    with pytest.raises(SystemExit, match="0.5초"):
+        cli.main(["--delay", "0.4"])
