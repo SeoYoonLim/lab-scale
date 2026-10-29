@@ -25,6 +25,8 @@
 | POST | `/api/auth/signup` | 공개 | 회원가입(아이디 3~20자 `[a-z0-9_]`, 대문자는 소문자로 정규화 / 비밀번호 8~128자) → 201 + 토큰. 중복이면 409 |
 | POST | `/api/auth/login` | 공개 | 로그인 → 200 + 토큰. 실패는 아이디 없음/비밀번호 틀림 모두 같은 401 |
 | GET | `/api/auth/me` | 필요 | 토큰의 사용자 `{id, username}` |
+| POST | `/api/auth/logout` | 필요 | 이 사용자의 모든 토큰 폐기(전체 기기 로그아웃) → 200 `{"ok": true}` (2026-10-29) |
+| POST | `/api/auth/change-password` | 필요 | 현재 비밀번호 확인 후 변경, 기존 토큰 전부 폐기 → 200 + 새 토큰. 현재 비밀번호 오류는 422 (2026-10-29) |
 | POST | `/api/research` | 필요 | 질문 → AI 답변 + 근거 + 리포트 저장. `previous_report_id`로 내 직전 리포트를 이어서 후속 질문 |
 | GET | `/api/research` | 필요 | 내 리포트 목록(최신순, `limit`/`offset` 페이지네이션, `total` 포함) |
 | GET | `/api/research/{report_id}` | 필요 | 내 리포트 한 건(전체 답변, sources, tool 사용 이력). 남의 리포트는 404 |
@@ -465,14 +467,18 @@ python -m scripts.refresh_data --days 30 --timeout-min 30 # 조회 기간 직접
 `backend/`에서 실행합니다. 세 단계로 나뉩니다(마커: `integration`, `slow`).
 
 ```bash
-pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-28 목록 API 정렬·페이징·검색 후 3159개 통과, 약 40초). slow는 기본 제외
-pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 2766개)
-pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(393개). DB가 꺼져 있으면 자동 skip
+pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-29 토큰 폐기 후 3216개 통과, 약 45초). slow는 기본 제외
+pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 2817개)
+pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(399개). DB가 꺼져 있으면 자동 skip
 pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)를 부르는 테스트(61개, 느리고 비결정적)
 ```
 
 - **1단계(순수 로직·라우터 mock)**: 계산 함수, 라우팅 게이트, 검증기, 라우터 응답 형태. 외부 호출 없음.
-- **2단계(dev DB 통합)**: 마이그레이션이 적용된 개발 DB의 실제 응답(읽기 위주). 가입 테스트는 `pt_` 접두어 계정을 만들고 끝나면 지웁니다.
+- **2단계(dev DB 통합)**: 마이그레이션이 적용된 개발 DB의 실제 응답(읽기 위주). 가입 테스트는 `pt_`(토큰 폐기 테스트는 `captest_`) 접두어 계정을 만들고 끝나면 지웁니다.
+  마이그레이션 업그레이드/다운그레이드 왕복 테스트(`tests/test_auth_revoke_devdb.py`) 1개는 dev DB에서 하지 않고 `MIGRATION_TEST_DATABASE_URL`이 가리키는
+  **별도 서버**에 임시 DB를 만들어 돕니다(dev DB 서버를 가리키면 테스트가 거부). 이 변수가 없으면 로컬에서는 그 1개만 skip됩니다(398개 통과 + 1 skip). 예:
+  `docker run -d --name migr_check_db -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci_dummy_pw -e POSTGRES_DB=ci_db -p 25433:5432 pgvector/pgvector:pg16` 후
+  `MIGRATION_TEST_DATABASE_URL=postgresql+psycopg://ci:ci_dummy_pw@localhost:25433/ci_db pytest -m "integration and not slow"`, 끝나면 `docker rm -f migr_check_db`.
 - **3단계(slow)**: 실제 모델 호출. 질문 몇 개를 여러 번 돌려 오류 유형을 세는 측정도 여기에 있습니다(예: `tests/test_event_reaction_slow.py`는 LLM 해석을
   켠 상태로 10개 질문 x 3회). 만든 `pt_` 계정·리포트는 끝나면 지웁니다.
 
@@ -490,7 +496,7 @@ pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)
 | `backend-unit` | Python 3.13에서 `pytest -m "not slow and not integration"`(DB·Ollama 없이 통과해야 함, skip 0) | `cd backend && pytest -m "not slow and not integration"` |
 | `secret-scan` | 추적 파일과 이번 push/PR이 추가한 커밋에서 `.env` 추적, `raw_*.jsonl`·서버 로그 추적, JWT·Bearer·개인 키·비밀번호/키 대입·URL 속 비밀번호 | `bash scripts/secret_scan.sh [--history origin/main..HEAD] [--env-file backend/.env]` |
 | `frontend` | `frontend/package.json`이 있을 때만: `npm ci`, `tsc -b`, `npm run lint`, `vitest run`, `vite build` (Node 24) | `cd frontend && npm ci && npx tsc -b && npm run lint && npx vitest run && npx vite build` |
-| `backend-integration` | 빈 pgvector DB에 `alembic upgrade head` + 종목 시드만 올린 상태에서 `pytest -m "integration and not slow and not needs_collected_data"` | 아래 "로컬에서 CI 통합 환경 재현" |
+| `backend-integration` | 빈 pgvector DB에 `alembic upgrade head` + 종목 시드만 올린 상태에서 `pytest -m "integration and not slow and not needs_collected_data"`. 마이그레이션 왕복 테스트용 서비스 컨테이너(5433)를 하나 더 띄운다 | 아래 "로컬에서 CI 통합 환경 재현" |
 | `eval-offline` | 같은 DB에서 `python -m evals.run_eval --mode offline --split all`(entity·period·routing_gate 52문항). **종목 오매칭률이 0이 아니면 실패**, 나머지 지표는 job summary 표와 아티팩트 | 아래와 같은 DB에서 `python -m evals.run_eval --mode offline --split all --out /tmp/s.json && python -m evals.ci_gate /tmp/s.json` |
 
 `secret-scan`은 값을 출력하지 않고 `파일:줄 [규칙]`만 알려주며, 허용 목록(로컬 개발 DB 기본값 `postgres:postgres@localhost`, `alembic.ini` 자리표시, 테스트·문서의 가짜 비밀번호)은
@@ -498,10 +504,10 @@ pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)
 
 **CI에서 제외되는 테스트(숫자로)**
 
-- `integration` 393개 중 **50개는 CI에서 제외**됩니다(`needs_collected_data` 마커). 수집된 시세·뉴스·공시·ETF 시세·환율·시장 지수(또는 인증 도입 전 옛 리포트)가 DB에 있어야 통과하는
-  테스트라서, 종목 목록만 시드한 CI의 빈 DB에서는 통과할 수 없습니다. 나머지 343개는 CI에서 실제로 돕니다. 로컬 dev DB에서는 마커가 있어도 **393개 전부** 평소처럼 돕니다.
+- `integration` 399개 중 **50개는 CI에서 제외**됩니다(`needs_collected_data` 마커). 수집된 시세·뉴스·공시·ETF 시세·환율·시장 지수(또는 인증 도입 전 옛 리포트)가 DB에 있어야 통과하는
+  테스트라서, 종목 목록만 시드한 CI의 빈 DB에서는 통과할 수 없습니다. 나머지 349개는 CI에서 실제로 돕니다. 로컬 dev DB에서는 마커가 있어도 **399개 전부** 평소처럼 돕니다(마이그레이션 왕복 1개는 `MIGRATION_TEST_DATABASE_URL`이 있을 때).
   제외 개수는 CI 로그와 job summary에 숫자로 찍히고, 상한(`MAX_EXCLUDED=50`)을 넘으면 CI가 실패합니다(마커로 테스트를 슬그머니 늘려 빼지 못하게).
-- 분류(빈 DB 기준): **a** 스스로 데이터를 만들어 통과 66, **b** 종목 시드로 해결 199, **c** 수집 데이터 필요 50(위 제외, 49번째는 브리핑 숫자 독립 재계산 대조, 50번째는 채팅 기간 수익률 템플릿의 DB 대조 테스트), **d** Ollama 필요 0.
+- 분류(빈 DB 기준): **a** 스스로 데이터를 만들어 통과 66, **b** 종목 시드로 해결 199, **c** 수집 데이터 필요 50(위 제외, 49번째는 브리핑 숫자 독립 재계산 대조, 50번째는 채팅 기간 수익률 템플릿의 DB 대조 테스트), **d** Ollama 필요 0. 2026-10-29 토큰 폐기 통합 테스트 6개는 모두 스스로 데이터를 만든다(a).
 - 그 밖의 skip은 조용히 통과로 보이지 않게 CI에서 **실패**로 바뀝니다(`CI_FAIL_ON_SKIP=1`, `backend/tests/ci_guard.py`).
 - `slow` 61개(실제 Ollama 호출)와 `evals` live 모드는 CI에서 돌지 않습니다: Ollama(llama3.1:8b)가 필요하고 느리며 비결정적이기 때문입니다. 로컬에서 `pytest -m slow`, `python -m evals.run_eval --mode live`.
 
@@ -509,11 +515,13 @@ pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)
 
 ```bash
 docker run -d --name ci_check_db -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci_dummy_pw -e POSTGRES_DB=ci_db -p 25432:5432 pgvector/pgvector:pg16
+docker run -d --name ci_migr_db -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci_dummy_pw -e POSTGRES_DB=ci_db -p 25433:5432 pgvector/pgvector:pg16
 cd backend
 export DATABASE_URL=postgresql+psycopg://ci:ci_dummy_pw@localhost:25432/ci_db   # PowerShell: $env:DATABASE_URL="..."
+export MIGRATION_TEST_DATABASE_URL=postgresql+psycopg://ci:ci_dummy_pw@localhost:25433/ci_db   # 마이그레이션 왕복용(CI의 5433 서비스)
 python -m alembic upgrade head && python -m scripts.ci_seed
-CI_FAIL_ON_SKIP=1 pytest -m "integration and not slow and not needs_collected_data"      # 343개 통과, skip 0
-docker rm -f ci_check_db
+CI_FAIL_ON_SKIP=1 pytest -m "integration and not slow and not needs_collected_data"      # 349개 통과, skip 0
+docker rm -f ci_check_db ci_migr_db
 ```
 
 **저장소 관리자가 GitHub 설정에서 직접 해야 할 일:** "main 병합 전에 CI 통과 요구"는 코드로 켤 수 없고 Settings → Branches → main 보호 규칙(Require status checks to pass before merging)에서
@@ -575,13 +583,17 @@ python -m evals.compare evals/results/summary_baseline_2026-10-27.json evals/res
 - `APP_ENV`(기본 development): production이면 약한 `JWT_SECRET`(예시 문구·반복 문자)으로 기동하지 않는다. 없거나 32자 미만은 모든 모드에서 거부(기존).
 - `CORS_ALLOW_ORIGINS`(기본 `http://localhost:5173,http://127.0.0.1:5173`). credentials는 쓰지 않는다(Bearer 헤더).
 - `CORS_EXPOSE_HEADERS`(기본 `X-Total-Count`). 브라우저 JS가 읽을 수 있게 노출할 응답 헤더(`GET /api/companies`의 전체 건수).
-- 레이트 리밋(`RATE_LIMIT_*`, 기본 켜짐): 로그인 IP당 분당 10회, 같은 아이디+IP 5회 실패면 5분 잠금, 가입 IP당 시간당 10회, 주문 사용자당 분당 30회, AI 질문 사용자당 분당 6회 + 동시 1건. 초과는 429 + `Retry-After`.
+- 레이트 리밋(`RATE_LIMIT_*`, 기본 켜짐): 로그인 IP당 분당 10회, 같은 아이디+IP 5회 실패면 5분 잠금, 가입 IP당 시간당 10회, 주문 사용자당 분당 30회, AI 질문 사용자당 분당 6회 + 동시 1건,
+  로그아웃 사용자당 분당 10회, 비밀번호 변경 사용자당 시간당 10회 + 현재 비밀번호 연속 5회 오류면 5분 잠금(`PASSWORD_CHANGE_LOCK_*`, 2026-10-29). 초과는 429 + `Retry-After`.
+- 토큰 폐기(2026-10-29): JWT에 `tv`(=`users.token_version`) 클레임을 넣고, 로그아웃·비밀번호 변경이 `token_version`을 올려 그 사용자의 기존 토큰을 **모든 기기에서** 무효로 한다.
+  `tv`가 없는 옛 토큰은 0으로 봐서 배포 직후에도 로그인 상태가 유지되고 첫 폐기 때 함께 무효가 된다. 비밀번호 변경은 새 토큰을 돌려줘 현재 세션을 이어 간다.
 - 외부 호출(`app/http_retry.py`): (연결, 읽기) timeout, 일시적 오류(연결·timeout·5xx·429)만 최대 2회 지수 백오프 재시도, 4xx는 바로 실패. 실시간 시세는 재시도 없이 최대 약 4초 뒤 DB 종가 폴백(기존 폴백 그대로).
 - `GET /api/health`로 DB·마이그레이션·Ollama·데이터 기준일을 확인한다. 처리되지 않은 예외는 500 `{"detail": "서버 오류가 발생했습니다."}`(상세는 서버 로그만). 요청 로그는 메서드·경로·상태·ms·user id만.
 
 **한계(막지 못하는 것)**
 - 레이트 리밋은 메모리 기반이라 서버 재시작 시 초기화되고 단일 프로세스에만 유효하다. 프록시 뒤에서는 모든 요청이 같은 IP로 보인다. 여러 IP의 분산 대입은 아이디+IP 잠금으로 막히지 않는다. 공개 조회 API에는 한도가 없다.
-- 토큰 폐기(로그아웃·비밀번호 변경 시 무효화)가 없다: 발급된 토큰은 24시간 동안 유효하다. 리프레시 토큰도 없다.
+- 토큰 폐기는 사용자 단위(전체 기기 로그아웃)다. 한 기기만 로그아웃할 수 없다. 폐기하지 않은 access token은 여전히 24시간 유효하고(훔친 토큰은 사용자가 로그아웃·비밀번호 변경을 할 때까지 쓸 수 있다), 리프레시 토큰은 없다.
+  DB를 백업에서 복원하거나 마이그레이션을 내렸다 올리면 `token_version`이 되돌아가 폐기한 토큰이 다시 통할 수 있으므로, 그 뒤에는 `JWT_SECRET`을 바꾸는 것이 안전하다.
 - FinanceDataReader는 timeout을 받지 않아 별도 스레드 상한(60초)으로 끊는다. 상한을 넘긴 스레드는 끝날 때까지 남는다(배치 스크립트에서만 씀).
 - HTTPS·보안 헤더·배포용 프로세스 관리는 범위 밖이다(로컬 시연 전제).
 
@@ -593,7 +605,8 @@ python -m evals.compare evals/results/summary_baseline_2026-10-27.json evals/res
 - **데이터는 수동 갱신입니다.** `python -m scripts.refresh_data`를 사람이 실행해야 하고(평일 15:30 이후 권장) 스케줄러가 없습니다. 갱신 사이에는 "오늘 주가"도 마지막 갱신일 종가입니다.
 - **`stale` 판정은 공휴일을 모릅니다.** `GET /api/status`는 평일 기준으로 2영업일 이상 뒤처지면 stale입니다(휴장일 달력 없음). 기간 표현의 평일 수도 같은 근사입니다.
 - **환율 소스 제한**: FinanceDataReader가 주는 날짜까지만 있고(2026-10-14 기준 10/12, 보통 1~2일 늦음) 금리는 범위 밖입니다. 지수 소스는 FDR 폴백 체인이고 네이버 지수 페이지는 쓸 수 없습니다.
-- **보안**: 로그인 시도 횟수 제한(rate limit)이 없고, 토큰 폐기(로그아웃·비밀번호 변경 시 무효화)가 없으며(만료 24시간), refresh token이 없고, HTTPS는 배포 환경에서 처리해야 합니다(로컬은 HTTP).
+- **보안**(2026-10-29 갱신): 로그인 횟수 제한(2026-10-28)과 토큰 폐기(로그아웃·비밀번호 변경, 2026-10-29)는 들어갔지만, 폐기는 전체 기기 단위이고, 폐기하지 않은 토큰은 24시간 유효하며, refresh token이 없고,
+  레이트 리밋은 메모리 기반(단일 프로세스)이며, 비밀번호 재설정·회원 탈퇴가 없고, HTTPS는 배포 환경에서 처리해야 합니다(로컬은 HTTP).
 - **진단 첫 호출 지연**: `POST /api/portfolio/diagnosis`는 LLM 설명을 만들어 보통 4~5초이고, Ollama를 쓴 지 오래됐거나 모델이 내려가 있으면 첫 호출이 훨씬 오래 걸립니다(시연 전 예열). Ollama가 응답하지 않으면 규칙 기반 문장으로 폴백합니다(`source`로 구분).
 - **사건 이후 주가 반응은 인과가 아닙니다.** 사건 뒤의 주가는 시장 전체와 다른 사건의 영향을 함께 받고 이를 분리하지 못합니다(초과수익률과 "같은 기간 다른 사건 N건"은 참고 수치). 공시는 시각을 몰라 접수일로 계산하고, 뉴스는 최근 기사 위주로만 수집돼 **표본이 적으며**(최근 사건은 5·20거래일 값이 없음, 요약은 날짜 단위 표본과 3개 미만 경고를 표시) 달력은 종목 시세 기준(주식 6/26부터, ETF 7/16부터)입니다. LLM 해석은 기본 꺼짐입니다.
 - **그 밖**: 뉴스·공시·RAG tool에는 기간 인자가 없고, 퍼지 종목명 매칭이 다른 종목으로 잘못 연결될 수 있으며, 개념 질문에도 불필요한 tool을 호출하는 문제(no_tool)가 남아 있습니다(아래 Known Issues).
@@ -634,7 +647,9 @@ python -m evals.compare evals/results/summary_baseline_2026-10-27.json evals/res
 - [x] REST API(리포트 생성/목록/조회/삭제) + 에러 처리(Ollama/DB 장애 시 502/503) + CORS
 - [x] 아이디/비밀번호 로그인(2026-10-07): `POST /api/auth/signup`, `POST /api/auth/login`, `GET /api/auth/me`.
   argon2id 비밀번호 해시 + HS256 JWT(만료 24시간). 리서치/관심종목/모의투자는 `Authorization: Bearer` 필수(없으면 401),
-  `X-Device-Id`는 폐지. 리서치 이력은 사용자별(남의 리포트 404). 로그인 시도 횟수 제한(rate limit)은 아직 없음
+  `X-Device-Id`는 폐지. 리서치 이력은 사용자별(남의 리포트 404). 로그인 시도 횟수 제한은 2026-10-28에 추가
+- [x] 로그아웃·비밀번호 변경·토큰 폐기(2026-10-29): `POST /api/auth/logout`, `POST /api/auth/change-password`. JWT `tv` 클레임과
+  `users.token_version`(마이그레이션 `e2a9c4f71b03`) 비교로 그 사용자의 기존 토큰을 전부 무효화. `tv` 없는 옛 토큰은 0으로 봐서 하위 호환
 - [x] 자동 테스트(pytest)와 API 문서
 - [ ] 프론트엔드 연동: 서윤님 담당(`feature/frontend`). API 스펙은 API.md, 2026-10-14 점검에서 실제 응답이 프론트 zod 스키마와 맞음을 확인. 화면 연동은 진행 중
 - [x] 모의투자 기능: `GET /api/portfolio`(잔고+보유종목+평가손익), `POST /api/portfolio/orders`(매수/매도, 현재가로 즉시 체결).

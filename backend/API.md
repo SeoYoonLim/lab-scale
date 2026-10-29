@@ -18,7 +18,7 @@ Authorization: Bearer <access_token>
 
 | 구분 | 엔드포인트 |
 | --- | --- |
-| **인증 필요** | `/api/auth/me`, `/api/briefing`(GET), `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET) |
+| **인증 필요** | `/api/auth/me`, `/api/auth/logout`(POST), `/api/auth/change-password`(POST), `/api/briefing`(GET), `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET) |
 | 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status`, `/api/health`, `/api/stocks/{ticker}/event-reactions`, `/api/stocks/{ticker}/price-history` |
 
 - 데이터는 **사용자별로 분리**된다. 리서치 리포트 목록/조회/삭제/이어 쓰기(`previous_report_id`)는 본인 것만 대상이고,
@@ -26,12 +26,13 @@ Authorization: Bearer <access_token>
   관심종목/모의투자도 사용자마다 따로다.
 - 로그인 도입 전에 만들어진 리포트(소유자 없음)와 `X-Device-Id`로 만든 관심종목/모의투자 데이터는 DB에 남아 있지만
   어떤 사용자에게도 보이지 않는다(새 계정으로 이전되지 않음).
-- 서버는 세션/쿠키를 쓰지 않는다. 로그아웃은 프론트가 저장한 토큰을 지우는 것으로 끝난다(서버 측 토큰 폐기 없음, 아래 "한계").
+- 서버는 세션/쿠키를 쓰지 않는다. 2026-10-29부터 `POST /api/auth/logout`과 `POST /api/auth/change-password`가 서버 측에서
+  토큰을 폐기한다(**그 사용자의 모든 기기 토큰이 한꺼번에 무효**, 아래 "토큰 폐기"). 이전에는 프론트가 토큰을 지우는 것뿐이었다.
 
 ### 인증 에러 (401)
 
-토큰이 없거나, `Bearer` 형식이 아니거나, 서명이 틀리거나(변조/다른 서버 키), 만료됐거나, 토큰의 사용자가 삭제됐으면
-**전부 같은 401**이다(사유를 구분해 알려주지 않는다). 응답 헤더에 `WWW-Authenticate: Bearer`가 붙는다.
+토큰이 없거나, `Bearer` 형식이 아니거나, 서명이 틀리거나(변조/다른 서버 키), 만료됐거나, 토큰의 사용자가 삭제됐거나,
+**폐기된 토큰**이면(로그아웃·비밀번호 변경 이후, 2026-10-29) **전부 같은 401**이다(사유를 구분해 알려주지 않는다). 응답 헤더에 `WWW-Authenticate: Bearer`가 붙는다.
 
 ```json
 { "detail": "인증이 필요합니다. 다시 로그인해주세요." }
@@ -50,8 +51,13 @@ Authorization: Bearer <access_token>
    (공개 API에는 붙여도 무시된다).
 5. **401 처리**: 어떤 API에서든 401을 받으면 저장된 토큰을 지우고 로그인 화면으로 보낸다. 재시도해도 같은 결과다.
    (로그인 API의 401은 "아이디 또는 비밀번호가 올바르지 않습니다" — 로그인 화면에서 그대로 보여주면 된다.)
+   비밀번호 변경에서 **현재 비밀번호가 틀린 경우는 401이 아니라 422**라서 이 처리에 걸리지 않는다(로그인 상태 유지).
 6. **앱 시작 시**: 저장된 토큰이 있으면 `GET /api/auth/me`로 유효한지 확인하고 사용자 이름을 표시한다(401이면 5번).
-7. **CORS**: `Authorization` 헤더를 보내면 브라우저가 preflight(OPTIONS)를 먼저 보낸다. 허용 origin(아래)에서는 그대로 통과한다.
+7. **로그아웃(2026-10-29)**: `POST /api/auth/logout`을 부른 뒤 저장한 토큰을 지운다. 응답이 401이어도(이미 무효) 토큰을 지우면 된다.
+   이 계정으로 로그인한 **다른 기기도 함께 로그아웃**된다(다음 요청에서 401).
+8. **비밀번호 변경(2026-10-29)**: `POST /api/auth/change-password` 성공 응답의 `access_token`으로 **저장한 토큰을 바꾼다**.
+   기존 토큰은 이 기기 것도 무효가 되므로, 바꾸지 않으면 다음 요청에서 401이 된다.
+9. **CORS**: `Authorization` 헤더를 보내면 브라우저가 preflight(OPTIONS)를 먼저 보낸다. 허용 origin(아래)에서는 그대로 통과한다.
 
 ## CORS
 
@@ -165,6 +171,8 @@ ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응�
 | POST | `/api/auth/signup` | 공개 | 회원가입 → 201 + access token |
 | POST | `/api/auth/login` | 공개 | 로그인 → 200 + access token |
 | GET | `/api/auth/me` | 필요 | 토큰의 사용자 정보 |
+| POST | `/api/auth/logout` | 필요 | 이 사용자의 모든 토큰 폐기(전체 기기 로그아웃) → 200 `{"ok": true}` |
+| POST | `/api/auth/change-password` | 필요 | 비밀번호 변경 + 기존 토큰 폐기 → 200 + 새 access token |
 | POST | `/api/research` | 필요 | 질문을 보내 AI 답변 생성(+리포트 저장). `previous_report_id`로 내 직전 보고서를 이어서 후속 질문 가능 |
 | GET | `/api/research` | 필요 | 내 리포트 목록(기본 최신순). `limit`/`offset` 페이지네이션(`has_next`, `total_pages`), `sort`/`order` 정렬, `q` 검색 |
 | GET | `/api/research/{report_id}` | 필요 | 내 리포트 한 건 조회 |
@@ -276,7 +284,85 @@ curl http://localhost:8000/api/auth/me -H "Authorization: Bearer $TOKEN"
 
 ### 에러
 
-401(토큰 없음/만료/변조/삭제된 사용자, 위 "인증 에러" 참고).
+401(토큰 없음/만료/변조/삭제된 사용자/폐기된 토큰, 위 "인증 에러" 참고).
+
+---
+
+## 토큰 폐기 (`tv` 클레임, 2026-10-29)
+
+- `users.token_version`(정수, 기본 0, 마이그레이션 `e2a9c4f71b03`)을 두고, 발급하는 토큰에 그 값을 **`tv` 클레임**으로 넣는다
+  (claims: `sub`, `iat`, `exp`, `tv`).
+- 인증할 때 토큰의 `tv`와 DB의 `token_version`이 **같을 때만** 통과한다. 다르면 401(다른 401과 같은 응답).
+  비교는 원래 하던 사용자 조회 결과로 하므로 요청당 DB 조회는 늘지 않았다(여전히 1회).
+- 로그아웃·비밀번호 변경이 `token_version`을 1 올리면, 그 전에 발급된 그 사용자의 토큰은 **기기와 상관없이 전부** 무효다.
+  다른 사용자의 토큰은 영향이 없다. 한 기기만 로그아웃하는 기능은 없다(한계).
+- **하위 호환**: `tv`가 없는 토큰(2026-10-29 이전 발급)은 `tv=0`으로 본다. 마이그레이션이 모든 기존 사용자의 `token_version`을 0으로
+  채우므로 배포 직후에도 기존 로그인 상태가 그대로 유지되고, 그 사용자가 처음 로그아웃하거나 비밀번호를 바꿀 때 함께 무효가 된다.
+  `tv`가 있는데 0 이상의 정수가 아니면(문자열, 음수, true 등) 401.
+- 로그인·가입 응답 형식은 그대로다(`{user, access_token, token_type}`).
+
+---
+
+## POST /api/auth/logout
+
+인증 필요. 본문 없음. 이 사용자의 `token_version`을 1 올려 **모든 기기의 기존 토큰을 무효**로 만든다.
+
+```bash
+curl -X POST http://localhost:8000/api/auth/logout -H "Authorization: Bearer $TOKEN"
+```
+
+### 응답 200
+
+```json
+{ "ok": true }
+```
+
+### 에러
+
+| 상태 | 언제 | body |
+| --- | --- | --- |
+| 401 | 토큰 없음/만료/변조/**이미 폐기된 토큰**(로그아웃을 두 번 부른 경우 포함) | 위 "인증 에러"와 같음. `token_version`은 바뀌지 않는다 |
+| 429 | 사용자당 분당 10회 초과 | 레이트 리밋 형식 |
+| 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
+
+---
+
+## POST /api/auth/change-password
+
+인증 필요. 현재 비밀번호를 확인하고 바꾼다. 성공하면 `token_version`을 올려 기존 토큰(이 기기 것 포함)을 전부 무효로 하고,
+**새 토큰을 응답으로 돌려줘** 현재 세션을 이어 가게 한다. 비밀번호 해시는 가입과 같은 argon2id다.
+
+### 요청
+
+```json
+{ "current_password": "correct-horse-battery", "new_password": "another-long-passphrase" }
+```
+
+| 필드 | 타입 | 규칙 |
+| --- | --- | --- |
+| `current_password` | string | 필수. 1~128자 |
+| `new_password` | string | 필수. **가입과 같은 규칙(8~128자, 문자 종류 제한 없음)**. 위반 시 422. `current_password`와 같으면 422(`"type": "same_password"`) |
+
+### 응답 200
+
+로그인 응답과 같은 형식(`user`, `access_token`, `token_type`). 이 `access_token`으로 저장한 토큰을 바꿔야 한다.
+
+### 에러
+
+| 상태 | 언제 | body |
+| --- | --- | --- |
+| 401 | 토큰 없음/만료/변조/폐기됨, 또는 처리 중에 다른 기기에서 로그아웃됨 | 위 "인증 에러"와 같음. 본문 검사보다 먼저다(토큰 없이는 본문 규칙도 알려주지 않는다) |
+| 422 | **현재 비밀번호가 틀림** | `{"detail": [{"type": "invalid_current_password", "loc": ["body", "current_password"], "msg": "현재 비밀번호가 올바르지 않습니다."}]}` |
+| 422 | 새 비밀번호 규칙 위반, 현재와 같음, 필드 누락 | 검증 오류 형식(`input` 없음) |
+| 429 | 사용자당 시간당 10회 초과, 또는 현재 비밀번호 연속 5회 오류(5분 잠금) | 레이트 리밋 형식 |
+| 503 | DB 연결 불가 | 위와 같음 |
+
+**현재 비밀번호 오류가 401이 아니라 422인 이유**: 이 API에서 인증 필요 라우트의 401은 "토큰이 무효하니 다시 로그인하라"는 뜻이고,
+프론트는 401을 받으면 로그인 상태를 지운다(위 "프론트가 할 일" 5번). 여기서는 토큰이 유효하고 입력 하나가 틀린 것이라 입력 오류로
+돌려준다. 형식은 검증 오류(422)와 같은 `detail` 배열이라 프론트가 따로 분기하지 않아도 `msg`가 그대로 보인다.
+로그인 실패 401과 같은 원칙은 지킨다: 오류 응답은 하나로 고정돼 있고 어떤 비밀번호도 응답·로그·예외 메시지에 넣지 않는다.
+계정은 토큰으로 이미 특정돼 있어 계정 존재 여부가 새는 경로는 없다. 새 비밀번호가 현재와 같은지는 요청의 두 값끼리만 비교하므로
+저장된 비밀번호에 대해 아무것도 드러내지 않는다. 규칙 위반 422는 현재 비밀번호를 확인하기 전에 끝나며 실패 횟수에 세지 않는다.
 
 ---
 
@@ -2779,6 +2865,9 @@ curl http://localhost:8000/api/health
 | `RATE_LIMIT_ORDERS_PER_MIN` | `30` | 사용자당 분당 모의투자 주문 |
 | `RATE_LIMIT_RESEARCH_PER_MIN` | `6` | 사용자당 분당 AI 질문(`POST /api/research`) |
 | `RATE_LIMIT_RESEARCH_CONCURRENT` | `1` | 사용자당 동시에 처리 중인 AI 질문 |
+| `RATE_LIMIT_LOGOUT_PER_MIN` | `10` | 사용자당 분당 로그아웃(2026-10-29) |
+| `RATE_LIMIT_PASSWORD_CHANGE_PER_HOUR` | `10` | 사용자당 시간당 비밀번호 변경 시도(2026-10-29) |
+| `PASSWORD_CHANGE_LOCK_FAILURES` / `PASSWORD_CHANGE_LOCK_SECONDS` | `5` / `300` | 같은 사용자의 현재 비밀번호 연속 오류 5회면 300초 비밀번호 변경 잠금(성공하면 초기화, 2026-10-29) |
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | `/api/health`의 Ollama 검사 주소(에이전트는 ollama 라이브러리 기본값과 같다) |
 
 ### 레이트 리밋 (429)
@@ -2790,6 +2879,9 @@ curl http://localhost:8000/api/health
 | `POST /api/auth/signup` | IP | 시간당 10회 | 맨 먼저 |
 | `POST /api/portfolio/orders` | 사용자 | 분당 30회 | 인증(401) 다음 |
 | `POST /api/research` | 사용자 | 분당 6회 + 동시 1건 | 인증(401) 다음. 처리 중인 질문이 있으면 두 번째는 429(`Retry-After: 5`) |
+| `POST /api/auth/logout` | 사용자 | 분당 10회 | 인증(401) 다음. 429면 폐기하지 않는다 |
+| `POST /api/auth/change-password` | 사용자 | 시간당 10회 | 인증(401)과 본문 검사(422) 다음. 매번 argon2 검증·해시를 하므로 CPU 소모를 제한한다 |
+| `POST /api/auth/change-password` 현재 비밀번호 연속 오류 | 사용자 | 5회 오류면 5분 잠금 | 시간당 한도 다음. 잠금 중에는 맞는 비밀번호도 429. 아이디+IP가 아니라 사용자 기준이라 토큰을 가진 쪽이 IP를 바꿔 대입해도 막힌다 |
 
 ```
 HTTP/1.1 429 Too Many Requests
@@ -2849,14 +2941,20 @@ FastAPI 기본 형식으로 `detail`이 **배열**이다. 필드별 위치는 `l
 필수 필드 누락은 `"type": "missing"`.
 `/api/auth/*`의 422에는 `input` 키가 빠진다(입력한 비밀번호가 응답에 되돌아오지 않게). 나머지 경로는 위 형식 그대로다.
 
-## 인증 관련 한계 (2026-10-07 기준, 2026-10-14에도 그대로)
+## 인증 관련 한계 (2026-10-29 갱신)
 
-- **로그인 시도 횟수 제한(rate limit)이 없다.** 같은 아이디에 비밀번호를 무한히 대입해볼 수 있다. 외부에 공개하기 전에
-  IP/아이디 기준 제한(또는 리버스 프록시 단의 제한)을 넣어야 한다.
-- **토큰 폐기(로그아웃/비밀번호 변경 시 무효화)가 없다.** 발급된 토큰은 만료(24시간)까지 유효하다. 서버의 `JWT_SECRET`을
-  바꾸면 모든 토큰이 한꺼번에 무효가 된다.
-- refresh token이 없다. 24시간이 지나면 다시 로그인해야 한다.
-- 비밀번호 변경/재설정, 회원 탈퇴 API는 없다.
+- 로그인·가입 횟수 제한은 2026-10-28에 들어갔다(메모리 기반, 위 "레이트 리밋"의 한계가 그대로다).
+- 토큰 폐기는 2026-10-29부터 된다(로그아웃·비밀번호 변경). 남은 한계:
+  - **폐기는 사용자 단위다(전체 기기 로그아웃).** 한 기기만 로그아웃하거나, 기기별 세션 목록을 보여 주는 기능은 없다.
+  - **폐기하지 않은 access token은 여전히 24시간 유효하다.** 토큰을 훔친 사람은 사용자가 로그아웃·비밀번호 변경을 하기 전까지 쓸 수 있다.
+    짧은 만료 + refresh token 구조가 아니다.
+  - **refresh token이 없다.** 24시간이 지나면 다시 로그인해야 한다.
+  - 훔친 토큰으로 로그아웃을 부르면 원래 사용자도 모든 기기에서 로그아웃된다(가용성 문제, 데이터 노출은 아님).
+    훔친 토큰으로 비밀번호를 바꾸려면 현재 비밀번호가 필요하다.
+  - DB를 백업에서 복원하거나 마이그레이션을 내렸다 올리면 `token_version`이 예전 값(또는 0)으로 돌아가 이미 폐기한 토큰이 다시 통할 수 있다.
+    그런 작업 뒤에는 `JWT_SECRET`을 바꿔 모든 토큰을 한꺼번에 무효로 하는 것이 안전하다.
+- 서버의 `JWT_SECRET`을 바꾸면 모든 토큰이 한꺼번에 무효가 된다(기존).
+- 비밀번호 재설정(분실 시), 회원 탈퇴 API는 없다.
 - HTTPS는 배포 환경(리버스 프록시)에서 처리해야 한다. 로컬 개발 서버는 HTTP라 토큰이 평문으로 오간다.
 
 ## 알아둘 점
