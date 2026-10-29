@@ -18,7 +18,7 @@ Authorization: Bearer <access_token>
 
 | 구분 | 엔드포인트 |
 | --- | --- |
-| **인증 필요** | `/api/auth/me`, `/api/auth/logout`(POST), `/api/auth/change-password`(POST), `/api/briefing`(GET), `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/performance`(GET), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET) |
+| **인증 필요** | `/api/auth/me`, `/api/auth/logout`(POST), `/api/auth/change-password`(POST), `/api/briefing`(GET), `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/performance`(GET), `/api/backtest`(POST), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET) |
 | 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status`, `/api/health`, `/api/stocks/{ticker}/event-reactions`, `/api/stocks/{ticker}/price-history` |
 
 - 데이터는 **사용자별로 분리**된다. 리서치 리포트 목록/조회/삭제/이어 쓰기(`previous_report_id`)는 본인 것만 대상이고,
@@ -187,6 +187,7 @@ ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응�
 | POST | `/api/portfolio/orders` | 필요 | 모의투자 매수/매도 주문 |
 | GET | `/api/portfolio/trades` | 필요 | 내 체결 내역(기본 최신순, `limit`/`offset` 페이지네이션(`has_next`, `total_pages`), `sort`/`order` 정렬, `ticker` 필터) |
 | GET | `/api/portfolio/performance` | 필요 | 거래일 종가 기준 자산 곡선과 성과 지표(수익률·MDD·변동성·승률·종목 기여도·코스피 대비), LLM 없음, 읽기 전용 (2026-10-29) |
+| POST | `/api/backtest` | 필요 | 과거 종가로 buy_and_hold / sma_cross / dca 백테스트(1~5종목, 최대 5년, t일 신호 → t+1일 종가 체결), LLM 없음, 저장 안 함 (2026-10-29) |
 | POST | `/api/portfolio/reset` | 필요 | 내 모의투자 초기화(보유·체결 내역 삭제 + 잔고 초기값). 본문 `{"confirm": true}` 필수 |
 | POST | `/api/portfolio/diagnosis` | 필요 | 내 포트폴리오 AI 진단(지표·플래그는 코드 계산, 설명은 LLM 또는 규칙 기반 폴백). 결과를 저장하고 `diagnosis_id`·`created_at`을 붙인다 |
 | GET | `/api/portfolio/diagnosis/history` | 필요 | 내 진단 이력 목록(기본 최신순, `limit`/`offset` 페이지네이션(`has_next`, `total_pages`), `sort`/`order` 정렬, 최근 50건 보관) |
@@ -2975,6 +2976,152 @@ curl "http://localhost:8000/api/portfolio/performance?period=3m" -H "Authorizati
 
 ---
 
+## POST /api/backtest (2026-10-29)
+
+인증 필요. 과거 종가로 전략을 시험한다. **LLM을 쓰지 않고** 모든 숫자는 코드가 DB 종가로 계산한다. 결과는 저장하지 않는다(요청마다 계산).
+과거 성과는 미래 수익을 보장하지 않는다(응답의 `disclaimer`).
+
+처리 순서: 인증(401) → 본문 검증(422) → 레이트 리밋(429, 사용자당 분당 10회) → 종목 해석(404) → 데이터 확인(400) → 계산.
+
+```bash
+curl -X POST http://localhost:8000/api/backtest -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"tickers": ["005930", "069500"], "strategy": "sma_cross", "params": {"short": 20, "long": 60},
+       "start": "2023-11-01", "end": "2026-10-28", "initial_cash": 10000000}'
+```
+
+### 요청
+
+| 필드 | 타입 | 기본 | 규칙(어기면 422) |
+| --- | --- | --- | --- |
+| `tickers` | string[] | (필수) | 1~5개, 각 1~50자, 중복 불가. 종목코드·정확한 종목명·별칭만 인정(주문 API와 같은 엄격 모드). 못 찾으면 **404 + 후보 안내**("혹시 SK하이닉스, … 중 하나인가요?") |
+| `strategy` | string | (필수) | `buy_and_hold` / `sma_cross` / `dca` |
+| `params` | object | `{}` | 전략별(아래). 모르는 키, 숫자가 아닌 값, 범위 밖은 422(`loc: ["body", "params", 키]`) |
+| `start`, `end` | date | (필수) | `1990-01-01` ≤ start < end ≤ 오늘, 기간 최대 5년 |
+| `initial_cash` | number | 10,000,000 | 100,000 ~ 10,000,000,000 |
+| `fee_rate` | number | 0.00015 | 0 ~ 0.01. **가정값이며 실제 수수료와 다를 수 있음** |
+| `sell_tax_rate` | number | 0.0018 | 0 ~ 0.01. **가정값이며 실제 세율과 다를 수 있음**(현재 법정 세율을 단정하지 않는다) |
+
+### 전략별 규칙
+
+| 전략 | params(기본) | 규칙 |
+| --- | --- | --- |
+| `buy_and_hold` | 없음 | 첫 거래일에 매수 신호 → 다음 거래일 종가에 칸(sleeve)의 현금으로 살 수 있는 만큼 매수, 끝까지 보유 |
+| `sma_cross` | `short` 2~120(20), `long` 3~250(60), `short < long`, 정수 | t일에 단기 SMA > 장기 SMA이면 목표 "보유", 아니면 "현금". 목표가 현재 상태와 다르면 다음 거래일 종가에 전량 매수(칸 현금 전부) 또는 전량 매도. 장기 SMA를 구할 수 있는 날(기간 안 `long`번째 거래일)부터 판단한다(기간 앞 데이터는 쓰지 않는다). 첫 판단일에 이미 단기 > 장기면 다음 날 매수 |
+| `dca` | `monthly_amount` 10,000 ~ `initial_cash`(min(1,000,000, initial_cash)) | 그 달의 첫 거래일에 매수 신호 → 다음 거래일 종가에 `monthly_amount ÷ 종목 수`(칸 현금이 모자라면 남은 현금)만큼 매수. 1주도 못 사면 건너뛰고 notice로 센다. 쓰지 않은 현금은 남는다 |
+
+### 룩어헤드 방지와 체결·비용 가정
+
+- **거래일 t의 신호는 t일 종가까지의 값만으로 계산하고, 체결은 t+1 거래일 종가로 한다.** 마지막 거래일의 신호는 체결되지 않는다.
+  `tests/test_backtest.py`의 `TestNoLookahead`가 "k일 뒤의 가격을 바꿔도 k일까지의 신호·거래·자산 곡선이 그대로"인지 3전략 × 3시점으로 확인한다.
+- 여러 종목은 **모든 종목의 종가가 있는 날만** 거래일로 쓴다(공통 달력). 빠진 날 수는 notice로 알린다.
+- **여러 종목**: 초기 자금을 종목 수로 똑같이 나눈 칸마다 따로 운용한다. 칸 사이에 현금을 옮기지 않고 리밸런싱하지 않는다.
+- **정수 주식 수**: 매수 수량 = floor(쓸 금액 ÷ (체결가 × (1 + 수수료율))). 남는 금액은 현금(이자 없음).
+- **비용**: 매수 비용 = 수량 × 체결가 × (1 + 수수료율), 매도 수령액 = 수량 × 체결가 × (1 − 수수료율 − 매도세율).
+- **기간 끝**: 강제로 팔지 않고 마지막 종가로 평가한다(매도 비용 미반영).
+- 호가 단위, 거래량 제약, 슬리피지, 배당은 반영하지 않는다. 시세는 FinanceDataReader의 **수정주가**다.
+- 장 마감(평일 15:30 KST) 전에는 오늘 날짜 행을 쓰지 않는다(브리핑·성과 추적과 같은 규칙).
+- 응답의 `assumptions[]`에 위 가정이 문장으로 들어 있다.
+
+### 기간 조정과 데이터 부족
+
+- 요청 기간이 보유 데이터보다 길면 **모든 종목의 종가가 있는 구간으로 조정**하고 `period.adjusted: true`, 실제 `period.start`/`period.end`,
+  notice("요청 기간(…) 중 모든 종목의 종가가 있는 구간(…)으로 계산했습니다")로 밝힌다. 조용히 줄이지 않는다.
+- 공통 거래일이 **30일 미만이면 400**과 이유(종목별 보유 시세 범위 포함)로 거부한다. 400인 이유: 요청 값은 규칙에 맞지만(그래서 422가 아니다)
+  데이터로 처리할 수 없는 경우라, 진단의 "보유 종목 없음"·주문의 "잔고 부족"과 같은 코드를 쓴다.
+
+```json
+{ "detail": "요청 기간에 모든 종목의 종가가 있는 거래일이 8일이라 백테스트할 수 없습니다(최소 30일). 보유 시세: 005930 2025-06-02~2025-06-13." }
+```
+
+### 지표 정의
+
+| 필드 | 정의 |
+| --- | --- |
+| `metrics.total_return_pct` | (마지막 자산 ÷ 초기 자금 − 1) × 100 |
+| `metrics.cagr_pct` | ((마지막 자산 ÷ 초기 자금)^(365.25 ÷ 첫날~마지막 날 달력 일수) − 1) × 100 |
+| `metrics.max_drawdown` | 자산 곡선에서 min(자산 ÷ 그때까지 최고 자산 − 1) × 100과 고점·저점·회복일(없으면 null)·고점→저점 거래일 수 |
+| `metrics.annualized_volatility_pct` | 일간 자산 등락률(%)의 표본 표준편차 × √252. 수익률이 2개 미만이면 null |
+| `metrics.sharpe_like` | 일간 등락률 평균 ÷ 표본 표준편차 × √252. **무위험 수익률 0 가정**(정식 Sharpe 비율이 아니다). 표준편차가 0이면 null |
+| `metrics.trade_count` / `buy_count` / `sell_count` | 체결 수 |
+| `metrics.fees_paid` / `taxes_paid` / `ending_cash` | 낸 수수료·세금 합, 마지막 날 현금 |
+| `benchmark` | 같은 기간 코스피(KS11) 매수 후 보유(비용 없음): 기간 안 첫 지수 종가 → 마지막 지수 종가. `excess_return_pct` = 전략 총수익률 − 지수 수익률(%p). 지수가 기간을 다 덮지 못하면 `covers_full_period: false`와 notice, 지수가 없으면 null |
+
+### 응답 200
+
+| 필드 | null | 설명 |
+| --- | --- | --- |
+| `generated_at` | 아니오 | 계산 시각(KST) |
+| `input` | 아니오 | 요청 요약: `tickers[]`{`ticker`, `name`}, `strategy`, `params`(기본값을 채운 값), `start`, `end`, `initial_cash`, `fee_rate`, `sell_tax_rate` |
+| `period` | 아니오 | `requested_start`, `requested_end`, 실제 `start`, `end`, `trading_days`, `adjusted` |
+| `metrics` | 아니오 | 위 표. `total_return_pct`, `cagr_pct`, `annualized_volatility_pct`, `sharpe_like`는 null 가능 |
+| `per_ticker[]` | 아니오 | 칸별 `start_value`, `final_value`, `return_pct`(null 가능), `quantity`(마지막 보유), `trade_count` |
+| `benchmark` | 예 | 위 표 |
+| `curve` | 아니오 | `points[]`{`date`, `total_value`, `cash`}, `total_points`, `sampled`, `max_points`(400). 400점을 넘으면 고르게 줄이되 첫·마지막·최고·최저·MDD 고점/저점은 남긴다 |
+| `trades` | 아니오 | `items[]`{`ticker`, `side`, `signal_date`, `date`(체결일 = 신호 다음 거래일), `quantity`, `price`, `amount`, `fee`, `tax`, `cash_after`(그 칸의 현금)}, `total`, `truncated`, `max_items`(500) |
+| `assumptions[]` | 아니오 | 체결·비용 가정 문장 |
+| `data_warnings[]` | 아니오 | 쓰인 구간의 시세 경고: `ticker`, `name`, `kind`(`jump` / `non_positive` / `flat_run`), `date`, `detail`, `value` |
+| `notices[]` | 아니오 | 기간 조정, 공통 거래일에서 뺀 날, 적립 건너뜀, 거래 없음, 벤치마크 부분 비교 |
+| `disclaimer` | 아니오 | 기존 면책 문구 + "백테스트 결과는 과거 데이터로 계산한 가상의 성과이며 미래 수익을 보장하지 않습니다." |
+
+**데이터 경고(`data_warnings`) 규칙** (`app/price_quality.py`, 백필 점검과 같은 함수):
+- `jump`: 직전 거래일 종가 대비 |등락률| > 30.5%(가격제한폭 30% + 수정주가 반올림 여유 0.5%p). 액면분할·병합 같은 가격 불연속이거나,
+  레버리지 ETF처럼 제한폭이 넓은 상품의 실제 급등락일 수 있다(판단하지 않고 알리기만 한다).
+- `flat_run`: 같은 종가가 5거래일 이상 이어짐(거래정지 중 같은 값으로 채운 행일 가능성).
+- `non_positive`: 종가 0 이하.
+
+예시(captest 계정, 2026-10-29 15:41, 일부 생략):
+
+```json
+{
+  "input": {"tickers": [{"ticker": "005930", "name": "삼성전자"}, {"ticker": "069500", "name": "KODEX 200"}],
+            "strategy": "sma_cross", "params": {"short": 20, "long": 60}, "start": "2023-11-01", "end": "2026-10-28",
+            "initial_cash": 10000000.0, "fee_rate": 0.00015, "sell_tax_rate": 0.0018},
+  "period": {"requested_start": "2023-11-01", "requested_end": "2026-10-28", "start": "2023-11-01", "end": "2026-10-28",
+             "trading_days": 727, "adjusted": false},
+  "metrics": {"final_value": 27515439.87, "total_return_pct": 175.15, "cagr_pct": 40.29,
+              "max_drawdown": {"pct": -40.9, "peak_date": "2026-06-18", "trough_date": "2026-10-15", "recovery_date": null, "duration_days": 79},
+              "annualized_volatility_pct": 36.69, "sharpe_like": 1.142, "trade_count": 22, "buy_count": 11, "sell_count": 11,
+              "fees_paid": 25826.17, "taxes_paid": 170897.97, "ending_cash": 27515439.87},
+  "per_ticker": [{"ticker": "005930", "name": "삼성전자", "start_value": 5000000.0, "final_value": 14511298.15, "return_pct": 190.23, "quantity": 0, "trade_count": 12},
+                 {"ticker": "069500", "name": "KODEX 200", "start_value": 5000000.0, "final_value": 13004141.72, "return_pct": 160.08, "quantity": 0, "trade_count": 10}],
+  "benchmark": {"index_code": "KS11", "index_name": "코스피", "start_date": "2023-11-01", "end_date": "2026-10-28",
+                "return_pct": 161.23, "excess_return_pct": 13.92, "covers_full_period": true},
+  "curve": {"points": [{"date": "2023-11-01", "total_value": 10000000.0, "cash": 10000000.0}, "..."], "total_points": 727, "sampled": true, "max_points": 400},
+  "trades": {"items": [{"ticker": "005930", "side": "buy", "signal_date": "2024-01-26", "date": "2024-01-29", "quantity": 67,
+                        "price": 74400.0, "amount": 4984800.0, "fee": 747.72, "tax": 0.0, "cash_after": 14452.28}, "..."],
+             "total": 22, "truncated": false, "max_items": 500},
+  "assumptions": ["신호는 그날 종가까지의 데이터로만 계산하고, 체결은 다음 거래일 종가로 합니다. ...", "..."],
+  "data_warnings": [], "notices": [],
+  "disclaimer": "이 서비스는 학습·시연용 모의투자와 AI 리서치입니다. ... 백테스트 결과는 과거 데이터로 계산한 가상의 성과이며 미래 수익을 보장하지 않습니다."
+}
+```
+
+### 에러
+
+| 상태 | 언제 |
+| --- | --- |
+| 401 | 토큰 없음/무효. 본문 검증보다 먼저다 |
+| 422 | 위 요청 규칙 위반(전략 파라미터는 `loc: ["body", "params", 키]`) |
+| 429 | 사용자당 분당 10회 초과(`RATE_LIMIT_BACKTEST_PER_MIN`) |
+| 404 | 종목을 찾지 못함(후보 안내 포함) |
+| 400 | 공통 거래일 30일 미만(이유 포함) |
+
+### 처리 시간 (2026-10-29 측정, 로컬 dev DB, TestClient)
+
+최악 입력(5종목: 005930·000660·069500·035420·122630, 5년 요청 → 보유 데이터 729거래일로 조정): 전략별 5회 중앙값
+buy_and_hold 35ms, sma_cross(5/250) 41ms, dca 33ms, 최대 72ms. 응답 크기 약 30~34KB.
+
+### 한계
+
+- **과최적화 위험**: 파라미터를 바꿔 가며 좋은 결과를 고르면 과거 데이터에만 맞는 설정이 된다. 표본은 약 3년(2023-10-30~)뿐이다.
+- **생존 편향**: 종목 목록은 현재 시가총액 상위 300개와 ETF 50개다. 그 사이 상장폐지되거나 순위에서 빠진 종목은 없어서 결과가 좋게 나오기 쉽다.
+- **단순 비용 모델**: 수수료·세금은 고정 비율 가정값이고, 슬리피지·호가 단위·거래량 제약·배당·세금 세부 규칙은 반영하지 않는다.
+- 종가 체결이라 장중 가격으로 체결할 수 없고, 다음 날 종가가 신호 시점 가격과 크게 다를 수 있다.
+- 벤치마크는 코스피 지수(배당 미포함 가격지수)이고, 전략 자산에도 배당이 없다.
+- 리밸런싱, 손절, 공매도, 레버리지, 종목 간 현금 이동은 없다.
+
+---
+
 ## 운영 설정 (환경변수, 2026-10-28)
 
 비밀값은 코드에 두지 않는다(`backend/.env`, 커밋 금지, 예시는 `backend/.env.example`). 아래는 비밀값이 아닌 설정과 기본값이다.
@@ -2994,6 +3141,7 @@ curl "http://localhost:8000/api/portfolio/performance?period=3m" -H "Authorizati
 | `RATE_LIMIT_RESEARCH_CONCURRENT` | `1` | 사용자당 동시에 처리 중인 AI 질문 |
 | `RATE_LIMIT_LOGOUT_PER_MIN` | `10` | 사용자당 분당 로그아웃(2026-10-29) |
 | `RATE_LIMIT_PASSWORD_CHANGE_PER_HOUR` | `10` | 사용자당 시간당 비밀번호 변경 시도(2026-10-29) |
+| `RATE_LIMIT_BACKTEST_PER_MIN` | `10` | 사용자당 분당 백테스트(`POST /api/backtest`, 2026-10-29) |
 | `PASSWORD_CHANGE_LOCK_FAILURES` / `PASSWORD_CHANGE_LOCK_SECONDS` | `5` / `300` | 같은 사용자의 현재 비밀번호 연속 오류 5회면 300초 비밀번호 변경 잠금(성공하면 초기화, 2026-10-29) |
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | `/api/health`의 Ollama 검사 주소(에이전트는 ollama 라이브러리 기본값과 같다) |
 
@@ -3009,6 +3157,7 @@ curl "http://localhost:8000/api/portfolio/performance?period=3m" -H "Authorizati
 | `POST /api/auth/logout` | 사용자 | 분당 10회 | 인증(401) 다음. 429면 폐기하지 않는다 |
 | `POST /api/auth/change-password` | 사용자 | 시간당 10회 | 인증(401)과 본문 검사(422) 다음. 매번 argon2 검증·해시를 하므로 CPU 소모를 제한한다 |
 | `POST /api/auth/change-password` 현재 비밀번호 연속 오류 | 사용자 | 5회 오류면 5분 잠금 | 시간당 한도 다음. 잠금 중에는 맞는 비밀번호도 429. 아이디+IP가 아니라 사용자 기준이라 토큰을 가진 쪽이 IP를 바꿔 대입해도 막힌다 |
+| `POST /api/backtest` | 사용자 | 분당 10회 | 인증(401)과 본문 검사(422) 다음, 종목 해석 전 |
 
 ```
 HTTP/1.1 429 Too Many Requests
