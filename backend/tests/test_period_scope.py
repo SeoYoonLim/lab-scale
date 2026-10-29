@@ -92,9 +92,19 @@ class TestAgentScopeDevDB:
 
         return extract_from_text(dev_db, q)
 
+    def _first_price_date(self, dev_db, ticker: str) -> date:
+        from sqlalchemy import text
+
+        d = dev_db.execute(text("SELECT min(p.price_date) FROM stock_price p JOIN company c ON c.id = p.company_id "
+                                "WHERE c.ticker = :t"), {"t": ticker}).scalar()
+        dev_db.rollback()
+        return d
+
+    # 질문의 달은 DB 시세 시작일에서 정한다(2026-10-29 3년치 백필 뒤로 시작일이 2026-06-26에서 2023-10-30으로 바뀌었다).
     @pytest.mark.needs_collected_data
     def test_outside_answer_uses_db_range_and_latest_close(self, dev_db):
-        q = "삼성전자 2024년 3월 주가 알려줘"
+        first = self._first_price_date(dev_db, "005930")
+        q = f"삼성전자 {first.year - 1}년 3월 주가 알려줘"  # 시세 시작일보다 앞선 달
         resp, records = agent._answer_period_scope(q, self._companies(dev_db, q), TODAY)
         r = records[0]["result"]
         assert r["scope"] == "outside" and r["called_via"] == "period_scope"
@@ -104,11 +114,14 @@ class TestAgentScopeDevDB:
 
     @pytest.mark.needs_collected_data
     def test_partial_answer_values_come_from_overlap_rows(self, dev_db):
-        q = "LG전자 2026년 6월 주가 흐름 알려줘"
+        first = self._first_price_date(dev_db, "066570")
+        assert first.day > 1  # 시작일이 그 달 1일보다 뒤여야 "일부만 겹침"이 된다
+        q = f"LG전자 {first.year}년 {first.month}월 주가 흐름 알려줘"
         resp, records = agent._answer_period_scope(q, self._companies(dev_db, q), TODAY)
         r = records[0]["result"]
         assert r["scope"] == "partial"
-        assert all("2026-06-01" <= p["price_date"] <= "2026-06-30" for p in r["prices"])
+        month = f"{first.year}-{first.month:02d}"
+        assert all(p["price_date"].startswith(month) for p in r["prices"])
         matched, unmatched = match_numbers(resp["answer"], [r, q])
         assert matched and unmatched == []
 
