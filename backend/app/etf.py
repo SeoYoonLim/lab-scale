@@ -120,8 +120,9 @@ def leverage_notice(name: str, kind: str) -> str:
 
 
 # ---------- 구성종목·비중 질문 ----------
-# 이 서비스는 ETF의 구성종목(PDF)·편입 비중 데이터를 수집하지 않는다. 그런데 모델은 이런 질문에 가격·뉴스만 답하거나(평가 기준선
-# etf_03/04) 아는 대로 종목을 늘어놓을 수 있어서, 이런 질문은 코드가 "제공하지 않음 + 확인 경로"로 답한다(app/agent.py).
+# 구성종목(PDF)·편입 비중은 2026-10-29부터 삼성 KODEX·미래에셋 TIGER ETF만 운용사 공시를 수집한다(app/etf_holdings.py). 그 밖의 ETF에는
+# 데이터가 없다. 모델은 이런 질문에 가격·뉴스만 답하거나(평가 기준선 etf_03/04) 아는 대로 종목을 늘어놓을 수 있어서, 이런 질문은 코드가
+# 답한다: 수집한 데이터가 있으면 템플릿(app/etf_holdings.holdings_answer), 없으면 아래 "제공하지 않음 + 확인 경로"(app/agent.py).
 # ETF 이름 속 낱말("TIGER 반도체TOP10")에 걸리지 않게 이름을 가린 뒤 본다.
 _CONSTITUENT_RE = re.compile(
     r"(?:구성|편입|보유|상위|담긴|담겨\s*있는|포함된|들어\s*있는|들어간)\s*(?:\d+\s*개\s*)?종목"
@@ -138,7 +139,7 @@ def asks_constituents(question: str) -> bool:
 
 
 def constituents_answer(names: list[str]) -> str:
-    """구성종목·비중 질문의 고정 답(구성종목을 지어내지 않는다). 레버리지/인버스 ETF면 고정 설명을 덧붙인다."""
+    """구성종목·비중 데이터가 없는 ETF의 고정 답(구성종목을 지어내지 않는다). 레버리지/인버스 ETF면 고정 설명을 덧붙인다."""
     joined = ", ".join(names)
     parts = [
         f"{joined}의 구성종목과 편입 비중 데이터는 이 서비스에서 제공하지 않습니다(보유한 ETF 데이터는 가격·거래량과 관련 뉴스입니다). "

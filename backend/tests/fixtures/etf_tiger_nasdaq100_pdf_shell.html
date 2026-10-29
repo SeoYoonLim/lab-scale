@@ -1,0 +1,364 @@
+<!-- 테이블 보기 -->
+<div class="tab-data actived">
+			<form id="formPdfList">
+				<input type="hidden" name="ksdFund"  value="KR7133690008" title="번호" />
+
+				<input type="hidden" name="pageIndex" value="1" title="페이지번호" />
+				<input type="hidden" name="firstIndex" value="0" title="조회할 첫번째 순서" />
+				<input type="hidden" name="listCnt" value="10" title="조회할 갯수" />
+
+                <style>
+                    .pdf-sort-group-type01 .form-datepicker-group::after{display:none;}
+                    /* 수익률 헤더 툴팁 : 마지막 컬럼이라 왼쪽으로 열리게 보정 */
+                    th.notice .toast-data-wrap{display:inline-flex;vertical-align:middle;}
+                    th.notice .toast-data-group{margin-right:0;}
+                    th.notice .new-toast-popup .toast-pop-data{left:auto;right:100%;}
+                    th.notice .new-toast-popup .toast-pop-inner{left:auto;right:1rem;text-align:left;font-weight:400;}
+                    th.notice .new-toast-popup .toast-pop-inner::after{left:auto;right:-10px;transform:rotate(90deg);}
+                    #formPdfList .data-view-sort .sort-value:before{display:none;}
+                    .tab-button-type01 .tab-button-list{
+                        background:transparent;
+                    }
+                    .tab-button-type01 .list-type-btn-wrap > li{
+                        border:0;
+                        margin-left:20px;
+                    }
+                    .tab-button-type01 .list-type-btn-wrap > li.actived{
+                        border:0;
+                        background-color:transparent;
+                    }
+                    .basic-data-group .tab-button-type01 .tab-button-list > li.actived .btn-tab-list-item{
+                        color:#193d71;
+                    }
+                    .basic-data-group .tab-button-type01 .tab-button-list > li.actived .btn-tab-list-item::after{
+                        display:none;
+                    }
+                </style>
+				<div class="data-view-sort">
+					<div class="sort-left" style="display: flex; align-items: center;">
+						<div class="sort-group pdf-sort-group-type01">
+							<div class="sort-label">기준일 </div>
+							<div class="">
+								<div class="form-datepicker-group">
+									<div class="form-date"><input type="text" name="fixDate" class="middle-size datepicker" value="2026.10.29" placeholder="시작일" title="기준일조회 시작일" tabindex="0"></div>
+								</div>
+							</div>
+						</div>
+						<div class="sort-group">
+							<div class="sort-value">
+								<select title="기준일 기간 선택" name="prfPrd" class="form-select basic-select middle-size">
+									<option value="Week01" selected>1주</option>
+									<option value="Month01" >1개월</option>
+									<option value="Month03" >3개월</option>
+									<option value="Month06" >6개월</option>
+									<option value="Year01" >1년</option>
+								</select>
+							</div>
+						</div>
+						<div class="sort-group">
+							<div class="sort-value">
+								<select title="정렬" name="order" class="form-select basic-select middle-size">
+									<option value="SRD" >보유비중 내림차순</option>
+									<option value="SRA" >보유비중 오름차순</option>
+									<option value="PRD" >수익률 내림차순</option>
+									<option value="PRA" >수익률 오름차순</option>
+								</select>
+							</div>
+							<button type="button" class="btn-basic btn-outline-whitegray btn-basic-auto btn-size-middle btn-round btn-data-inquiry btn_detail_search" style="margin-left:20px;">조회</button>
+						</div>
+					</div>
+					<div class="tab-button-group tab-button-type01" style="display: flex; align-items: center; gap: 0 1.25rem; margin-left: auto;">
+						<ul class="tab-button-list list-type-btn-wrap">
+							<!-- <li><button type="button" class="btn-tab-list-item btn-list-type type-list">테이블 보기</button></li>
+                            <li><button type="button" class="btn-tab-list-item btn-list-type type-card">트리맵 보기</button></li> -->
+							<li id="tab10" aria-controls="tab-panel10" class="actived">
+<button type="button" class="btn-tab-list-item c-button for figured" data-type="table" onclick="console.log('태그에서 클릭이벤트');" title="선택됨">테이블 보기</button>
+                            </li>
+							<li id="tab11" aria-controls="tab-panel11" class="">
+<button type="button" class="btn-tab-list-item c-button for figured" data-type="treemap" onclick="console.log('태그에서 클릭이벤트');">트리맵 보기</button>
+                            </li>
+						</ul>
+                        <a href="javascript:" title="" class="c-button for figured btn_detail_excel" data-type="excel">엑셀다운로드</a>
+					</div>
+				</div>
+				<div class="data-view tbl-type02">
+					<div class="read-table-top">
+						<div class="top-right">
+							<div class="btn-item">
+</div>
+						</div>
+					</div>
+					<!-- 2025-08-19 HDH : 레이어 팝업 디자인 개선 : type-new 추가 -->
+<div class="note-info small chart-info-box type-new">
+	<div class="title">
+		
+				구성종목에 표시된 수익률의 경우 전영업일 기준의 수익률 입니다.
+			</div>
+</div><div class="read-table-wrap">
+								<div class="read-table">
+									<table>
+										<caption>
+											
+													종목코드, 종목명, 수량(주), 평가금액(원), 비중(%), 1주 수익률의 정보를 제공하는 테이블 표
+												</caption>
+										<colgroup>
+											<col style="width:25%;">
+													<col style="width:20%;">
+													<col style="width:15%;">
+													<col style="width:15%;">
+													<col style="width:15%;">
+													<col style="width:15%;">
+												</colgroup>
+										<thead>
+										<tr>
+											<th scope="col" class="hidden">종목코드</th>
+											<th scope="col">종목명</th>
+
+											<th scope="col">수량(주)</th>
+													<th scope="col">평가금액(원)</th>
+													<th scope="col">비중(%)</th>
+												<th scope="col" class="notice"> 1주 수익률
+												<div class="toast-data-wrap">
+													<div class="toast-data-group new-toast-popup">
+														<div class="toast-data-detail">
+															<button type="button" class="btn-question btn-toast-toggle btn-toast-open"><span class="blind">도움말</span></button>
+														</div>
+														<div class="toast-pop-data">
+															<div class="toast-pop-inner orange-box">
+																<div class="pop-header">
+																	<div class="pop-header-info">1주 수익률</div>
+																</div>
+																<div class="pop-body">
+																	구성종목에 표시된 수익률의 경우 전영업일 기준의 수익률 입니다.
+																</div>
+																<button type="button" class="btn-toast-toggle btn-toast-close">팝업닫기</button>
+															</div>
+														</div>
+													</div>
+												</div>
+											</th>
+										</tr>
+										</thead>
+										<tbody class="listArea">
+
+										</tbody>
+									</table>
+								</div>
+							</div>
+							<div class="btn-page-wrap">
+								<button type="button" class="btn-basic btn-outline-whitegray btn-round btn-list-more page-number btnMore" style="background-color:transparent;"><span>더보기(<em class="current-page">0</em>/<em class="total"></em>)</span></button>
+							</div>
+							<!-- //데이타 있을 때 -->
+						</div>
+			</form>
+		</div>
+		<!-- //테이블 보기 -->
+
+		<!-- 트리맵 보기 -->
+		<div class="tab-data">
+			<div class="data-view-sort">
+				<div class="sort-left" style="display: flex; align-items: center;">
+					<div class="sort-group pdf-sort-group-type01">
+						<div class="sort-label">기준일 </div>
+						<div class="">
+							<div class="form-datepicker-group">
+								<div class="form-date"><input type="text" name="fixDate" class="middle-size datepicker" value="2026.10.29" placeholder="시작일" title="기준일조회 시작일" tabindex="0"></div>
+							</div>
+						</div>
+					</div>
+					<div class="sort-group">
+						<div class="sort-value">
+							<select title="기준일 기간 선택" name="prfPrd" class="form-select basic-select middle-size">
+								<option value="Week01" selected>1주</option>
+								<option value="Month01" >1개월</option>
+								<option value="Month03" >3개월</option>
+								<option value="Month06" >6개월</option>
+								<option value="Year01" >1년</option>
+							</select>
+						</div>
+						<button type="button" class="btn-basic btn-outline-whitegray btn-basic-auto btn-size-middle btn-round btn-data-inquiry btn_detail_search">조회</button>
+					</div>
+				</div>
+                <div class="tab-button-group tab-button-type01" style="display: flex; align-items: center; gap: 0 1.25rem; margin-left: auto;">
+                    <ul class="tab-button-list list-type-btn-wrap">
+                        <!-- <li><button type="button" class="btn-tab-list-item btn-list-type type-list">테이블 보기</button></li>
+                        <li><button type="button" class="btn-tab-list-item btn-list-type type-card">트리맵 보기</button></li> -->
+                        <li id="tab10" aria-controls="tab-panel10" class="actived">
+                                <button type="button" class="btn-tab-list-item c-button for figured" data-type="table" onclick="console.log('태그에서 클릭이벤트');" title="선택됨">테이블 보기</button>
+                        </li>
+                        <li id="tab11" aria-controls="tab-panel11" class="">
+                                <button type="button" class="btn-tab-list-item c-button for figured" data-type="treemap" onclick="console.log('태그에서 클릭이벤트');">트리맵 보기</button>
+                        </li>
+                    </ul>
+                </div>
+			</div>
+			<div class="data-view treemap">
+				<div class="treemap-chart-content">
+					<div class="treemap-chart-title">
+						<div class="txt">구성종목 수익률 기준</div>
+						<div class="treemap-chart-sort">
+							<div class="btn-chart-sort-item" style="background:rgba(237,40,15,1.0);"><span class="value">+15%</span></div>
+							<div class="btn-chart-sort-item" style="background:rgba(245,130,33,1.0);"><span class="value number-state up white">+10%</span></div>
+							<div class="btn-chart-sort-item" style="background:rgba(240,178,107,1.0);"><span class="value number-state up white">+5%</span></div>
+							<div class="btn-chart-sort-item" style="background:rgba(141,200,232,1.0);"><span class="value number-state up white">0%</span></div>
+							<div class="btn-chart-sort-item" style="background:rgba(0,134,184,1.0);"><span class="value number-state up white">-5%</span></div>
+							<div class="btn-chart-sort-item" style="background:rgba(4,59,114,1.0);"><span class="value number-state up white">-10%</span></div>
+							<div class="btn-chart-sort-item" style="background:rgba(5 28 50);"><span class="value number-state white">-15%</span></div>
+						</div>
+					</div>
+					<!-- 2025-08-19 HDH : 레이어 팝업 디자인 개선 : type-new 추가 -->
+<div class="note-info small chart-info-box type-new">
+	<div class="title">
+		
+				구성종목에 표시된 수익률의 경우 전영업일 기준의 수익률 입니다.
+			</div>
+</div><div class="treemap-chart-card-wrap">
+						<div class="treemap-chart-header">
+							<div class="header-title">TIGER 미국나스닥100 (133690)</div>
+							<div class="header-value">
+								<div class="value-cate">1주</div>
+								<div class="value-number"><span class="color-up"><span class="blind">상승</span>
+							1.49</span></div>
+							</div>
+						</div>
+						<div class="treemap-chart-data">
+							<div id="treeMapChart3">
+								<div id="treeMapChart_KR7133690008" class="wj-control wj-flexchart wj-treemap" style="width:100%;height:100%"></div>
+<div class="btn-chart-view"><button type="button" class="btn-chart-detail" data-key="KR7133690008">구성종목 보기</button></div> <!-- 20220105 추가 -->
+<script type="text/javascript">
+	$(document).ready(function(){
+
+		var formNm = "ksdFundFrm_KR7133690008";
+
+		//비동기 통신으로 데이터 조회
+		cmmCtrl.bscAjax(function(data){
+			if(data.rtnData != undefined && data.rtnData.length > 0)
+			{
+				var ksdFund = data.rtnData[0].ksdFund;
+				var rtnDataList = data.rtnData;
+				$.each(rtnDataList, function(i, data){
+					rtnDataList.sort(function(a, b){
+						return b.stockRate - a.stockRate;
+					})
+				})
+				getTreeMap("#treeMapChart_" + ksdFund, data.rtnData);
+			}
+		}, "/tigeretf/ko/product/chart/prdct-item-list.ajax?ksdFund=KR7133690008&prfPrd=Week01&fixDate=20261028&listCnt=20", "json", false)
+
+	})
+
+	//현업이 정해준 박스 색
+
+	function getTreeMap(treeId, data){
+		var nameField = "ko" == 'en' ? 'memItemnameEng' : 'memItemname';
+		
+		var treemap = new wijmo.chart.hierarchical.TreeMap(treeId, {
+	        binding: "stockRate", //비율
+	        bindingName: nameField, //국문명
+	        maxDepth : 0, // 최대 뎁스
+			plotMargin : 0, //그래프영역 마진값 설정
+	        itemsSource: data,
+	        palette : getPalette(data),
+	        dataLabel: {
+	            position: 'Center',
+	            content: '{'+nameField+'}'
+	        },
+	        tooltip : {
+				content : function(hti){
+
+					var formNm = "ksdFundFrm_KR7133690008";
+					var rateTitl = "ko" == 'en'? 'Weighting' : '보유비중',
+						prfTitl = "ko" == 'en' ? 'Yield' : "수익률";
+					var prfPrd = "Week01",	
+						prfPrdStr = "";
+					
+					if( prfPrd == 'Week01' ){
+						prfPrdStr =  "ko" == 'en' ? '1Week' : "1주일";
+					}else if( prfPrd == 'Month01' ){
+						prfPrdStr =  "ko" == 'en' ? '1Month' : "1개월";
+					}else if( prfPrd == 'Month03' ){
+						prfPrdStr =  "ko" == 'en' ? '3Month' : "3개월";
+					}else if( prfPrd == 'Month06' ){
+						prfPrdStr =  "ko" == 'en' ? '6Month' : "6개월";
+					}else{
+						prfPrdStr =  "ko" == 'en' ? '1Year' : "1년";
+					}
+
+					prfTitl =  prfPrdStr+prfTitl;
+					
+					var pdfRate = hti.item.pdfRate == null ? '-' :  (hti.item.pdfRate).toFixed(2);
+
+					return '<div class="treemap-tooltip-wrap"><div class="title">'+hti.item[nameField]+'</div><div class="value"><div class="name">'+rateTitl+'(%)</div><div class="num">'+hti.item.stockRate+'%</div></div><div class="value"><div class="name">'
+						+prfTitl+'</div><div class="num">'+pdfRate+'%</div></div></div>';
+				}
+			}
+	    });
+
+		treemap.hostElement.addEventListener('click', function (e) {
+			// get hittest object
+		    var ht = treemap.hitTest(e);
+			var item = ht.item;
+			item.prfPrd = 'Week01';
+			item.fixDate = '20261028';
+
+			cmmCtrl.getTreeDtlPop(item);
+	     });
+		
+		$(treemap.hostElement).next().find('.btn-chart-detail').on('click', function (e) {
+			var item = {
+					ksdFund : $(this).data("key"),
+					prfPrd : 'Week01',
+					fixDate : '20261028'
+				};
+			cmmCtrl.getTreeDtlPop(item, this);
+	     });
+
+
+		$(treemap.hostElement).removeAttr('tabindex');
+
+	}
+	//색 15~, 15~10, 10~5, 5~0, 0~-5, -5~-10, -10미만
+	var palettes =  ['rgba(237,40,15,1.0)' , 'rgba(245,130,33,1.0)' , 'rgba(240,178,107,1.0)' , 'rgba(141,200,232,1.0)', 'rgba(0,134,184,1.0)' , 'rgba(4,59,114,1.0)', 'rgba(5 28 50)'];
+	function getPalette(data) {
+		// 수익률기준
+		var arr = [];
+		for(var q = 0; q < data.length ; q++){
+			if(data[q].pdfRate >= 15)
+			{
+				arr.push(palettes[0]);
+			}
+			else if( data[q].pdfRate < 15 && data[q].pdfRate >= 10)
+			{
+				arr.push(palettes[1]);
+			}
+			else if( data[q].pdfRate < 10 && data[q].pdfRate >= 5)
+			{
+				arr.push(palettes[2]);
+			}
+			else if( data[q].pdfRate < 5 && data[q].pdfRate >= 0)
+			{
+				arr.push(palettes[3]);
+			}
+			else if( data[q].pdfRate < 0 && data[q].pdfRate >= -5)
+			{
+				arr.push(palettes[4]);
+			}
+			else if( data[q].pdfRate < -5 && data[q].pdfRate >= -10)
+			{
+				arr.push(palettes[5]);
+			}
+			else if( data[q].pdfRate < -10)
+			{
+				arr.push(palettes[6]);
+			}
+		}
+		return arr;
+	}
+</script></div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+		<!-- //트리맵 보기 -->
+		

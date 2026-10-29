@@ -41,6 +41,8 @@ from app.etf import (
     remove_empty_sections,
 )
 from app.answer_guard import code_summary, freshness_note, guard_answer, is_simple_quote, quote_answer
+from app.etf_holdings import constituents_chat_answer, requested_top_n
+from app.etf_holdings_db import chat_views
 from app.glossary import comparison_answer, concept_answer, find_term, term_answer
 from app.models import Company, StockPrice
 from app.period_parser import KST, mentions_period, parse_period
@@ -1109,7 +1111,8 @@ def _answer_event(question: str, model: str, company: str, previous: dict | None
 
 # ---------- LLM 전에 코드가 답을 만드는 질문 ----------
 # 평가 기준선(backend/evals, 2026-10-27)에서 LLM이 숫자·정의를 지어낸 유형은 LLM을 부르지 않고 코드가 답한다:
-# (C) 종목 없는 용어 정의 질문 -> app/glossary.py, (B) ETF 구성종목·비중 질문 -> 제공하지 않음 안내,
+# (C) 종목 없는 용어 정의 질문 -> app/glossary.py, (B) ETF 구성종목·비중 질문 -> 수집한 운용사 공시 PDF가 있으면 코드 템플릿,
+# 없으면 제공하지 않음 안내(2026-10-29: KODEX·TIGER만 수집, app/etf_holdings.py),
 # (A) 보유 시세보다 앞선 기간의 시세 질문 -> 범위 밖 안내 또는 겹치는 구간만 코드가 요약(app/period_scope.py).
 # 셋 다 해당하지 않는 질문은 이전과 같은 흐름이다(사건 반응 경로가 이보다 먼저다).
 
@@ -1145,11 +1148,23 @@ def _answer_concept(question: str, companies: list | None):
 
 
 def _answer_etf_constituents(question: str, companies: list | None):
-    """(B) ETF 구성종목·편입 비중 질문은 데이터를 제공하지 않는다고 답한다(구성종목을 지어내지 않는다)."""
-    etfs = [c.name for c in companies or [] if getattr(c, "asset_type", None) == "etf"]
-    if not etfs or not asks_constituents(question):
+    """(B) ETF 구성종목·편입 비중 질문. 수집한 구성종목(운용사 공시 PDF)이 있는 ETF는 코드 템플릿으로 답하고(LLM을 부르지 않는다),
+    데이터가 없는 ETF는 제공하지 않는다고 답한다(구성종목을 지어내지 않는다). DB를 읽지 못해도 제공하지 않음 답변으로 돌아간다."""
+    etf_companies = [c for c in companies or [] if getattr(c, "asset_type", None) == "etf"]
+    if not etf_companies or not asks_constituents(question):
         return None
-    return _code_answer(constituents_answer(etfs))
+    names = [c.name for c in etf_companies]
+    try:
+        db = SessionLocal()
+        try:
+            views, missing = chat_views(db, etf_companies)
+        finally:
+            db.close()
+    except Exception:
+        return _code_answer(constituents_answer(names))
+    if not views:
+        return _code_answer(constituents_answer(names))
+    return _code_answer(constituents_chat_answer(views, missing, constituents_answer, requested_top_n(question)))
 
 
 def _price_dict(row) -> dict:
