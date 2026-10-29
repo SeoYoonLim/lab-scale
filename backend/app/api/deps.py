@@ -1,13 +1,14 @@
 """라우터 간에 공유하는 FastAPI 의존성.
 
 `Authorization: Bearer <JWT>`로 사용자를 인증한다(POST /api/auth/login|signup이 발급).
-헤더가 없거나, 형식이 틀렸거나, 서명/만료 검증에 실패했거나, 토큰의 사용자가 DB에 없으면
-전부 같은 401(WWW-Authenticate: Bearer)이다. 실패 사유는 응답에 구분해서 드러내지 않는다.
+헤더가 없거나, 형식이 틀렸거나, 서명/만료 검증에 실패했거나, 토큰의 사용자가 DB에 없거나, 폐기된 토큰이면
+(토큰의 tv ≠ users.token_version: 로그아웃·비밀번호 변경 이후) 전부 같은 401(WWW-Authenticate: Bearer)이다.
+실패 사유는 응답에 구분해서 드러내지 않는다. tv 비교는 원래 하던 사용자 조회(load_user) 결과로 하므로 DB 조회가 늘지 않는다.
 """
 
 from fastapi import Depends, Header, HTTPException, Request
 
-from app.auth import CurrentUser, InvalidToken, decode_access_token, get_user
+from app.auth import CurrentUser, InvalidToken, decode_token_claims, get_user
 from app.db.session import SessionLocal
 
 # 실패 사유와 무관하게 응답은 하나로 통일한다.
@@ -39,11 +40,11 @@ def load_user(user_id: int) -> CurrentUser | None:
 def get_current_user(request: Request, authorization: str | None = Header(default=None)) -> CurrentUser:
     token = _bearer_token(authorization)
     try:
-        user_id = decode_access_token(token)
+        user_id, token_version = decode_token_claims(token)
     except InvalidToken:
         raise unauthorized() from None
     user = load_user(user_id)
-    if user is None:
+    if user is None or user.token_version != token_version:
         raise unauthorized()
     request.state.user_id = user.id  # 요청 로그(app.main)에 user id만 남긴다(토큰은 남기지 않음)
     return user

@@ -114,7 +114,7 @@ class TestAccessLog:
     def test_logs_method_path_status_ms_user_without_query_or_token(self, caplog, monkeypatch):
         from app.api import deps
 
-        monkeypatch.setattr(deps, "decode_access_token", lambda t: 77)
+        monkeypatch.setattr(deps, "decode_token_claims", lambda t: (77, 0))
         monkeypatch.setattr(deps, "load_user", lambda uid: deps.CurrentUser(id=uid, username="u"))
         token = "eyJhbGciOiJIUzI1NiJ9.secret-token-value.sig"
         with caplog.at_level(logging.INFO, logger="app.access"):

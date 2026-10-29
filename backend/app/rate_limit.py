@@ -1,13 +1,15 @@
 """메모리 기반 레이트 리밋(2026-10-28 안정화). 단일 프로세스·단일 인스턴스 가정.
 
 막는 것: 한 IP의 로그인·가입 반복(무차별 대입), 같은 아이디+IP의 연속 로그인 실패(일시 잠금), 한 사용자의 주문 폭주,
-한 사용자의 AI 질문 폭주와 동시 질문(Ollama를 오래 점유한다).
+한 사용자의 AI 질문 폭주와 동시 질문(Ollama를 오래 점유한다), 한 사용자의 로그아웃·비밀번호 변경 반복과
+비밀번호 변경 시 현재 비밀번호 연속 실패(일시 잠금, 2026-10-29).
 못 막는 것: 서버를 재시작하면 카운터가 초기화된다. 워커·인스턴스를 여러 개 띄우면 각자 따로 센다. IP는 request.client.host
 (직접 연결한 주소)라 프록시 뒤에서는 모든 요청이 같은 IP로 보이고, X-Forwarded-For는 위조될 수 있어 믿지 않는다.
 여러 IP에서 한 아이디를 노리는 분산 시도는 아이디+IP 잠금으로 막히지 않는다(정상 사용자를 잠그지 않기 위한 선택).
 
 설정(환경변수, 정수, 기본값은 아래 상수): RATE_LIMIT_ENABLED(1/0), RATE_LIMIT_LOGIN_PER_MIN, RATE_LIMIT_SIGNUP_PER_HOUR,
-LOGIN_LOCK_FAILURES, LOGIN_LOCK_SECONDS, RATE_LIMIT_ORDERS_PER_MIN, RATE_LIMIT_RESEARCH_PER_MIN, RATE_LIMIT_RESEARCH_CONCURRENT.
+LOGIN_LOCK_FAILURES, LOGIN_LOCK_SECONDS, RATE_LIMIT_ORDERS_PER_MIN, RATE_LIMIT_RESEARCH_PER_MIN, RATE_LIMIT_RESEARCH_CONCURRENT,
+RATE_LIMIT_LOGOUT_PER_MIN, RATE_LIMIT_PASSWORD_CHANGE_PER_HOUR, PASSWORD_CHANGE_LOCK_FAILURES, PASSWORD_CHANGE_LOCK_SECONDS.
 설정은 요청 때마다 읽으므로(값이 바뀌면 그 키의 한도도 바뀐다) 테스트에서 monkeypatch.setenv로 바꿀 수 있다.
 """
 
@@ -28,6 +30,10 @@ DEFAULTS = {
     "RATE_LIMIT_ORDERS_PER_MIN": 30,  # 사용자당 모의투자 주문
     "RATE_LIMIT_RESEARCH_PER_MIN": 6,  # 사용자당 AI 질문
     "RATE_LIMIT_RESEARCH_CONCURRENT": 1,  # 사용자당 동시에 처리 중인 AI 질문
+    "RATE_LIMIT_LOGOUT_PER_MIN": 10,  # 사용자당 로그아웃
+    "RATE_LIMIT_PASSWORD_CHANGE_PER_HOUR": 10,  # 사용자당 비밀번호 변경 시도(argon2 검증·해시를 매번 한다)
+    "PASSWORD_CHANGE_LOCK_FAILURES": 5,  # 같은 사용자의 현재 비밀번호 연속 오류 이만큼이면
+    "PASSWORD_CHANGE_LOCK_SECONDS": 300,  # 이만큼 비밀번호 변경 잠금
 }
 MAX_KEYS = 10_000  # 리미터 하나가 기억하는 키 수 상한(넘으면 가장 오래 안 쓴 키부터 버린다)
 CONCURRENT_RETRY_AFTER_S = 5  # 동시 질문으로 거절할 때 안내하는 대기 시간
@@ -167,7 +173,10 @@ login_failures = FailureLock()
 orders = SlidingWindow(60)
 research = SlidingWindow(60)
 research_active = Concurrency()
-ALL = (login_ip, signup_ip, login_failures, orders, research, research_active)
+logout = SlidingWindow(60)
+password_change = SlidingWindow(3600)
+password_change_failures = FailureLock()
+ALL = (login_ip, signup_ip, login_failures, orders, research, research_active, logout, password_change, password_change_failures)
 
 
 def reset_all() -> None:
@@ -184,21 +193,38 @@ def check(limiter: SlidingWindow, key: str, limit_name: str) -> None:
         raise too_many(wait)
 
 
-def check_login_lock(key: str) -> None:
+def _check_lock(lock: FailureLock, key: str) -> None:
     if not enabled():
         return
-    wait = login_failures.locked_for(key)
+    wait = lock.locked_for(key)
     if wait > 0:
         raise too_many(wait)
 
 
-def record_login(key: str, success: bool) -> None:
+def _record(lock: FailureLock, key: str, success: bool, prefix: str) -> None:
     if not enabled():
         return
     if success:
-        login_failures.reset(key)
+        lock.reset(key)
     else:
-        login_failures.failure(key, setting("LOGIN_LOCK_FAILURES"), setting("LOGIN_LOCK_SECONDS"))
+        lock.failure(key, setting(f"{prefix}_LOCK_FAILURES"), setting(f"{prefix}_LOCK_SECONDS"))
+
+
+def check_login_lock(key: str) -> None:
+    _check_lock(login_failures, key)
+
+
+def record_login(key: str, success: bool) -> None:
+    _record(login_failures, key, success, "LOGIN")
+
+
+def check_password_change_lock(key: str) -> None:
+    _check_lock(password_change_failures, key)
+
+
+def record_password_change(key: str, success: bool) -> None:
+    """현재 비밀번호가 맞았는지만 센다(새 비밀번호 규칙 위반 422는 라우트에 들어오기 전에 끝나 여기까지 오지 않는다)."""
+    _record(password_change_failures, key, success, "PASSWORD_CHANGE")
 
 
 class research_slot:

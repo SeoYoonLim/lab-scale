@@ -53,8 +53,9 @@ class TestToken:
         now = datetime(2026, 10, 7, tzinfo=timezone.utc)
         token = create_access_token(7, now=now)
         claims = jwt.decode(token, jwt_secret, algorithms=["HS256"], options={"verify_exp": False})
-        assert set(claims) == {"sub", "iat", "exp"}
+        assert set(claims) == {"sub", "iat", "exp", "tv"}
         assert claims["sub"] == "7"
+        assert claims["tv"] == 0  # 기본 token_version
         assert claims["exp"] - claims["iat"] == ACCESS_TOKEN_TTL.total_seconds() == 24 * 3600
         assert jwt.get_unverified_header(token)["alg"] == "HS256"
 

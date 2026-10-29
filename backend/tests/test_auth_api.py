@@ -36,6 +36,8 @@ PROTECTED = [
     ("GET", "/api/portfolio/diagnosis/1/compare"),
     ("DELETE", "/api/portfolio/diagnosis/1"),
     ("GET", "/api/auth/me"),
+    ("POST", "/api/auth/logout"),
+    ("POST", "/api/auth/change-password"),
 ]
 
 
@@ -227,6 +229,8 @@ class TestRouteCoverage:
     }
     PROTECTED_ROUTES = {
         ("GET", "/api/auth/me"),
+        ("POST", "/api/auth/logout"),
+        ("POST", "/api/auth/change-password"),
         ("GET", "/api/briefing"),
         ("POST", "/api/research"),
         ("GET", "/api/research"),

@@ -1,8 +1,11 @@
 """아이디/비밀번호 로그인: 비밀번호 해시, JWT 발급/검증, 사용자 저장/조회.
 
 - 비밀번호는 argon2id(argon2-cffi 기본 파라미터)로 해시한다. 평문과 해시는 응답/로그/예외 메시지에 넣지 않는다.
-- 토큰은 HS256 JWT(claims: sub=user id 문자열, iat, exp). 만료 24시간. 검증 시 알고리즘을 HS256으로 고정해
+- 토큰은 HS256 JWT(claims: sub=user id 문자열, iat, exp, tv). 만료 24시간. 검증 시 알고리즘을 HS256으로 고정해
   alg=none이나 다른 알고리즘으로 바꿔치기한 토큰을 거부한다.
+- 토큰 폐기(2026-10-29): tv는 발급 시점의 users.token_version이다. 로그아웃·비밀번호 변경이 token_version을 1 올리면 그 전에
+  발급된 토큰은 전부 tv가 달라져 401이 된다(get_current_user가 비교). tv가 없는 옛 토큰은 tv=0으로 본다. 모든 사용자의
+  token_version이 0에서 시작하므로 배포 직후에도 옛 토큰이 그대로 통하고, 그 사용자의 첫 폐기 때 함께 무효가 된다.
 - 서명 키(JWT_SECRET)는 .env(환경 변수)에서만 읽는다. 없거나 MIN_SECRET_LEN자 미만이면 RuntimeError.
   앱 시작 시(app.main lifespan)에 한 번 검사하고, 토큰을 만들거나 검증할 때마다 다시 읽는다(빈 키로 서명되는 일이 없게).
 """
@@ -18,6 +21,7 @@ import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from dotenv import load_dotenv
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.models import User
@@ -45,12 +49,17 @@ class UsernameTaken(Exception):
     pass
 
 
+class TokenRevoked(Exception):
+    """비밀번호를 바꾸는 사이에 같은 사용자의 토큰이 폐기됐다(다른 기기의 로그아웃 등)."""
+
+
 @dataclass(frozen=True)
 class CurrentUser:
     """인증된 요청의 사용자. ORM 객체 대신 이걸 넘겨 세션 수명과 password_hash 노출을 신경 쓰지 않게 한다."""
 
     id: int
     username: str
+    token_version: int = 0  # 토큰을 만들 때 tv로 넣고, 검증할 때 토큰의 tv와 비교한다
 
     @property
     def owner_key(self) -> str:
@@ -113,14 +122,17 @@ def _dummy_hash() -> str:
 # ---------- 토큰 ----------
 
 
-def create_access_token(user_id: int, now: datetime | None = None) -> str:
+def create_access_token(user_id: int, now: datetime | None = None, token_version: int = 0) -> str:
     now = now or datetime.now(timezone.utc)
-    claims = {"sub": str(user_id), "iat": now, "exp": now + ACCESS_TOKEN_TTL}
+    claims = {"sub": str(user_id), "iat": now, "exp": now + ACCESS_TOKEN_TTL, "tv": token_version}
     return jwt.encode(claims, get_jwt_secret(), algorithm=JWT_ALGORITHM)
 
 
-def decode_access_token(token: str) -> int:
-    """검증된 토큰의 user id. 서명/만료/형식/필수 claim 중 하나라도 어긋나면 InvalidToken."""
+def decode_token_claims(token: str) -> tuple[int, int]:
+    """검증된 토큰의 (user id, tv). 서명/만료/형식/필수 claim 중 하나라도 어긋나면 InvalidToken.
+
+    tv가 없으면(폐기 기능 이전에 발급된 토큰) 0. 있는데 0 이상의 정수가 아니면 InvalidToken.
+    """
     try:
         claims = jwt.decode(
             token,
@@ -128,9 +140,18 @@ def decode_access_token(token: str) -> int:
             algorithms=[JWT_ALGORITHM],
             options={"require": ["sub", "exp", "iat"]},
         )
-        return int(claims["sub"])
+        user_id = int(claims["sub"])
     except (jwt.PyJWTError, ValueError, TypeError) as e:
         raise InvalidToken(type(e).__name__) from None
+    tv = claims.get("tv", 0)
+    if type(tv) is not int or tv < 0:  # bool(True == 1)이나 문자열 "1"은 받지 않는다
+        raise InvalidToken("tv")
+    return user_id, tv
+
+
+def decode_access_token(token: str) -> int:
+    """검증된 토큰의 user id(tv 비교는 get_current_user가 한다)."""
+    return decode_token_claims(token)[0]
 
 
 # ---------- 사용자 저장/조회 ----------
@@ -146,7 +167,7 @@ def create_user(db, username: str, password: str) -> CurrentUser:
         # 예외 원문에는 INSERT 파라미터(해시 포함)가 들어 있으므로 체인을 끊고 버린다.
         db.rollback()
         raise UsernameTaken() from None
-    return CurrentUser(id=user.id, username=user.username)
+    return _current(user)
 
 
 def authenticate(db, username: str, password: str) -> CurrentUser | None:
@@ -167,9 +188,44 @@ def authenticate(db, username: str, password: str) -> CurrentUser | None:
         return None
     if not verify_password(password, user.password_hash):
         return None
-    return CurrentUser(id=user.id, username=user.username)
+    return _current(user)
+
+
+def _current(user: User) -> CurrentUser:
+    return CurrentUser(id=user.id, username=user.username, token_version=user.token_version)
 
 
 def get_user(db, user_id: int) -> CurrentUser | None:
     user = db.get(User, user_id)
-    return CurrentUser(id=user.id, username=user.username) if user else None
+    return _current(user) if user else None
+
+
+# ---------- 토큰 폐기 ----------
+
+
+def revoke_tokens(db, user_id: int) -> int | None:
+    """token_version을 1 올려 이 사용자의 기존 토큰을 전부 무효로 만든다. 새 token_version(사용자가 없으면 None)."""
+    new_version = db.execute(
+        update(User).where(User.id == user_id).values(token_version=User.token_version + 1).returning(User.token_version)
+    ).scalar_one_or_none()
+    db.commit()
+    return new_version
+
+
+def change_password(db, user: CurrentUser, current_password: str, new_password: str) -> CurrentUser | None:
+    """현재 비밀번호가 맞으면 해시를 바꾸고 token_version을 올린 사용자를 돌려준다. 틀리면 None(아무것도 바꾸지 않음).
+
+    new_password는 validate_password를 거친 값이어야 한다. 행을 FOR UPDATE로 잠그고, 그 사이 token_version이 요청 토큰의
+    것과 달라졌으면(다른 곳에서 로그아웃) TokenRevoked. 사용자가 지워졌으면 TokenRevoked.
+    """
+    row = db.execute(select(User).where(User.id == user.id).with_for_update()).scalar_one_or_none()
+    if row is None or row.token_version != user.token_version:
+        db.rollback()
+        raise TokenRevoked()
+    if not verify_password(current_password, row.password_hash):
+        db.rollback()
+        return None
+    row.password_hash = hash_password(new_password)
+    row.token_version += 1
+    db.commit()
+    return _current(row)
