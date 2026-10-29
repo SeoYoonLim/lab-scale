@@ -16,6 +16,7 @@ from app.api.briefing import router as briefing_router
 from app.api.companies import router as companies_router
 from app.api.disclaimer import router as disclaimer_router
 from app.api.discovery import router as discovery_router
+from app.api.performance import router as performance_router
 from app.api.portfolio import router as portfolio_router
 from app.api.research import router as research_router
 from app.api.status import router as status_router
@@ -124,3 +125,4 @@ app.include_router(discovery_router)
 app.include_router(watchlist_router)
 app.include_router(portfolio_router)
 app.include_router(briefing_router)
+app.include_router(performance_router)
