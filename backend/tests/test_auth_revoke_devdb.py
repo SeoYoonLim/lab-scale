@@ -30,6 +30,7 @@ client = TestClient(app, raise_server_exceptions=False)
 pytestmark = pytest.mark.integration
 
 BACKEND = Path(__file__).resolve().parents[1]
+# 이 마이그레이션 한 단계만 검사한다("head"가 아니라 이 리비전까지 올린다: 뒤에 마이그레이션이 더 생겨도 이 테스트는 그대로다).
 PREV_REVISION = "c5d8f3a07b14"
 REVISION = "e2a9c4f71b03"
 
@@ -206,7 +207,7 @@ class TestMigrationRoundTrip:
                     )
 
             assert column() is None
-            self._alembic(target_sa, "upgrade", "head")
+            self._alembic(target_sa, "upgrade", REVISION)
             assert column() == ("NO", "0")
             assert versions() == (REVISION, 1)
             with psycopg.connect(target_pg) as c:
@@ -216,7 +217,7 @@ class TestMigrationRoundTrip:
             assert column() is None
             assert versions() == (PREV_REVISION, 1)  # 기존 행은 그대로
 
-            self._alembic(target_sa, "upgrade", "head")
+            self._alembic(target_sa, "upgrade", REVISION)
             assert column() == ("NO", "0")
             assert versions() == (REVISION, 1)
         finally:

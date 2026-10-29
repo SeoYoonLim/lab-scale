@@ -84,6 +84,22 @@ def _status(exc: BaseException) -> int | None:
     return getattr(getattr(exc, "response", None), "status_code", None)
 
 
+def is_challenge(resp) -> bool:
+    """Cloudflare 봇 확인 화면인지(상태코드가 200·503이어도): cf-mitigated: challenge 헤더 또는 본문 앞부분의 "Just a moment..."."""
+    if resp is None:
+        return False
+    headers = getattr(resp, "headers", None) or {}
+    if str(headers.get("cf-mitigated", "")).lower() == "challenge":
+        return True
+    text = getattr(resp, "text", "")
+    return isinstance(text, str) and "Just a moment..." in text[:2000]
+
+
+class _Challenge(Exception):
+    def __init__(self, resp):
+        self.resp = resp
+
+
 class PoliteClient:
     """요청마다 직전 요청과 delay초 간격을 둔다. 403·429를 받은 호스트는 막고(blocked) 다시 요청하지 않는다.
     get/sleep/clock을 주입할 수 있어 테스트가 기다리지 않는다."""
@@ -108,10 +124,14 @@ class PoliteClient:
         for attempt in (0, 1):
             self._wait()
             try:
-                return self._get(url, params=params, headers={"User-Agent": USER_AGENT}, timeout=(5, 25), label=label, retries=0)
+                resp = self._get(url, params=params, headers={"User-Agent": USER_AGENT}, timeout=(5, 25), label=label, retries=0)
+                if is_challenge(resp):
+                    raise _Challenge(resp)
+                return resp
             except Exception as e:  # noqa: BLE001 - 분류 후 다시 올린다
-                if _status(e) in BLOCK_STATUSES:
-                    self.blocked[host] = (f"{host}가 요청을 막았습니다(HTTP {_status(e)}, 요청 과다 또는 봇 확인 화면). "
+                if isinstance(e, _Challenge) or _status(e) in BLOCK_STATUSES or is_challenge(getattr(e, "response", None)):
+                    code = getattr(getattr(e, "response", None), "status_code", None) or getattr(getattr(e, "resp", None), "status_code", None)
+                    self.blocked[host] = (f"{host}가 요청을 막았습니다(HTTP {code}, 요청 과다 또는 봇 확인 화면). "
                                           "우회하지 않고 이번 실행에서는 이 사이트에 더 요청하지 않습니다. 잠시 뒤 다시 실행하세요.")
                     raise HostBlocked(self.blocked[host]) from None
                 if attempt == 0 and http_retry.is_transient(e):  # 연결 오류·5xx: 간격을 두고 한 번만 더

@@ -137,6 +137,21 @@ class TestCashAndHelpers:
     def test_is_cash(self, name, code, cash):
         assert E.is_cash(name, code) is cash
 
+    @pytest.mark.parametrize("raw, code", [("-", None), ("", None), ("  ", None), (None, None), ("005930", "005930"), (" NVDA US EQUITY ", "NVDA US EQUITY")])
+    def test_clean_code(self, raw, code):
+        assert E._clean_code(raw) == code
+
+    def test_dash_codes_become_null_in_both_parsers(self):
+        html = '<tr data-tot-cnt="1"><td>-</td><td>KOFR Index TRS</td><td>1</td><td>2</td><td>-0.07</td><td>x</td></tr>'
+        snap = E.parse_tiger_pdf(date(2026, 10, 28), html)
+        assert [(h.name, h.code, h.weight_pct) for h in snap.holdings] == [("KOFR Index TRS", None, -0.07)]
+        payload = {"pdf": {"gijunYMD": "20261028", "list": [{"secNm": "옵션", "itmNo": "-", "ratio": "-0.14"}]}}
+        assert E.parse_kodex_pdf(payload).holdings[0].code is None
+
+    def test_negative_weights_are_kept_and_sorted_last(self):
+        snap = E._finish(E.TIGER, date(2026, 10, 28), [("매도 콜옵션", "KR4B", -0.14), ("A", "1", 5.0), ("B", "2", 0.0)])
+        assert [h.weight_pct for h in snap.holdings] == [5.0, 0.0, -0.14]
+
     def test_rows_without_weight_are_skipped(self):
         snap = E._finish(E.KODEX, date(2026, 10, 28), [("A", "1", None), ("B", "2", 1.0), ("C", "3", None)])
         assert len(snap.holdings) == 1 and snap.skipped_no_weight == 2
@@ -469,6 +484,29 @@ class TestCollect:
             with pytest.raises(C.HostBlocked):
                 c.get("https://example.test/a")
         assert len(calls) == 1 and c.requests == 1
+
+    @pytest.mark.parametrize("resp, why", [
+        (types.SimpleNamespace(status_code=200, text="<html><title>Just a moment...</title>", headers={}), "본문"),
+        (types.SimpleNamespace(status_code=503, text="x", headers={"cf-mitigated": "challenge"}), "헤더"),
+    ])
+    def test_a_challenge_page_with_200_or_503_also_blocks_the_host(self, resp, why):
+        calls = []
+
+        def get(url, **kw):
+            calls.append(url)
+            return resp
+
+        c = C.PoliteClient(2.0, get=get, sleep=lambda s: None, clock=lambda: 0.0)
+        with pytest.raises(C.HostBlocked) as e:
+            c.get("https://example.test/a")
+        assert "우회하지 않고" in str(e.value)
+        with pytest.raises(C.HostBlocked):
+            c.get("https://example.test/b")
+        assert len(calls) == 1
+
+    def test_normal_html_with_rows_is_not_a_challenge(self):
+        c = C.PoliteClient(2.0, get=lambda *a, **k: FakeResp(text=load_text("etf_tiger_nasdaq100_pdf_list.html")), sleep=lambda s: None)
+        assert c.get("https://example.test/a").text.startswith("<tr")
 
     def test_5xx_is_retried_once_by_the_client_but_never_with_http_retry_backoff(self):
         from app.http_retry import TransientHTTPError

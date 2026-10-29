@@ -11,6 +11,7 @@
 저장 규칙: 현금성 자산(예금·설정현금액 등)과 비중이 없는 행은 저장하지 않는다. 그래서 비중 합계는 "현금성 제외 구성종목 비중의 합"이다.
 KODEX는 운용사가 현금성 자산을 뺀 비중을 주고(합계 100%), TIGER는 현금 행에도 비중이 있어 이 모듈이 뺀다.
 레버리지 ETF는 선물을 포함해 합계가 약 200%이고, 인버스 ETF의 선물 비중은 매도 포지션의 크기라 부호 없이 공시된다.
+커버드콜 ETF의 매도 콜옵션과 TRS(스왑) 같은 파생 포지션은 음수 비중으로 공시된다(2026-10-29 수집분에서 7건, 모두 -0.14% 이상).
 """
 
 import re
@@ -89,6 +90,12 @@ def is_cash(name: str, code: str | None) -> bool:
     return bool(_CASH_CODE_RE.match(code or "") or _CASH_NAME_RE.search(name or ""))
 
 
+def _clean_code(raw) -> str | None:
+    """운용사가 코드 칸에 "-"나 빈 값을 주면 코드 없음(None)."""
+    code = (str(raw) if raw is not None else "").strip()
+    return None if code in ("", "-") else code
+
+
 def _to_float(raw) -> float | None:
     if raw is None:
         return None
@@ -130,7 +137,7 @@ def parse_kodex_pdf(payload: dict) -> Snapshot:
         items = pdf["list"]
         if not isinstance(items, list):
             raise TypeError("list")
-        rows = [((r.get("secNm") or "").strip(), (r.get("itmNo") or "").strip() or None, _to_float(r.get("ratio"))) for r in items]
+        rows = [((r.get("secNm") or "").strip(), _clean_code(r.get("itmNo")), _to_float(r.get("ratio"))) for r in items]
     except (KeyError, TypeError, ValueError, AttributeError) as e:
         raise ParseError(f"KODEX 구성종목 응답 형식이 예상과 다릅니다({type(e).__name__})") from None
     return _finish(KODEX, as_of, [r for r in rows if r[0]])
@@ -184,7 +191,7 @@ def parse_tiger_pdf(as_of: date, list_html: str) -> Snapshot:
         tds = [td.get_text(strip=True) for td in tr.find_all("td")]
         if len(tds) < 5:
             continue
-        rows.append((tds[1], tds[0] or None, _to_float(tds[4])))
+        rows.append((tds[1], _clean_code(tds[0]), _to_float(tds[4])))
     if not rows:
         raise ParseError("TIGER 구성종목 표에서 행을 찾지 못했습니다")
     declared = re.search(r'data-tot-cnt="(\d+)"', list_html or "")
