@@ -129,6 +129,8 @@ jobs:
   # 몇 개를 제외했는지 로그와 job summary에 숫자로 남긴다. 그 밖의 skip은 CI_FAIL_ON_SKIP=1 때문에 실패다.
   # Ollama가 필요한 테스트는 통합 범위에 없다(실제 Ollama를 부르는 건 slow 마커 테스트뿐이고 CI는 slow를 돌리지 않는다).
   # DB 비밀번호는 이 서비스 컨테이너 전용 더미 값이고, 개발 DB(.env)의 값과 다르다.
+  # migration-postgres: 마이그레이션 업그레이드/다운그레이드 왕복 테스트(tests/test_auth_revoke_devdb.py) 전용 서버.
+  # 테스트가 여기에 임시 DB를 만들고 지운다. 테스트 대상 DB(DATABASE_URL)와 같은 서버는 테스트가 거부하므로 따로 둔다.
   # ---------------------------------------------------------------------------
   backend-integration:
     runs-on: ubuntu-latest
@@ -147,9 +149,23 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
+      migration-postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci_dummy_pw
+          POSTGRES_DB: ci_db
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     env:
       JWT_SECRET: ci-dummy-jwt-secret-not-a-real-value
       DATABASE_URL: postgresql+psycopg://ci:ci_dummy_pw@localhost:5432/ci_db
+      MIGRATION_TEST_DATABASE_URL: postgresql+psycopg://ci:ci_dummy_pw@localhost:5433/ci_db
       CI_FAIL_ON_SKIP: "1"
       # needs_collected_data 마커로 제외하는 통합 테스트 수의 상한. 마커를 더 붙여 테스트를 슬그머니 빼지 못하게 한다.
       # 늘려야 하면 이유와 함께 이 값과 README의 숫자를 같이 고친다.
