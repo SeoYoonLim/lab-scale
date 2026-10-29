@@ -9,7 +9,8 @@
 
 설정(환경변수, 정수, 기본값은 아래 상수): RATE_LIMIT_ENABLED(1/0), RATE_LIMIT_LOGIN_PER_MIN, RATE_LIMIT_SIGNUP_PER_HOUR,
 LOGIN_LOCK_FAILURES, LOGIN_LOCK_SECONDS, RATE_LIMIT_ORDERS_PER_MIN, RATE_LIMIT_RESEARCH_PER_MIN, RATE_LIMIT_RESEARCH_CONCURRENT,
-RATE_LIMIT_LOGOUT_PER_MIN, RATE_LIMIT_PASSWORD_CHANGE_PER_HOUR, PASSWORD_CHANGE_LOCK_FAILURES, PASSWORD_CHANGE_LOCK_SECONDS.
+RATE_LIMIT_LOGOUT_PER_MIN, RATE_LIMIT_PASSWORD_CHANGE_PER_HOUR, PASSWORD_CHANGE_LOCK_FAILURES, PASSWORD_CHANGE_LOCK_SECONDS,
+RATE_LIMIT_BACKTEST_PER_MIN.
 설정은 요청 때마다 읽으므로(값이 바뀌면 그 키의 한도도 바뀐다) 테스트에서 monkeypatch.setenv로 바꿀 수 있다.
 """
 
@@ -34,6 +35,7 @@ DEFAULTS = {
     "RATE_LIMIT_PASSWORD_CHANGE_PER_HOUR": 10,  # 사용자당 비밀번호 변경 시도(argon2 검증·해시를 매번 한다)
     "PASSWORD_CHANGE_LOCK_FAILURES": 5,  # 같은 사용자의 현재 비밀번호 연속 오류 이만큼이면
     "PASSWORD_CHANGE_LOCK_SECONDS": 300,  # 이만큼 비밀번호 변경 잠금
+    "RATE_LIMIT_BACKTEST_PER_MIN": 10,  # 사용자당 백테스트(요청마다 최대 5종목·5년을 계산한다)
 }
 MAX_KEYS = 10_000  # 리미터 하나가 기억하는 키 수 상한(넘으면 가장 오래 안 쓴 키부터 버린다)
 CONCURRENT_RETRY_AFTER_S = 5  # 동시 질문으로 거절할 때 안내하는 대기 시간
@@ -176,7 +178,9 @@ research_active = Concurrency()
 logout = SlidingWindow(60)
 password_change = SlidingWindow(3600)
 password_change_failures = FailureLock()
-ALL = (login_ip, signup_ip, login_failures, orders, research, research_active, logout, password_change, password_change_failures)
+backtest = SlidingWindow(60)
+ALL = (login_ip, signup_ip, login_failures, orders, research, research_active, logout, password_change, password_change_failures,
+       backtest)
 
 
 def reset_all() -> None:
