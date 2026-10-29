@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, CheckConstraint, Column, String, TIMESTAMP, UniqueConstraint, func
+from sqlalchemy import BigInteger, CheckConstraint, Column, Integer, String, TIMESTAMP, UniqueConstraint, func
 
 from app.db.base import Base
 
@@ -22,6 +22,8 @@ class User(Base):
     id = Column(BigInteger, primary_key=True)
     username = Column(String(20), nullable=False)
     password_hash = Column(String(255), nullable=False)
+    # 로그아웃·비밀번호 변경 때 1씩 올린다. JWT의 tv 클레임과 다르면 그 토큰은 폐기된 것이다(app.auth).
+    token_version = Column(Integer, nullable=False, default=0, server_default="0")
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
 
     def __repr__(self) -> str:
