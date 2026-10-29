@@ -1,6 +1,7 @@
 from app.models.company import Company
 from app.models.data_refresh_log import DataRefreshLog
 from app.models.disclosure import Disclosure
+from app.models.etf_holding import EtfHolding
 from app.models.exchange_rate import ExchangeRate
 from app.models.holding import Holding
 from app.models.market_index import MarketIndex
@@ -19,6 +20,7 @@ __all__ = [
     "StockPrice",
     "News",
     "Disclosure",
+    "EtfHolding",
     "MarketIndex",
     "ExchangeRate",
     "DataRefreshLog",
