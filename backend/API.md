@@ -18,7 +18,7 @@ Authorization: Bearer <access_token>
 
 | 구분 | 엔드포인트 |
 | --- | --- |
-| **인증 필요** | `/api/auth/me`, `/api/auth/logout`(POST), `/api/auth/change-password`(POST), `/api/briefing`(GET), `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET) |
+| **인증 필요** | `/api/auth/me`, `/api/auth/logout`(POST), `/api/auth/change-password`(POST), `/api/briefing`(GET), `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/performance`(GET), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET) |
 | 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status`, `/api/health`, `/api/stocks/{ticker}/event-reactions`, `/api/stocks/{ticker}/price-history` |
 
 - 데이터는 **사용자별로 분리**된다. 리서치 리포트 목록/조회/삭제/이어 쓰기(`previous_report_id`)는 본인 것만 대상이고,
@@ -186,6 +186,7 @@ ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응�
 | GET | `/api/portfolio` | 필요 | 내 모의투자 잔고 + 보유 종목(첫 호출 시 계좌 자동 생성) |
 | POST | `/api/portfolio/orders` | 필요 | 모의투자 매수/매도 주문 |
 | GET | `/api/portfolio/trades` | 필요 | 내 체결 내역(기본 최신순, `limit`/`offset` 페이지네이션(`has_next`, `total_pages`), `sort`/`order` 정렬, `ticker` 필터) |
+| GET | `/api/portfolio/performance` | 필요 | 거래일 종가 기준 자산 곡선과 성과 지표(수익률·MDD·변동성·승률·종목 기여도·코스피 대비), LLM 없음, 읽기 전용 (2026-10-29) |
 | POST | `/api/portfolio/reset` | 필요 | 내 모의투자 초기화(보유·체결 내역 삭제 + 잔고 초기값). 본문 `{"confirm": true}` 필수 |
 | POST | `/api/portfolio/diagnosis` | 필요 | 내 포트폴리오 AI 진단(지표·플래그는 코드 계산, 설명은 LLM 또는 규칙 기반 폴백). 결과를 저장하고 `diagnosis_id`·`created_at`을 붙인다 |
 | GET | `/api/portfolio/diagnosis/history` | 필요 | 내 진단 이력 목록(기본 최신순, `limit`/`offset` 페이지네이션(`has_next`, `total_pages`), `sort`/`order` 정렬, 최근 50건 보관) |
@@ -2845,6 +2846,132 @@ curl http://localhost:8000/api/health
 
 - `status`는 모든 검사가 ok면 `"ok"`, 하나라도 아니면 `"degraded"`. 사유는 예외 **종류만** 쓴다(메시지에는 주소·SQL이 들어갈 수 있어 내보내지 않음).
 - 실패한 검사가 있어도 2초 남짓이면 응답한다. 측정: 정상 23ms(첫 호출 162ms).
+
+---
+
+## GET /api/portfolio/performance (2026-10-29)
+
+인증 필요. 모의투자 체결 내역을 날짜순으로 다시 계산해 **거래일 종가 기준 일별 자산 곡선**과 성과 지표를 돌려준다.
+**LLM을 쓰지 않고** 모든 숫자는 코드가 DB 값(체결, 종가, 코스피 지수)으로 계산한다. 읽기 전용이다(계좌를 만들지 않고 아무것도 쓰지 않는다).
+본인 계좌만 대상이고, 토큰이 없으면 401. 문구는 관찰 사실만 쓴다(투자 권유 없음, 응답에 `disclaimer` 포함).
+
+```bash
+curl "http://localhost:8000/api/portfolio/performance?period=3m" -H "Authorization: Bearer $TOKEN"
+```
+
+| 쿼리 | 값 | 기본 | 범위 밖 |
+| --- | --- | --- | --- |
+| `period` | `1m` / `3m` / `6m` / `all` | `all` | 422(대소문자 구분, `2y`·빈 값도 422) |
+
+### 계산 규칙
+
+- **자산** = 현금 + Σ(보유 수량 × 그 거래일 종가). 체결은 체결일(KST)의 장 마감 종가로 평가한다. 같은 날 여러 건은 체결 순서대로 반영한다.
+  주말·휴일 체결은 다음 거래일 종가에 반영된다. 매수·매도의 현금·평균단가 계산은 주문 API와 같은 함수(`app.portfolio.apply_buy/apply_sell`)다.
+- **거래일**: 시세가 한 종목이라도 수집된 날. 휴장일(시세 행이 없는 날)은 건너뛴다.
+- **기간**: `all`은 첫 체결 직전 거래일부터 `data_date`까지이고 시작값은 초기 자금(`initial_balance`, 1,000만원).
+  `1m`/`3m`/`6m`은 `data_date`에서 그 개월 수를 뺀 날(말일 보정) 이전 마지막 거래일부터이고, 시작값은 그날의 자산이다.
+  첫 체결 전 구간은 초기 자금 그대로다(notice로 알린다).
+- **장중 규칙**: 평일 15:30(KST) 전에는 오늘 날짜의 시세·지수 행을 쓰지 않는다(`GET /api/briefing`과 같은 함수).
+  `data_date`는 그렇게 정한 마지막 거래일이고, 평일 기준 2영업일 이상 뒤처지면 `stale: true`와 `stale_notice`가 붙는다.
+- **`data_date` 이후 체결**(오늘 장중이나 종가 수집 전 주문)은 아직 종가가 없어 곡선·지표에 넣지 않고 `trades.pending_count`로만 센다(notice).
+- **결손**: 보유 종목의 그날 종가가 없으면 직전 종가를 쓰고, 종가가 한 번도 없으면 마지막 체결가를 쓴다. 어느 쪽이든 `data_gaps`에 남긴다.
+  잔고·수량이 맞지 않아 재생할 수 없는 체결은 빼고 notice로 알린다. 체결 내역을 다시 계산한 현금이 현재 잔고와 다르면 notice로 알린다.
+- **0으로 나누기 없음**: 분모가 0 이하이면 그 값은 `null`이다.
+
+### 지표 정의
+
+| 필드 | 정의 |
+| --- | --- |
+| `summary.cumulative_return_pct` | (마지막 자산 ÷ 초기 자금 − 1) × 100 |
+| `summary.period_return_pct` | (마지막 자산 ÷ 기간 시작값 − 1) × 100. `all`이면 누적 수익률과 같다 |
+| `summary.profit_loss` | 마지막 자산 − 기간 시작값 |
+| `summary.cash_weight_pct` | 마지막 날 현금 ÷ 마지막 자산 × 100 |
+| `risk.max_drawdown.pct` | 기간 곡선에서 min(자산 ÷ 그때까지의 최고 자산 − 1) × 100 (0 이하). `peak_date`/`trough_date`는 그 고점·저점, `recovery_date`는 저점 뒤 처음으로 고점 자산 이상이 된 날(없으면 null), `duration_days`는 고점→저점 거래일 수. 하락이 없으면 0과 날짜 null |
+| `risk.daily_volatility_pct` | 연속한 두 거래일 자산 등락률(%)의 **표본 표준편차**. 수익률이 2개 미만(곡선 2점 이하)이면 null |
+| `risk.annualized_volatility_pct` | 일간 변동성 × √252 |
+| `trades.win_rate_pct` | 기간 중 매도 건 가운데 실현손익((매도가 − 매도 직전 평균단가) × 수량)이 양수인 비율. 매도가 없으면 null. 0원은 `even` |
+| `contributions[].profit_loss` | 기간 끝 평가액 + 기간 중 매도대금 − 기간 중 매수대금 − 기간 시작 평가액. **종목 합 = `summary.profit_loss`**. 큰 순으로 정렬 |
+| `contributions[].contribution_pct` | 위 손익 ÷ 기간 시작값 × 100. 종목 합 = 기간 수익률 |
+| `benchmark` | 코스피(`market_index`의 `KS11`). 기간과 지수 데이터가 겹치는 구간 [`start_date`, `end_date`]에서 지수 수익률과 같은 구간의 포트폴리오 수익률, 초과수익(%p = 포트폴리오 − 지수). 지수가 기간을 다 덮지 못하면 `covers_full_period: false`와 notice. 지수 데이터가 없거나 겹치지 않으면 `null`과 notice |
+
+### 응답 200
+
+| 필드 | 타입 | null | 설명 |
+| --- | --- | --- | --- |
+| `generated_at` | string | 아니오 | 응답 시각(KST, ISO 8601) |
+| `period` | string | 아니오 | 요청한 기간 |
+| `data_date` | string | 예 | 마지막 거래일(YYYY-MM-DD). 시세가 하나도 없으면 null |
+| `stale` / `stale_notice` | bool / string | 아니오 / 예 | 데이터가 뒤처졌는지와 안내 |
+| `start_date` / `end_date` | string | 예 | 곡선의 첫날·마지막 날(시세가 없으면 null) |
+| `initial_balance` | number | 아니오 | 초기 자금 |
+| `message` | string | 예 | 체결이 없을 때(`아직 체결된 모의투자 주문이 없습니다...`), 체결이 모두 `data_date` 이후일 때, 시세가 없을 때의 안내. 정상 계산이면 null |
+| `summary` | object | 아니오 | `start_value`, `end_value`, `cash_balance`, `eval_amount`, `profit_loss`(숫자), `cumulative_return_pct`?, `period_return_pct`?, `cash_weight_pct`? |
+| `risk` | object | 아니오 | `max_drawdown`{`pct`, `peak_date`?, `trough_date`?, `recovery_date`?, `duration_days`}, `daily_volatility_pct`?, `annualized_volatility_pct`?, `daily_return_count` |
+| `trades` | object | 아니오 | 기간 중 `count`, `buys`, `sells`, `wins`, `losses`, `even`, `win_rate_pct`?, `realized_profit_loss`, 그리고 `pending_count`(종가 반영 전 체결 수) |
+| `contributions[]` | array | 아니오 | `ticker`, `company_name`, `profit_loss`, `contribution_pct`?, `quantity`(기간 끝), `eval_amount`, `unrealized_profit_loss`?(보유 중일 때만, 평균단가 대비), `realized_profit_loss` |
+| `benchmark` | object | 예 | 위 정의 |
+| `curve` | object | 아니오 | `points[]`{`date`, `total_asset`, `cash_balance`, `eval_amount`, `return_pct`?(기간 시작값 대비 %)}, `total_points`(샘플링 전), `sampled`, `max_points`(400) |
+| `data_gaps[]` | array | 아니오 | `ticker`, `company_name`, `kind`(`previous_close` / `trade_price`), `days`, `first_date`, `last_date` (기간 안에서 대체 가격을 쓴 날) |
+| `notices[]` | string[] | 아니오 | 부분 비교·결손·대기 체결 등 안내 |
+| `disclaimer` | string | 아니오 | `GET /api/disclaimer`와 같은 문구 |
+
+`?` 표시는 null 가능. 체결이 없으면 곡선은 초기 자금 한 점(`data_date`), 지표는 0이고 변동성·승률·벤치마크는 null이다.
+
+**곡선 샘플링**: 포인트가 400개를 넘으면 고르게 줄이되 첫 점·마지막 점·최고점·최저점·MDD 고점/저점은 반드시 남기고 `sampled: true`다.
+지표는 샘플링 전 전체 곡선으로 계산한다.
+
+예시(captest 계정, 과거 체결 5건: 삼성전자 20주 매수 → 8주 매도, SK하이닉스 1주 매수 → 매도, NAVER 5주 매수, 2026-10-29 15:05):
+
+```json
+{
+  "period": "all", "data_date": "2026-10-28", "stale": false, "start_date": "2026-09-22", "end_date": "2026-10-28",
+  "initial_balance": 10000000.0, "message": null,
+  "summary": {"start_value": 10000000.0, "end_value": 8409000.0, "cash_balance": 4635500.0, "eval_amount": 3773500.0,
+              "profit_loss": -1591000.0, "cumulative_return_pct": -15.91, "period_return_pct": -15.91, "cash_weight_pct": 55.13},
+  "risk": {"max_drawdown": {"pct": -20.23, "peak_date": "2026-09-22", "trough_date": "2026-10-20", "recovery_date": null, "duration_days": 14},
+           "daily_volatility_pct": 2.3419, "annualized_volatility_pct": 37.1764, "daily_return_count": 20},
+  "trades": {"count": 5, "buys": 3, "sells": 2, "wins": 0, "losses": 2, "even": 0, "win_rate_pct": 0.0,
+             "realized_profit_loss": -1049000.0, "pending_count": 0},
+  "contributions": [
+    {"ticker": "035420", "company_name": "NAVER", "profit_loss": 40000.0, "contribution_pct": 0.4, "quantity": 5,
+     "eval_amount": 917500.0, "unrealized_profit_loss": 40000.0, "realized_profit_loss": 0.0},
+    {"ticker": "000660", "company_name": "SK하이닉스", "profit_loss": -629000.0, "contribution_pct": -6.29, "quantity": 0,
+     "eval_amount": 0.0, "unrealized_profit_loss": null, "realized_profit_loss": -629000.0},
+    {"ticker": "005930", "company_name": "삼성전자", "profit_loss": -1002000.0, "contribution_pct": -10.02, "quantity": 12,
+     "eval_amount": 2856000.0, "unrealized_profit_loss": -582000.0, "realized_profit_loss": -420000.0}
+  ],
+  "benchmark": {"index_code": "KS11", "index_name": "코스피", "start_date": "2026-09-22", "end_date": "2026-10-27",
+                "index_return_pct": -19.66, "portfolio_return_pct": -17.57, "excess_return_pct": 2.08, "covers_full_period": false},
+  "curve": {"points": [{"date": "2026-09-22", "total_asset": 10000000.0, "cash_balance": 10000000.0, "eval_amount": 0.0, "return_pct": 0.0},
+                       "... 21개 ..."], "total_points": 21, "sampled": false, "max_points": 400},
+  "data_gaps": [],
+  "notices": ["코스피 지수 데이터가 2026-09-22~2026-10-27만 있어 그 구간끼리만 비교했습니다."],
+  "disclaimer": "이 서비스는 학습·시연용 모의투자와 AI 리서치입니다. ..."
+}
+```
+
+### 쿼리 수
+
+요청당 DB 쿼리는 보유·거래 종목 수와 상관없이 **5개**다(계좌 1 + 체결 1 + 거래일 달력 1 + 종가 1(`company_id IN (...)`) + 지수 1). 인증의 사용자 조회 1개는 별도다.
+`tests/test_performance_devdb.py`가 종목 1개와 10개 계좌의 쿼리 수가 같고 5 이하인지 확인한다.
+
+### 에러
+
+| 상태 | 언제 |
+| --- | --- |
+| 401 | 토큰 없음/무효(위 "인증 에러") |
+| 422 | `period`가 허용 값이 아님 |
+| 503 | DB 연결 불가 |
+
+### 한계
+
+- **일봉 종가 기준이다.** 체결 당일의 장중 움직임은 반영하지 않고, 장 마감 뒤에 체결한 주문도 그날 종가로 평가한다. 체결가 자체는 주문 때의 현재가 그대로다.
+- **수수료·세금·슬리피지는 반영하지 않는다**(모의투자 주문 자체가 반영하지 않는다).
+- 거래일은 "시세가 한 종목이라도 있는 날"이라, 전 종목 수집이 빠진 날(예: 2026-10-15·16)은 휴장일처럼 건너뛴다. 일부 종목만 빠진 날은 `data_gaps`로 보인다.
+- `POST /api/portfolio/reset`은 체결 내역을 지우므로 초기화 전의 성과는 계산할 수 없다(초기화 이후 체결만 재생한다).
+- 지수(코스피)는 수집 시점에 따라 시세보다 늦을 수 있어(2026-10-29 기준 지수는 10/27, 시세는 10/28) 벤치마크가 부분 구간 비교가 되는 경우가 많다.
+- 벤치마크는 코스피만이다(코스닥 종목만 가진 계좌도 코스피와 비교한다). 무위험 수익률이 없어 샤프 비율 같은 위험조정 지표는 없다.
+- 변동성은 거래일 간 자산 등락률이라 표본(거래일)이 적으면 의미가 약하다.
 
 ---
 

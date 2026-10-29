@@ -38,6 +38,7 @@
 | GET | `/api/portfolio` | 필요 | 내 모의투자 잔고 + 보유 종목(평가손익 포함). 첫 호출 시 계좌 자동 생성(초기 잔고 1,000만원) |
 | POST | `/api/portfolio/orders` | 필요 | 모의투자 매수/매도 주문(현재가로 즉시 체결) |
 | GET | `/api/portfolio/trades` | 필요 | 내 체결 내역(최신순, `limit` 기본 50·최대 200, `offset`, `ticker` 필터, `total` 포함) |
+| GET | `/api/portfolio/performance` | 필요 | 모의투자 성과(2026-10-29): 체결 내역을 재생한 거래일 종가 기준 자산 곡선(최대 400점)과 누적·기간 수익률, MDD, 일간 변동성, 승률, 종목별 기여도, 현금 비중, 코스피 대비 초과수익. `period` = `1m`/`3m`/`6m`/`all`. **LLM 없이 코드가 DB 값으로 계산**, 읽기 전용. 장 마감 전 오늘 행 제외, 수수료·세금 미반영. 필드·정의식은 [backend/API.md](backend/API.md) |
 | POST | `/api/portfolio/reset` | 필요 | 내 모의투자 초기화(보유·체결 내역 삭제 + 잔고 1,000만원 복구). 본문 `{"confirm": true}`가 아니면 400. 관심종목·리서치는 유지 |
 | POST | `/api/portfolio/diagnosis` | 필요 | 내 포트폴리오 AI 진단. 비중·집중도(허핀달)·시장별 비중·손익·20거래일 수익률과 규칙 플래그는 코드가 계산하고, llama3.1:8b가 설명만 생성(검증 실패/Ollama 장애 시 규칙 기반 문장으로 폴백, `source`로 구분). 보유 종목이 없으면 400. 결과는 사용자당 최근 50건 저장하고 응답에 `diagnosis_id`·`created_at` 추가(저장 실패 시 null, 진단은 정상) |
 | GET | `/api/portfolio/diagnosis/history` | 필요 | 내 진단 이력(최신순, `limit` 기본 20·최대 100, `offset`, `total` 포함). 항목: id·created_at·source·total_asset·holdings_count·flags(코드만)·summary_preview(앞 80자) |
@@ -467,16 +468,16 @@ python -m scripts.refresh_data --days 30 --timeout-min 30 # 조회 기간 직접
 `backend/`에서 실행합니다. 세 단계로 나뉩니다(마커: `integration`, `slow`).
 
 ```bash
-pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-29 토큰 폐기 후 3216개 통과, 약 45초). slow는 기본 제외
-pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 2817개)
-pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(399개). DB가 꺼져 있으면 자동 skip
+pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-29 성과 추적 API 후 3262개: 3261 통과 + 마이그레이션 왕복 1 skip, 약 40초). slow는 기본 제외
+pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 2857개)
+pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(405개). DB가 꺼져 있으면 자동 skip
 pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)를 부르는 테스트(61개, 느리고 비결정적)
 ```
 
 - **1단계(순수 로직·라우터 mock)**: 계산 함수, 라우팅 게이트, 검증기, 라우터 응답 형태. 외부 호출 없음.
 - **2단계(dev DB 통합)**: 마이그레이션이 적용된 개발 DB의 실제 응답(읽기 위주). 가입 테스트는 `pt_`(토큰 폐기 테스트는 `captest_`) 접두어 계정을 만들고 끝나면 지웁니다.
   마이그레이션 업그레이드/다운그레이드 왕복 테스트(`tests/test_auth_revoke_devdb.py`) 1개는 dev DB에서 하지 않고 `MIGRATION_TEST_DATABASE_URL`이 가리키는
-  **별도 서버**에 임시 DB를 만들어 돕니다(dev DB 서버를 가리키면 테스트가 거부). 이 변수가 없으면 로컬에서는 그 1개만 skip됩니다(398개 통과 + 1 skip). 예:
+  **별도 서버**에 임시 DB를 만들어 돕니다(dev DB 서버를 가리키면 테스트가 거부). 이 변수가 없으면 로컬에서는 그 1개만 skip됩니다(404개 통과 + 1 skip). 예:
   `docker run -d --name migr_check_db -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci_dummy_pw -e POSTGRES_DB=ci_db -p 25433:5432 pgvector/pgvector:pg16` 후
   `MIGRATION_TEST_DATABASE_URL=postgresql+psycopg://ci:ci_dummy_pw@localhost:25433/ci_db pytest -m "integration and not slow"`, 끝나면 `docker rm -f migr_check_db`.
 - **3단계(slow)**: 실제 모델 호출. 질문 몇 개를 여러 번 돌려 오류 유형을 세는 측정도 여기에 있습니다(예: `tests/test_event_reaction_slow.py`는 LLM 해석을
@@ -504,10 +505,10 @@ pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)
 
 **CI에서 제외되는 테스트(숫자로)**
 
-- `integration` 399개 중 **50개는 CI에서 제외**됩니다(`needs_collected_data` 마커). 수집된 시세·뉴스·공시·ETF 시세·환율·시장 지수(또는 인증 도입 전 옛 리포트)가 DB에 있어야 통과하는
-  테스트라서, 종목 목록만 시드한 CI의 빈 DB에서는 통과할 수 없습니다. 나머지 349개는 CI에서 실제로 돕니다. 로컬 dev DB에서는 마커가 있어도 **399개 전부** 평소처럼 돕니다(마이그레이션 왕복 1개는 `MIGRATION_TEST_DATABASE_URL`이 있을 때).
-  제외 개수는 CI 로그와 job summary에 숫자로 찍히고, 상한(`MAX_EXCLUDED=50`)을 넘으면 CI가 실패합니다(마커로 테스트를 슬그머니 늘려 빼지 못하게).
-- 분류(빈 DB 기준): **a** 스스로 데이터를 만들어 통과 66, **b** 종목 시드로 해결 199, **c** 수집 데이터 필요 50(위 제외, 49번째는 브리핑 숫자 독립 재계산 대조, 50번째는 채팅 기간 수익률 템플릿의 DB 대조 테스트), **d** Ollama 필요 0. 2026-10-29 토큰 폐기 통합 테스트 6개는 모두 스스로 데이터를 만든다(a).
+- `integration` 405개 중 **51개는 CI에서 제외**됩니다(`needs_collected_data` 마커). 수집된 시세·뉴스·공시·ETF 시세·환율·시장 지수(또는 인증 도입 전 옛 리포트)가 DB에 있어야 통과하는
+  테스트라서, 종목 목록만 시드한 CI의 빈 DB에서는 통과할 수 없습니다. 나머지 354개는 CI에서 실제로 돕니다. 로컬 dev DB에서는 마커가 있어도 **405개 전부** 평소처럼 돕니다(마이그레이션 왕복 1개는 `MIGRATION_TEST_DATABASE_URL`이 있을 때).
+  제외 개수는 CI 로그와 job summary에 숫자로 찍히고, 상한(`MAX_EXCLUDED=51`)을 넘으면 CI가 실패합니다(마커로 테스트를 슬그머니 늘려 빼지 못하게).
+- 분류(빈 DB 기준): **a** 스스로 데이터를 만들어 통과 66, **b** 종목 시드로 해결 199, **c** 수집 데이터 필요 51(위 제외, 49번째는 브리핑 숫자 독립 재계산 대조, 50번째는 채팅 기간 수익률 템플릿의 DB 대조 테스트, 51번째는 성과 추적 API 숫자의 독립 재계산 대조(2026-10-29)), **d** Ollama 필요 0. 2026-10-29 토큰 폐기 통합 테스트 6개와 성과 추적 통합 테스트 5개는 스스로 데이터를 만든다(a).
 - 그 밖의 skip은 조용히 통과로 보이지 않게 CI에서 **실패**로 바뀝니다(`CI_FAIL_ON_SKIP=1`, `backend/tests/ci_guard.py`).
 - `slow` 61개(실제 Ollama 호출)와 `evals` live 모드는 CI에서 돌지 않습니다: Ollama(llama3.1:8b)가 필요하고 느리며 비결정적이기 때문입니다. 로컬에서 `pytest -m slow`, `python -m evals.run_eval --mode live`.
 
@@ -520,7 +521,7 @@ cd backend
 export DATABASE_URL=postgresql+psycopg://ci:ci_dummy_pw@localhost:25432/ci_db   # PowerShell: $env:DATABASE_URL="..."
 export MIGRATION_TEST_DATABASE_URL=postgresql+psycopg://ci:ci_dummy_pw@localhost:25433/ci_db   # 마이그레이션 왕복용(CI의 5433 서비스)
 python -m alembic upgrade head && python -m scripts.ci_seed
-CI_FAIL_ON_SKIP=1 pytest -m "integration and not slow and not needs_collected_data"      # 349개 통과, skip 0
+CI_FAIL_ON_SKIP=1 pytest -m "integration and not slow and not needs_collected_data"      # 354개 통과, skip 0
 docker rm -f ci_check_db ci_migr_db
 ```
 
@@ -664,6 +665,7 @@ python -m evals.compare evals/results/summary_baseline_2026-10-27.json evals/res
     공백·대소문자 차이, 등록된 별칭만 주문되고, 비슷한 이름만 있으면 404 + "정확한 종목을 찾지 못했습니다. 혹시 A, B 중 하나인가요?"(후보 최대 3개).
     다른 경로의 보정은 그대로. 한계: 같은 계정에서 지연이 큰 주문 하나가 뒤따르는 주문을 기다리게 한다(보통 수 ms)
 - [x] 데이터 일괄 갱신: `python -m scripts.refresh_data`(6단계, 단계별 기록, `GET /api/status`로 기준일 확인). 실행은 수동이고 스케줄러는 없다(자동화 여부 논의 필요)
+- [x] 모의투자 성과 추적(2026-10-29): `GET /api/portfolio/performance`(LLM 없음, 읽기 전용). 계산은 `app/performance.py`(순수), DB 조회는 `app/performance_db.py`(쿼리 5개 고정). 통합 테스트가 응답 숫자를 원시 SQL로 독립 재계산해 대조한다
 - [x] 오늘의 개인화 브리핑: `GET /api/briefing`(LLM 없음, 코드 계산, 읽기 전용). 계산은 `app/briefing.py`(순수), DB 조회는 `app/briefing_db.py`(쿼리 수 고정). 숫자는 `tests/briefing_recompute.py`가 원시 SQL로 독립 재계산해 대조한다
 - [x] 리서치 챗 3차(2026-10-28): 채팅에서 개인화 브리핑("오늘 브리핑", "내 보유종목 어때", LLM 없음), 기간 수익률·기간 최고/최저가·두 종목 비교를 코드 템플릿으로 답함, 숫자 검증기에 날짜·대상·기간 혼동 검사 추가(독립 고정 세트로 재현율 0.57→0.90). 상세는 [backend/API.md](backend/API.md)의 "3차 라운드"와 [backend/evals/README.md](backend/evals/README.md)
 - [x] ETF(2026-10-14): 종목 50개, 리서치·진단 처리 규칙과 레버리지/인버스 고정 문구(위 "ETF 처리 규칙")
