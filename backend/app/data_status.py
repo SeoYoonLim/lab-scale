@@ -14,6 +14,9 @@ KST = ZoneInfo("Asia/Seoul")
 STALE_BUSINESS_DAYS = 2
 # refresh_data.py의 단계 수. 한 번의 실행을 구분하려고 최근 행을 이만큼만 읽는다.
 MAX_STEPS_PER_RUN = 6
+# last_refresh가 보는 단계(scripts/refresh_data.STEP_ORDER와 같다, 테스트가 확인). 다른 스크립트가 남긴 행
+# (예: scripts/backfill_history.py의 'backfill')은 "마지막 갱신 실행"으로 읽지 않는다.
+REFRESH_STEPS = ("prices", "index", "fx", "news", "embed", "content")
 
 NOTE = "주가는 종가 기준이며, 실시간 시세는 별도 엔드포인트로 제공됩니다."
 
@@ -91,7 +94,10 @@ def build_status(db: Session, now: datetime | None = None) -> dict:
     news_latest = _kst_date(db.execute(select(func.max(News.published_at))).scalar())
     disclosure_latest = _kst_date(db.execute(select(func.max(Disclosure.disclosed_at))).scalar())
     recent = db.execute(
-        select(DataRefreshLog).order_by(DataRefreshLog.id.desc()).limit(MAX_STEPS_PER_RUN)
+        select(DataRefreshLog)
+        .where(DataRefreshLog.step.in_(REFRESH_STEPS))
+        .order_by(DataRefreshLog.id.desc())
+        .limit(MAX_STEPS_PER_RUN)
     ).scalars().all()
 
     return {

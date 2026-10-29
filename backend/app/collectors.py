@@ -290,11 +290,12 @@ def _price_values(record: dict) -> tuple:
 # FinanceDataReader(KRX 로그인 불필요)로 주가 수집 후 DB에 upsert하는 함수.
 # 이미 있는 날짜는 최신 값으로 갱신한다. 장 마감 전에 저장된 행(거래량 등)이 남지 않게 하기 위해서다.
 def fetch_and_save_stock(
-    ticker: str, name: str, days: int = 7, dry_run: bool = False
+    ticker: str, name: str, days: int = 7, dry_run: bool = False, start_date: str | None = None, end_date: str | None = None
 ) -> CollectResult:
+    """start_date/end_date(YYYY-MM-DD)를 주면 days 대신 그 기간을 받는다(scripts/backfill_history.py가 장기 이력에 쓴다)."""
     today = datetime.now(KST)
-    start_date = (today - timedelta(days=days)).strftime("%Y-%m-%d")
-    end_date = today.strftime("%Y-%m-%d")
+    start_date = start_date or (today - timedelta(days=days)).strftime("%Y-%m-%d")
+    end_date = end_date or today.strftime("%Y-%m-%d")
 
     print(f"[{name}({ticker})] {start_date} ~ {end_date} 주가 데이터 수집 중...")
 
@@ -405,11 +406,14 @@ def fetch_index_frame(index_code: str, start_date: str, end_date: str, reader=No
     return None, None, errors
 
 
-def fetch_and_save_market_index(index_code: str, days: int = 7, dry_run: bool = False) -> CollectResult:
-    """지수 일별 종가를 폴백 체인(MARKET_INDEX_SOURCES)으로 받아 market_index에 upsert한다(멱등)."""
+def fetch_and_save_market_index(
+    index_code: str, days: int = 7, dry_run: bool = False, start_date: str | None = None, end_date: str | None = None
+) -> CollectResult:
+    """지수 일별 종가를 폴백 체인(MARKET_INDEX_SOURCES)으로 받아 market_index에 upsert한다(멱등).
+    start_date/end_date를 주면 days 대신 그 기간을 받는다."""
     today = datetime.now(KST)
-    start_date = (today - timedelta(days=days)).strftime("%Y-%m-%d")
-    end_date = today.strftime("%Y-%m-%d")
+    start_date = start_date or (today - timedelta(days=days)).strftime("%Y-%m-%d")
+    end_date = end_date or today.strftime("%Y-%m-%d")
 
     df, source, errors = fetch_index_frame(index_code, start_date, end_date, today=today.date())
     for msg in errors:
