@@ -18,8 +18,8 @@ Authorization: Bearer <access_token>
 
 | 구분 | 엔드포인트 |
 | --- | --- |
-| **인증 필요** | `/api/auth/me`, `/api/auth/logout`(POST), `/api/auth/change-password`(POST), `/api/auth/email`(PUT), `/api/auth/resend-verification`(POST), `/api/briefing`(GET), `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/performance`(GET), `/api/backtest`(POST), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET) |
-| 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/auth/oauth/providers`(GET), `/api/auth/oauth/{provider}/login`·`/callback`(GET, 브라우저 이동), `/api/auth/oauth/exchange`(POST), `/api/auth/verify-email`, `/api/auth/find-username`, `/api/auth/forgot-password`, `/api/auth/reset-password`(모두 POST), `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status`, `/api/health`, `/api/stocks/{ticker}/event-reactions`, `/api/stocks/{ticker}/price-history` |
+| **인증 필요** | `/api/auth/me`(GET/DELETE), `/api/auth/logout`(POST), `/api/auth/change-password`(POST), `/api/auth/email`(PUT), `/api/auth/resend-verification`(POST), `/api/briefing`(GET), `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/performance`(GET), `/api/backtest`(POST), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET) |
+| 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/auth/delete-account/confirm`(POST), `/api/auth/oauth/providers`(GET), `/api/auth/oauth/{provider}/login`·`/callback`(GET, 브라우저 이동), `/api/auth/oauth/exchange`(POST), `/api/auth/verify-email`, `/api/auth/find-username`, `/api/auth/forgot-password`, `/api/auth/reset-password`(모두 POST), `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status`, `/api/health`, `/api/stocks/{ticker}/event-reactions`, `/api/stocks/{ticker}/price-history` |
 
 - 데이터는 **사용자별로 분리**된다. 리서치 리포트 목록/조회/삭제/이어 쓰기(`previous_report_id`)는 본인 것만 대상이고,
   **남의 리포트 ID는 없는 리포트와 똑같이 404**다(403이 아니다 — 그 ID가 존재하는지 드러내지 않기 위해).
@@ -184,6 +184,8 @@ ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응�
 | GET | `/api/auth/oauth/{provider}/login` | 공개 | 브라우저 이동: 구글·네이버 인증 페이지로 302 |
 | GET | `/api/auth/oauth/{provider}/callback` | 공개 | 공급자가 돌려보내는 곳 → 프론트 `/oauth/callback#code=...` 또는 `/login?error=...`로 302 |
 | POST | `/api/auth/oauth/exchange` | 공개 | 60초 1회용 코드 → 로그인과 같은 응답(access token) |
+| DELETE | `/api/auth/me` | 필요 | 회원 탈퇴: 모든 데이터 삭제(2026-10-30, 아래 "회원 탈퇴") |
+| POST | `/api/auth/delete-account/confirm` | 공개 | 소셜 계정의 탈퇴 확인 메일 링크로 탈퇴 확정 |
 | POST | `/api/research` | 필요 | 질문을 보내 AI 답변 생성(+리포트 저장). `previous_report_id`로 내 직전 보고서를 이어서 후속 질문 가능 |
 | GET | `/api/research` | 필요 | 내 리포트 목록(기본 최신순). `limit`/`offset` 페이지네이션(`has_next`, `total_pages`), `sort`/`order` 정렬, `q` 검색 |
 | GET | `/api/research/{report_id}` | 필요 | 내 리포트 한 건 조회 |
@@ -229,7 +231,7 @@ ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응�
 | 필드 | 타입 | 규칙 |
 | --- | --- | --- |
 | `username` | string | 필수. **3~20자, 영문 소문자/숫자/밑줄(`[a-z0-9_]`)**. 대문자는 소문자로 바꿔 저장한다(`Alice`로 가입하면 `alice`). 위반 시 422 |
-| `password` | string | 필수. **8~128자**(문자 종류 제한 없음). 위반 시 422 |
+| `password` | string | 필수. **8~128자**, 흔한 비밀번호(내장 목록)·한 문자 반복·아이디 또는 이메일 앞부분(3자 이상)이 들어간 비밀번호는 거부(2026-10-30, 가입·변경·재설정 공통). 위반 시 422(입력값은 되돌려주지 않는다) |
 | `email` | string \| null | **선택(2026-10-30 추가, 없으면 이전과 같다)**. 앞뒤 공백 제거·소문자로 저장, 최대 254자, 형식 위반 422. 다른 계정이 쓰면 409. 주면 인증 메일을 보낸다(아래 "계정 복구"). 응답 형식은 같다 |
 
 ```bash
@@ -314,9 +316,8 @@ curl http://localhost:8000/api/auth/me -H "Authorization: Bearer $TOKEN"
   비교는 원래 하던 사용자 조회 결과로 하므로 요청당 DB 조회는 늘지 않았다(여전히 1회).
 - 로그아웃·비밀번호 변경이 `token_version`을 1 올리면, 그 전에 발급된 그 사용자의 토큰은 **기기와 상관없이 전부** 무효다.
   다른 사용자의 토큰은 영향이 없다. 한 기기만 로그아웃하는 기능은 없다(한계).
-- **하위 호환**: `tv`가 없는 토큰(2026-10-29 이전 발급)은 `tv=0`으로 본다. 마이그레이션이 모든 기존 사용자의 `token_version`을 0으로
-  채우므로 배포 직후에도 기존 로그인 상태가 그대로 유지되고, 그 사용자가 처음 로그아웃하거나 비밀번호를 바꿀 때 함께 무효가 된다.
-  `tv`가 있는데 0 이상의 정수가 아니면(문자열, 음수, true 등) 401.
+- **`tv`는 필수다(2026-10-30 변경)**: 2026-10-29까지는 `tv`가 없는 옛 토큰을 `tv=0`으로 받았지만, 그런 토큰은 수명(24시간)이 지나 남아 있지 않아
+  이제 `tv`가 없으면 401이다. `tv`가 0 이상의 정수가 아니면(문자열, 음수, true 등) 401. 비밀번호 재설정과 회원 탈퇴도 토큰을 폐기한다.
 - 로그인·가입 응답 형식은 그대로다(`{user, access_token, token_type}`).
 
 ---
@@ -359,7 +360,7 @@ curl -X POST http://localhost:8000/api/auth/logout -H "Authorization: Bearer $TO
 | 필드 | 타입 | 규칙 |
 | --- | --- | --- |
 | `current_password` | string | 필수. 1~128자 |
-| `new_password` | string | 필수. **가입과 같은 규칙(8~128자, 문자 종류 제한 없음)**. 위반 시 422. `current_password`와 같으면 422(`"type": "same_password"`) |
+| `new_password` | string | 필수. **가입과 같은 규칙**(8~128자, 흔한 비밀번호·아이디·이메일 앞부분 거부). 위반 시 422. `current_password`와 같으면 422(`"type": "same_password"`) |
 
 ### 응답 200
 
@@ -488,7 +489,7 @@ curl -X POST http://localhost:8000/api/auth/logout -H "Authorization: Bearer $TO
 | 상태 | 언제 |
 | --- | --- |
 | 400 | 잘못됐거나 만료됐거나 이미 쓴 토큰, 이메일 인증 토큰(위와 같은 일반 메시지) |
-| 422 | 새 비밀번호 규칙 위반(가입과 같은 8~128자). 토큰은 쓰이지 않고 남는다 |
+| 422 | 새 비밀번호 규칙 위반(가입과 같은 규칙, 그 계정의 아이디·이메일 앞부분 포함도 거부). 토큰은 쓰이지 않고 남는다 |
 | 429 | IP당 분당 10회 초과(토큰 무차별 대입 방지) |
 
 ### 메일 발송과 개발 모드 확인
@@ -669,6 +670,59 @@ client id와 secret이 **둘 다** 설정된 공급자만 나온다. 키 값(cli
 - 계정 연결 해제, 이미 로그인한 계정에 소셜 계정을 수동으로 연결하는 기능, 소셜 계정 탈퇴는 없다.
 - 공급자 계정이 지워지거나 동의를 철회해도 우리 쪽 연결은 남는다(다음 로그인에서 실패할 뿐이다).
 - 마이그레이션을 내리면 소셜 연결과 1회용 코드는 사라진다. 비밀번호 없는 계정에는 검증되지 않는 표식 값(`!no-password`)이 들어가 로그인할 수 없게 되고, 비밀번호 찾기로 다시 정해야 한다.
+
+---
+
+## 회원 탈퇴 (2026-10-30)
+
+### DELETE /api/auth/me (인증 필요)
+
+그 사용자의 계정과 **모든 데이터**를 지운다(되돌릴 수 없음). 지우는 것: 관심종목, 모의투자 계좌·보유·체결, 리서치 리포트와 tool 호출 이력, 포트폴리오 진단,
+계정 토큰(이메일 인증·재설정·로그인 코드), 소셜 로그인 연결, 사용자 행. 다른 사용자의 데이터는 건드리지 않는다. 지운 뒤 그 사용자의 모든 JWT는 401.
+본문(JSON, DELETE에도 본문을 보낸다):
+
+```json
+{ "current_password": "...", "confirm_username": "..." }
+```
+
+본인 확인은 계정 종류에 따라 다르다.
+
+| 계정 | 필요한 것 | 결과 |
+| --- | --- | --- |
+| 비밀번호가 있는 계정 | `current_password`(필수, 없으면 422 `missing`) | 맞으면 **200** `{"ok": true, "status": "deleted", "message": "회원 탈퇴가 끝났습니다. 계정과 모든 데이터를 지웠습니다."}`. 틀리면 422(비밀번호 변경과 같은 `invalid_current_password`), 연속 5회 오류면 비밀번호 변경과 같은 잠금(429) |
+| 비밀번호 없는 소셜 계정 + 인증된 이메일 | 없음(본문 `{}`) | **202** `{"ok": true, "status": "confirmation_sent", ...}`. 그 주소로 30분 1회용 확인 링크 `{FRONTEND_BASE_URL}/delete-account#token=...`(fragment)를 보낸다. 링크를 열어 확정해야 지워진다(재설정과 같은 메일 소유 확인) |
+| 비밀번호도 인증된 이메일도 없는 소셜 계정 | 10분 안에 로그인해 받은 토큰 + `confirm_username`(아이디, 대소문자 무시) | 맞으면 200 deleted. 아니면 400 `"이 계정은 비밀번호와 인증된 이메일이 없어 본인 확인을 위해 방금(10분 안) 다시 로그인한 뒤, 확인용으로 아이디를 함께 보내야 탈퇴할 수 있습니다."` |
+
+401(토큰 없음·무효, 본문 검증보다 먼저), 429(사용자당 시간당 5회 `RATE_LIMIT_ACCOUNT_DELETE_PER_HOUR`). 응답은 `Cache-Control: no-store`.
+
+### POST /api/auth/delete-account/confirm (공개)
+
+```json
+{ "token": "확인 메일 링크 fragment의 token" }
+```
+
+200 deleted. 잘못됐거나 만료(30분)됐거나 이미 쓴 토큰, 다른 목적의 토큰(재설정 등)은 같은 400 `{"detail": "링크가 올바르지 않거나 만료됐습니다. 메일을 다시 요청해주세요."}`. IP당 분당 10회.
+**프론트가 할 일**: 설정 화면에 "회원 탈퇴"(비밀번호 입력 → `DELETE /api/auth/me`), 202면 "메일을 확인하세요" 안내, `/delete-account` 화면이 `location.hash`의 `token`을 읽어
+`history.replaceState`로 지운 뒤 이 API로 보낸다. 탈퇴가 끝나면 저장된 토큰을 지운다.
+
+## 보안 통제 (2026-10-30)
+
+전체 위협 모델·점검 결과·운영 체크리스트는 [SECURITY.md](SECURITY.md).
+
+- **보안 헤더**(모든 응답): `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()`.
+  `/api/auth/*`와 `Authorization` 헤더가 있는 요청의 응답은 `Cache-Control: no-store`(이미 지정된 값은 덮지 않는다). `SECURITY_HSTS=1`이면 `Strict-Transport-Security: max-age=31536000; includeSubDomains`(HTTPS 전용).
+  CORS 설정은 그대로다.
+- **요청 본문 크기**: 1MB(`MAX_REQUEST_BODY_BYTES`)를 넘으면 413 `{"detail": "요청 본문이 너무 큽니다."}`. Content-Length와 길이를 밝히지 않은(chunked) 본문 모두.
+- **공개 GET 거친 레이트 리밋**: 모든 `GET /api/*`를 IP당 분당 600회(`RATE_LIMIT_PUBLIC_GET_PER_MIN`)로 센다(로그인 여부와 상관없이). 넘으면 429 + `Retry-After`.
+- **메일 수신 주소 상한**: 같은 주소로 보내는 메일(인증·아이디·재설정·변경 알림·탈퇴 확인 합산) 시간당 10통(`RATE_LIMIT_MAIL_PER_RECIPIENT_PER_HOUR`). 넘으면 보내지 않는다(응답은 같다).
+- **API 문서**: `APP_ENV=production`이면 `/docs`, `/redoc`, `/openapi.json`을 끈다(개발 기본은 그대로).
+- **비밀번호 정책**: 8~128자 + 흔한 비밀번호·한 문자 반복·아이디/이메일 앞부분 포함 거부. 로그인 성공 시 argon2 파라미터가 오래된 해시는 재해시한다.
+  아이디·이메일 포함은 가입·변경은 `"type": "password_context"`, 흔한 비밀번호는 가입에서 `"type": "value_error"`로 422다.
+- **JWT**: `tv` 클레임이 필수다(2026-10-30, 아래 "토큰 폐기"). `JWT_SECRET`이 `.env.example`의 `<...>` 자리표시 그대로면 모든 모드에서 기동하지 않는다.
+- **접근 로그**: 앱 접근 로그와 uvicorn 접근 로그 모두 쿼리 문자열을 남기지 않는다(소셜 로그인 콜백의 code·state 등). 실행 명령은 그대로다.
+- **보안 이벤트 로그**: 로거 `app.security`, 한 줄 `event=<signup|login|login_locked|logout|password_change|password_reset|email_change|email_verify|oauth_login|account_delete|account_delete_requested> user=<id|-> result=<...> ip=<IPv4 /24, IPv6 /48>`.
+  아이디·이메일·비밀번호·토큰은 남기지 않는다.
+- **답변 링크**: AI 답변에서 근거 링크(도구 결과의 url)가 아닌 URL이 든 문장은 지운다(프롬프트 인젝션 피싱 링크 방지).
 
 ---
 
@@ -3682,6 +3736,11 @@ ETF의 **구성종목과 편입 비중**(운용사가 공시하는 PDF를 수집
 | `RATE_LIMIT_VERIFICATION_MAIL_PER_HOUR` | `5` | 사용자당 시간당 인증 메일(`PUT /api/auth/email` + `resend-verification` 합산) |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `MAIL_FROM` / `FRONTEND_BASE_URL` | 위 "계정 복구" | 메일 발송(`SMTP_HOST`가 없으면 개발용 파일 발송기). `SMTP_PASSWORD`는 비밀값 |
 | `PASSWORD_CHANGE_LOCK_FAILURES` / `PASSWORD_CHANGE_LOCK_SECONDS` | `5` / `300` | 같은 사용자의 현재 비밀번호 연속 오류 5회면 300초 비밀번호 변경 잠금(성공하면 초기화, 2026-10-29) |
+| `MAX_REQUEST_BODY_BYTES` | `1048576` | 요청 본문 상한(넘으면 413, 2026-10-30) |
+| `RATE_LIMIT_PUBLIC_GET_PER_MIN` | `600` | IP당 분당 모든 GET `/api/*` |
+| `RATE_LIMIT_MAIL_PER_RECIPIENT_PER_HOUR` | `10` | 같은 수신 주소로 보내는 메일 시간당(모든 종류 합산, 넘으면 생략) |
+| `RATE_LIMIT_ACCOUNT_DELETE_PER_HOUR` | `5` | 사용자당 시간당 회원 탈퇴 시도 |
+| `SECURITY_HSTS` | (꺼짐) | `1`이면 Strict-Transport-Security(HTTPS로만 서비스할 때) |
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | `/api/health`의 Ollama 검사 주소(에이전트는 ollama 라이브러리 기본값과 같다) |
 
 ### 레이트 리밋 (429)
@@ -3697,6 +3756,9 @@ ETF의 **구성종목과 편입 비중**(운용사가 공시하는 PDF를 수집
 | `POST /api/auth/change-password` | 사용자 | 시간당 10회 | 인증(401)과 본문 검사(422) 다음. 매번 argon2 검증·해시를 하므로 CPU 소모를 제한한다 |
 | `POST /api/auth/change-password` 현재 비밀번호 연속 오류 | 사용자 | 5회 오류면 5분 잠금 | 시간당 한도 다음. 잠금 중에는 맞는 비밀번호도 429. 아이디+IP가 아니라 사용자 기준이라 토큰을 가진 쪽이 IP를 바꿔 대입해도 막힌다 |
 | `POST /api/backtest` | 사용자 | 분당 10회 | 인증(401)과 본문 검사(422) 다음, 종목 해석 전 |
+| 모든 `GET /api/*` | IP | 분당 600회 | 라우트보다 먼저(2026-10-30). 공개 시세·검색·헬스 포함 |
+| `DELETE /api/auth/me` | 사용자 | 시간당 5회 + 비밀번호 변경과 같은 연속 오류 잠금 | 인증(401) 다음 |
+| 메일 발송(모든 종류) | 수신 주소 | 시간당 10통 | 응답 뒤 발송 단계. 넘으면 보내지 않고 응답은 같다 |
 
 ```
 HTTP/1.1 429 Too Many Requests
