@@ -36,7 +36,8 @@ class TestSignupLoginMe:
         assert body["token_type"] == "bearer"
 
         me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {body['access_token']}"})
-        assert me.status_code == 200 and me.json() == {"id": user["id"], "username": raw_name.lower()}
+        # 2026-10-30: 이메일 상태 필드가 추가됐고 기존 필드는 그대로다(이메일 없이 가입하면 null/false)
+        assert me.status_code == 200 and me.json() == {"id": user["id"], "username": raw_name.lower(), "email": None, "email_verified": False}
 
     def test_duplicate_username_case_insensitive_is_409(self, signup):
         user = signup()

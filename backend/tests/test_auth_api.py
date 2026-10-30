@@ -41,6 +41,8 @@ PROTECTED = [
     ("GET", "/api/auth/me"),
     ("POST", "/api/auth/logout"),
     ("POST", "/api/auth/change-password"),
+    ("PUT", "/api/auth/email"),
+    ("POST", "/api/auth/resend-verification"),
 ]
 
 
@@ -58,6 +60,8 @@ def no_db(monkeypatch):
 def known_user(monkeypatch):
     """토큰의 user id가 USER면 DB 조회 없이 USER를 돌려준다."""
     monkeypatch.setattr(deps, "load_user", lambda user_id: USER if user_id == USER.id else None)
+    # /me가 이메일 상태를 읽는 DB 조회도 가짜로(이 파일은 DB 없이 돈다)
+    monkeypatch.setattr(auth_api.recovery_db, "account_email", lambda db, user_id: (None, False))
 
 
 class TestSignup:
@@ -80,7 +84,7 @@ class TestSignup:
         assert PASSWORD not in r.text
         # 발급된 토큰으로 바로 /me가 된다
         me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {body['access_token']}"})
-        assert me.json() == {"id": 3, "username": "alice"}
+        assert me.json() == {"id": 3, "username": "alice", "email": None, "email_verified": False}  # 이메일 필드는 2026-10-30 추가
 
     def test_duplicate_is_409(self, monkeypatch, no_db):
         def taken(db, username, password):
@@ -207,7 +211,7 @@ class TestBearerDependency:
         token = create_access_token(USER.id)
         r = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
         assert r.status_code == 200
-        assert r.json() == {"id": 3, "username": "alice"}
+        assert r.json() == {"id": 3, "username": "alice", "email": None, "email_verified": False}
 
 
 def _requires_login(dependant) -> bool:
@@ -221,6 +225,10 @@ class TestRouteCoverage:
     PUBLIC = {
         ("POST", "/api/auth/signup"),
         ("POST", "/api/auth/login"),
+        ("POST", "/api/auth/verify-email"),
+        ("POST", "/api/auth/find-username"),
+        ("POST", "/api/auth/forgot-password"),
+        ("POST", "/api/auth/reset-password"),
         ("GET", "/api/companies"),
         ("GET", "/api/disclaimer"),
         ("GET", "/api/discovery/trending"),
@@ -235,6 +243,8 @@ class TestRouteCoverage:
         ("GET", "/api/auth/me"),
         ("POST", "/api/auth/logout"),
         ("POST", "/api/auth/change-password"),
+        ("PUT", "/api/auth/email"),
+        ("POST", "/api/auth/resend-verification"),
         ("GET", "/api/briefing"),
         ("POST", "/api/research"),
         ("GET", "/api/research"),

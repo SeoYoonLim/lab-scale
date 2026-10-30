@@ -68,6 +68,7 @@ def store(monkeypatch):
     monkeypatch.setattr(auth_api, "SessionLocal", lambda: type("S", (), {"close": lambda self: None})())
     monkeypatch.setattr(auth_api, "revoke_tokens", s.revoke)
     monkeypatch.setattr(auth_api, "change_password", s.change)
+    monkeypatch.setattr(auth_api.recovery_db, "account_email", lambda db, user_id: (None, False))  # /me의 이메일 상태(2026-10-30)
     return s
 
 

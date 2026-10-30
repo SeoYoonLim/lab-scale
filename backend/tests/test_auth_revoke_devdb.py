@@ -125,7 +125,8 @@ class TestChangePassword:
         assert u["password"] not in r.text and new_password not in r.text
 
         assert client.get("/api/auth/me", headers=h(u["token"])).status_code == 401
-        assert client.get("/api/auth/me", headers=h(body["access_token"])).json() == {"id": u["id"], "username": u["username"]}
+        assert client.get("/api/auth/me", headers=h(body["access_token"])).json() == {
+            "id": u["id"], "username": u["username"], "email": None, "email_verified": False}  # 이메일 필드는 2026-10-30 추가
         assert client.get("/api/watchlist", headers=h(body["access_token"])).status_code == 200
         assert token_version(dev_db, u["id"]) == 1
 
