@@ -1,9 +1,9 @@
 """ETF 구성종목·비중 수집: 삼성 KODEX와 미래에셋 TIGER의 공시 구성종목(PDF)을 받아 etf_holding에 저장한다(멱등: (ETF, 기준일) 단위 교체).
 
 - 대상: company의 ETF 중 KODEX·TIGER. 다른 운용사 ETF(RISE·ACE·SOL·HANARO·PLUS·TIME)는 건너뛴다(채팅은 "제공하지 않음"을 유지).
-- 외부 사이트에 부담을 주지 않게 하루 한 번 안팎으로만 실행한다. 요청 사이에 --delay초(기본 2.0)를 쉰다(전체 약 3분). 일시적 오류(429 등)로 실패한 ETF는 30초 쉰 뒤 한 번 더 시도한다.
+- 외부 사이트에 부담을 주지 않게 하루 한 번 안팎으로만 실행한다. 요청 사이에 --delay초(기본 3.0)를 쉰다(전체 약 3~4분). 일시적 오류(429 등)로 실패한 ETF는 30초 쉰 뒤 한 번 더 시도한다.
 - 한 ETF의 실패는 그 ETF만 실패로 남기고 계속한다. 결과(ETF별 기준일·종목 수·비중 합계·실패 사유)는 요약 출력과 --report JSON에 남는다.
-- 실행 요약은 data_refresh_log에 step='etf_holdings'로 한 행 남는다(/api/status의 last_refresh는 refresh_data 단계만 읽는다).
+- 수집한 시각은 etf_holding.collected_at에 남고 API(`GET /api/etf/{ticker}/holdings`)가 collected_at으로 보여준다. data_refresh_log에는 쓰지 않는다.
 - 이 프로젝트의 수집은 모두 수동이다(스케줄러 없음). 구성종목은 영업일마다 바뀌므로 필요할 때 돌린다.
 
 사용 예:
@@ -14,11 +14,10 @@
 
 import argparse
 import json
-from datetime import datetime
 from pathlib import Path
 
 from app.db.session import SessionLocal
-from app.etf_holdings_collect import DEFAULT_DELAY_S, KST, collect, log_run
+from app.etf_holdings_collect import DEFAULT_DELAY_S, collect
 
 DEFAULT_REPORT = Path(__file__).resolve().parent / "etf_holdings_report.json"  # *_report.json은 gitignore 대상
 
@@ -34,12 +33,9 @@ def main(argv=None):
         raise SystemExit("--delay는 0.5초 이상이어야 합니다(외부 사이트 보호).")
 
     tickers = [t.strip() for t in args.tickers.split(",") if t.strip()] if args.tickers else None
-    started = datetime.now(KST)
     db = SessionLocal()
     try:
         results = collect(db, tickers, delay=args.delay, dry_run=args.dry_run)
-        if not args.dry_run:
-            log_run(db, results, started)
     finally:
         db.close()
 

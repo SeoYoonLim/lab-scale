@@ -42,7 +42,7 @@ from app.etf_holdings import (
     weight_warnings,
 )
 from app.etf_holdings_db import save_snapshot
-from app.models import Company, DataRefreshLog
+from app.models import Company
 
 KST = ZoneInfo("Asia/Seoul")
 USER_AGENT = "lab-scale-research-demo/1.0 (learning project; low-frequency public PDF lookup)"
@@ -256,18 +256,3 @@ def collect(db: Session, tickers: list[str] | None = None, delay: float = DEFAUL
             attempt(r)
     return results
 
-
-def log_run(db: Session, results: list[EtfResult], started_at: datetime) -> None:
-    """실행 요약을 data_refresh_log에 한 행 남긴다(step='etf_holdings'). /api/status의 last_refresh는 refresh_data 단계만 읽는다."""
-    tried = [r for r in results if not r.skipped]
-    if not tried:
-        return
-    failed = [r for r in tried if not r.ok]
-    all_failed = len(failed) == len(tried)
-    dates = [r.as_of for r in tried if r.as_of]
-    db.add(DataRefreshLog(
-        step="etf_holdings", status="failed" if all_failed else "success", started_at=started_at, finished_at=datetime.now(KST),
-        rows_added=sum(r.rows for r in tried if r.ok), latest_date=max(dates) if dates else None,
-        error_type="AllFailed" if all_failed else ("PartialFailure" if failed else None),
-    ))
-    db.commit()
