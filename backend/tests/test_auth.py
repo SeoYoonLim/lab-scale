@@ -157,7 +157,7 @@ class TestUsernameRules:
 
 
 class TestPasswordRules:
-    @pytest.mark.parametrize("pw", ["a" * 8, "a" * 128, "한글비밀번호입니다", "with space 123"])
+    @pytest.mark.parametrize("pw", ["ab" * 4, "ab" * 64, "한글비밀번호입니다", "with space 123"])
     def test_valid(self, pw):
         assert validate_password(pw) == pw
 

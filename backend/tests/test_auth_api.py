@@ -43,6 +43,7 @@ PROTECTED = [
     ("POST", "/api/auth/change-password"),
     ("PUT", "/api/auth/email"),
     ("POST", "/api/auth/resend-verification"),
+    ("DELETE", "/api/auth/me"),
 ]
 
 
@@ -233,6 +234,7 @@ class TestRouteCoverage:
         ("GET", "/api/auth/oauth/{provider}/login"),
         ("GET", "/api/auth/oauth/{provider}/callback"),
         ("POST", "/api/auth/oauth/exchange"),
+        ("POST", "/api/auth/delete-account/confirm"),
         ("GET", "/api/companies"),
         ("GET", "/api/disclaimer"),
         ("GET", "/api/discovery/trending"),
@@ -249,6 +251,7 @@ class TestRouteCoverage:
         ("POST", "/api/auth/change-password"),
         ("PUT", "/api/auth/email"),
         ("POST", "/api/auth/resend-verification"),
+        ("DELETE", "/api/auth/me"),
         ("GET", "/api/briefing"),
         ("POST", "/api/research"),
         ("GET", "/api/research"),

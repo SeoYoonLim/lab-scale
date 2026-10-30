@@ -46,6 +46,7 @@ def fake_db(monkeypatch):
     monkeypatch.setattr(rdb, "set_email", rec("set_email", EmailChange("changed", "raw-dummy", "tester", None)))
     monkeypatch.setattr(rdb, "send_email_changed_notice", rec("send_email_changed_notice", None))
     monkeypatch.setattr(rdb, "account_email", rec("account_email", ("a@b.com", False)))
+    monkeypatch.setattr(rdb, "token_owner", lambda *a: None)  # 재설정 전 비밀번호 문맥 검사용 조회(2026-10-30)
     monkeypatch.setattr(rdb, "send_verification", rec("send_verification", None))
     return calls
 

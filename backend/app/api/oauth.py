@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
-from app import oauth, oauth_db, oauth_providers, rate_limit
+from app import oauth, oauth_db, oauth_providers, rate_limit, security_log
 from app.account_recovery import TOKEN_MAX_LEN, frontend_base_url
 from app.api.auth import AuthResponse, _auth_response
 from app.api.deps import client_ip
@@ -122,6 +122,7 @@ def callback(provider: str, http_request: Request) -> RedirectResponse:
     finally:
         db.close()
     logger.info("소셜 로그인: provider=%s user=%s decision=%s", provider, user.id, decision.kind)
+    security_log.event("oauth_login", user_id=user.id, result=decision.kind, ip=client_ip(http_request))
     resp = _redirect(f"{frontend_base_url()}/oauth/callback#code={raw}")
     resp.delete_cookie(oauth.COOKIE_NAME, path=oauth.COOKIE_PATH)
     return resp

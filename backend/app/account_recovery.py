@@ -20,14 +20,15 @@ from datetime import datetime, timedelta
 PURPOSE_VERIFY_EMAIL = "verify_email"
 PURPOSE_RESET = "reset_password"
 PURPOSE_OAUTH_LOGIN = "oauth_login"  # 소셜 로그인 1회용 코드(app/oauth_db.py). 같은 테이블·같은 1회용 규칙을 쓴다
+PURPOSE_DELETE = "delete_account"  # 비밀번호 없는 소셜 계정의 탈퇴 확인 메일(2026-10-30)
 TOKEN_TTL = {PURPOSE_VERIFY_EMAIL: timedelta(hours=24), PURPOSE_RESET: timedelta(minutes=30),
-             PURPOSE_OAUTH_LOGIN: timedelta(seconds=60)}
+             PURPOSE_OAUTH_LOGIN: timedelta(seconds=60), PURPOSE_DELETE: timedelta(minutes=30)}
 TOKEN_BYTES = 32
 TOKEN_MAX_LEN = 128  # 요청 본문의 토큰 길이 상한(token_urlsafe(32)는 43자)
 EMAIL_MAX_LEN = 254
 EMAIL_LOCAL_MAX_LEN = 64
 DEFAULT_FRONTEND_BASE_URL = "http://localhost:5173"
-LINK_PATHS = {PURPOSE_VERIFY_EMAIL: "/verify-email", PURPOSE_RESET: "/reset-password"}
+LINK_PATHS = {PURPOSE_VERIFY_EMAIL: "/verify-email", PURPOSE_RESET: "/reset-password", PURPOSE_DELETE: "/delete-account"}
 
 _LOCAL_RE = re.compile(r"[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*", re.ASCII)
 _LABEL_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", re.ASCII)
@@ -147,4 +148,13 @@ def email_changed_mail(to: str, username: str, new_email: str) -> Mail:
         "이제 아이디 찾기·비밀번호 재설정 메일은 새 주소로만 갑니다.\n\n"
         "본인이 변경했다면 이 메일은 무시하세요. 본인이 아니라면 바로 로그인해 비밀번호를 바꾸고 이메일을 되돌리세요. "
         "로그인할 수 없다면 서비스 관리자에게 문의하세요.\n"
+    ))
+
+
+def delete_account_mail(to: str, username: str, raw_token: str, base_url: str | None = None) -> Mail:
+    minutes = int(TOKEN_TTL[PURPOSE_DELETE].total_seconds() // 60)
+    return Mail(to, "[AI 투자 리서치] 회원 탈퇴 확인", (
+        f"안녕하세요, {username}님.\n\n회원 탈퇴를 요청하셨습니다. 아래 링크에서 확인하면 계정과 모든 데이터(모의투자, 관심종목, 리서치 기록, 진단)가 "
+        f"지워지고 되돌릴 수 없습니다. 링크는 {minutes}분 동안 한 번만 쓸 수 있습니다.\n\n"
+        f"{link(PURPOSE_DELETE, raw_token, base_url)}\n\n{_IGNORE}\n"
     ))

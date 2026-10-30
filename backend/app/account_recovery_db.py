@@ -13,14 +13,14 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app import account_recovery as R
 from app import mailer
-from app.auth import CurrentUser, EmailTaken, PasswordNotSet, TokenRevoked, check_current_password, is_email_conflict
+from app.auth import CurrentUser, EmailTaken, PasswordNotSet, TokenRevoked, check_current_password, is_email_conflict, verify_password
 from app.db.session import SessionLocal
-from app.models import AccountToken, User
+from app.models import AccountToken, User, VirtualAccount, Watchlist
 
 logger = logging.getLogger(__name__)
 
@@ -220,3 +220,69 @@ def send_verification(email: str, username: str, raw: str) -> None:
 def send_email_changed_notice(previous_email: str, username: str, new_email: str) -> None:
     """이전 인증 주소로 변경 알림(best-effort, 실패해도 응답과 무관)."""
     mailer.send_safely(R.email_changed_mail(previous_email, username, new_email))
+
+
+# ---------- 회원 탈퇴(2026-10-30) ----------
+
+
+def account_state(db, user_id: int) -> tuple[bool, str | None, bool, str | None]:
+    """(비밀번호 있음, 이메일, 이메일 인증됨, username). 사용자가 없으면 (False, None, False, None)."""
+    row = db.execute(select(User.password_hash, User.email, User.email_verified_at, User.username).where(User.id == user_id)).one_or_none()
+    if row is None:
+        return False, None, False, None
+    return bool(row.password_hash), row.email, row.email_verified_at is not None, row.username
+
+
+def password_matches(db, user_id: int, password: str) -> bool:
+    """현재 비밀번호 확인(탈퇴). 해시는 이 함수 밖으로 내보내지 않는다. 해시가 없으면 더미 검증 후 False."""
+    stored = db.execute(select(User.password_hash).where(User.id == user_id)).scalar_one_or_none()
+    db.rollback()
+    return verify_password(password, stored)
+
+
+def token_owner(db, raw: str, purpose: str, at: datetime) -> tuple[str, str | None] | None:
+    """토큰을 쓰지 않고 주인(username, email)만 본다(재설정 비밀번호가 아이디·이메일을 포함하는지 미리 검사할 때). 쓸 수 없는 토큰이면 None."""
+    row = db.execute(
+        select(User.username, User.email).join(AccountToken, AccountToken.user_id == User.id)
+        .where(AccountToken.token_hash == R.hash_token(raw), AccountToken.purpose == purpose,
+               AccountToken.used_at.is_(None), AccountToken.expires_at > at)
+    ).one_or_none()
+    db.rollback()  # 읽기만 했다(뒤이은 reset_password가 새 트랜잭션에서 토큰을 쓴다)
+    return (row.username, row.email) if row else None
+
+
+def delete_user_data(db, user_id: int) -> bool:
+    """그 사용자의 데이터를 한 트랜잭션에서 지운다. 소유자 키(user:{id})로 묶인 관심종목·모의투자 계좌(보유·체결은 FK CASCADE)를
+    먼저 지우고, users 행을 지우면 리서치 리포트(+tool_call_log)·진단·account_token·oauth_identity가 FK CASCADE로 지워진다.
+    다른 사용자 행은 WHERE가 그 사용자의 id/소유자 키뿐이라 건드리지 않는다. 사용자가 없으면 False. commit까지 한다."""
+    row = db.execute(select(User.id).where(User.id == user_id).with_for_update()).scalar_one_or_none()
+    if row is None:
+        db.rollback()
+        return False
+    owner = f"user:{user_id}"
+    db.execute(delete(Watchlist).where(Watchlist.device_id == owner))
+    db.execute(delete(VirtualAccount).where(VirtualAccount.device_id == owner))
+    db.execute(delete(User).where(User.id == user_id))
+    db.commit()
+    return True
+
+
+def request_delete_mail(db, user_id: int, email: str, username: str, at: datetime) -> str:
+    """탈퇴 확인 토큰(30분, 1회용)을 발급하고 원문을 돌려준다(메일은 호출 쪽이 응답 뒤에 보낸다)."""
+    raw = issue_token(db, user_id, R.PURPOSE_DELETE, at)
+    db.commit()
+    return raw
+
+
+def confirm_delete(db, raw: str, at: datetime) -> int | None:
+    """탈퇴 확인 토큰을 쓰고 그 사용자의 데이터를 지운다. 지운 user id, 토큰이 맞지 않으면 None."""
+    user_id = consume_token(db, raw, R.PURPOSE_DELETE, at)
+    if user_id is None:
+        db.rollback()
+        return None
+    db.commit()
+    return user_id if delete_user_data(db, user_id) else None
+
+
+def send_delete_confirmation(email: str, username: str, raw: str) -> None:
+    mailer.send_safely(R.delete_account_mail(email, username, raw))

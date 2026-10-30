@@ -91,11 +91,12 @@ class TestTvClaim:
         assert jwt.decode(token, jwt_secret, algorithms=["HS256"])["tv"] == 5
         assert decode_token_claims(token) == (3, 5)
 
-    def test_token_without_tv_is_version_0(self, jwt_secret):
-        """폐기 기능 이전에 발급된 토큰(sub/iat/exp만)."""
+    def test_token_without_tv_is_rejected(self, jwt_secret):
+        """tv 없는 토큰(폐기 기능 이전 형식)은 2026-10-30부터 거부한다. 그런 토큰은 수명 24시간이 지나 남아 있지 않다."""
         now = datetime.now(timezone.utc)
         legacy = jwt.encode({"sub": "3", "iat": now, "exp": now + auth.ACCESS_TOKEN_TTL}, jwt_secret, algorithm="HS256")
-        assert decode_token_claims(legacy) == (3, 0)
+        with pytest.raises(InvalidToken):
+            decode_token_claims(legacy)
 
     @pytest.mark.parametrize("tv", [-1, "0", "1", 1.0, True, None, [0]])
     def test_malformed_tv_is_invalid(self, jwt_secret, tv):
@@ -118,12 +119,10 @@ class TestTvClaim:
         """DB보다 큰 tv(위조는 서명에서 막히지만, 다운그레이드·복원 뒤 남은 토큰)도 통과시키지 않는다."""
         assert me(create_access_token(3, token_version=7)).status_code == 401
 
-    def test_legacy_token_works_until_first_revoke(self, store, jwt_secret):
+    def test_legacy_token_without_tv_is_401(self, store, jwt_secret):
         now = datetime.now(timezone.utc)
         legacy = jwt.encode({"sub": "3", "iat": now, "exp": now + auth.ACCESS_TOKEN_TTL}, jwt_secret, algorithm="HS256")
-        assert me(legacy).status_code == 200
-        assert client.post("/api/auth/logout", headers=bearer(legacy)).status_code == 200
-        assert me(legacy).status_code == 401
+        assert me(legacy).status_code == 401 and me(legacy).json() == UNAUTHORIZED
 
 
 # ---------- 로그아웃 ----------

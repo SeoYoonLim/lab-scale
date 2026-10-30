@@ -102,13 +102,13 @@ class TestLogout:
         assert client.get("/api/auth/me", headers=h(b["token"])).status_code == 200
         assert token_version(dev_db, b["id"]) == 0
 
-    def test_legacy_token_without_tv_works_until_first_revoke(self, captest, jwt_secret):
+    def test_legacy_token_without_tv_is_rejected(self, captest, jwt_secret):
+        """2026-10-30부터 tv는 필수다(tv 없이 발급된 토큰은 수명 24시간이 지나 남아 있지 않다)."""
         u = captest()
         now = datetime.now(timezone.utc)
         legacy = jwt.encode({"sub": str(u["id"]), "iat": now, "exp": now + ACCESS_TOKEN_TTL}, jwt_secret, algorithm="HS256")
-        assert client.get("/api/auth/me", headers=h(legacy)).status_code == 200
-        assert client.post("/api/auth/logout", headers=h(u["token"])).status_code == 200
         assert client.get("/api/auth/me", headers=h(legacy)).status_code == 401
+        assert client.get("/api/auth/me", headers=h(u["token"])).status_code == 200
 
 
 class TestChangePassword:

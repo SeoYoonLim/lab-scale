@@ -101,6 +101,12 @@ def get_jwt_secret() -> str:
         raise RuntimeError("JWT_SECRET 환경 변수가 설정되지 않았습니다. backend/.env에 JWT_SECRET을 추가하세요.")
     if len(secret) < MIN_SECRET_LEN:
         raise RuntimeError(f"JWT_SECRET은 {MIN_SECRET_LEN}자 이상이어야 합니다(현재 {len(secret)}자).")
+    if len(secret.encode("utf-8")) < MIN_SECRET_LEN:
+        raise RuntimeError(f"JWT_SECRET은 {MIN_SECRET_LEN}바이트 이상이어야 합니다.")
+    stripped = secret.strip()
+    if stripped.startswith("<") and stripped.endswith(">"):
+        # .env.example의 자리표시(<...로 교체>)를 그대로 복사한 값. 모든 모드에서 거부한다(2026-10-30).
+        raise RuntimeError("JWT_SECRET이 .env.example의 예시 자리표시 그대로입니다. secrets.token_urlsafe(48)로 새로 만드세요.")
     return secret
 
 
@@ -117,10 +123,36 @@ def normalize_username(username: str) -> str:
     return v
 
 
+# 흔한 비밀번호(작은 내장 목록, 2026-10-30). 소문자로 비교한다. 유출 목록 상위와 한국에서 흔한 키보드 패턴 위주.
+_COMMON_CHOICES = frozenset("""
+password password1 password12 password123 passw0rd p@ssw0rd p@ssword 12345678 123456789 1234567890 0123456789 87654321
+11111111 00000000 88888888 99999999 12341234 11223344 123123123 qwerty123 qwertyui qwertyuiop qwer1234 qwer1234!
+1q2w3e4r 1q2w3e4r! 1q2w3e4r5t 1qaz2wsx 1qaz2wsx3edc q1w2e3r4 q1w2e3r4t5 asdf1234 asdfghjk asdfasdf zxcv1234 zxcvbnm1
+a1234567 a12345678 abc12345 abcd1234 abcd1234! abcdefgh aaaaaaaa iloveyou iloveyou1 sunshine princess football
+baseball welcome1 welcome123 letmein1 admin123 admin1234 administrator changeme changeme1 trustno1 dragon12 monkey12
+superman batman123 starwars computer internet samsung1 samsung123 korea123 seoul123 love1234 test1234 testtest guest123
+""".split())
+
+
 def validate_password(password: str) -> str:
+    """가입·비밀번호 변경·재설정이 같이 쓰는 규칙: 8~128자, 흔한 비밀번호 거부, 한 문자 반복 거부. 메시지에 입력값을 넣지 않는다.
+    아이디·이메일이 들어 있는지는 그 값을 아는 곳에서 password_context_problem으로 따로 본다."""
     if not PASSWORD_MIN_LEN <= len(password) <= PASSWORD_MAX_LEN:
         raise ValueError(f"비밀번호는 {PASSWORD_MIN_LEN}~{PASSWORD_MAX_LEN}자여야 합니다.")
+    if password.lower() in _COMMON_CHOICES or len(set(password)) == 1:
+        raise ValueError("너무 흔한 비밀번호입니다. 다른 비밀번호를 정해주세요.")
     return password
+
+
+def password_context_problem(password: str, username: str | None = None, email: str | None = None) -> str | None:
+    """비밀번호에 아이디나 이메일 앞부분(3자 이상)이 들어 있으면 이유, 아니면 None(대소문자 무시)."""
+    low = password.lower()
+    if username and len(username) >= 3 and username.lower() in low:
+        return "비밀번호에 아이디를 넣을 수 없습니다."
+    local = (email or "").split("@")[0].lower()
+    if len(local) >= 3 and local in low:
+        return "비밀번호에 이메일 주소 앞부분을 넣을 수 없습니다."
+    return None
 
 
 # ---------- 비밀번호 해시 ----------
@@ -170,15 +202,27 @@ def decode_token_claims(token: str) -> tuple[int, int]:
             token,
             get_jwt_secret(),
             algorithms=[JWT_ALGORITHM],
-            options={"require": ["sub", "exp", "iat"]},
+            options={"require": ["sub", "exp", "iat", "tv"]},
         )
         user_id = int(claims["sub"])
     except (jwt.PyJWTError, ValueError, TypeError) as e:
         raise InvalidToken(type(e).__name__) from None
-    tv = claims.get("tv", 0)
+    # tv는 필수다(2026-10-30). tv 없이 발급된 옛 토큰은 수명(24시간)이 지나 남아 있지 않다.
+    tv = claims.get("tv")
     if type(tv) is not int or tv < 0:  # bool(True == 1)이나 문자열 "1"은 받지 않는다
         raise InvalidToken("tv")
     return user_id, tv
+
+
+def token_issued_at(token: str) -> int | None:
+    """검증된 토큰의 iat(초). 탈퇴처럼 "최근 로그인"을 요구하는 동작이 쓴다. 검증 실패면 None."""
+    try:
+        decode_token_claims(token)
+        claims = jwt.decode(token, get_jwt_secret(), algorithms=[JWT_ALGORITHM])
+    except (InvalidToken, jwt.PyJWTError):
+        return None
+    iat = claims.get("iat")
+    return int(iat) if isinstance(iat, (int, float)) else None
 
 
 def decode_access_token(token: str) -> int:
@@ -224,7 +268,18 @@ def authenticate(db, username: str, password: str) -> CurrentUser | None:
     # 비밀번호 없는 계정(소셜 로그인, password_hash NULL)은 verify_password가 더미 검증 후 False → 같은 401, 같은 시간
     if not verify_password(password, user.password_hash):
         return None
+    _rehash_if_needed(db, user, password)
     return _current(user)
+
+
+def _rehash_if_needed(db, user: User, password: str) -> None:
+    """저장된 해시의 argon2 파라미터가 지금 기본값보다 약하면 맞은 비밀번호로 새로 해시한다(실패해도 로그인은 그대로)."""
+    try:
+        if _hasher.check_needs_rehash(user.password_hash):
+            user.password_hash = hash_password(password)
+            db.commit()
+    except Exception:  # noqa: BLE001 - 재해시는 최선 노력. 원문(해시 포함)은 남기지 않는다
+        db.rollback()
 
 
 def _current(user: User) -> CurrentUser:

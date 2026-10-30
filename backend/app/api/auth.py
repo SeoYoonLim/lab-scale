@@ -21,15 +21,20 @@
 
 import logging
 
+import time
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 from sqlalchemy.exc import DBAPIError
 
 from app import account_recovery_db as recovery_db
 from app import rate_limit
+from app import security_log
 from app.account_recovery import INVALID_LINK, RECOVERY_ACCEPTED, TOKEN_MAX_LEN, normalize_email
-from app.api.deps import client_ip, get_current_user, unauthorized
+from app.account_recovery import PURPOSE_RESET as R_PURPOSE_RESET
+from app.api.deps import _bearer_token, client_ip, get_current_user, unauthorized
 from app.auth import (
     PASSWORD_MAX_LEN,
     USERNAME_MAX_LEN,
@@ -44,6 +49,8 @@ from app.auth import (
     create_user,
     hash_password,
     normalize_username,
+    password_context_problem,
+    token_issued_at,
     revoke_tokens,
     validate_password,
 )
@@ -65,12 +72,24 @@ NO_PASSWORD_DETAIL = (
     "비밀번호가 설정되지 않은 계정은 여기서 이메일을 바꿀 수 없습니다. 이 계정의 이메일은 로그인에 쓴 외부 계정(소셜 로그인)에서 관리됩니다."
 )
 EMAIL_INPUT_MAX_LEN = 320  # 정규화 전 입력 상한(앞뒤 공백 포함). 정규화 뒤에는 254자
+RECENT_LOGIN_S = 600  # 비밀번호·인증 이메일이 모두 없는 소셜 계정의 탈퇴는 10분 안에 로그인한 토큰만 허용
+DELETE_NEEDS_RECENT_LOGIN = (
+    "이 계정은 비밀번호와 인증된 이메일이 없어 본인 확인을 위해 방금(10분 안) 다시 로그인한 뒤, 확인용으로 아이디를 함께 보내야 탈퇴할 수 있습니다."
+)
 
 
 class SignupRequest(BaseModel):
     username: str
     password: str
     email: str | None = Field(default=None, max_length=EMAIL_INPUT_MAX_LEN)  # 선택(2026-10-30). 없으면 이전과 같다
+
+    @model_validator(mode="after")
+    def _password_context(self):
+        # 비밀번호에 아이디나 이메일 앞부분을 넣지 못하게 한다(2026-10-30). 요청 안의 값끼리만 비교한다.
+        problem = password_context_problem(self.password, self.username, self.email)
+        if problem:
+            raise PydanticCustomError("password_context", problem)
+        return self
 
     @field_validator("username")
     @classmethod
@@ -150,6 +169,20 @@ class LogoutResponse(BaseModel):
     ok: bool = True
 
 
+class DeleteAccountRequest(BaseModel):
+    """DELETE /api/auth/me 본문. 비밀번호가 있는 계정은 current_password가 필수다(없으면 422).
+    비밀번호도 인증 이메일도 없는 소셜 계정만 confirm_username(+ 10분 안의 로그인)을 쓴다."""
+
+    current_password: str | None = Field(default=None, min_length=1, max_length=PASSWORD_MAX_LEN)
+    confirm_username: str | None = Field(default=None, min_length=1, max_length=USERNAME_MAX_LEN * 5)
+
+
+class AccountDeleteResponse(BaseModel):
+    ok: bool = True
+    status: str  # "deleted" | "confirmation_sent"
+    message: str
+
+
 class UserOut(BaseModel):
     id: int
     username: str
@@ -178,6 +211,11 @@ class AuthResponse(BaseModel):
     user: UserOut
     access_token: str
     token_type: str = "bearer"
+
+
+def password_problem_error(problem: str) -> list[dict]:
+    """비밀번호에 아이디·이메일이 들어 있을 때의 422 detail(검증 오류와 같은 배열 형식, 입력값 없음)."""
+    return [{"type": "password_context", "loc": ["body", "new_password"], "msg": problem}]
 
 
 def _auth_response(user: CurrentUser) -> AuthResponse:
@@ -217,6 +255,7 @@ def signup(request: SignupRequest, http_request: Request, background: Background
         db.close()
     if raw:
         background.add_task(recovery_db.send_verification, request.email, user.username, raw)
+    security_log.event("signup", user_id=user.id, ip=client_ip(http_request))
     return _auth_response(user)
 
 
@@ -225,7 +264,11 @@ def login(request: LoginRequest, http_request: Request) -> AuthResponse:
     ip = client_ip(http_request)
     rate_limit.check(rate_limit.login_ip, ip, "RATE_LIMIT_LOGIN_PER_MIN")
     lock_key = f"{request.username.strip().casefold()}|{ip}"
-    rate_limit.check_login_lock(lock_key)
+    try:
+        rate_limit.check_login_lock(lock_key)
+    except HTTPException:
+        security_log.event("login_locked", result="locked", ip=ip)
+        raise
     db = SessionLocal()
     try:
         user = authenticate(db, request.username, request.password)
@@ -235,7 +278,9 @@ def login(request: LoginRequest, http_request: Request) -> AuthResponse:
         db.close()
     rate_limit.record_login(lock_key, success=user is not None)
     if user is None:
+        security_log.event("login", result="fail", ip=ip)  # 아이디는 남기지 않는다(비밀번호를 아이디 칸에 친 경우)
         raise HTTPException(status_code=401, detail=LOGIN_FAILED_DETAIL, headers={"WWW-Authenticate": "Bearer"})
+    security_log.event("login", user_id=user.id, ip=ip)
     return _auth_response(user)
 
 
@@ -264,6 +309,7 @@ def logout(user: CurrentUser = Depends(get_current_user)) -> LogoutResponse:
         db.close()
     if new_version is None:  # 토큰 검증과 이 사이에 사용자가 지워졌다
         raise unauthorized()
+    security_log.event("logout", user_id=user.id)
     return LogoutResponse()
 
 
@@ -280,6 +326,10 @@ def change_password_route(
     rate_limit.check_password_change_lock(key)
     db = SessionLocal()
     try:
+        email, _ = recovery_db.account_email(db, user.id)
+        problem = password_context_problem(request.new_password, user.username, email)
+        if problem:
+            raise HTTPException(status_code=422, detail=password_problem_error(problem))
         updated = change_password(db, user, request.current_password, request.new_password)
     except PasswordNotSet:
         raise HTTPException(status_code=400, detail=SOCIAL_NO_PASSWORD_DETAIL) from None
@@ -290,6 +340,7 @@ def change_password_route(
     finally:
         db.close()
     rate_limit.record_password_change(key, success=updated is not None)
+    security_log.event("password_change", user_id=user.id, result="ok" if updated else "fail")
     if updated is None:
         raise HTTPException(status_code=422, detail=CURRENT_PASSWORD_WRONG)
     return _auth_response(updated)
@@ -326,6 +377,7 @@ def put_email(request: ChangeEmailRequest, background: BackgroundTasks, user: Cu
     finally:
         db.close()
     rate_limit.record_password_change(key, success=change.status != "wrong_password")
+    security_log.event("email_change", user_id=user.id, result={"wrong_password": "fail", "changed": "ok"}.get(change.status, "unchanged"))
     if change.status == "wrong_password":
         raise HTTPException(status_code=422, detail=CURRENT_PASSWORD_WRONG)
     if change.status == "changed":
@@ -368,6 +420,7 @@ def verify_email(request: TokenRequest, http_request: Request) -> MessageRespons
         raise _db_unavailable(e) from None
     finally:
         db.close()
+    security_log.event("email_verify", result="ok" if ok else "fail", ip=client_ip(http_request))
     if not ok:
         raise HTTPException(status_code=400, detail=INVALID_LINK)
     return MessageResponse(message="이메일 인증이 끝났습니다.")
@@ -403,12 +456,94 @@ def reset_password(request: ResetPasswordRequest, http_request: Request) -> Mess
     new_hash = hash_password(request.new_password)  # 토큰이 틀려도 같은 만큼 시간을 쓴다
     db = SessionLocal()
     try:
-        user = recovery_db.reset_password(db, request.token, new_hash, recovery_db.now())
+        at = recovery_db.now()
+        owner = recovery_db.token_owner(db, request.token, R_PURPOSE_RESET, at)  # 토큰은 아직 쓰지 않는다
+        problem = password_context_problem(request.new_password, *owner) if owner else None
+        if problem:  # 422면 토큰이 그대로 남아 다른 비밀번호로 다시 시도할 수 있다
+            raise HTTPException(status_code=422, detail=password_problem_error(problem))
+        user = recovery_db.reset_password(db, request.token, new_hash, at)
     except DBAPIError as e:
         raise _db_unavailable(e) from None
     finally:
         db.close()
+    security_log.event("password_reset", user_id=user.id if user else None, result="ok" if user else "fail",
+                       ip=client_ip(http_request))
     if user is None:
         raise HTTPException(status_code=400, detail=INVALID_LINK)
     rate_limit.clear_locks_after_password_reset(user.username, user.owner_key)
     return MessageResponse(message="비밀번호를 바꿨습니다. 모든 기기에서 로그아웃됐으니 새 비밀번호로 로그인해주세요.")
+
+
+# ---------- 회원 탈퇴(2026-10-30) ----------
+
+
+@router.delete("/me", response_model=AccountDeleteResponse)
+def delete_me(
+    request: DeleteAccountRequest, http_request: Request, background: BackgroundTasks, user: CurrentUser = Depends(get_current_user)
+) -> AccountDeleteResponse:
+    """회원 탈퇴: 그 사용자의 모든 데이터를 지운다(되돌릴 수 없음). 본인 확인 방식은 계정 종류에 따라 다르다.
+
+    - 비밀번호가 있는 계정: current_password 필수(없으면 422, 틀리면 비밀번호 변경과 같은 422, 연속 오류 잠금 공유). 맞으면 바로 삭제 200.
+    - 비밀번호가 없고 인증된 이메일이 있는 소셜 계정: 그 주소로 30분 1회용 확인 링크를 보내고 202(status="confirmation_sent").
+      링크(프론트 /delete-account#token=...)에서 POST /api/auth/delete-account/confirm으로 확정한다(재설정과 같은 메일 소유 확인).
+    - 비밀번호도 인증 이메일도 없는 소셜 계정: 10분 안에 로그인해 받은 토큰 + confirm_username(아이디 일치)일 때만 삭제(아니면 400).
+    사용자당 시간당 RATE_LIMIT_ACCOUNT_DELETE_PER_HOUR회.
+    """
+    key = user.owner_key
+    rate_limit.check(rate_limit.account_delete, key, "RATE_LIMIT_ACCOUNT_DELETE_PER_HOUR")
+    rate_limit.check_password_change_lock(key)
+    ip = client_ip(http_request)
+    db = SessionLocal()
+    try:
+        has_password, email, email_verified, username = recovery_db.account_state(db, user.id)
+        db.rollback()
+        if username is None:
+            raise unauthorized()
+        if has_password:
+            if request.current_password is None:
+                raise HTTPException(status_code=422, detail=[
+                    {"type": "missing", "loc": ["body", "current_password"], "msg": "Field required"}])
+            ok = recovery_db.password_matches(db, user.id, request.current_password)
+            rate_limit.record_password_change(key, success=ok)
+            if not ok:
+                security_log.event("account_delete", user_id=user.id, result="fail", ip=ip)
+                raise HTTPException(status_code=422, detail=CURRENT_PASSWORD_WRONG)
+            recovery_db.delete_user_data(db, user.id)
+        elif email and email_verified:
+            raw = recovery_db.request_delete_mail(db, user.id, email, username, recovery_db.now())
+            background.add_task(recovery_db.send_delete_confirmation, email, username, raw)
+            security_log.event("account_delete_requested", user_id=user.id, ip=ip)
+            return JSONResponse(status_code=202, content=AccountDeleteResponse(
+                status="confirmation_sent",
+                message="등록된 이메일로 탈퇴 확인 링크를 보냈습니다. 30분 안에 링크에서 확인하면 계정과 모든 데이터가 지워집니다.").model_dump())
+        else:
+            iat = token_issued_at(_bearer_token(http_request.headers.get("authorization")))
+            recent = iat is not None and time.time() - iat <= RECENT_LOGIN_S
+            if not recent or (request.confirm_username or "").strip().lower() != username:
+                security_log.event("account_delete", user_id=user.id, result="fail", ip=ip)
+                raise HTTPException(status_code=400, detail=DELETE_NEEDS_RECENT_LOGIN)
+            recovery_db.delete_user_data(db, user.id)
+    except DBAPIError as e:
+        raise _db_unavailable(e) from None
+    finally:
+        db.close()
+    security_log.event("account_delete", user_id=user.id, ip=ip)
+    return AccountDeleteResponse(status="deleted", message="회원 탈퇴가 끝났습니다. 계정과 모든 데이터를 지웠습니다.")
+
+
+@router.post("/delete-account/confirm", response_model=AccountDeleteResponse)
+def confirm_delete_account(request: TokenRequest, http_request: Request) -> AccountDeleteResponse:
+    """탈퇴 확인 메일 링크의 토큰으로 탈퇴를 확정한다(공개: 링크를 연 브라우저는 로그인돼 있지 않을 수 있다). 토큰 오류는 같은 400."""
+    ip = client_ip(http_request)
+    rate_limit.check(rate_limit.token_ip, f"delete|{ip}", "RATE_LIMIT_TOKEN_PER_MIN")
+    db = SessionLocal()
+    try:
+        user_id = recovery_db.confirm_delete(db, request.token, recovery_db.now())
+    except DBAPIError as e:
+        raise _db_unavailable(e) from None
+    finally:
+        db.close()
+    security_log.event("account_delete", user_id=user_id, result="ok" if user_id else "fail", ip=ip)
+    if user_id is None:
+        raise HTTPException(status_code=400, detail=INVALID_LINK)
+    return AccountDeleteResponse(status="deleted", message="회원 탈퇴가 끝났습니다. 계정과 모든 데이터를 지웠습니다.")
