@@ -19,7 +19,7 @@ Authorization: Bearer <access_token>
 | 구분 | 엔드포인트 |
 | --- | --- |
 | **인증 필요** | `/api/auth/me`, `/api/auth/logout`(POST), `/api/auth/change-password`(POST), `/api/auth/email`(PUT), `/api/auth/resend-verification`(POST), `/api/briefing`(GET), `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/performance`(GET), `/api/backtest`(POST), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET) |
-| 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/auth/verify-email`, `/api/auth/find-username`, `/api/auth/forgot-password`, `/api/auth/reset-password`(모두 POST), `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status`, `/api/health`, `/api/stocks/{ticker}/event-reactions`, `/api/stocks/{ticker}/price-history` |
+| 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/auth/oauth/providers`(GET), `/api/auth/oauth/{provider}/login`·`/callback`(GET, 브라우저 이동), `/api/auth/oauth/exchange`(POST), `/api/auth/verify-email`, `/api/auth/find-username`, `/api/auth/forgot-password`, `/api/auth/reset-password`(모두 POST), `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status`, `/api/health`, `/api/stocks/{ticker}/event-reactions`, `/api/stocks/{ticker}/price-history` |
 
 - 데이터는 **사용자별로 분리**된다. 리서치 리포트 목록/조회/삭제/이어 쓰기(`previous_report_id`)는 본인 것만 대상이고,
   **남의 리포트 ID는 없는 리포트와 똑같이 404**다(403이 아니다 — 그 ID가 존재하는지 드러내지 않기 위해).
@@ -180,6 +180,10 @@ ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응�
 | POST | `/api/auth/find-username` | 공개 | 인증된 이메일로 아이디를 메일 발송(응답에는 아이디 없음, 항상 같은 200) |
 | POST | `/api/auth/forgot-password` | 공개 | 인증된 이메일로 재설정 링크 발송(항상 같은 200) |
 | POST | `/api/auth/reset-password` | 공개 | 재설정 토큰 + 새 비밀번호 → 모든 기존 토큰 폐기 |
+| GET | `/api/auth/oauth/providers` | 공개 | 켜진 소셜 로그인 공급자 목록(2026-10-30, 아래 "소셜 로그인") |
+| GET | `/api/auth/oauth/{provider}/login` | 공개 | 브라우저 이동: 구글·네이버 인증 페이지로 302 |
+| GET | `/api/auth/oauth/{provider}/callback` | 공개 | 공급자가 돌려보내는 곳 → 프론트 `/oauth/callback#code=...` 또는 `/login?error=...`로 302 |
+| POST | `/api/auth/oauth/exchange` | 공개 | 60초 1회용 코드 → 로그인과 같은 응답(access token) |
 | POST | `/api/research` | 필요 | 질문을 보내 AI 답변 생성(+리포트 저장). `previous_report_id`로 내 직전 보고서를 이어서 후속 질문 가능 |
 | GET | `/api/research` | 필요 | 내 리포트 목록(기본 최신순). `limit`/`offset` 페이지네이션(`has_next`, `total_pages`), `sort`/`order` 정렬, `q` 검색 |
 | GET | `/api/research/{report_id}` | 필요 | 내 리포트 한 건 조회 |
@@ -540,6 +544,131 @@ curl -X POST http://localhost:8000/api/auth/logout -H "Authorization: Bearer $TO
 - 메일은 응답 뒤 같은 프로세스에서 보낸다(큐 없음). 서버가 그 사이에 멈추면 메일이 가지 않을 수 있고 재시도하지 않는다. SMTP가 느리면(최대 10초) 그 작업이 워커 스레드를 잡는다.
 - 비밀번호 재설정은 새 비밀번호가 이전과 같아도 막지 않는다(옛 해시와 비교하지 않는다).
 - DB를 백업에서 복원하면 `token_version`과 토큰 사용 기록이 되돌아갈 수 있다(위 "토큰 폐기"의 주의와 같다).
+
+---
+
+## 소셜 로그인: 구글·네이버 (2026-10-30)
+
+Authorization Code 방식이고 **서버가 code를 받아 처리**한다. 기존 아이디/비밀번호 로그인과 응답 형식은 그대로이고, 소셜 로그인도 마지막에 같은 형식
+(`{"user": {"id", "username"}, "access_token", "token_type": "bearer"}`)을 받는다. 코드: `app/oauth.py`(순수: state·쿠키 서명, PKCE, 계정 결정),
+`app/oauth_providers.py`(공급자 통신), `app/oauth_db.py`(DB), `app/api/oauth.py`(라우트).
+
+### 흐름과 프론트가 할 일
+
+1. 로그인 화면이 `GET /api/auth/oauth/providers`로 켜진 공급자를 받아 버튼을 보인다. 버튼은 **브라우저를 이동**시킨다(fetch가 아니다):
+   `location.href = "http://localhost:8000/api/auth/oauth/google/login"`(백엔드 주소 + `login_path`).
+2. 백엔드가 공급자 로그인·동의 화면으로 보낸다. 사용자가 동의하면 공급자가 백엔드 콜백으로 돌려보낸다.
+3. 백엔드가 확인을 끝내면 `{FRONTEND_BASE_URL}/oauth/callback#code=...`로 보낸다. **코드는 쿼리가 아니라 fragment(`#code=`)**에 있다
+   (프론트 서버 로그와 Referer에 남지 않게 하려는 것으로, 이메일 인증 링크와 같다).
+4. 프론트 `/oauth/callback` 화면이 `location.hash`에서 `code`를 읽고, `history.replaceState`로 주소창에서 지운 뒤
+   `POST /api/auth/oauth/exchange {"code": ...}`를 보낸다. 200 응답의 `access_token`을 지금처럼 저장하면 로그인이 끝난다(400이면 "다시 로그인").
+   **코드는 60초 1회용**이므로 화면이 열리자마자 한 번만 보낸다.
+5. 실패하면 `{FRONTEND_BASE_URL}/login?error=...`로 온다. 로그인 화면은 `error`를 읽어 안내한다.
+
+| `error` | 뜻 | 프론트 안내 예 |
+| --- | --- | --- |
+| `oauth_denied` | 사용자가 공급자 화면에서 동의를 거부했다 | "로그인을 취소했습니다." |
+| `oauth_failed` | state·쿠키 검증 실패(오래된 탭, 다른 브라우저, 위조), 공급자 통신 실패·시간 초과, 계정 처리 실패 | "로그인에 실패했습니다. 다시 시도해주세요." |
+| `oauth_unavailable` | 그 공급자의 키가 서버에 설정되지 않았다 | "지금은 이 방법으로 로그인할 수 없습니다." |
+
+상세 원인은 URL에 넣지 않는다(서버 로그에 사유 코드만 남는다).
+
+### GET /api/auth/oauth/providers (공개)
+
+```json
+{"providers": [{"id": "google", "name": "Google", "login_path": "/api/auth/oauth/google/login"},
+               {"id": "naver", "name": "네이버", "login_path": "/api/auth/oauth/naver/login"}]}
+```
+
+client id와 secret이 **둘 다** 설정된 공급자만 나온다. 키 값(client id 포함)은 내보내지 않는다. 키가 하나도 없으면 `{"providers": []}`.
+
+### GET /api/auth/oauth/{provider}/login (공개, 브라우저 이동)
+
+`provider`는 `google` | `naver`(그 밖은 404 `{"detail": "지원하지 않는 로그인 방식입니다."}`).
+
+- 키가 없으면 **503이 아니라** `302 {FRONTEND_BASE_URL}/login?error=oauth_unavailable`이다. 브라우저 이동이라 JSON을 보여줄 화면이 없기 때문이다.
+- 있으면 302로 공급자 인증 페이지로 보낸다. 이때 서명한 `state`(공급자, 무작위 nonce, 만료 10분, 서버 시크릿으로 HMAC)를 싣는다.
+  같은 nonce를 담은 쿠키 `oauth_state`도 심는다(`HttpOnly; SameSite=Lax; Path=/api/auth/oauth; Max-Age=600`, `OAUTH_REDIRECT_BASE`가 https면 `Secure`).
+- **구글**: `scope=openid email profile`, PKCE(`code_challenge_method=S256`), OIDC `nonce`, `prompt=select_account`.
+  PKCE verifier는 **state가 아니라 쿠키에만** 있다. state는 공급자 URL과 콜백 URL에 실리므로, 거기에 verifier가 있으면 code를 가로챈 쪽이 verifier도 얻는다.
+- **네이버**: 요청 항목(이름·이메일)은 URL이 아니라 네이버 개발자 센터에서 고른다.
+- 응답 헤더 `Cache-Control: no-store`, `Referrer-Policy: no-referrer`. 레이트 리밋: IP당 분당 20회(429).
+
+### GET /api/auth/oauth/{provider}/callback (공개, 공급자가 브라우저를 보냄)
+
+1. `error`가 있으면 → `access_denied`면 `oauth_denied`, 그 밖은 `oauth_failed`.
+2. `code`·`state`가 없거나 너무 길면 `oauth_failed`.
+3. `state` 서명·만료·종류, 쿠키 서명·만료·종류, 둘의 공급자·nonce가 모두 맞아야 한다. 아니면 `oauth_failed`.
+   공격자가 자기 브라우저에서 받은 state·code로 피해자를 공격자 계정에 로그인시키는 로그인 CSRF를 막는다. 쿠키는 그 브라우저에서 시작한 로그인에만 있다.
+4. 서버가 client secret으로 code를 토큰으로 바꾸고 프로필을 얻는다. 공급자 통신은 timeout (5, 10)초, 일시 오류(연결·timeout·5xx·429)만 1번 재시도, 합계 15초 상한이다(`app.http_retry`).
+   실패·시간 초과는 `oauth_failed`이고, 로그에는 사유 코드(`token_http`, `token_error`, `id_token_invalid`, `profile_http`, `profile_invalid`)만 남는다.
+   - **구글**: 토큰 엔드포인트에서 **서버끼리 TLS로 직접 받은** `id_token`의 클레임을 쓴다. `iss`(accounts.google.com), `aud`(우리 client id), `exp`, `nonce`(이번 로그인의 nonce)를 반드시 확인한다.
+     서명(JWKS) 검증은 하지 않는다. 직접 받은 토큰은 TLS 서버 인증으로 발급자를 확인할 수 있기 때문이다(OpenID Connect Core 3.1.3.7 6번). JWKS를 받아 캐시하는 외부 호출도 필요 없다.
+     브라우저를 거쳐 온 id_token은 받지 않는다. 쓰는 값은 `sub`, `email`, `email_verified`, `name`이다.
+   - **네이버**: `POST https://nid.naver.com/oauth2.0/token`(client secret은 URL이 아니라 본문에 담는다), `GET https://openapi.naver.com/v1/nid/me`로 `id`, `email`, `name`을 받는다.
+     네이버는 실패도 200 + `{"error": ...}`로 줄 수 있어 본문으로 판정한다. 네이버가 준 이메일은 검증된 것으로 취급한다.
+5. 계정을 정한다(아래 "계정 연결 규칙"). 60초 1회용 코드를 만들어 `302 {FRONTEND_BASE_URL}/oauth/callback#code=...`로 보내고 쿠키를 지운다. 레이트 리밋: IP당 분당 20회(login과 따로 센다).
+
+### POST /api/auth/oauth/exchange (공개)
+
+```json
+{ "code": "콜백 fragment의 code" }
+```
+
+200은 아이디/비밀번호 로그인과 같은 형식이다. 잘못됐거나 만료됐거나(60초) 이미 쓴 코드는 모두 같은 400 `{"detail": "로그인 코드가 올바르지 않거나 만료됐습니다. 다시 로그인해주세요."}`이다.
+`code`가 비었거나 128자를 넘으면 422. IP당 분당 10회 초과는 429.
+코드는 `account_token`(purpose `oauth_login`)에 **SHA-256만** 저장한다. 사용은 조건부 UPDATE 한 문장이라 동시에 두 번 보내도 한 번만 성공한다.
+메모리가 아니라 DB에 두므로 워커가 여럿이거나 재시작해도 맞다. 이메일 인증·재설정 토큰은 목적이 달라 이 코드로 쓸 수 없다.
+
+### 계정 연결 규칙 (`app.oauth.decide_account`)
+
+| 상황 | 결과 |
+| --- | --- |
+| (provider, 공급자 사용자 id)가 이미 연결돼 있음 | 그 사용자로 로그인. 이메일은 보지 않는다(공급자 쪽 이메일이 바뀌어도 같은 사용자) |
+| 공급자 이메일이 검증됐고, 같은 이메일의 로컬 계정이 있고, 그 계정의 이메일도 **인증됨** | 그 계정에 연결(로그인). 둘 다 같은 주소의 소유를 확인한 경우만 같은 사람으로 본다 |
+| 같은 이메일의 로컬 계정이 있지만 어느 쪽이든 미검증 | **연결하지 않는다.** 새 계정을 만들고 이메일은 비운다. 미인증 주소를 이용한 계정 탈취를 막고 이메일 유일성도 지킨다 |
+| 충돌 없음 | 새 계정. 사용자명 `google_` / `naver_` + 무작위 8자리 hex(아이디 규칙 안, 충돌 시 다시 뽑음). 검증된 이메일이면 `email`과 인증 상태를 채운다. **비밀번호 없음** |
+
+구글은 `email_verified`가 true일 때만 검증된 것으로 본다. 미검증 이메일은 새 계정에도 저장하지 않는다.
+
+### 비밀번호 없는 계정 (소셜로 만든 계정)
+
+`users.password_hash`는 이제 NULL을 허용한다(마이그레이션 `c7a2e5f81d30`).
+
+- **아이디/비밀번호 로그인**: 항상 실패한다. 없는 아이디와 같은 401이고, 더미 해시 검증을 해서 응답 시간도 같다.
+- **`POST /api/auth/change-password`**: 400 `{"detail": "소셜 계정은 비밀번호가 없습니다. 인증된 이메일이 있으면 비밀번호 찾기로 새 비밀번호를 정할 수 있습니다."}`.
+- **`PUT /api/auth/email`**: 400(현재 비밀번호를 확인할 수 없음, 위 "계정 복구").
+- **비밀번호 설정**: 인증된 이메일이 있으면 `forgot-password` → `reset-password`로 비밀번호를 정할 수 있다. 그 뒤에는 아이디/비밀번호 로그인도 된다.
+
+### 환경변수와 공급자 콘솔 설정
+
+| 환경변수 | 기본 | 뜻 |
+| --- | --- | --- |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | (없음) | 둘 다 있어야 구글 버튼이 켜진다 |
+| `NAVER_LOGIN_CLIENT_ID` / `NAVER_LOGIN_CLIENT_SECRET` | (없음) | 둘 다 있어야 네이버 버튼이 켜진다. **`NAVER_CLIENT_ID`/`NAVER_CLIENT_SECRET`(뉴스 검색 API 키)과 다른 이름이다.** 뉴스 키가 로그인 키로 잘못 쓰여 버튼이 켜지지 않게 나눴다 |
+| `OAUTH_REDIRECT_BASE` | `http://localhost:8000` | 백엔드 공개 주소. 콜백은 이 값 + `/api/auth/oauth/{provider}/callback`. https면 쿠키에 Secure |
+| `FRONTEND_BASE_URL` | `http://localhost:5173` | 성공·오류 리디렉션 앞부분(계정 복구 메일 링크와 공유) |
+| `RATE_LIMIT_OAUTH_PER_MIN` / `RATE_LIMIT_OAUTH_EXCHANGE_PER_MIN` | `20` / `10` | IP당 분당 login·callback(각각) / exchange |
+
+공급자 콘솔에 등록할 **리디렉션 URI**(로컬 기준, 배포하면 `OAUTH_REDIRECT_BASE`에 맞춰 바꾼다):
+
+- 구글(Google Cloud Console > API 및 서비스 > 사용자 인증 정보 > OAuth 클라이언트 ID, 유형 "웹 애플리케이션"): 승인된 리디렉션 URI `http://localhost:8000/api/auth/oauth/google/callback`.
+  OAuth 동의 화면이 "테스트" 상태면 등록한 테스트 사용자만 로그인할 수 있다.
+- 네이버(네이버 개발자 센터 > 애플리케이션 등록, 사용 API "네이버 로그인", 제공 정보 이름·이메일): 서비스 URL `http://localhost:5173`, Callback URL `http://localhost:8000/api/auth/oauth/naver/callback`.
+  **"개발 중" 상태에서는 애플리케이션의 멤버 관리에 등록한 네이버 아이디만 로그인할 수 있다.** 다른 사람은 검수를 받아 "서비스 적용" 상태가 돼야 한다.
+
+### 한계
+
+- **실제 키로 한 확인은 아직 없다.** 모든 테스트는 가짜 공급자 응답이다. 키를 설정한 뒤 직접 눌러 확인해야 한다.
+  구글·네이버 응답 형식이 바뀌면 `app/oauth_providers.py`의 파싱을 고쳐야 한다.
+- 구글 id_token의 서명은 검증하지 않는다(TLS로 직접 받은 응답이라는 근거, 위 4번). 토큰 엔드포인트 주소를 바꿔치기하는 설정 실수는 막지 못한다.
+- **uvicorn 기본 접근 로그는 콜백 URL의 쿼리(공급자 `code`, `state`)를 남긴다**(앱의 요청 로그는 쿼리를 남기지 않는다). 공급자 code만으로는 client secret 없이 토큰을 받을 수 없고(구글은 PKCE verifier도 필요), 한 번만 쓸 수 있다.
+  운영에서는 접근 로그 쿼리를 끄거나 가리는 것을 권장한다.
+- 1회용 코드는 브라우저에 묶여 있지 않다(60초 안에 코드를 손에 넣은 쪽이 먼저 바꿀 수 있다). fragment라 서버 로그·Referer에는 남지 않는다.
+- 레이트 리밋은 메모리 기반이다(위 "레이트 리밋").
+- 계정 연결 해제, 이미 로그인한 계정에 소셜 계정을 수동으로 연결하는 기능, 소셜 계정 탈퇴는 없다.
+- 공급자 계정이 지워지거나 동의를 철회해도 우리 쪽 연결은 남는다(다음 로그인에서 실패할 뿐이다).
+- 마이그레이션을 내리면 소셜 연결과 1회용 코드는 사라진다. 비밀번호 없는 계정에는 검증되지 않는 표식 값(`!no-password`)이 들어가 로그인할 수 없게 되고, 비밀번호 찾기로 다시 정해야 한다.
 
 ---
 
@@ -3547,6 +3676,9 @@ ETF의 **구성종목과 편입 비중**(운용사가 공시하는 PDF를 수집
 | `RATE_LIMIT_RECOVERY_PER_MIN` | `5` | IP당 분당 `find-username`·`forgot-password`(엔드포인트별로 따로, 2026-10-30) |
 | `RATE_LIMIT_RECOVERY_EMAIL_PER_HOUR` | `3` | 같은 이메일로 시간당 `find-username`·`forgot-password`(엔드포인트별, 메일 폭탄 방지) |
 | `RATE_LIMIT_TOKEN_PER_MIN` | `10` | IP당 분당 `verify-email`·`reset-password`(엔드포인트별, 토큰 무차별 대입 방지) |
+| `RATE_LIMIT_OAUTH_PER_MIN` | `20` | IP당 분당 소셜 로그인 시작·콜백(각각, 2026-10-30) |
+| `RATE_LIMIT_OAUTH_EXCHANGE_PER_MIN` | `10` | IP당 분당 1회용 로그인 코드 교환 |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `NAVER_LOGIN_CLIENT_ID` / `NAVER_LOGIN_CLIENT_SECRET` / `OAUTH_REDIRECT_BASE` | 위 "소셜 로그인" | 소셜 로그인 키(비밀값은 `.env`에만)와 백엔드 공개 주소 |
 | `RATE_LIMIT_VERIFICATION_MAIL_PER_HOUR` | `5` | 사용자당 시간당 인증 메일(`PUT /api/auth/email` + `resend-verification` 합산) |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `MAIL_FROM` / `FRONTEND_BASE_URL` | 위 "계정 복구" | 메일 발송(`SMTP_HOST`가 없으면 개발용 파일 발송기). `SMTP_PASSWORD`는 비밀값 |
 | `PASSWORD_CHANGE_LOCK_FAILURES` / `PASSWORD_CHANGE_LOCK_SECONDS` | `5` / `300` | 같은 사용자의 현재 비밀번호 연속 오류 5회면 300초 비밀번호 변경 잠금(성공하면 초기화, 2026-10-29) |

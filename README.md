@@ -10,7 +10,7 @@
 ## 지금 상태 요약 (2026-10-14 기준)
 
 **한 줄 요약:** 백엔드(API + 에이전트 + 데이터 수집·일괄 갱신 + 로그인 + 관심종목/모의투자 + 포트폴리오 AI 진단과 이력 + 환율 영향 분석 +
-시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응 + 오늘의 개인화 브리핑(API·채팅))는 동작하고, 빠른 테스트 **3734개**가 통과합니다(`pytest`, 순수 로직 3274 + 개발 DB 통합 460. KODEX 수집 데이터가 DB에 없으면 그중 수집 데이터 대조 3개가 사유와 함께 skip, 2026-10-30).
+시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응 + 오늘의 개인화 브리핑(API·채팅))는 동작하고, 빠른 테스트 **3846개**가 통과합니다(`pytest`, 순수 로직 3371 + 개발 DB 통합 475. KODEX 수집 데이터가 DB에 없으면 그중 수집 데이터 대조 3개가 사유와 함께 skip, 2026-10-30).
 실제 Ollama를 부르는 slow 테스트 61개는 기본에서 빠지고 `pytest -m slow`로 따로 돌립니다. 백엔드 작업 브랜치는 `feature/backend`(원격 push 완료)이고
 아직 main에 병합하지 않았습니다. 프론트엔드는 서윤님이 `feature/frontend`에서 React + Vite + zod로 진행 중이며, 2026-10-14에 실제 백엔드 응답을
 프론트의 zod 스키마로 검증했을 때 불일치가 없었습니다(프론트 테스트 20개·빌드·lint 통과). 남은 큰 일은 화면 연동과 아래 "알려진 한계"입니다.
@@ -33,6 +33,9 @@
 | POST | `/api/auth/find-username` | 공개 | **인증된** 이메일로 아이디를 메일 발송. 응답에 아이디 없음, 이메일 존재와 상관없이 같은 200 |
 | POST | `/api/auth/forgot-password` | 공개 | **인증된** 이메일로 재설정 링크(30분, 1회용) 발송. 같은 200 |
 | POST | `/api/auth/reset-password` | 공개 | 토큰 + 새 비밀번호 → 해시 교체, 기존 JWT 전부 폐기, 로그인 잠금 해제. 토큰 오류 400, 규칙 위반 422. 상세 [backend/API.md](backend/API.md) "계정 복구" |
+| GET | `/api/auth/oauth/providers` | 공개 | 소셜 로그인(2026-10-30): 키가 설정된 공급자(구글·네이버) 목록, 키 값은 내보내지 않음 |
+| GET | `/api/auth/oauth/{provider}/login`, `/callback` | 공개 | 브라우저 이동용. 서명된 state + HttpOnly 쿠키(로그인 CSRF 방지), 구글 PKCE. 성공은 프론트 `/oauth/callback#code=`(60초 1회용), 실패는 `/login?error=oauth_denied\|oauth_failed\|oauth_unavailable` |
+| POST | `/api/auth/oauth/exchange` | 공개 | 1회용 코드 → 로그인과 같은 응답. 연결 규칙·환경변수·콘솔 설정은 [backend/API.md](backend/API.md) "소셜 로그인" |
 | POST | `/api/research` | 필요 | 질문 → AI 답변 + 근거 + 리포트 저장. `previous_report_id`로 내 직전 리포트를 이어서 후속 질문 |
 | GET | `/api/research` | 필요 | 내 리포트 목록(최신순, `limit`/`offset` 페이지네이션, `total` 포함) |
 | GET | `/api/research/{report_id}` | 필요 | 내 리포트 한 건(전체 답변, sources, tool 사용 이력). 남의 리포트는 404 |
@@ -397,6 +400,8 @@ DART_API_KEY=...          # 공시 수집에만 필요
 JWT_SECRET=...            # 필수. 로그인 토큰 서명 키(32자 이상)
 # 선택(계정 복구 메일, 2026-10-30): SMTP_HOST, SMTP_PORT(기본 587, STARTTLS), SMTP_USER, SMTP_PASSWORD, MAIL_FROM, FRONTEND_BASE_URL(기본 http://localhost:5173)
 #   SMTP_HOST가 없으면 메일을 보내지 않고 backend/backups/dev_mail.log에 기록한다(개발용, 링크 원문이 들어 있으니 공유 금지)
+# 선택(소셜 로그인, 2026-10-30): GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, NAVER_LOGIN_CLIENT_ID, NAVER_LOGIN_CLIENT_SECRET(뉴스용 NAVER_CLIENT_*와 별개),
+#   OAUTH_REDIRECT_BASE(기본 http://localhost:8000). 비워 두면 그 공급자 로그인 버튼이 꺼진다
 # 선택: EVENT_REACTION_LLM_INTERPRETATION=1   사건 반응 답변에 LLM 해석(## 해석)을 붙인다. 기본은 꺼짐(생략하면 꺼짐)
 ```
 
@@ -504,9 +509,9 @@ python -m scripts.backfill_history --tickers 005930,069500 --years 5 --end 2026-
 `backend/`에서 실행합니다. 세 단계로 나뉩니다(마커: `integration`, `slow`).
 
 ```bash
-pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-30 이메일 변경 보강 후 3734개: 마이그레이션 왕복용 `MIGRATION_TEST_DATABASE_URL`을 주면 3731 통과 + 수집 데이터 대조 3 skip, 약 61초). slow는 기본 제외
-pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 3274개)
-pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(460개). DB가 꺼져 있으면 자동 skip
+pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-30 소셜 로그인 후 3846개: 마이그레이션 왕복용 `MIGRATION_TEST_DATABASE_URL`을 주면 3843 통과 + 수집 데이터 대조 3 skip, 약 68초). slow는 기본 제외
+pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 3371개)
+pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(475개). DB가 꺼져 있으면 자동 skip
 pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)를 부르는 테스트(61개, 느리고 비결정적)
 ```
 
@@ -541,10 +546,10 @@ pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)
 
 **CI에서 제외되는 테스트(숫자로)**
 
-- `integration` 460개 중 **58개는 CI에서 제외**됩니다(`needs_collected_data` 마커). 수집된 시세·뉴스·공시·ETF 시세·환율·시장 지수(또는 인증 도입 전 옛 리포트)가 DB에 있어야 통과하는
-  테스트라서, 종목 목록만 시드한 CI의 빈 DB에서는 통과할 수 없습니다. 나머지 402개는 CI에서 실제로 돕니다. 로컬 dev DB에서는 마커가 있어도 **460개 전부** 평소처럼 돕니다(마이그레이션 왕복 1개는 `MIGRATION_TEST_DATABASE_URL`이 있을 때).
+- `integration` 475개 중 **58개는 CI에서 제외**됩니다(`needs_collected_data` 마커). 수집된 시세·뉴스·공시·ETF 시세·환율·시장 지수(또는 인증 도입 전 옛 리포트)가 DB에 있어야 통과하는
+  테스트라서, 종목 목록만 시드한 CI의 빈 DB에서는 통과할 수 없습니다. 나머지 417개는 CI에서 실제로 돕니다. 로컬 dev DB에서는 마커가 있어도 **475개 전부** 평소처럼 돕니다(마이그레이션 왕복 1개는 `MIGRATION_TEST_DATABASE_URL`이 있을 때).
   제외 개수는 CI 로그와 job summary에 숫자로 찍히고, 상한(`MAX_EXCLUDED=58`)을 넘으면 CI가 실패합니다(마커로 테스트를 슬그머니 늘려 빼지 못하게).
-- 분류(빈 DB 기준): **a** 스스로 데이터를 만들어 통과 66, **b** 종목 시드로 해결 199, **c** 수집 데이터 필요 58(위 제외, 49번째는 브리핑 숫자 독립 재계산 대조, 50번째는 채팅 기간 수익률 템플릿의 DB 대조 테스트, 51번째는 성과 추적 API 숫자의 독립 재계산 대조, 52번째는 백테스트 buy_and_hold 총수익률의 DB 종가 재계산 대조(2026-10-29), 53~57번째는 ETF 구성종목 API·합계·채팅을 `etf_holding`에서 SQL로 다시 계산해 대조(2026-10-30, 해당 ETF의 수집 데이터가 없으면 사유와 함께 skip), 58번째는 포트폴리오 실질 노출 API의 삼성전자 직접+TIGER 200 경유 금액을 SQL만으로 재계산해 대조(2026-10-30)), **d** Ollama 필요 0. 2026-10-29 토큰 폐기 통합 테스트 6개, 성과 추적 통합 테스트 5개, 백테스트 통합 테스트 4개, 계정 복구 통합 테스트 25개(captest 계정·가짜 발송기, 마이그레이션 왕복 1 포함), 실질 노출 통합 테스트 8개(captest 가짜 종목·ETF를 만들고 지움), ETF 구성종목 통합 테스트 11개(가짜 ETF 10 + 마이그레이션 왕복 1, `captest_` 접두어로 만들고 지움)는 스스로 데이터를 만든다(a).
+- 분류(빈 DB 기준): **a** 스스로 데이터를 만들어 통과 66, **b** 종목 시드로 해결 199, **c** 수집 데이터 필요 58(위 제외, 49번째는 브리핑 숫자 독립 재계산 대조, 50번째는 채팅 기간 수익률 템플릿의 DB 대조 테스트, 51번째는 성과 추적 API 숫자의 독립 재계산 대조, 52번째는 백테스트 buy_and_hold 총수익률의 DB 종가 재계산 대조(2026-10-29), 53~57번째는 ETF 구성종목 API·합계·채팅을 `etf_holding`에서 SQL로 다시 계산해 대조(2026-10-30, 해당 ETF의 수집 데이터가 없으면 사유와 함께 skip), 58번째는 포트폴리오 실질 노출 API의 삼성전자 직접+TIGER 200 경유 금액을 SQL만으로 재계산해 대조(2026-10-30)), **d** Ollama 필요 0. 2026-10-29 토큰 폐기 통합 테스트 6개, 성과 추적 통합 테스트 5개, 백테스트 통합 테스트 4개, 소셜 로그인 통합 테스트 15개(가짜 공급자, 마이그레이션 왕복 1 포함), 계정 복구 통합 테스트 25개(captest 계정·가짜 발송기, 마이그레이션 왕복 1 포함), 실질 노출 통합 테스트 8개(captest 가짜 종목·ETF를 만들고 지움), ETF 구성종목 통합 테스트 11개(가짜 ETF 10 + 마이그레이션 왕복 1, `captest_` 접두어로 만들고 지움)는 스스로 데이터를 만든다(a).
 - 그 밖의 skip은 조용히 통과로 보이지 않게 CI에서 **실패**로 바뀝니다(`CI_FAIL_ON_SKIP=1`, `backend/tests/ci_guard.py`).
 - `slow` 61개(실제 Ollama 호출)와 `evals` live 모드는 CI에서 돌지 않습니다: Ollama(llama3.1:8b)가 필요하고 느리며 비결정적이기 때문입니다. 로컬에서 `pytest -m slow`, `python -m evals.run_eval --mode live`.
 
@@ -624,6 +629,7 @@ python -m evals.compare evals/results/summary_baseline_2026-10-27.json evals/res
   로그아웃 사용자당 분당 10회, 비밀번호 변경 사용자당 시간당 10회 + 현재 비밀번호 연속 5회 오류면 5분 잠금(`PASSWORD_CHANGE_LOCK_*`, 2026-10-29),
   백테스트 사용자당 분당 10회(`RATE_LIMIT_BACKTEST_PER_MIN`, 2026-10-29), 계정 복구(2026-10-30): 아이디·비밀번호 찾기 IP당 분당 5회 + 같은 이메일 시간당 3회(엔드포인트별),
   이메일 인증·비밀번호 재설정 IP당 분당 10회, 인증 메일 사용자당 시간당 5회. 초과는 429 + `Retry-After`.
+- 소셜 로그인(2026-10-30): `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, `NAVER_LOGIN_CLIENT_ID`/`NAVER_LOGIN_CLIENT_SECRET`, `OAUTH_REDIRECT_BASE`. 레이트 리밋 login·callback IP당 분당 20회, exchange 10회.
 - 메일(2026-10-30): `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASSWORD`/`MAIL_FROM`/`FRONTEND_BASE_URL`. `SMTP_HOST`가 없으면 `backend/backups/dev_mail.log`에 기록(개발용).
 - 토큰 폐기(2026-10-29): JWT에 `tv`(=`users.token_version`) 클레임을 넣고, 로그아웃·비밀번호 변경이 `token_version`을 올려 그 사용자의 기존 토큰을 **모든 기기에서** 무효로 한다.
   `tv`가 없는 옛 토큰은 0으로 봐서 배포 직후에도 로그인 상태가 유지되고 첫 폐기 때 함께 무효가 된다. 비밀번호 변경은 새 토큰을 돌려줘 현재 세션을 이어 간다.
@@ -689,6 +695,7 @@ python -m evals.compare evals/results/summary_baseline_2026-10-27.json evals/res
 - [x] 아이디/비밀번호 로그인(2026-10-07): `POST /api/auth/signup`, `POST /api/auth/login`, `GET /api/auth/me`.
   argon2id 비밀번호 해시 + HS256 JWT(만료 24시간). 리서치/관심종목/모의투자는 `Authorization: Bearer` 필수(없으면 401),
   `X-Device-Id`는 폐지. 리서치 이력은 사용자별(남의 리포트 404). 로그인 시도 횟수 제한은 2026-10-28에 추가
+- [x] 소셜 로그인(2026-10-30): 구글·네이버 Authorization Code(서명 state + 쿠키, 구글 PKCE·nonce), 양쪽 검증된 이메일만 자동 연결, 1회용 코드 교환, 비밀번호 없는 계정(마이그레이션 c7a2e5f81d30). 실제 키 확인과 프론트 버튼·`/oauth/callback` 화면은 아직
 - [x] 계정 복구(2026-10-30): 이메일 등록·인증, 아이디 찾기, 비밀번호 재설정(인증된 이메일만, 열거 방지, 토큰 해시 저장, 마이그레이션 b6e1d4a9c2f7). 프론트 화면 `/verify-email`, `/reset-password`는 아직 없음
 - [x] 로그아웃·비밀번호 변경·토큰 폐기(2026-10-29): `POST /api/auth/logout`, `POST /api/auth/change-password`. JWT `tv` 클레임과
   `users.token_version`(마이그레이션 `e2a9c4f71b03`) 비교로 그 사용자의 기존 토큰을 전부 무효화. `tv` 없는 옛 토큰은 0으로 봐서 하위 호환
