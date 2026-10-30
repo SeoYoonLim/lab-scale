@@ -92,7 +92,18 @@ def get_mailer():
 
 
 def send_safely(mail: Mail, mailer=None) -> bool:
-    """보내고 성공 여부를 돌려준다. 실패해도 예외를 밖으로 내지 않는다(API 응답이 달라지지 않게)."""
+    """보내고 성공 여부를 돌려준다. 실패해도 예외를 밖으로 내지 않는다(API 응답이 달라지지 않게).
+
+    같은 수신 주소로 시간당 RATE_LIMIT_MAIL_PER_RECIPIENT_PER_HOUR통(모든 메일 종류 합산)을 넘으면 보내지 않고 False(2026-10-30).
+    계정을 여러 개 만들어 남의 주소로 인증 메일을 반복해 보내는 메일 폭탄을 막는다. 응답은 이미 나갔으므로 달라지지 않는다.
+    """
+    from app import rate_limit
+
+    if rate_limit.enabled():
+        ok, _ = rate_limit.mail_recipient.hit(mail.to.strip().lower(), rate_limit.setting("RATE_LIMIT_MAIL_PER_RECIPIENT_PER_HOUR"))
+        if not ok:
+            logger.warning("메일 발송 생략(수신 주소 시간당 한도): to=%s", mask_email(mail.to))
+            return False
     try:
         (mailer or get_mailer()).send(mail)
         return True

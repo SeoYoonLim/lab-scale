@@ -95,8 +95,9 @@ def save_report(
             raise
         finally:
             db.close()
-    except Exception:
-        logger.exception("research_report 저장 실패 (답변은 정상 반환됨): question=%r", question[:80])
+    except Exception as e:  # noqa: BLE001 - 저장 실패는 답변을 막지 않는다
+        # 질문 원문은 개인정보일 수 있어 남기지 않는다(길이와 예외 종류만, 2026-10-30)
+        logger.error("research_report 저장 실패 (답변은 정상 반환됨): question_len=%s error=%s", len(question), type(e).__name__)
         return None
 
 

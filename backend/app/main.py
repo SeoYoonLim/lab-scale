@@ -1,5 +1,6 @@
 import logging
 import time
+import traceback
 from contextlib import asynccontextmanager
 
 import ollama
@@ -11,10 +12,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError, OperationalError
 
+from app import rate_limit, security
 from app.api.auth import router as auth_router
 from app.api.backtest import router as backtest_router
 from app.api.briefing import router as briefing_router
 from app.api.companies import router as companies_router
+from app.api.deps import client_ip
 from app.api.disclaimer import router as disclaimer_router
 from app.api.discovery import router as discovery_router
 from app.api.etf import router as etf_router
@@ -41,7 +44,13 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="AI Investment Research Agent", lifespan=lifespan)
+# 운영(APP_ENV=production)에서는 API 문서(/docs, /redoc, /openapi.json)를 끈다. 개발 기본 동작은 그대로(app/security.py).
+_DOCS = security.docs_enabled()
+app = FastAPI(title="AI Investment Research Agent", lifespan=lifespan,
+              docs_url="/docs" if _DOCS else None, redoc_url="/redoc" if _DOCS else None,
+              openapi_url="/openapi.json" if _DOCS else None)
+# uvicorn 접근 로그에서 쿼리 문자열(소셜 로그인 콜백의 code·state 등)을 지운다
+security.install_access_log_filter()
 
 
 def _error(status: int, message: str) -> JSONResponse:
@@ -101,12 +110,35 @@ async def log_requests(request: Request, call_next):
                           user_id if user_id is not None else "-")
 
 
+@app.exception_handler(security.BodyTooLarge)
+async def body_too_large(request: Request, exc: security.BodyTooLarge):
+    return _error(413, security.BODY_TOO_LARGE)
+
+
+@app.middleware("http")
+async def security_controls(request: Request, call_next):
+    # 공개 GET 거친 레이트 리밋(IP당) → 보안 헤더·no-store(app/security.py)
+    wait = security.public_get_limited(request.method, request.url.path, client_ip(request))
+    if wait is not None:
+        exc = rate_limit.too_many(wait)
+        response = JSONResponse(status_code=429, content={"detail": exc.detail}, headers=exc.headers)
+    else:
+        response = await call_next(request)
+    security.apply_headers(response.headers, request.url.path, "authorization" in request.headers)
+    return response
+
+
 @app.exception_handler(Exception)
 async def unhandled_error(request: Request, exc: Exception):
     # 처리되지 않은 예외: 응답에는 고정 문구만(스택트레이스·내부 경로·SQL 없음), 상세는 서버 로그에만 남긴다.
-    logger.exception("처리되지 않은 오류: %s %s", request.method, request.url.path)
+    # 예외 메시지에는 SQL 파라미터(이메일 등 사용자 입력)가 섞일 수 있어 종류와 스택(코드 위치)만 남긴다
+    logger.error("처리되지 않은 오류: %s %s %s | %s", request.method, request.url.path, type(exc).__name__,
+                 "".join(traceback.format_tb(exc.__traceback__)))
     return _error(500, SERVER_ERROR_DETAIL)
 
+
+# 요청 본문 크기 제한(413). CORS보다 안쪽에 둬서 413 응답에도 CORS 헤더가 붙게 한다(브라우저가 읽을 수 있게).
+app.add_middleware(security.BodySizeLimitMiddleware)
 
 # 허용 origin은 CORS_ALLOW_ORIGINS(쉼표 구분, 기본 http://localhost:5173, http://127.0.0.1:5173, app/config.py).
 # 인증은 Authorization 헤더(Bearer)라 쿠키·credentials를 쓰지 않는다(allow_credentials=False). '*'와 credentials를 함께 쓰지 않는다.
@@ -118,6 +150,7 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=cors_expose_headers(),  # 브라우저가 X-Total-Count를 읽으려면 필요(CORS_EXPOSE_HEADERS)
 )
+
 
 app.include_router(auth_router)
 app.include_router(oauth_router)
