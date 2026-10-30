@@ -18,8 +18,8 @@ Authorization: Bearer <access_token>
 
 | 구분 | 엔드포인트 |
 | --- | --- |
-| **인증 필요** | `/api/auth/me`, `/api/auth/logout`(POST), `/api/auth/change-password`(POST), `/api/briefing`(GET), `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/performance`(GET), `/api/backtest`(POST), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET) |
-| 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status`, `/api/health`, `/api/stocks/{ticker}/event-reactions`, `/api/stocks/{ticker}/price-history` |
+| **인증 필요** | `/api/auth/me`, `/api/auth/logout`(POST), `/api/auth/change-password`(POST), `/api/auth/email`(PUT), `/api/auth/resend-verification`(POST), `/api/briefing`(GET), `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/performance`(GET), `/api/backtest`(POST), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET) |
+| 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/auth/verify-email`, `/api/auth/find-username`, `/api/auth/forgot-password`, `/api/auth/reset-password`(모두 POST), `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status`, `/api/health`, `/api/stocks/{ticker}/event-reactions`, `/api/stocks/{ticker}/price-history` |
 
 - 데이터는 **사용자별로 분리**된다. 리서치 리포트 목록/조회/삭제/이어 쓰기(`previous_report_id`)는 본인 것만 대상이고,
   **남의 리포트 ID는 없는 리포트와 똑같이 404**다(403이 아니다 — 그 ID가 존재하는지 드러내지 않기 위해).
@@ -171,9 +171,15 @@ ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응�
 | --- | --- | --- | --- |
 | POST | `/api/auth/signup` | 공개 | 회원가입 → 201 + access token |
 | POST | `/api/auth/login` | 공개 | 로그인 → 200 + access token |
-| GET | `/api/auth/me` | 필요 | 토큰의 사용자 정보 |
+| GET | `/api/auth/me` | 필요 | 토큰의 사용자 정보(2026-10-30부터 `email`, `email_verified` 추가) |
 | POST | `/api/auth/logout` | 필요 | 이 사용자의 모든 토큰 폐기(전체 기기 로그아웃) → 200 `{"ok": true}` |
 | POST | `/api/auth/change-password` | 필요 | 비밀번호 변경 + 기존 토큰 폐기 → 200 + 새 access token |
+| PUT | `/api/auth/email` | 필요 | 이메일 등록·변경 + 인증 메일(2026-10-30, 아래 "계정 복구") |
+| POST | `/api/auth/resend-verification` | 필요 | 인증 메일 재발송 |
+| POST | `/api/auth/verify-email` | 공개 | 메일 링크의 토큰으로 이메일 인증 |
+| POST | `/api/auth/find-username` | 공개 | 인증된 이메일로 아이디를 메일 발송(응답에는 아이디 없음, 항상 같은 200) |
+| POST | `/api/auth/forgot-password` | 공개 | 인증된 이메일로 재설정 링크 발송(항상 같은 200) |
+| POST | `/api/auth/reset-password` | 공개 | 재설정 토큰 + 새 비밀번호 → 모든 기존 토큰 폐기 |
 | POST | `/api/research` | 필요 | 질문을 보내 AI 답변 생성(+리포트 저장). `previous_report_id`로 내 직전 보고서를 이어서 후속 질문 가능 |
 | GET | `/api/research` | 필요 | 내 리포트 목록(기본 최신순). `limit`/`offset` 페이지네이션(`has_next`, `total_pages`), `sort`/`order` 정렬, `q` 검색 |
 | GET | `/api/research/{report_id}` | 필요 | 내 리포트 한 건 조회 |
@@ -220,6 +226,7 @@ ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응�
 | --- | --- | --- |
 | `username` | string | 필수. **3~20자, 영문 소문자/숫자/밑줄(`[a-z0-9_]`)**. 대문자는 소문자로 바꿔 저장한다(`Alice`로 가입하면 `alice`). 위반 시 422 |
 | `password` | string | 필수. **8~128자**(문자 종류 제한 없음). 위반 시 422 |
+| `email` | string \| null | **선택(2026-10-30 추가, 없으면 이전과 같다)**. 앞뒤 공백 제거·소문자로 저장, 최대 254자, 형식 위반 422. 다른 계정이 쓰면 409. 주면 인증 메일을 보낸다(아래 "계정 복구"). 응답 형식은 같다 |
 
 ```bash
 curl -X POST http://localhost:8000/api/auth/signup \
@@ -242,7 +249,8 @@ curl -X POST http://localhost:8000/api/auth/signup \
 | 상태 | 언제 | body |
 | --- | --- | --- |
 | 409 | 이미 있는 아이디(대소문자 무시) | `{"detail": "이미 사용 중인 아이디입니다."}` |
-| 422 | 아이디/비밀번호 규칙 위반, 필드 누락, 잘못된 JSON | 검증 오류 형식. 단 `/api/auth/*`의 422에는 **`input` 키가 없다**(입력한 비밀번호를 되돌려주지 않기 위해) |
+| 409 | 이미 쓰는 이메일(대소문자 무시, `email`을 줬을 때만) | `{"detail": "이미 사용 중인 이메일입니다."}` |
+| 422 | 아이디/비밀번호/이메일 규칙 위반, 필드 누락, 잘못된 JSON | 검증 오류 형식. 단 `/api/auth/*`의 422에는 **`input` 키가 없다**(입력한 비밀번호를 되돌려주지 않기 위해) |
 | 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
 
 ---
@@ -282,8 +290,11 @@ curl http://localhost:8000/api/auth/me -H "Authorization: Bearer $TOKEN"
 ### 응답 200
 
 ```json
-{ "id": 1, "username": "alice_01" }
+{ "id": 1, "username": "alice_01", "email": "alice@example.com", "email_verified": true }
 ```
+
+`email`(string | null)과 `email_verified`(boolean)는 2026-10-30에 추가됐다(기존 `id`·`username`은 그대로). 본인에게는 이메일을 가리지 않는다.
+이메일을 등록하지 않았으면 `null` / `false`. 가입·로그인 응답의 `user`(`id`, `username`)는 바뀌지 않았다.
 
 ### 에러
 
@@ -366,6 +377,143 @@ curl -X POST http://localhost:8000/api/auth/logout -H "Authorization: Bearer $TO
 로그인 실패 401과 같은 원칙은 지킨다: 오류 응답은 하나로 고정돼 있고 어떤 비밀번호도 응답·로그·예외 메시지에 넣지 않는다.
 계정은 토큰으로 이미 특정돼 있어 계정 존재 여부가 새는 경로는 없다. 새 비밀번호가 현재와 같은지는 요청의 두 값끼리만 비교하므로
 저장된 비밀번호에 대해 아무것도 드러내지 않는다. 규칙 위반 422는 현재 비밀번호를 확인하기 전에 끝나며 실패 횟수에 세지 않는다.
+
+---
+
+## 계정 복구: 이메일 등록·인증, 아이디 찾기, 비밀번호 재설정 (2026-10-30)
+
+계산·DB는 `app/account_recovery.py`(순수: 토큰·이메일·메일 본문), `app/account_recovery_db.py`(DB와 발송 작업), 발송기는 `app/mailer.py`.
+에러 형식은 다른 API와 같은 `{"detail": ...}`이고 `/api/auth/*`의 422에는 입력값(`input`)이 들어가지 않는다.
+
+### 원칙
+
+- **복구는 인증된 이메일로만 동작한다.** 아이디 찾기·비밀번호 재설정 메일은 `email_verified_at`이 있는 이메일에만 보낸다.
+  인증 없이 보내면, 가입·등록 때 오타로 남의 주소를 넣은 경우 그 주소의 주인이 재설정 링크를 받아 계정을 가져갈 수 있다.
+  링크를 열어 인증한 주소만 "이 계정의 주인이 받는 주소"로 믿는다.
+- **사용자 열거 방지**: `find-username`과 `forgot-password`는 이메일이 있든, 없든, 인증 전이든 **항상 같은 200과 같은 본문**이다.
+  사용자 조회·토큰 발급·메일 발송은 모두 응답을 보낸 뒤 `BackgroundTasks`로 처리해서 응답 시간도 이메일 존재 여부와 상관없다. 응답에 아이디를 넣지 않는다.
+- **토큰**: `secrets.token_urlsafe(32)`(256비트). DB(`account_token.token_hash`)에는 **SHA-256 hex만** 저장하고 원문은 메일 링크에만 있다.
+  1회용이고, 만료는 이메일 인증 24시간·비밀번호 재설정 30분. 같은 목적의 새 토큰을 발급하면 이전 미사용 토큰은 무효가 된다
+  (이메일 변경·인증 재발송·재설정 메일 재요청). 잘못됐거나 만료됐거나 이미 썼거나 다른 목적의 토큰은 **모두 같은 400**이다.
+- **동시 사용**: 토큰 사용은 조건부 `UPDATE ... WHERE used_at IS NULL AND expires_at > now RETURNING`이라 같은 토큰으로 동시에 두 번 요청해도 한 번만 성공한다.
+
+### 프론트가 만들 화면 두 개 (링크 형식)
+
+메일 링크는 `{FRONTEND_BASE_URL}/verify-email#token=...`, `{FRONTEND_BASE_URL}/reset-password#token=...`이다(기본 `http://localhost:5173`).
+**토큰은 쿼리(`?token=`)가 아니라 fragment(`#token=`)에 있다.** fragment는 브라우저가 서버로 보내지 않아서 프론트 서버의 접근 로그나 외부로 가는 `Referer`에 남지 않는다.
+
+- `/verify-email`: `location.hash`에서 `token`을 읽어 `POST /api/auth/verify-email {"token": ...}`. 200이면 "인증 완료", 400이면 "링크가 만료됐거나 이미 쓰였다 → 재발송" 안내.
+- `/reset-password`: `token`을 읽고 새 비밀번호 입력 폼을 보여준 뒤 `POST /api/auth/reset-password {"token": ..., "new_password": ...}`. 200이면 로그인 화면으로(저장된 토큰은 지운다: 모두 폐기됨). 422는 비밀번호 규칙, 400은 링크 문제.
+- 두 화면 모두 토큰을 읽은 뒤 `history.replaceState`로 주소창의 fragment를 지우고, 외부 리소스·분석 스크립트에 토큰을 넘기지 않는 것을 권장한다.
+
+### PUT /api/auth/email (인증 필요)
+
+```json
+{ "email": "Alice@Example.com" }
+```
+
+이메일을 등록하거나 바꾼다. 저장값은 앞뒤 공백 제거·소문자(`alice@example.com`). 바꾸면 `email_verified`가 `false`가 되고 옛 주소로 보낸 인증 링크는 무효,
+새 주소로 인증 메일을 보낸다. **현재 비밀번호는 묻지 않는다**(요구사항). 이 때문에 로그인 토큰(JWT)을 훔친 사람은 자기 주소를 등록·인증한 뒤
+비밀번호를 재설정해 계정을 계속 가질 수 있다(아래 "한계"). 지금과 같은 주소면 아무것도 바꾸지 않는다(`verification_sent: false`).
+
+```json
+{ "email": "alice@example.com", "email_verified": false, "verification_sent": true, "message": "인증 메일을 보냈습니다. 메일의 링크를 열면 인증이 끝납니다." }
+```
+
+| 상태 | 언제 |
+| --- | --- |
+| 401 | 토큰 없음·무효(본문 검증보다 먼저) |
+| 409 | 다른 계정이 쓰는 이메일(대소문자 무시) `{"detail": "이미 사용 중인 이메일입니다."}` |
+| 422 | 이메일 형식 위반(최대 254자, ASCII 주소만) |
+| 429 | 사용자당 시간당 인증 메일 5회 초과(재발송과 합산) |
+
+### POST /api/auth/resend-verification (인증 필요, 본문 없음)
+
+인증 메일을 다시 보낸다(이전 인증 링크는 무효). 200 `{"ok": true, "message": "인증 메일을 다시 보냈습니다. ..."}`.
+400 `"등록된 이메일이 없습니다. 먼저 이메일을 등록해주세요."` / `"이미 인증된 이메일입니다."`(본인 계정 상태만 알린다), 401, 429(위와 같은 한도).
+
+### POST /api/auth/verify-email (공개)
+
+```json
+{ "token": "메일 링크 fragment의 token" }
+```
+
+200 `{"ok": true, "message": "이메일 인증이 끝났습니다."}`. 잘못됐거나 만료됐거나 이미 쓴 토큰, 비밀번호 재설정 토큰은 400
+`{"detail": "링크가 올바르지 않거나 만료됐습니다. 메일을 다시 요청해주세요."}`. `token`이 비었거나 128자를 넘으면 422. IP당 분당 10회 초과 429.
+
+### POST /api/auth/find-username, POST /api/auth/forgot-password (공개)
+
+```json
+{ "email": "alice@example.com" }
+```
+
+항상(형식이 맞으면) **200과 같은 본문**:
+
+```json
+{ "ok": true, "message": "입력한 이메일이 인증된 계정의 이메일이면 안내 메일을 보냈습니다. 몇 분 안에 받지 못했다면 스팸함을 확인하거나, 로그인한 뒤 이메일 등록·인증 상태를 확인해주세요." }
+```
+
+- `find-username`: 인증된 이메일이면 그 계정의 아이디를 메일로 보낸다(응답에는 절대 넣지 않는다).
+- `forgot-password`: 인증된 이메일이면 재설정 링크(30분, 1회용)를 보낸다. 다시 요청하면 이전 링크는 무효.
+- 422: 이메일 형식 위반. 429: IP당 분당 5회(엔드포인트별) 또는 같은 이메일 시간당 3회(엔드포인트별, 메일 폭탄 방지) 초과. 429는 이메일이 있든 없든 같은 기준이라 존재 여부를 드러내지 않는다.
+
+### POST /api/auth/reset-password (공개)
+
+```json
+{ "token": "메일 링크 fragment의 token", "new_password": "new-correct-horse" }
+```
+
+200 `{"ok": true, "message": "비밀번호를 바꿨습니다. 모든 기기에서 로그아웃됐으니 새 비밀번호로 로그인해주세요."}`(로그인 토큰은 주지 않는다).
+성공하면 한 트랜잭션에서: 토큰 사용 처리 → 비밀번호 해시 교체 → **`token_version` 증가(그 사용자의 기존 JWT 전부 401)** → 그 사용자의 남은 재설정 토큰 무효.
+그 뒤 그 아이디의 로그인 실패 잠금(모든 IP)과 비밀번호 변경 잠금을 푼다.
+
+| 상태 | 언제 |
+| --- | --- |
+| 400 | 잘못됐거나 만료됐거나 이미 쓴 토큰, 이메일 인증 토큰(위와 같은 일반 메시지) |
+| 422 | 새 비밀번호 규칙 위반(가입과 같은 8~128자). 토큰은 쓰이지 않고 남는다 |
+| 429 | IP당 분당 10회 초과(토큰 무차별 대입 방지) |
+
+### 메일 발송과 개발 모드 확인
+
+| 환경변수 | 기본 | 뜻 |
+| --- | --- | --- |
+| `SMTP_HOST` | (없음) | 있으면 SMTP로 보낸다. **없으면 개발용 파일 발송기**를 자동으로 쓴다 |
+| `SMTP_PORT` | `587` | STARTTLS(서버 인증서 검증) |
+| `SMTP_USER` / `SMTP_PASSWORD` | (없음) | 있으면 로그인한다. 비밀값이므로 `.env`에만 둔다 |
+| `MAIL_FROM` | `SMTP_USER` | 보내는 주소 |
+| `FRONTEND_BASE_URL` | `http://localhost:5173` | 메일 링크의 앞부분 |
+
+- SMTP는 연결·전송 timeout 10초, 재시도 없음. 실패해도 API 응답은 같다(이미 응답을 보낸 뒤다). 로그에는 마스킹한 수신자(`al***@ex***.com`)와 예외 클래스 이름만 남기고 비밀번호·본문·토큰은 남기지 않는다.
+- **개발 모드**(`SMTP_HOST` 없음): 메일 전체(링크 원문 포함)가 `backend/backups/dev_mail.log`에 덧붙는다(`backups/`는 gitignore 대상). 콘솔에는 `dev mail 기록됨: al***@ex***.com (dev_mail.log)`만 찍힌다.
+  로컬에서 흐름을 확인하려면 가입·이메일 등록 후 이 파일의 마지막 링크를 열면 된다. 이 파일에는 유효한 토큰이 있으므로 공유하지 않는다.
+- 테스트는 메모리 발송기를 쓴다(`tests/conftest.py`의 `mail_outbox`, 실제 파일·SMTP를 쓰지 않는다).
+
+### 실제 흐름 (2026-10-30, dev DB, TestClient, 메모리 발송기, 토큰은 앞 8자만)
+
+| 단계 | 결과 |
+| --- | --- |
+| 가입(이메일 없음, 기존 형식) | 201 `{"user": {"id": ..., "username": "captest_..."}, "access_token": "eyJhbGci...", "token_type": "bearer"}` |
+| `PUT /email` (`CAPTEST-DEMO...@EXAMPLE.COM`) | 200 `email`은 소문자로 저장, `email_verified: false`, `verification_sent: true`. 메일 링크 `http://localhost:5173/verify-email#token=bYUJXpOj...` |
+| `verify-email` | 200 → `/me`의 `email_verified: true`. 같은 토큰 다시 쓰면 400 |
+| `find-username`(인증된 이메일 / 없는 이메일) | 둘 다 200 + 같은 본문. 아이디는 메일에만 |
+| `forgot-password` | 200(같은 본문), 메일 링크 `.../reset-password#token=I_UL3Y4U...` |
+| `reset-password`(짧은 비밀번호) | 422, 토큰은 남음 |
+| `reset-password` | 200. 같은 토큰 다시 쓰면 400 |
+| 기존 JWT로 `/me` / 옛 비밀번호 로그인 / 새 비밀번호 로그인 | 401 / 401 / 200 |
+| `account_token` 행 | `verify_email`·`reset_password` 두 행, 해시 64자, 둘 다 사용됨. 원문으로 찾으면 0행 |
+
+### 한계
+
+- **이메일 중복 409는 이메일 존재를 드러낸다**(가입과 `PUT /email`). 같은 주소를 두 계정에 쓰지 못하게 하려는 선택이다. 가입은 IP당 시간당 10회, `PUT /email`은 사용자당 시간당 5회로 묶여 대량 확인은 어렵다.
+  복구 API(`find-username`, `forgot-password`)는 이 정보를 드러내지 않는다.
+- **레이트 리밋은 메모리 기반**이다(서버 재시작 시 초기화, 여러 워커·인스턴스면 따로 센다, 프록시 뒤에서는 모든 요청이 같은 IP). 위 "레이트 리밋" 참고.
+- **이메일 변경에 현재 비밀번호 확인이 없다.** 탈취한 JWT(유효 24시간)로 공격자가 자기 이메일을 등록·인증하고 비밀번호를 재설정하면 원래 사용자는 쫓겨난다.
+  보완책(아직 없음): 이메일 변경 시 현재 비밀번호 확인, 옛 인증 주소로 변경 알림 메일, 변경 직후 일정 시간 재설정 금지.
+- **기존 계정은 로그인한 뒤 이메일을 등록·인증해야 복구할 수 있다.** 이메일이 없거나 인증 전인 계정은 아이디·비밀번호를 잊으면 복구할 수 없다.
+- 이메일 형식은 보수적인 ASCII 규칙이다(국제화 도메인, 따옴표가 있는 로컬파트는 422).
+- 메일은 응답 뒤 같은 프로세스에서 보낸다(큐 없음). 서버가 그 사이에 멈추면 메일이 가지 않을 수 있고 재시도하지 않는다. SMTP가 느리면(최대 10초) 그 작업이 워커 스레드를 잡는다.
+- 비밀번호 재설정은 새 비밀번호가 이전과 같아도 막지 않는다(옛 해시와 비교하지 않는다).
+- DB를 백업에서 복원하면 `token_version`과 토큰 사용 기록이 되돌아갈 수 있다(위 "토큰 폐기"의 주의와 같다).
 
 ---
 
@@ -3370,6 +3518,11 @@ ETF의 **구성종목과 편입 비중**(운용사가 공시하는 PDF를 수집
 | `RATE_LIMIT_LOGOUT_PER_MIN` | `10` | 사용자당 분당 로그아웃(2026-10-29) |
 | `RATE_LIMIT_PASSWORD_CHANGE_PER_HOUR` | `10` | 사용자당 시간당 비밀번호 변경 시도(2026-10-29) |
 | `RATE_LIMIT_BACKTEST_PER_MIN` | `10` | 사용자당 분당 백테스트(`POST /api/backtest`, 2026-10-29) |
+| `RATE_LIMIT_RECOVERY_PER_MIN` | `5` | IP당 분당 `find-username`·`forgot-password`(엔드포인트별로 따로, 2026-10-30) |
+| `RATE_LIMIT_RECOVERY_EMAIL_PER_HOUR` | `3` | 같은 이메일로 시간당 `find-username`·`forgot-password`(엔드포인트별, 메일 폭탄 방지) |
+| `RATE_LIMIT_TOKEN_PER_MIN` | `10` | IP당 분당 `verify-email`·`reset-password`(엔드포인트별, 토큰 무차별 대입 방지) |
+| `RATE_LIMIT_VERIFICATION_MAIL_PER_HOUR` | `5` | 사용자당 시간당 인증 메일(`PUT /api/auth/email` + `resend-verification` 합산) |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `MAIL_FROM` / `FRONTEND_BASE_URL` | 위 "계정 복구" | 메일 발송(`SMTP_HOST`가 없으면 개발용 파일 발송기). `SMTP_PASSWORD`는 비밀값 |
 | `PASSWORD_CHANGE_LOCK_FAILURES` / `PASSWORD_CHANGE_LOCK_SECONDS` | `5` / `300` | 같은 사용자의 현재 비밀번호 연속 오류 5회면 300초 비밀번호 변경 잠금(성공하면 초기화, 2026-10-29) |
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | `/api/health`의 Ollama 검사 주소(에이전트는 ollama 라이브러리 기본값과 같다) |
 
