@@ -135,3 +135,14 @@ def username_mail(to: str, username: str) -> Mail:
     return Mail(to, "[AI 투자 리서치] 아이디 안내", (
         f"요청하신 아이디는 다음과 같습니다.\n\n아이디: {username}\n\n{_IGNORE}\n"
     ))
+
+
+def email_changed_mail(to: str, username: str, new_email: str) -> Mail:
+    """이전(인증된) 주소로 보내는 이메일 변경 알림. 링크·토큰을 넣지 않는다(피싱 메일과 구분되게, 이 메일로는 아무것도 할 수 없다).
+    새 주소는 가려서 쓴다."""
+    return Mail(to, "[AI 투자 리서치] 계정 이메일이 변경되었습니다", (
+        f"안녕하세요, {username}님.\n\n계정의 이메일이 {mask_email(new_email)}(으)로 변경되었습니다. "
+        "이제 아이디 찾기·비밀번호 재설정 메일은 새 주소로만 갑니다.\n\n"
+        "본인이 변경했다면 이 메일은 무시하세요. 본인이 아니라면 바로 로그인해 비밀번호를 바꾸고 이메일을 되돌리세요. "
+        "로그인할 수 없다면 서비스 관리자에게 문의하세요.\n"
+    ))

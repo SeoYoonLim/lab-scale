@@ -66,6 +66,18 @@ class TokenRevoked(Exception):
     """비밀번호를 바꾸는 사이에 같은 사용자의 토큰이 폐기됐다(다른 기기의 로그아웃 등)."""
 
 
+class PasswordNotSet(Exception):
+    """비밀번호가 없는 계정(password_hash가 비어 있음). 지금은 users.password_hash가 NOT NULL이라 생기지 않지만,
+    소셜 로그인처럼 비밀번호 없이 만든 계정이 생기면 "현재 비밀번호 확인"을 할 수 없으므로 그 확인이 필요한 동작을 거부한다."""
+
+
+def check_current_password(password_hash: str | None, password: str) -> bool:
+    """현재 비밀번호 확인(DB 없음). 맞으면 True, 틀리면 False. 해시가 없으면 PasswordNotSet(빈 해시를 통과시키지 않는다)."""
+    if not password_hash:
+        raise PasswordNotSet()
+    return verify_password(password, password_hash)
+
+
 @dataclass(frozen=True)
 class CurrentUser:
     """인증된 요청의 사용자. ORM 객체 대신 이걸 넘겨 세션 수명과 password_hash 노출을 신경 쓰지 않게 한다."""

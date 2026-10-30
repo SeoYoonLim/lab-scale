@@ -83,7 +83,7 @@ def last_token(outbox, to: str) -> str:
 
 def register_and_verify(user, outbox) -> str:
     email = email_for()
-    r = client.put("/api/auth/email", headers=user["headers"], json={"email": email})
+    r = client.put("/api/auth/email", headers=user["headers"], json={"email": email, "current_password": user["password"]})
     assert r.status_code == 200 and r.json()["verification_sent"] is True
     assert client.post("/api/auth/verify-email", json={"token": last_token(outbox, email)}).status_code == 200
     return email
@@ -105,7 +105,7 @@ class TestFullFlow:
 
         # 이메일 등록 → 인증 메일(토큰은 fragment에만)
         email = email_for("Flow").upper()
-        r = client.put("/api/auth/email", headers=user["headers"], json={"email": f"  {email} "})
+        r = client.put("/api/auth/email", headers=user["headers"], json={"email": f"  {email} ", "current_password": user["password"]})
         assert r.status_code == 200
         assert r.json() == {"email": email.lower(), "email_verified": False, "verification_sent": True,
                             "message": "인증 메일을 보냈습니다. 메일의 링크를 열면 인증이 끝납니다."}
@@ -163,7 +163,7 @@ class TestEnumerationAndUnverified:
         verified_user, unverified_user = captest(), captest()
         verified = register_and_verify(verified_user, mail_outbox.outbox)
         unverified = email_for("unv")
-        assert client.put("/api/auth/email", headers=unverified_user["headers"], json={"email": unverified}).status_code == 200
+        assert client.put("/api/auth/email", headers=unverified_user["headers"], json={"email": unverified, "current_password": unverified_user["password"]}).status_code == 200
         before = len(mail_outbox.outbox)
         rs = [client.post(path, json={"email": e}) for e in (verified, email_for("none"), unverified)]
         assert [r.status_code for r in rs] == [200, 200, 200] and len({r.text for r in rs}) == 1
@@ -173,7 +173,7 @@ class TestEnumerationAndUnverified:
     def test_unverified_email_gets_no_reset_token(self, captest, dev_db, mail_outbox):
         user = captest()
         email = email_for("unv")
-        client.put("/api/auth/email", headers=user["headers"], json={"email": email})
+        client.put("/api/auth/email", headers=user["headers"], json={"email": email, "current_password": user["password"]})
         mail_outbox.outbox.clear()
         assert client.post("/api/auth/forgot-password", json={"email": email}).status_code == 200
         assert mail_outbox.outbox == [] and tokens_of(dev_db, user["id"], "reset_password") == []
@@ -183,7 +183,7 @@ class TestTokenRules:
     def test_verify_token_is_single_use(self, captest, mail_outbox):
         user = captest()
         email = email_for()
-        client.put("/api/auth/email", headers=user["headers"], json={"email": email})
+        client.put("/api/auth/email", headers=user["headers"], json={"email": email, "current_password": user["password"]})
         raw = last_token(mail_outbox.outbox, email)
         assert client.post("/api/auth/verify-email", json={"token": raw}).status_code == 200
         r = client.post("/api/auth/verify-email", json={"token": raw})
@@ -201,7 +201,7 @@ class TestTokenRules:
     def test_expired_tokens_are_rejected(self, captest, mail_outbox, monkeypatch):
         user = captest()
         email = email_for()
-        client.put("/api/auth/email", headers=user["headers"], json={"email": email})
+        client.put("/api/auth/email", headers=user["headers"], json={"email": email, "current_password": user["password"]})
         verify_raw = last_token(mail_outbox.outbox, email)
         real_now = recovery_db.now
         monkeypatch.setattr(recovery_db, "now", lambda: real_now() + timedelta(hours=24, seconds=1))
@@ -220,7 +220,7 @@ class TestTokenRules:
     def test_tokens_cannot_cross_purposes(self, captest, mail_outbox):
         user = captest()
         email = email_for()
-        client.put("/api/auth/email", headers=user["headers"], json={"email": email})
+        client.put("/api/auth/email", headers=user["headers"], json={"email": email, "current_password": user["password"]})
         verify_raw = last_token(mail_outbox.outbox, email)
         assert client.post("/api/auth/reset-password", json={"token": verify_raw, "new_password": dummy_password()}).status_code == 400
         assert client.post("/api/auth/verify-email", json={"token": verify_raw}).status_code == 200  # 위 거부가 토큰을 쓰지 않았다
@@ -232,7 +232,7 @@ class TestTokenRules:
     def test_new_token_invalidates_the_previous_one(self, captest, mail_outbox, dev_db):
         user = captest()
         email = email_for()
-        client.put("/api/auth/email", headers=user["headers"], json={"email": email})
+        client.put("/api/auth/email", headers=user["headers"], json={"email": email, "current_password": user["password"]})
         first = last_token(mail_outbox.outbox, email)
         assert client.post("/api/auth/resend-verification", headers=user["headers"]).status_code == 200
         second = last_token(mail_outbox.outbox, email)
@@ -267,15 +267,15 @@ class TestTokenRules:
     def test_changing_email_resets_verification_and_kills_old_link(self, captest, mail_outbox):
         user = captest()
         first = email_for("a")
-        client.put("/api/auth/email", headers=user["headers"], json={"email": first})
+        client.put("/api/auth/email", headers=user["headers"], json={"email": first, "current_password": user["password"]})
         old_link = last_token(mail_outbox.outbox, first)
         second = email_for("b")
-        r = client.put("/api/auth/email", headers=user["headers"], json={"email": second})
+        r = client.put("/api/auth/email", headers=user["headers"], json={"email": second, "current_password": user["password"]})
         assert r.json()["email"] == second and r.json()["email_verified"] is False
         assert client.post("/api/auth/verify-email", json={"token": old_link}).status_code == 400  # 옛 주소의 링크로 새 주소 인증 불가
         assert client.post("/api/auth/verify-email", json={"token": last_token(mail_outbox.outbox, second)}).status_code == 200
         third = email_for("c")
-        client.put("/api/auth/email", headers=user["headers"], json={"email": third})
+        client.put("/api/auth/email", headers=user["headers"], json={"email": third, "current_password": user["password"]})
         me = client.get("/api/auth/me", headers=user["headers"]).json()
         assert me["email"] == third and me["email_verified"] is False  # 인증된 주소를 바꾸면 인증이 풀린다
 
@@ -320,8 +320,8 @@ class TestConflictsAndLocks:
     def test_duplicate_email_is_409_case_insensitive(self, captest, mail_outbox):
         a, b = captest(), captest()
         email = email_for("dup")
-        assert client.put("/api/auth/email", headers=a["headers"], json={"email": email}).status_code == 200
-        r = client.put("/api/auth/email", headers=b["headers"], json={"email": email.upper()})
+        assert client.put("/api/auth/email", headers=a["headers"], json={"email": email, "current_password": a["password"]}).status_code == 200
+        r = client.put("/api/auth/email", headers=b["headers"], json={"email": email.upper(), "current_password": b["password"]})
         assert r.status_code == 409 and r.json() == {"detail": "이미 사용 중인 이메일입니다."}
         r = client.post("/api/auth/signup", json={"username": f"captest_{secrets.token_hex(6)}", "password": dummy_password(), "email": email})
         assert r.status_code == 409 and r.json() == {"detail": "이미 사용 중인 이메일입니다."}
@@ -332,7 +332,7 @@ class TestConflictsAndLocks:
         user = captest()
         email = register_and_verify(user, mail_outbox.outbox)
         n = len(mail_outbox.outbox)
-        r = client.put("/api/auth/email", headers=user["headers"], json={"email": email.upper()})
+        r = client.put("/api/auth/email", headers=user["headers"], json={"email": email.upper(), "current_password": user["password"]})
         assert r.status_code == 200 and r.json()["verification_sent"] is False and r.json()["email_verified"] is True
         assert len(mail_outbox.outbox) == n
 
@@ -419,3 +419,70 @@ class TestMigrationRoundTrip:
         finally:
             with psycopg.connect(admin, autocommit=True) as c:
                 c.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+
+
+class TestEmailChangeHardening:
+    """2026-10-30 보강: PUT /api/auth/email은 현재 비밀번호 필수, 이전 인증 주소로 변경 알림, 남은 재설정 링크 무효."""
+
+    def test_missing_or_wrong_current_password_changes_nothing(self, captest, mail_outbox):
+        user = captest()
+        email = email_for()
+        r = client.put("/api/auth/email", headers=user["headers"], json={"email": email})
+        assert r.status_code == 422
+        r = client.put("/api/auth/email", headers=user["headers"], json={"email": email, "current_password": "wrong-dummy-pw"})
+        assert r.status_code == 422 and r.json()["detail"][0]["type"] == "invalid_current_password"
+        assert r.json()["detail"][0]["loc"] == ["body", "current_password"] and "wrong-dummy-pw" not in r.text
+        assert client.get("/api/auth/me", headers=user["headers"]).json()["email"] is None and mail_outbox.outbox == []
+        # 토큰은 그대로 유효하다(401이 아니므로 프론트가 로그아웃하지 않는다)
+        assert client.get("/api/auth/me", headers=user["headers"]).status_code == 200
+
+    def test_old_verified_address_gets_a_notice_without_links(self, captest, mail_outbox):
+        user = captest()
+        old = register_and_verify(user, mail_outbox.outbox)
+        mail_outbox.outbox.clear()
+        new = email_for("new")
+        r = client.put("/api/auth/email", headers=user["headers"], json={"email": new, "current_password": user["password"]})
+        assert r.status_code == 200 and r.json()["verification_sent"] is True and r.json()["email_verified"] is False
+        to_old = [m for m in mail_outbox.outbox if m.to == old]
+        assert len(to_old) == 1
+        notice = to_old[0]
+        assert "변경되었습니다" in notice.subject and "본인이 아니라면" in notice.body
+        assert "http" not in notice.body and "token" not in notice.body and new not in notice.body  # 링크·토큰 없음, 새 주소는 가림
+        assert [m.to for m in mail_outbox.outbox if "#token=" in m.body] == [new]
+
+    def test_no_notice_on_first_registration_or_unverified_previous(self, captest, mail_outbox):
+        user = captest()
+        first = email_for("first")
+        client.put("/api/auth/email", headers=user["headers"], json={"email": first, "current_password": user["password"]})
+        second = email_for("second")
+        client.put("/api/auth/email", headers=user["headers"], json={"email": second, "current_password": user["password"]})
+        assert [m.to for m in mail_outbox.outbox] == [first, second]  # 인증 메일만, 알림 없음
+        assert all("#token=" in m.body for m in mail_outbox.outbox)
+
+    def test_email_change_kills_pending_reset_links(self, captest, mail_outbox, dev_db):
+        user = captest()
+        old = register_and_verify(user, mail_outbox.outbox)
+        client.post("/api/auth/forgot-password", json={"email": old})
+        pending = last_token(mail_outbox.outbox, old)
+        client.put("/api/auth/email", headers=user["headers"], json={"email": email_for("x"), "current_password": user["password"]})
+        r = client.post("/api/auth/reset-password", json={"token": pending, "new_password": dummy_password()})
+        assert r.status_code == 400
+        assert all(row.used_at is not None for row in tokens_of(dev_db, user["id"], "reset_password"))
+        r = client.post("/api/auth/login", json={"username": user["username"], "password": user["password"]})
+        assert r.status_code == 200  # 비밀번호는 그대로
+
+    def test_wrong_password_locks_like_change_password(self, captest, mail_outbox, monkeypatch):
+        user = captest()
+        monkeypatch.setenv("RATE_LIMIT_ENABLED", "1")
+        monkeypatch.setenv("RATE_LIMIT_VERIFICATION_MAIL_PER_HOUR", "100")  # 잠금만 보이게
+        rate_limit.reset_all()
+        body = {"email": email_for(), "current_password": "wrong-dummy-pw"}
+        for _ in range(5):
+            assert client.put("/api/auth/email", headers=user["headers"], json=body).status_code == 422
+        right = {"email": body["email"], "current_password": user["password"]}
+        r = client.put("/api/auth/email", headers=user["headers"], json=right)
+        assert r.status_code == 429 and "retry-after" in r.headers
+        # 같은 잠금을 비밀번호 변경과 공유한다(두 엔드포인트로 시도 횟수를 늘릴 수 없다)
+        r = client.post("/api/auth/change-password", headers=user["headers"], json={"current_password": user["password"], "new_password": dummy_password()})
+        assert r.status_code == 429
+

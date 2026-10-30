@@ -10,7 +10,8 @@ from fastapi.testclient import TestClient
 import app.api.auth as auth_api
 from app import rate_limit
 from app.account_recovery import INVALID_LINK, RECOVERY_ACCEPTED
-from app.auth import CurrentUser, EmailTaken
+from app.account_recovery_db import EmailChange
+from app.auth import CurrentUser, EmailTaken, PasswordNotSet, TokenRevoked
 from app.main import app
 
 client = TestClient(app, raise_server_exceptions=False)
@@ -42,7 +43,8 @@ def fake_db(monkeypatch):
     monkeypatch.setattr(rdb, "verify_email", rec("verify_email", False))
     monkeypatch.setattr(rdb, "reset_password", rec("reset_password", None))
     monkeypatch.setattr(rdb, "new_verification", rec("new_verification", ("sent", "raw-dummy", "a@b.com", "tester")))
-    monkeypatch.setattr(rdb, "set_email", rec("set_email", ("raw-dummy", "tester")))
+    monkeypatch.setattr(rdb, "set_email", rec("set_email", EmailChange("changed", "raw-dummy", "tester", None)))
+    monkeypatch.setattr(rdb, "send_email_changed_notice", rec("send_email_changed_notice", None))
     monkeypatch.setattr(rdb, "account_email", rec("account_email", ("a@b.com", False)))
     monkeypatch.setattr(rdb, "send_verification", rec("send_verification", None))
     return calls
@@ -82,7 +84,7 @@ class TestValidation:
 
     def test_bad_email_on_put_and_signup(self, fake_db, login_as):
         login_as(7)
-        r = client.put("/api/auth/email", json={"email": "bad-email-dummy"})
+        r = client.put("/api/auth/email", json={"email": "bad-email-dummy", "current_password": DUMMY_PASSWORD})
         assert r.status_code == 422 and "bad-email-dummy" not in r.text
         r = client.post("/api/auth/signup", json={"username": "alice", "password": DUMMY_PASSWORD, "email": "bad-email-dummy"})
         assert r.status_code == 422 and "bad-email-dummy" not in r.text and DUMMY_PASSWORD not in r.text
@@ -148,15 +150,16 @@ class TestSignupCompatibility:
 class TestEmailRoutes:
     def test_put_email_sends_verification(self, fake_db, login_as):
         login_as(7)
-        r = client.put("/api/auth/email", json={"email": "New@Example.com"})
+        r = client.put("/api/auth/email", json={"email": "New@Example.com", "current_password": DUMMY_PASSWORD})
         assert r.status_code == 200 and r.json()["verification_sent"] is True
-        assert fake_db[0] == ("set_email", (7, "new@example.com", fake_db[0][1][2]))
+        name, args = fake_db[0]
+        assert name == "set_email" and args[0].id == 7 and args[1:3] == ("new@example.com", DUMMY_PASSWORD)
         assert ("send_verification", ("new@example.com", "tester", "raw-dummy")) in fake_db
 
     def test_same_email_sends_nothing(self, monkeypatch, fake_db, login_as):
         login_as(7)
-        monkeypatch.setattr(auth_api.recovery_db, "set_email", lambda *a: (None, "tester"))
-        r = client.put("/api/auth/email", json={"email": "a@b.com"})
+        monkeypatch.setattr(auth_api.recovery_db, "set_email", lambda *a: EmailChange("unchanged", username="tester"))
+        r = client.put("/api/auth/email", json={"email": "a@b.com", "current_password": DUMMY_PASSWORD})
         assert r.status_code == 200 and r.json()["verification_sent"] is False and "send_verification" not in names(fake_db)
 
     @pytest.mark.parametrize("status, detail", [("no_email", "등록된 이메일이 없습니다"), ("verified", "이미 인증된 이메일입니다")])
@@ -198,11 +201,11 @@ class TestRateLimitsOn:
     def test_verification_mail_per_user_shared_by_put_and_resend(self, on, fake_db, login_as):
         login_as(7)
         for _ in range(3):
-            assert client.put("/api/auth/email", json={"email": "a@b.com"}).status_code == 200
+            assert client.put("/api/auth/email", json={"email": "a@b.com", "current_password": DUMMY_PASSWORD}).status_code == 200
         for _ in range(2):
             assert client.post("/api/auth/resend-verification").status_code == 200
         assert client.post("/api/auth/resend-verification").status_code == 429
-        assert client.put("/api/auth/email", json={"email": "c@d.com"}).status_code == 429
+        assert client.put("/api/auth/email", json={"email": "c@d.com", "current_password": DUMMY_PASSWORD}).status_code == 429
         login_as(8)  # 다른 사용자는 따로 센다
         assert client.post("/api/auth/resend-verification").status_code == 200
 
@@ -219,3 +222,54 @@ class TestRateLimitsOn:
         rate_limit.clear_locks_after_password_reset("alice", "user:1")
         assert rate_limit.login_failures.locked_for("alice|1.1.1.1") == 0 == rate_limit.login_failures.locked_for("alice|2.2.2.2")
         assert rate_limit.login_failures.locked_for("alicex|1.1.1.1") > 0
+
+
+class TestEmailChangeHardening:
+    @pytest.fixture(autouse=True)
+    def _in(self, login_as):
+        login_as(7)
+
+    @pytest.mark.parametrize("body", [{"email": "a@b.com"}, {"email": "a@b.com", "current_password": ""},
+                                      {"email": "a@b.com", "current_password": "x" * 129}])
+    def test_current_password_is_required(self, fake_db, body):
+        r = client.put("/api/auth/email", json=body)
+        assert r.status_code == 422 and fake_db == [] and '"input"' not in r.text
+
+    def test_wrong_password_is_422_with_change_password_format(self, monkeypatch, fake_db):
+        monkeypatch.setattr(auth_api.recovery_db, "set_email", lambda *a: EmailChange("wrong_password"))
+        r = client.put("/api/auth/email", json={"email": "a@b.com", "current_password": DUMMY_PASSWORD})
+        assert r.status_code == 422 and r.json() == {"detail": auth_api.CURRENT_PASSWORD_WRONG}
+        assert DUMMY_PASSWORD not in r.text and "send_verification" not in names(fake_db)
+
+    def test_account_without_password_is_400(self, monkeypatch, fake_db):
+        def no_pw(*a):
+            raise PasswordNotSet()
+        monkeypatch.setattr(auth_api.recovery_db, "set_email", no_pw)
+        r = client.put("/api/auth/email", json={"email": "a@b.com", "current_password": DUMMY_PASSWORD})
+        assert r.status_code == 400 and r.json() == {"detail": auth_api.NO_PASSWORD_DETAIL} and "소셜 로그인" in r.json()["detail"]
+
+    def test_revoked_between_auth_and_update_is_401(self, monkeypatch, fake_db):
+        def revoked(*a):
+            raise TokenRevoked()
+        monkeypatch.setattr(auth_api.recovery_db, "set_email", revoked)
+        assert client.put("/api/auth/email", json={"email": "a@b.com", "current_password": DUMMY_PASSWORD}).status_code == 401
+
+    def test_notice_goes_to_previous_verified_address(self, monkeypatch, fake_db):
+        monkeypatch.setattr(auth_api.recovery_db, "set_email", lambda *a: EmailChange("changed", "raw-dummy", "tester", "old@example.com"))
+        r = client.put("/api/auth/email", json={"email": "New@example.com", "current_password": DUMMY_PASSWORD})
+        assert r.status_code == 200
+        assert ("send_email_changed_notice", ("old@example.com", "tester", "new@example.com")) in fake_db
+        assert ("send_verification", ("new@example.com", "tester", "raw-dummy")) in fake_db
+
+    def test_failures_feed_the_shared_password_lock(self, on, monkeypatch, fake_db):
+        monkeypatch.setenv("RATE_LIMIT_VERIFICATION_MAIL_PER_HOUR", "100")
+        monkeypatch.setattr(auth_api.recovery_db, "set_email", lambda *a: EmailChange("wrong_password"))
+        for _ in range(5):
+            assert client.put("/api/auth/email", json={"email": "a@b.com", "current_password": DUMMY_PASSWORD}).status_code == 422
+        r = client.put("/api/auth/email", json={"email": "a@b.com", "current_password": DUMMY_PASSWORD})
+        assert r.status_code == 429 and "retry-after" in r.headers
+        assert rate_limit.password_change_failures.locked_for("user:7") > 0
+
+    def test_resend_does_not_need_a_password(self, fake_db):
+        assert client.post("/api/auth/resend-verification").status_code == 200
+

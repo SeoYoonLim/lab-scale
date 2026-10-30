@@ -10,6 +10,7 @@
 """
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from sqlalchemy import select, update
@@ -17,7 +18,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app import account_recovery as R
 from app import mailer
-from app.auth import CurrentUser, EmailTaken, is_email_conflict
+from app.auth import CurrentUser, EmailTaken, PasswordNotSet, TokenRevoked, check_current_password, is_email_conflict
 from app.db.session import SessionLocal
 from app.models import AccountToken, User
 
@@ -72,30 +73,51 @@ def account_email(db, user_id: int) -> tuple[str | None, bool]:
     return row.email, row.email_verified_at is not None
 
 
-def set_email(db, user_id: int, email: str, at: datetime) -> tuple[str | None, str | None]:
-    """이메일을 등록·변경한다. (인증 메일용 원문 토큰, username). 지금 이메일과 같으면 바꾸지 않고 (None, username).
+@dataclass(frozen=True)
+class EmailChange:
+    status: str  # "changed" | "unchanged" | "wrong_password"
+    raw_token: str | None = None  # 새 주소로 보낼 인증 토큰 원문(changed일 때만)
+    username: str | None = None
+    previous_verified_email: str | None = None  # 바뀌기 전 주소가 인증돼 있었으면 그 주소(변경 알림을 보낸다)
 
-    바꾸면 email_verified_at을 비우고, 옛 이메일로 보낸 인증 토큰은 무효가 된다(issue_token). 다른 계정이 쓰는 이메일이면 EmailTaken.
-    사용자가 없으면 LookupError.
+
+def set_email(db, user: CurrentUser, email: str, current_password: str, at: datetime) -> EmailChange:
+    """현재 비밀번호를 확인하고 이메일을 등록·변경한다. 행을 FOR UPDATE로 잠근 채 확인·변경을 한 트랜잭션에서 한다.
+
+    - 비밀번호가 틀리면 아무것도 바꾸지 않고 status="wrong_password". 비밀번호 없는 계정이면 PasswordNotSet(app.auth).
+    - 사용자가 없거나 그 사이 토큰이 폐기됐으면(token_version 불일치) TokenRevoked.
+    - 지금과 같은 주소면 status="unchanged"(메일 없음).
+    - 바꾸면 email_verified_at을 비우고, 그 사용자의 미사용 인증 토큰과 **미사용 재설정 토큰**을 모두 무효로 한다
+      (옛 주소로 간 재설정 링크가 이메일 변경 뒤에도 살아 있지 않게). 다른 계정이 쓰는 주소면 EmailTaken.
     """
-    row = db.execute(select(User).where(User.id == user_id).with_for_update()).scalar_one_or_none()
-    if row is None:
+    row = db.execute(select(User).where(User.id == user.id).with_for_update()).scalar_one_or_none()
+    if row is None or row.token_version != user.token_version:
         db.rollback()
-        raise LookupError()
+        raise TokenRevoked()
+    try:
+        ok = check_current_password(row.password_hash, current_password)
+    except PasswordNotSet:
+        db.rollback()
+        raise
+    if not ok:
+        db.rollback()
+        return EmailChange("wrong_password")
     if row.email == email:
         db.rollback()
-        return None, row.username
+        return EmailChange("unchanged", username=row.username)
+    previous = row.email if row.email_verified_at is not None else None
     row.email, row.email_verified_at = email, None
     try:
         db.flush()
-        raw = issue_token(db, user_id, R.PURPOSE_VERIFY_EMAIL, at)
+        invalidate_tokens(db, user.id, R.PURPOSE_RESET, at)
+        raw = issue_token(db, user.id, R.PURPOSE_VERIFY_EMAIL, at)
         db.commit()
     except IntegrityError as e:
         db.rollback()
         if is_email_conflict(e):
             raise EmailTaken() from None
         raise RuntimeError("account email integrity error") from None
-    return raw, row.username
+    return EmailChange("changed", raw, row.username, previous)
 
 
 def new_verification(db, user_id: int, at: datetime) -> tuple[str, str | None, str | None, str | None]:
@@ -193,3 +215,8 @@ def deliver_reset(email: str) -> None:
 def send_verification(email: str, username: str, raw: str) -> None:
     """이미 발급한 인증 토큰을 담아 보낸다(가입·이메일 변경·재발송)."""
     mailer.send_safely(R.verify_mail(email, username, raw))
+
+
+def send_email_changed_notice(previous_email: str, username: str, new_email: str) -> None:
+    """이전 인증 주소로 변경 알림(best-effort, 실패해도 응답과 무관)."""
+    mailer.send_safely(R.email_changed_mail(previous_email, username, new_email))

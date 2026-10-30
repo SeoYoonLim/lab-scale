@@ -35,6 +35,7 @@ from app.auth import (
     USERNAME_MAX_LEN,
     CurrentUser,
     EmailTaken,
+    PasswordNotSet,
     TokenRevoked,
     UsernameTaken,
     authenticate,
@@ -57,6 +58,9 @@ CURRENT_PASSWORD_WRONG = [
     {"type": "invalid_current_password", "loc": ["body", "current_password"], "msg": "현재 비밀번호가 올바르지 않습니다."}
 ]
 EMAIL_TAKEN_DETAIL = "이미 사용 중인 이메일입니다."
+NO_PASSWORD_DETAIL = (
+    "비밀번호가 설정되지 않은 계정은 여기서 이메일을 바꿀 수 없습니다. 이 계정의 이메일은 로그인에 쓴 외부 계정(소셜 로그인)에서 관리됩니다."
+)
 EMAIL_INPUT_MAX_LEN = 320  # 정규화 전 입력 상한(앞뒤 공백 포함). 정규화 뒤에는 254자
 
 
@@ -83,6 +87,18 @@ class SignupRequest(BaseModel):
 
 class EmailRequest(BaseModel):
     email: str = Field(max_length=EMAIL_INPUT_MAX_LEN)
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, v: str) -> str:
+        return normalize_email(v)
+
+
+class ChangeEmailRequest(BaseModel):
+    """PUT /api/auth/email(2026-10-30 보강): 현재 비밀번호가 필수다(처음 등록할 때도). 탈취한 토큰만으로 복구 주소를 바꾸지 못하게."""
+
+    email: str = Field(max_length=EMAIL_INPUT_MAX_LEN)
+    current_password: str = Field(min_length=1, max_length=PASSWORD_MAX_LEN)
 
     @field_validator("email")
     @classmethod
@@ -278,28 +294,43 @@ def change_password_route(
 
 
 @router.put("/email", response_model=EmailStatus)
-def put_email(request: EmailRequest, background: BackgroundTasks, user: CurrentUser = Depends(get_current_user)) -> EmailStatus:
-    """이메일 등록·변경. 바꾸면 인증 상태를 비우고(옛 인증 링크는 무효) 새 주소로 인증 메일을 보낸다. 지금과 같은 주소면 아무것도
-    바꾸지 않는다. 다른 계정이 쓰는 주소면 409. 사용자당 인증 메일 한도(재발송과 합산)를 넘으면 429."""
-    rate_limit.check(rate_limit.verification_mail, user.owner_key, "RATE_LIMIT_VERIFICATION_MAIL_PER_HOUR")
+def put_email(request: ChangeEmailRequest, background: BackgroundTasks, user: CurrentUser = Depends(get_current_user)) -> EmailStatus:
+    """이메일 등록·변경(현재 비밀번호 필수). 바꾸면 인증 상태를 비우고 남은 인증·재설정 링크를 무효로 하고 새 주소로 인증 메일을,
+    이전 주소가 인증돼 있었으면 그 주소로 변경 알림을 보낸다. 지금과 같은 주소면 아무것도 바꾸지 않는다.
+
+    현재 비밀번호 오류는 422(비밀번호 변경과 같은 CURRENT_PASSWORD_WRONG), 연속 오류는 비밀번호 변경과 같은 사용자 잠금(합산)으로 429.
+    비밀번호가 없는 계정은 400. 다른 계정이 쓰는 주소면 409. 사용자당 인증 메일 한도(재발송과 합산)를 넘으면 429.
+    """
+    key = user.owner_key
+    rate_limit.check(rate_limit.verification_mail, key, "RATE_LIMIT_VERIFICATION_MAIL_PER_HOUR")
+    rate_limit.check_password_change_lock(key)
     db = SessionLocal()
     try:
-        raw, username = recovery_db.set_email(db, user.id, request.email, recovery_db.now())
-        email, verified = recovery_db.account_email(db, user.id)
+        change = recovery_db.set_email(db, user, request.email, request.current_password, recovery_db.now())
+        if change.status != "wrong_password":
+            email, verified = recovery_db.account_email(db, user.id)
+    except PasswordNotSet:
+        raise HTTPException(status_code=400, detail=NO_PASSWORD_DETAIL) from None
     except EmailTaken:
+        rate_limit.record_password_change(key, success=True)  # 비밀번호는 맞았다(유일 위반은 그 뒤에 난다)
         raise HTTPException(status_code=409, detail=EMAIL_TAKEN_DETAIL) from None
-    except LookupError:
+    except TokenRevoked:
         raise unauthorized() from None
     except DBAPIError as e:
         raise _db_unavailable(e) from None
     finally:
         db.close()
-    if raw:
-        background.add_task(recovery_db.send_verification, request.email, username, raw)
+    rate_limit.record_password_change(key, success=change.status != "wrong_password")
+    if change.status == "wrong_password":
+        raise HTTPException(status_code=422, detail=CURRENT_PASSWORD_WRONG)
+    if change.status == "changed":
+        background.add_task(recovery_db.send_verification, request.email, change.username, change.raw_token)
+        if change.previous_verified_email:
+            background.add_task(recovery_db.send_email_changed_notice, change.previous_verified_email, change.username, request.email)
         message = "인증 메일을 보냈습니다. 메일의 링크를 열면 인증이 끝납니다."
     else:
         message = "이미 등록된 이메일입니다." + ("" if verified else " 인증 메일이 필요하면 재발송을 요청해주세요.")
-    return EmailStatus(email=email, email_verified=verified, verification_sent=bool(raw), message=message)
+    return EmailStatus(email=email, email_verified=verified, verification_sent=change.status == "changed", message=message)
 
 
 @router.post("/resend-verification", response_model=MessageResponse)

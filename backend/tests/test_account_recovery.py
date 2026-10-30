@@ -190,3 +190,22 @@ class TestMailer:
     def test_tests_use_the_memory_outbox(self, mail_outbox):
         M.send_safely(R.Mail("a@b.com", "s", "b"))
         assert mail_outbox.outbox == [R.Mail("a@b.com", "s", "b")]
+
+
+class TestEmailChangePieces:
+    def test_check_current_password(self):
+        from app.auth import PasswordNotSet, check_current_password, hash_password
+
+        pw = "dummy-" + "x" * 10
+        h = hash_password(pw)
+        assert check_current_password(h, pw) is True and check_current_password(h, pw + "y") is False
+        for missing in (None, ""):
+            with pytest.raises(PasswordNotSet):
+                check_current_password(missing, pw)
+
+    def test_email_changed_notice_has_no_link_or_token_and_masks_the_new_address(self):
+        m = R.email_changed_mail("old@example.com", "alice", "newperson@example.org")
+        assert m.to == "old@example.com" and "변경되었습니다" in m.subject
+        assert "ne***@ex***.org" in m.body and "newperson@example.org" not in m.body
+        assert "http" not in m.body and "token" not in m.body.lower() and "본인이 아니라면" in m.body
+
