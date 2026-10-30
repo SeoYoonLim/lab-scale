@@ -40,7 +40,7 @@ from app.etf import (
     news_result_for_llm,
     remove_empty_sections,
 )
-from app.answer_guard import code_summary, freshness_note, guard_answer, is_simple_quote, quote_answer
+from app.answer_guard import code_summary, freshness_note, guard_answer, is_simple_quote, quote_answer, strip_untrusted_urls
 from app.etf_holdings import constituents_chat_answer, requested_top_n
 from app.etf_holdings_db import chat_views
 from app.glossary import comparison_answer, concept_answer, find_term, term_answer
@@ -1392,6 +1392,8 @@ def _llm_fallback(err: LLMUnavailable, records: list[dict], etf_subjects=None) -
 def _guard(answer: str, records: list[dict], question: str) -> str:
     """(B) 답변 숫자 검증: 도구 결과·질문·단순 계산으로 설명되지 않는 숫자가 있으면 코드 요약으로 바꾼다(app/answer_guard)."""
     guarded, log = guard_answer(answer, records, question)
+    # 근거 링크가 아닌 URL이 든 문장은 지운다(프롬프트 인젝션으로 들어온 피싱 링크 방지, 2026-10-30)
+    guarded, log["untrusted_url_sentences"] = strip_untrusted_urls(guarded, records)
     _meta()["answer_guard"] = log
     if log["replaced"]:
         logger.info("답변 숫자 검증: %s로 대체(설명되지 않는 숫자 %s)", log["mode"], log["violations"])
