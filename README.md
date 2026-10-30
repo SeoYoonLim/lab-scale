@@ -10,7 +10,7 @@
 ## 지금 상태 요약 (2026-10-14 기준)
 
 **한 줄 요약:** 백엔드(API + 에이전트 + 데이터 수집·일괄 갱신 + 로그인 + 관심종목/모의투자 + 포트폴리오 AI 진단과 이력 + 환율 영향 분석 +
-시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응 + 오늘의 개인화 브리핑(API·채팅))는 동작하고, 빠른 테스트 **3507개**가 통과합니다(`pytest`, 순수 로직 3081 + 개발 DB 통합 426. KODEX 수집 데이터가 DB에 없으면 그중 수집 데이터 대조 3개가 사유와 함께 skip, 2026-10-30).
+시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응 + 오늘의 개인화 브리핑(API·채팅))는 동작하고, 빠른 테스트 **3613개**가 통과합니다(`pytest`, 순수 로직 3178 + 개발 DB 통합 435. KODEX 수집 데이터가 DB에 없으면 그중 수집 데이터 대조 3개가 사유와 함께 skip, 2026-10-30).
 실제 Ollama를 부르는 slow 테스트 61개는 기본에서 빠지고 `pytest -m slow`로 따로 돌립니다. 백엔드 작업 브랜치는 `feature/backend`(원격 push 완료)이고
 아직 main에 병합하지 않았습니다. 프론트엔드는 서윤님이 `feature/frontend`에서 React + Vite + zod로 진행 중이며, 2026-10-14에 실제 백엔드 응답을
 프론트의 zod 스키마로 검증했을 때 불일치가 없었습니다(프론트 테스트 20개·빌드·lint 통과). 남은 큰 일은 화면 연동과 아래 "알려진 한계"입니다.
@@ -50,6 +50,7 @@
 | GET | `/api/status` | 공개 | 데이터 기준일: 소스별 최신 날짜, 지수 `stale`(2영업일 이상 뒤처지면 true), 마지막 `refresh_data` 결과(`last_refresh`, 없으면 null). `is_realtime`은 항상 false |
 | GET | `/api/health` | 공개 | 서비스 상태: DB 연결, 마이그레이션 head 일치, Ollama 연결·모델 설치/로딩, 마지막 시세 날짜·stale. 검사마다 2초 상한·병렬, 실패해도 200 + `status: "degraded"` 와 사유(주소·버전 미노출) |
 | GET | `/api/stocks/{ticker}/price-history` | 공개 | 주가 추이 차트용 일별 시세(종가·거래량·등락률·시가·고가·저가, 날짜 오름차순). 쿼리 `days`는 1~90(기본 90)이고 달력 일이 아니라 **최근 N거래일**. 주식은 2026-06-26부터, ETF는 2026-07-16부터 데이터가 있어 90개가 안 될 수 있으니 `count`로 확인(에러 아님). 주가가 없으면 200에 `items=[]` |
+| GET | `/api/portfolio/exposure` | 필요 | 포트폴리오 실질 노출(2026-10-30): 보유 개별 종목 + 보유 ETF 구성종목을 합쳐 **기업별 실질 비중**(직접·ETF 경유 합산)과 겹침 목록, 분해하지 않은 ETF(구성종목 없음·레버리지/인버스), 기타 비중, 플래그(실질 40% 이상, ETF 경유로 10%p 이상 커짐). `limit` 1~50(밖은 422). 보유가 없으면 200 + `message`. LLM 없음, DB만 읽기(쿼리 3개 고정, 중앙값 약 23ms), 저장 안 함. 업종별 노출은 `company.sector`가 비어 있어 없음. [backend/API.md](backend/API.md) |
 | GET | `/api/etf/{ticker}/holdings` | 공개 | ETF 구성종목·비중(2026-10-30): 운용사(삼성 KODEX·미래에셋 TIGER) 공시 PDF를 수집해 저장한 값. 기준일·비중 합계·상위 `limit`개(1~50, 밖은 422)·`stale`·`data_warnings`(합계가 기대값에서 5%p 넘게 벗어남). 데이터가 없는 ETF는 404가 아니라 200 + `items=[]` + `message`, ETF가 아닌 종목은 404. LLM 없음. 수집은 수동(`python -m scripts.collect_etf_holdings`). [backend/API.md](backend/API.md) |
 | GET | `/api/stocks/{ticker}/event-reactions` | 공개 | 뉴스·공시 이후 주가 반응. 기준 종가 대비 1/5/20거래일 수익률, 시장 지수 대비 초과수익률, 거래량 비율, 같은 구간의 다른 사건 수를 코드로 계산(LLM 없음). ETF는 뉴스만. 쿼리 `event_type`(disclosure/news/all)·`limit`(1~30, 유형별)·`since_days`(기본 60, 최대 120). 시간적 선후관계일 뿐 인과가 아니라는 고정 `disclaimer` 포함 |
 | GET | `/api/briefing` | 필요 | 오늘의 개인화 브리핑: 보유종목(모의투자)·관심종목 기준으로 코스피/코스닥/환율 요약, 종목별 최신 종가·1일/5거래일 등락률·거래량 배수(직전 20거래일 평균 대비)·최근 7일 뉴스·공시, 규칙 기반 flag(등락 3%·7%, 거래량 2배, 신규 공시, 비중 40%)와 상위 5개 highlights, 포트폴리오 요약(평가금액·비중·손익·전일 대비). **LLM 없이 코드가 DB 값으로 계산**하고 문장은 관찰 사실만 쓴다. 읽기 전용(계좌를 만들지 않음). `news_limit` 1~5. 장 마감(15:30) 전에는 오늘 행을 쓰지 않는다. 응답 필드는 [backend/API.md](backend/API.md) |
@@ -495,9 +496,9 @@ python -m scripts.backfill_history --tickers 005930,069500 --years 5 --end 2026-
 `backend/`에서 실행합니다. 세 단계로 나뉩니다(마커: `integration`, `slow`).
 
 ```bash
-pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-30 ETF 구성종목 후 3507개: 마이그레이션 왕복용 `MIGRATION_TEST_DATABASE_URL`을 주면 3504 통과 + 수집 데이터 대조 3 skip, 약 57초). slow는 기본 제외
-pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 3081개)
-pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(426개). DB가 꺼져 있으면 자동 skip
+pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-30 실질 노출 후 3613개: 마이그레이션 왕복용 `MIGRATION_TEST_DATABASE_URL`을 주면 3610 통과 + 수집 데이터 대조 3 skip, 약 52초). slow는 기본 제외
+pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 3178개)
+pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(435개). DB가 꺼져 있으면 자동 skip
 pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)를 부르는 테스트(61개, 느리고 비결정적)
 ```
 
@@ -532,10 +533,10 @@ pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)
 
 **CI에서 제외되는 테스트(숫자로)**
 
-- `integration` 426개 중 **57개는 CI에서 제외**됩니다(`needs_collected_data` 마커). 수집된 시세·뉴스·공시·ETF 시세·환율·시장 지수(또는 인증 도입 전 옛 리포트)가 DB에 있어야 통과하는
-  테스트라서, 종목 목록만 시드한 CI의 빈 DB에서는 통과할 수 없습니다. 나머지 369개는 CI에서 실제로 돕니다. 로컬 dev DB에서는 마커가 있어도 **426개 전부** 평소처럼 돕니다(마이그레이션 왕복 1개는 `MIGRATION_TEST_DATABASE_URL`이 있을 때).
-  제외 개수는 CI 로그와 job summary에 숫자로 찍히고, 상한(`MAX_EXCLUDED=57`)을 넘으면 CI가 실패합니다(마커로 테스트를 슬그머니 늘려 빼지 못하게).
-- 분류(빈 DB 기준): **a** 스스로 데이터를 만들어 통과 66, **b** 종목 시드로 해결 199, **c** 수집 데이터 필요 57(위 제외, 49번째는 브리핑 숫자 독립 재계산 대조, 50번째는 채팅 기간 수익률 템플릿의 DB 대조 테스트, 51번째는 성과 추적 API 숫자의 독립 재계산 대조, 52번째는 백테스트 buy_and_hold 총수익률의 DB 종가 재계산 대조(2026-10-29), 53~57번째는 ETF 구성종목 API·합계·채팅을 `etf_holding`에서 SQL로 다시 계산해 대조(2026-10-30, 해당 ETF의 수집 데이터가 없으면 사유와 함께 skip)), **d** Ollama 필요 0. 2026-10-29 토큰 폐기 통합 테스트 6개, 성과 추적 통합 테스트 5개, 백테스트 통합 테스트 4개, ETF 구성종목 통합 테스트 11개(가짜 ETF 10 + 마이그레이션 왕복 1, `captest_` 접두어로 만들고 지움)는 스스로 데이터를 만든다(a).
+- `integration` 435개 중 **58개는 CI에서 제외**됩니다(`needs_collected_data` 마커). 수집된 시세·뉴스·공시·ETF 시세·환율·시장 지수(또는 인증 도입 전 옛 리포트)가 DB에 있어야 통과하는
+  테스트라서, 종목 목록만 시드한 CI의 빈 DB에서는 통과할 수 없습니다. 나머지 377개는 CI에서 실제로 돕니다. 로컬 dev DB에서는 마커가 있어도 **435개 전부** 평소처럼 돕니다(마이그레이션 왕복 1개는 `MIGRATION_TEST_DATABASE_URL`이 있을 때).
+  제외 개수는 CI 로그와 job summary에 숫자로 찍히고, 상한(`MAX_EXCLUDED=58`)을 넘으면 CI가 실패합니다(마커로 테스트를 슬그머니 늘려 빼지 못하게).
+- 분류(빈 DB 기준): **a** 스스로 데이터를 만들어 통과 66, **b** 종목 시드로 해결 199, **c** 수집 데이터 필요 58(위 제외, 49번째는 브리핑 숫자 독립 재계산 대조, 50번째는 채팅 기간 수익률 템플릿의 DB 대조 테스트, 51번째는 성과 추적 API 숫자의 독립 재계산 대조, 52번째는 백테스트 buy_and_hold 총수익률의 DB 종가 재계산 대조(2026-10-29), 53~57번째는 ETF 구성종목 API·합계·채팅을 `etf_holding`에서 SQL로 다시 계산해 대조(2026-10-30, 해당 ETF의 수집 데이터가 없으면 사유와 함께 skip), 58번째는 포트폴리오 실질 노출 API의 삼성전자 직접+TIGER 200 경유 금액을 SQL만으로 재계산해 대조(2026-10-30)), **d** Ollama 필요 0. 2026-10-29 토큰 폐기 통합 테스트 6개, 성과 추적 통합 테스트 5개, 백테스트 통합 테스트 4개, 실질 노출 통합 테스트 8개(captest 가짜 종목·ETF를 만들고 지움), ETF 구성종목 통합 테스트 11개(가짜 ETF 10 + 마이그레이션 왕복 1, `captest_` 접두어로 만들고 지움)는 스스로 데이터를 만든다(a).
 - 그 밖의 skip은 조용히 통과로 보이지 않게 CI에서 **실패**로 바뀝니다(`CI_FAIL_ON_SKIP=1`, `backend/tests/ci_guard.py`).
 - `slow` 61개(실제 Ollama 호출)와 `evals` live 모드는 CI에서 돌지 않습니다: Ollama(llama3.1:8b)가 필요하고 느리며 비결정적이기 때문입니다. 로컬에서 `pytest -m slow`, `python -m evals.run_eval --mode live`.
 
@@ -699,6 +700,7 @@ python -m evals.compare evals/results/summary_baseline_2026-10-27.json evals/res
 - [x] 오늘의 개인화 브리핑: `GET /api/briefing`(LLM 없음, 코드 계산, 읽기 전용). 계산은 `app/briefing.py`(순수), DB 조회는 `app/briefing_db.py`(쿼리 수 고정). 숫자는 `tests/briefing_recompute.py`가 원시 SQL로 독립 재계산해 대조한다
 - [x] 리서치 챗 3차(2026-10-28): 채팅에서 개인화 브리핑("오늘 브리핑", "내 보유종목 어때", LLM 없음), 기간 수익률·기간 최고/최저가·두 종목 비교를 코드 템플릿으로 답함, 숫자 검증기에 날짜·대상·기간 혼동 검사 추가(독립 고정 세트로 재현율 0.57→0.90). 상세는 [backend/API.md](backend/API.md)의 "3차 라운드"와 [backend/evals/README.md](backend/evals/README.md)
 - [x] ETF(2026-10-14): 종목 50개, 리서치·진단 처리 규칙과 레버리지/인버스 고정 문구(위 "ETF 처리 규칙")
+- [x] 포트폴리오 실질 노출(2026-10-30): `GET /api/portfolio/exposure`, 보유 종목 + 보유 ETF 구성종목 합산(위 표). 구성종목 데이터가 있는 ETF만 분해
 - [~] ETF 구성종목·비중(2026-10-30): 수집-저장-API-채팅 구현 완료, 수집은 TIGER 15개만 성공(KODEX 23개는 삼성 사이트 429로 보류), RISE 등 12개는 미지원
 - [x] 뉴스·공시 이후 주가 반응(2026-10-14): `GET /api/stocks/{ticker}/event-reactions` + 리서치 에이전트 연동(코드가 수치를 쓰고 LLM 해석은 기본 꺼짐, 위 절)
 - [x] 데이터 기준일 API(`GET /api/status`), 포트폴리오 진단 이력 저장·비교(2026-10-14)

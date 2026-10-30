@@ -3132,6 +3132,124 @@ buy_and_hold 35ms, sma_cross(5/250) 41ms, dca 33ms, 최대 72ms. 응답 크기 �
 
 ---
 
+## GET /api/portfolio/exposure (2026-10-30)
+
+내 모의투자 **보유 개별 종목과 보유 ETF의 구성종목을 합쳐 기업별로 실제로 얼마나 노출돼 있는지**(실질 노출) 계산한다. ETF 때문에 숨은 집중과 겹침을 보여준다.
+**인증 필요**(없거나 잘못된 토큰은 401, 쿼리 검증 오류(422)보다 먼저), 소유자는 토큰의 사용자뿐이다. **읽기 전용, DB만 읽는다**(외부 요청·LLM·저장 없음, 계좌를 만들지 않는다).
+쿼리는 보유 종목 수와 무관하게 **고정 3개**다(보유+종목 1, 종목별 최근 종가 2개 1, 분해할 ETF의 최신 구성종목+company 매핑 1; 보유가 없으면 1개).
+레이트 리밋은 없다(성과 추적·브리핑 같은 기존 조회 API와 같다). 계산은 `app/exposure.py`(순수), DB 조회는 `app/exposure_db.py`.
+
+### 요청
+
+| 쿼리 | 기본 | 범위 | 설명 |
+|---|---|---|---|
+| `limit` | 10 | 1~50 (밖은 **422**) | `companies`(실질 비중이 큰 기업)를 몇 개까지 보여줄지. `overlaps`·`flags`·`summary`는 `limit`과 무관하게 전체 기준이다 |
+
+### 보유가 없을 때
+
+**200 + 빈 목록 + `message`**다(성과 추적·브리핑 같은 읽기 전용 조회 API와 같은 방식). 보유가 없으면 400을 주는 것은 AI를 호출하는 `POST /api/portfolio/diagnosis`뿐이다.
+`message`는 `"보유 중인 종목이 없습니다. 모의투자로 종목이나 ETF를 매수하면 기업별 실질 노출을 계산합니다."`이고 숫자는 0, 목록은 `[]`, `valuation_date`는 `null`이다.
+보유 종목 전부의 최신 종가가 없으면 `"보유 종목의 최신 종가를 구하지 못해 실질 노출을 계산할 수 없습니다."`(200).
+
+### 계산식
+
+- **보유 평가금액** = `round(수량 x 최신 종가, 2)`. 최신 종가는 DB의 종목별 마지막 종가이고 장 마감 전(평일 15:30 KST)에는 오늘 행(장중 값)을 빼고 직전 종가를 쓴다(성과 추적·브리핑과 같은 규칙).
+  **분모(`전체 보유 평가금액`)는 보유 종목의 평가금액 합계이고 현금은 넣지 않는다**(계좌 총자산 대비가 아니다). 종가가 없는 종목은 평가에서 빼고 `data_warnings`(`no_price`)에 남긴다.
+- **개별 주식**은 평가금액 전부가 그 기업의 직접 노출이다.
+- **데이터가 있는 일반 ETF**는 `ETF 평가금액 x 구성종목 비중% / 100`을 그 구성종목에 배분한다(ETF 경유 노출). 가장 최근 기준일의 구성종목만 쓴다.
+  같은 기업의 직접 노출과 ETF 경유 노출(여러 ETF, 같은 ETF 안의 중복 행 포함)은 합산한다.
+- **기업 묶기**: 구성종목 코드가 `company.ticker`와 일치하면 그 종목코드로 묶는다(`linked=true`, 직접 보유한 같은 종목과 자동으로 합쳐진다).
+  코드가 없거나 `company`에 없는 구성종목(해외 종목, 선물 등)은 **이름(공백·대소문자 무시)으로 묶고 `linked=false`**로 표시하며 `code`는 운용사가 준 표기(`NVDA US EQUITY` 등, 없으면 `null`)다.
+  연결 안 된 구성종목은 이름이 같아도 `company`의 종목과 합치지 않는다.
+- **양(+) 비중만 기업에 배분**하고, 그 ETF 평가금액에서 배분한 금액을 뺀 나머지가 **기타(현금·파생 등)**다(`summary.other_amount`). 양의 비중 합계가 100%보다 작으면 기타는 양수,
+  100%보다 크면 **기타가 음수**다(커버드콜의 매도 옵션·스왑처럼 음수 비중으로 공시된 포지션 때문일 수 있다). 음수 비중 구성종목은 기업 노출로 잡지 않는다.
+- **비중 합계 경고**(`data_warnings`): 양의 비중 합계가 **100.5% 초과**면 `etf_weight_over_100`(배분은 공시 비중 그대로 하고 기타가 음수가 됨을 알림), **95% 미만**이면 `etf_weight_under_100`(나머지는 기타로 둠).
+  100.0~100.5%는 공시 반올림 수준이라 경고하지 않는다(예: TIGER 200의 합계 100.09%는 기타 -0.09%로 잡힌다). 보유 종목들의 종가 날짜가 다르면 `older_price` 경고.
+- **합계 불변식**: `모든 기업의 합계 금액(summary.companies_amount) + 기타(other_amount) + 분해하지 않은 ETF(undecomposed_etf_amount) = 전체 보유 평가금액(total_eval_amount)`.
+  계산은 반올림하지 않은 값으로 하고 출력만 소수 둘째 자리로 반올림하므로, **반올림된 항목을 더한 값과 전체 평가금액의 차이는 항목 수 x 0.005원 이내**다(`summary`의 값끼리는 0.02원 이내).
+  `companies`는 `limit`개만 보여주므로 목록을 더해서는 맞출 수 없다(`summary.company_count`가 전체 기업 수). 맞춰 볼 때는 `summary`의 값을 쓴다.
+- **정렬**: 실질 금액 큰 순, 같으면 이름 순. `rank`는 1부터.
+- **플래그(`flags`)**: ① `concentration` - 실질 비중이 **40% 이상**(브리핑·진단의 집중 기준과 같은 값), ② `etf_inflates_weight` - ETF 경유 때문에 실질 비중이 직접 비중보다 **10%p 이상** 커진 기업(`value_pct` = ETF 경유 비중).
+  `limit`과 무관하게 모든 기업을 검사한다. 문구는 관찰 사실만 담는다(투자 권유 없음).
+
+### 분해하지 않는 ETF와 이유 (`undecomposed_etfs`)
+
+평가금액과 이유를 따로 모으고, 기업 노출·기타에는 넣지 않는다(전체 평가금액에는 포함).
+
+| `reason_code` | 대상 | 이유 |
+|---|---|---|
+| `no_holdings_data` | 구성종목 데이터가 없는 ETF(RISE·ACE 등 미지원 운용사, 아직 수집 안 된 KODEX 등) | 모르는 것을 지어내지 않는다 |
+| `leveraged_inverse` | 이름으로 판별한 레버리지·인버스 ETF(채팅의 레버리지 안내와 같은 판정 `app.etf.leverage_kind`) | 배수와 선물·스왑 구조 때문에 구성종목 비중을 그대로 곱하면 실제 노출을 오해하게 한다. 구성종목 데이터가 있어도 분해하지 않는다 |
+
+### 응답 200 (2026-10-30 실제 응답, dev DB, captest 계정에 삼성전자 10주 + TIGER 200 30주, `limit=3`; 일부 필드는 `...`로 생략)
+
+```json
+{
+  "valuation_date": "2026-10-28", "stale": true, "etf_holdings_stale": false, "limit": 3, "message": null,
+  "summary": {"total_eval_amount": 5306150.0, "holding_count": 2, "stock_amount": 2450000.0, "etf_amount": 2856150.0,
+              "decomposed_etf_amount": 2856150.0, "undecomposed_etf_amount": 0.0, "companies_amount": 5308720.54,
+              "other_amount": -2570.54, "other_weight_pct": -0.05, "company_count": 194},
+  "companies": [
+    {"rank": 1, "name": "삼성전자", "code": "005930", "linked": true, "direct_amount": 2450000.0, "via_etf_amount": 1007935.33,
+     "via_etfs": [{"ticker": "102110", "name": "TIGER 200", "amount": 1007935.33, "etf_weight_pct": 35.29}],
+     "total_amount": 3457935.33, "effective_weight_pct": 65.17, "direct_weight_pct": 46.17},
+    {"rank": 2, "name": "SK하이닉스", "code": "000660", "linked": true, "direct_amount": 0.0, "via_etf_amount": 754880.44, "...": "...",
+     "total_amount": 754880.44, "effective_weight_pct": 14.23, "direct_weight_pct": 0.0},
+    {"rank": 3, "name": "SK스퀘어", "code": "402340", "...": "...", "total_amount": 75687.98, "effective_weight_pct": 1.43, "direct_weight_pct": 0.0}
+  ],
+  "overlaps": [{"name": "삼성전자", "direct_amount": 2450000.0, "via_etf_amount": 1007935.33, "total_amount": 3457935.33, "effective_weight_pct": 65.17, "...": "..."}],
+  "decomposed_etfs": [{"ticker": "102110", "name": "TIGER 200", "eval_amount": 2856150.0, "weight_pct": 53.83, "holdings_as_of": "2026-10-29",
+                       "stale": false, "stale_notice": null, "constituent_count": 200, "weight_sum_pct": 100.09}],
+  "undecomposed_etfs": [],
+  "flags": [
+    {"kind": "concentration", "name": "삼성전자", "code": "005930", "value_pct": 65.17, "threshold_pct": 40.0,
+     "message": "삼성전자의 실질 비중이 보유 평가금액의 65.17%입니다(기준 40% 이상)."},
+    {"kind": "etf_inflates_weight", "name": "삼성전자", "code": "005930", "value_pct": 19.0, "threshold_pct": 10.0,
+     "message": "삼성전자는 ETF를 통한 노출 때문에 실질 비중(65.17%)이 직접 비중(46.17%)보다 19.00%p 큽니다(기준 10%p 이상)."},
+    {"kind": "etf_inflates_weight", "name": "SK하이닉스", "...": "..."}
+  ],
+  "data_warnings": [],
+  "disclaimer": "실질 노출은 보유 평가금액(종가 기준)과 ETF 구성종목 비중으로 계산한 참고 값이며 투자 판단 보조용입니다. 구성종목과 비중은 운용사가 공시한 기준일의 값이라 현재와 다를 수 있습니다. 이 서비스는 학습·시연용 모의투자와 AI 리서치입니다. ..."
+}
+```
+
+### 필드와 null 여부
+
+| 필드 | 설명 |
+|---|---|
+| `generated_at` | 응답 생성 시각(KST ISO) |
+| `valuation_date` | **보유 평가 기준일** = 보유 종목들의 최신 종가 날짜 중 가장 늦은 것. 보유가 없거나 종가가 없으면 `null` |
+| `stale` / `stale_notice` | 평가 기준일이 최근 영업일보다 2영업일 이상 뒤처졌으면 `true`와 안내(`/api/status`와 같은 규칙). 아니면 `false` / `null` |
+| `etf_holdings_stale` | 분해한 ETF 중 구성종목 기준일이 2영업일 이상 오래된 것이 하나라도 있으면 `true` |
+| `message` | 보유가 없거나 종가가 전혀 없을 때만 문장, 아니면 `null` |
+| `limit` | 적용된 `limit` |
+| `summary.*` | 모두 숫자(null 없음). `total_eval_amount`(분모), `holding_count`(평가에 포함된 보유 수), `stock_amount`/`etf_amount`, `decomposed_etf_amount`/`undecomposed_etf_amount`, `companies_amount`(전체 기업 합), `other_amount`/`other_weight_pct`(음수일 수 있음), `company_count`(전체 기업 수) |
+| `companies[]` | 상위 `limit`개. `rank`, `name`, `code`(연결된 종목은 종목코드, 연결 안 된 구성종목은 운용사 표기이거나 `null`), `linked`, `direct_amount`, `via_etf_amount`, `via_etfs[]`(`ticker`, `name`, `amount`, `etf_weight_pct`: 그 ETF의 구성종목 비중), `total_amount`, `effective_weight_pct`(= 합계/전체 평가금액), `direct_weight_pct` |
+| `overlaps[]` | 직접 보유와 ETF 경유 노출이 **모두** 있는 기업 전체(`limit` 무관, `companies[]`와 같은 필드) |
+| `decomposed_etfs[]` | 분해한 ETF: `ticker`, `name`, `eval_amount`, `weight_pct`(전체 대비), `holdings_as_of`(**구성종목 기준일**), `stale`, `stale_notice`(stale일 때만, 아니면 `null`), `constituent_count`, `weight_sum_pct`(양의 비중 합계) |
+| `undecomposed_etfs[]` | 분해하지 않은 ETF: `ticker`, `name`, `eval_amount`, `weight_pct`, `reason_code`, `reason` |
+| `flags[]` / `data_warnings[]` | 위 규칙. 없으면 `[]` |
+| `disclaimer` | 투자 판단 보조용·공시 기준일 값이라 현재와 다를 수 있다는 문구 + 서비스 면책 |
+
+**두 종류의 기준일**: `valuation_date`는 보유 종목의 종가 날짜(평가 기준)이고, `decomposed_etfs[].holdings_as_of`는 ETF 구성종목의 운용사 공시 기준일이다. 둘은 다를 수 있다.
+
+### 처리 시간 (2026-10-30 측정, 로컬 dev DB, TestClient)
+
+보유 개별 종목 10 + ETF 3(TIGER 200 구성종목 200개, TIGER 머니마켓액티브 356개, TIGER 미국S&P500 503개), 전체 기업 1,050개, 5회: **API 응답(인증·직렬화 포함) 중앙값 22.8ms, 최대 52.6ms**,
+`get_exposure`만 중앙값 16.9ms(쿼리 3개). 같은 환경의 `GET /api/portfolio/performance`가 약 21ms다. 응답 크기는 `limit`과 `overlaps` 크기에만 비례한다.
+
+### 한계
+
+- **구성종목 데이터가 있는 ETF만 분해한다.** 2026-10-30 현재 dev DB에는 TIGER 15개(2026-10-29 기준)뿐이고 KODEX 23개는 수집되지 않았으며(운용사 사이트 429), RISE·ACE·SOL·HANARO·PLUS·TIME은 수집 대상이 아니다. 그 ETF는 `undecomposed_etfs`(`no_holdings_data`)로 나온다.
+- **해외 종목은 `company`와 연결되지 않는다**(`linked=false`, 이름으로만 묶음). 같은 회사가 ETF마다 다른 영문 표기로 공시되면 서로 합쳐지지 않고, 국내 종목이라도 코드가 없는 구성종목은 직접 보유 종목과 합쳐지지 않는다.
+- **구성종목 기준일 지연**: 운용사가 공시한 기준일의 값을 수동으로 수집한 것이라 현재와 다를 수 있다. `holdings_as_of`와 `stale`을 같이 보여줘야 한다.
+- **구성종목 비중은 공시 값**이다(합계가 100%와 조금 다르거나, 채권형·머니마켓 ETF처럼 크게 낮을 수 있음). 모자란 만큼은 기타로 둔다.
+- **평가는 종가 기준**이다(실시간 아님). 장중에는 오늘 행을 빼고 직전 종가를 쓰며, 종목마다 종가 날짜가 다를 수 있다(`older_price` 경고).
+- **업종별 노출은 제공하지 않는다**: `company.sector`가 전 종목 비어 있어(주식 300개 모두 NULL) 이 필드를 만들지 않았다. 업종 컬럼이 채워지면 추가할 수 있다.
+- 현금은 분모에 넣지 않는다. 레버리지·인버스 ETF의 실제 노출(배수)은 계산하지 않는다. ETF를 구성종목으로 담은 ETF는 그 ETF를 하나의 구성종목으로 둔다(더 풀지 않는다).
+
+---
+
 ## GET /api/etf/{ticker}/holdings (2026-10-30)
 
 ETF의 **구성종목과 편입 비중**(운용사가 공시하는 PDF를 수집해 `etf_holding`에 저장한 값). **공개**(인증 없음) - `/api/stocks/{ticker}/...` 시세 API와 같은 정책이다.
