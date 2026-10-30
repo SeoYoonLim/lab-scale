@@ -1,4 +1,8 @@
 .env
+.env.*
+!.env.example
+*.log
+*.dump
 __pycache__/
 *.pyc
 .vscode/
