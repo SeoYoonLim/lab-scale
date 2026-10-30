@@ -41,6 +41,25 @@ def mail_outbox(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def oauth_env_clean(monkeypatch):
+    """소셜 로그인 키·주소 환경변수를 모든 테스트에서 지운다(.env의 값과 무관하게 '키 없음'에서 시작). 공급자 HTTP는
+    tests/test_oauth*.py가 가짜로 바꾼다. 실수로 실제 구글·네이버에 요청하지 않게 기본 HTTP도 막아 둔다."""
+    from app import oauth_providers
+
+    for name in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "NAVER_LOGIN_CLIENT_ID", "NAVER_LOGIN_CLIENT_SECRET", "OAUTH_REDIRECT_BASE"):
+        monkeypatch.delenv(name, raising=False)
+
+    class _Blocked:
+        def post(self, url, data):
+            raise AssertionError("테스트에서 실제 공급자에 요청하려 했다")
+
+        def get(self, url, headers):
+            raise AssertionError("테스트에서 실제 공급자에 요청하려 했다")
+
+    monkeypatch.setattr(oauth_providers, "HTTP", _Blocked())
+
+
+@pytest.fixture(autouse=True)
 def jwt_secret(monkeypatch):
     """모든 테스트에 테스트마다 새로 만든 임의 JWT_SECRET을 넣는다(.env의 실제 값을 쓰지 않는다)."""
     secret = secrets.token_urlsafe(48)

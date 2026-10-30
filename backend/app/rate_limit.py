@@ -11,7 +11,7 @@
 LOGIN_LOCK_FAILURES, LOGIN_LOCK_SECONDS, RATE_LIMIT_ORDERS_PER_MIN, RATE_LIMIT_RESEARCH_PER_MIN, RATE_LIMIT_RESEARCH_CONCURRENT,
 RATE_LIMIT_LOGOUT_PER_MIN, RATE_LIMIT_PASSWORD_CHANGE_PER_HOUR, PASSWORD_CHANGE_LOCK_FAILURES, PASSWORD_CHANGE_LOCK_SECONDS,
 RATE_LIMIT_BACKTEST_PER_MIN, RATE_LIMIT_RECOVERY_PER_MIN, RATE_LIMIT_RECOVERY_EMAIL_PER_HOUR, RATE_LIMIT_TOKEN_PER_MIN,
-RATE_LIMIT_VERIFICATION_MAIL_PER_HOUR(계정 복구, 2026-10-30).
+RATE_LIMIT_VERIFICATION_MAIL_PER_HOUR(계정 복구, 2026-10-30), RATE_LIMIT_OAUTH_PER_MIN, RATE_LIMIT_OAUTH_EXCHANGE_PER_MIN(소셜 로그인).
 설정은 요청 때마다 읽으므로(값이 바뀌면 그 키의 한도도 바뀐다) 테스트에서 monkeypatch.setenv로 바꿀 수 있다.
 """
 
@@ -42,6 +42,8 @@ DEFAULTS = {
     "RATE_LIMIT_RECOVERY_EMAIL_PER_HOUR": 3,
     "RATE_LIMIT_TOKEN_PER_MIN": 10,  # 이메일 인증·비밀번호 재설정(토큰 제출) 엔드포인트별 IP당 분당(토큰 무차별 대입 방지)
     "RATE_LIMIT_VERIFICATION_MAIL_PER_HOUR": 5,  # 사용자당 인증 메일(이메일 등록·변경 + 재발송 합산)
+    "RATE_LIMIT_OAUTH_PER_MIN": 20,  # 소셜 로그인 시작(login)·콜백(callback) 각각 IP당 분당(2026-10-30)
+    "RATE_LIMIT_OAUTH_EXCHANGE_PER_MIN": 10,  # 1회용 로그인 코드 교환 IP당 분당(코드 무차별 대입 방지)
 }
 MAX_KEYS = 10_000  # 리미터 하나가 기억하는 키 수 상한(넘으면 가장 오래 안 쓴 키부터 버린다)
 CONCURRENT_RETRY_AFTER_S = 5  # 동시 질문으로 거절할 때 안내하는 대기 시간
@@ -195,8 +197,10 @@ recovery_ip = SlidingWindow(60)  # 키: "{엔드포인트}|{ip}"
 recovery_email = SlidingWindow(3600)  # 키: "{엔드포인트}|{정규화한 이메일}"
 token_ip = SlidingWindow(60)  # 키: "{엔드포인트}|{ip}"
 verification_mail = SlidingWindow(3600)  # 키: 사용자(owner_key)
+oauth_ip = SlidingWindow(60)  # 키: "{login|callback}|{ip}"
+oauth_exchange = SlidingWindow(60)  # 키: ip
 ALL = (login_ip, signup_ip, login_failures, orders, research, research_active, logout, password_change, password_change_failures,
-       backtest, recovery_ip, recovery_email, token_ip, verification_mail)
+       backtest, recovery_ip, recovery_email, token_ip, verification_mail, oauth_ip, oauth_exchange)
 
 
 def reset_all() -> None:

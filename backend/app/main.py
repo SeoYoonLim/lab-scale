@@ -18,6 +18,7 @@ from app.api.companies import router as companies_router
 from app.api.disclaimer import router as disclaimer_router
 from app.api.discovery import router as discovery_router
 from app.api.etf import router as etf_router
+from app.api.oauth import router as oauth_router
 from app.api.exposure import router as exposure_router
 from app.api.performance import router as performance_router
 from app.api.portfolio import router as portfolio_router
@@ -119,6 +120,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(oauth_router)
 app.include_router(disclaimer_router)
 app.include_router(status_router)
 app.include_router(research_router)

@@ -85,6 +85,23 @@ def get(url: str, *, params=None, headers=None, timeout=DEFAULT_TIMEOUT, session
     return call_with_retry(once, label=label or url.split("?")[0], **retry_kwargs)
 
 
+def post(url: str, *, data=None, headers=None, timeout=DEFAULT_TIMEOUT, session=None, label: str = "",
+         **retry_kwargs) -> requests.Response:
+    """requests POST(form) + timeout + get()과 같은 재시도 규칙(5xx·429·연결 오류·timeout만). 4xx는 바로 HTTPError.
+    label은 로그에 쓰이므로 URL만 넣는다(본문·비밀값은 로그에 남지 않는다)."""
+    http = session or requests
+
+    def once():
+        resp = http.post(url, data=data, headers=headers, timeout=timeout)
+        status = getattr(resp, "status_code", 200)
+        if status >= 500 or status == 429:
+            raise TransientHTTPError(f"HTTP {status}", response=resp)
+        resp.raise_for_status()
+        return resp
+
+    return call_with_retry(once, label=label or url.split("?")[0], **retry_kwargs)
+
+
 _POOL = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="ext-call")
 
 
