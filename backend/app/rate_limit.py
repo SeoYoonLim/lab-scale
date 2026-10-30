@@ -10,7 +10,8 @@
 설정(환경변수, 정수, 기본값은 아래 상수): RATE_LIMIT_ENABLED(1/0), RATE_LIMIT_LOGIN_PER_MIN, RATE_LIMIT_SIGNUP_PER_HOUR,
 LOGIN_LOCK_FAILURES, LOGIN_LOCK_SECONDS, RATE_LIMIT_ORDERS_PER_MIN, RATE_LIMIT_RESEARCH_PER_MIN, RATE_LIMIT_RESEARCH_CONCURRENT,
 RATE_LIMIT_LOGOUT_PER_MIN, RATE_LIMIT_PASSWORD_CHANGE_PER_HOUR, PASSWORD_CHANGE_LOCK_FAILURES, PASSWORD_CHANGE_LOCK_SECONDS,
-RATE_LIMIT_BACKTEST_PER_MIN.
+RATE_LIMIT_BACKTEST_PER_MIN, RATE_LIMIT_RECOVERY_PER_MIN, RATE_LIMIT_RECOVERY_EMAIL_PER_HOUR, RATE_LIMIT_TOKEN_PER_MIN,
+RATE_LIMIT_VERIFICATION_MAIL_PER_HOUR(계정 복구, 2026-10-30).
 설정은 요청 때마다 읽으므로(값이 바뀌면 그 키의 한도도 바뀐다) 테스트에서 monkeypatch.setenv로 바꿀 수 있다.
 """
 
@@ -36,6 +37,11 @@ DEFAULTS = {
     "PASSWORD_CHANGE_LOCK_FAILURES": 5,  # 같은 사용자의 현재 비밀번호 연속 오류 이만큼이면
     "PASSWORD_CHANGE_LOCK_SECONDS": 300,  # 이만큼 비밀번호 변경 잠금
     "RATE_LIMIT_BACKTEST_PER_MIN": 10,  # 사용자당 백테스트(요청마다 최대 5종목·5년을 계산한다)
+    # 계정 복구(2026-10-30). 아이디 찾기·비밀번호 찾기는 엔드포인트별로 IP당 분당 + 이메일당 시간당(메일 폭탄 방지)
+    "RATE_LIMIT_RECOVERY_PER_MIN": 5,
+    "RATE_LIMIT_RECOVERY_EMAIL_PER_HOUR": 3,
+    "RATE_LIMIT_TOKEN_PER_MIN": 10,  # 이메일 인증·비밀번호 재설정(토큰 제출) 엔드포인트별 IP당 분당(토큰 무차별 대입 방지)
+    "RATE_LIMIT_VERIFICATION_MAIL_PER_HOUR": 5,  # 사용자당 인증 메일(이메일 등록·변경 + 재발송 합산)
 }
 MAX_KEYS = 10_000  # 리미터 하나가 기억하는 키 수 상한(넘으면 가장 오래 안 쓴 키부터 버린다)
 CONCURRENT_RETRY_AFTER_S = 5  # 동시 질문으로 거절할 때 안내하는 대기 시간
@@ -134,6 +140,12 @@ class FailureLock:
         with self._lock:
             self._state.pop(key, None)
 
+    def reset_prefix(self, prefix: str) -> None:
+        """prefix로 시작하는 키를 모두 지운다(비밀번호 재설정 뒤 그 아이디의 모든 IP 잠금 해제)."""
+        with self._lock:
+            for key in [k for k in self._state if k.startswith(prefix)]:
+                self._state.pop(key, None)
+
     def clear(self) -> None:
         with self._lock:
             self._state.clear()
@@ -179,8 +191,12 @@ logout = SlidingWindow(60)
 password_change = SlidingWindow(3600)
 password_change_failures = FailureLock()
 backtest = SlidingWindow(60)
+recovery_ip = SlidingWindow(60)  # 키: "{엔드포인트}|{ip}"
+recovery_email = SlidingWindow(3600)  # 키: "{엔드포인트}|{정규화한 이메일}"
+token_ip = SlidingWindow(60)  # 키: "{엔드포인트}|{ip}"
+verification_mail = SlidingWindow(3600)  # 키: 사용자(owner_key)
 ALL = (login_ip, signup_ip, login_failures, orders, research, research_active, logout, password_change, password_change_failures,
-       backtest)
+       backtest, recovery_ip, recovery_email, token_ip, verification_mail)
 
 
 def reset_all() -> None:
@@ -220,6 +236,12 @@ def check_login_lock(key: str) -> None:
 
 def record_login(key: str, success: bool) -> None:
     _record(login_failures, key, success, "LOGIN")
+
+
+def clear_locks_after_password_reset(username: str, owner_key: str) -> None:
+    """비밀번호 재설정에 성공하면 그 아이디의 로그인 잠금(모든 IP)과 비밀번호 변경 잠금을 푼다(비활성 상태에서도 지운다)."""
+    login_failures.reset_prefix(f"{username.casefold()}|")
+    password_change_failures.reset(owner_key)
 
 
 def check_password_change_lock(key: str) -> None:

@@ -49,6 +49,19 @@ class UsernameTaken(Exception):
     pass
 
 
+class EmailTaken(Exception):
+    """다른 계정이 이미 쓰는 이메일(대소문자 무시, users의 uq_users_email_lower 인덱스)."""
+
+
+EMAIL_UNIQUE_INDEX = "uq_users_email_lower"
+
+
+def is_email_conflict(e: IntegrityError) -> bool:
+    """IntegrityError가 이메일 유일 인덱스 위반인지(예외 원문은 로그에 남기지 않는다)."""
+    diag = getattr(getattr(e, "orig", None), "diag", None)
+    return getattr(diag, "constraint_name", None) == EMAIL_UNIQUE_INDEX
+
+
 class TokenRevoked(Exception):
     """비밀번호를 바꾸는 사이에 같은 사용자의 토큰이 폐기됐다(다른 기기의 로그아웃 등)."""
 
@@ -157,15 +170,18 @@ def decode_access_token(token: str) -> int:
 # ---------- 사용자 저장/조회 ----------
 
 
-def create_user(db, username: str, password: str) -> CurrentUser:
-    """username은 normalize_username을 거친 값이어야 한다. 이미 있으면 UsernameTaken."""
-    user = User(username=username, password_hash=hash_password(password))
+def create_user(db, username: str, password: str, email: str | None = None) -> CurrentUser:
+    """username은 normalize_username, email은 app.account_recovery.normalize_email을 거친 값이어야 한다.
+    아이디가 이미 있으면 UsernameTaken, 이메일이 이미 있으면 EmailTaken(email_verified_at은 비운 채로 만든다)."""
+    user = User(username=username, password_hash=hash_password(password), email=email)
     db.add(user)
     try:
         db.commit()
-    except IntegrityError:
+    except IntegrityError as e:
         # 예외 원문에는 INSERT 파라미터(해시 포함)가 들어 있으므로 체인을 끊고 버린다.
         db.rollback()
+        if email is not None and is_email_conflict(e):
+            raise EmailTaken() from None
         raise UsernameTaken() from None
     return _current(user)
 

@@ -28,6 +28,19 @@ def rate_limit_off(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def mail_outbox(monkeypatch):
+    """모든 테스트의 메일 발송기를 메모리 보관함으로 바꾼다(실제 SMTP 연결·backups/dev_mail.log 쓰기를 하지 않는다).
+    보관함(MemoryMailer)을 돌려주므로 테스트는 mail_outbox.outbox로 보낸 메일을 확인한다. SMTP 관련 환경변수도 지운다."""
+    from app import mailer
+
+    for name in ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "MAIL_FROM", "FRONTEND_BASE_URL"):
+        monkeypatch.delenv(name, raising=False)
+    box = mailer.MemoryMailer()
+    monkeypatch.setattr(mailer, "get_mailer", lambda: box)
+    return box
+
+
+@pytest.fixture(autouse=True)
 def jwt_secret(monkeypatch):
     """모든 테스트에 테스트마다 새로 만든 임의 JWT_SECRET을 넣는다(.env의 실제 값을 쓰지 않는다)."""
     secret = secrets.token_urlsafe(48)
