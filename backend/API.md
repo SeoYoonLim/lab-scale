@@ -174,7 +174,7 @@ ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응�
 | GET | `/api/auth/me` | 필요 | 토큰의 사용자 정보(2026-10-30부터 `email`, `email_verified` 추가) |
 | POST | `/api/auth/logout` | 필요 | 이 사용자의 모든 토큰 폐기(전체 기기 로그아웃) → 200 `{"ok": true}` |
 | POST | `/api/auth/change-password` | 필요 | 비밀번호 변경 + 기존 토큰 폐기 → 200 + 새 access token |
-| PUT | `/api/auth/email` | 필요 | 이메일 등록·변경 + 인증 메일(2026-10-30, 아래 "계정 복구") |
+| PUT | `/api/auth/email` | 필요 | 이메일 등록·변경(**현재 비밀번호 필수**) + 인증 메일, 이전 인증 주소로 변경 알림(2026-10-30, 아래 "계정 복구") |
 | POST | `/api/auth/resend-verification` | 필요 | 인증 메일 재발송 |
 | POST | `/api/auth/verify-email` | 공개 | 메일 링크의 토큰으로 이메일 인증 |
 | POST | `/api/auth/find-username` | 공개 | 인증된 이메일로 아이디를 메일 발송(응답에는 아이디 없음, 항상 같은 200) |
@@ -409,12 +409,23 @@ curl -X POST http://localhost:8000/api/auth/logout -H "Authorization: Bearer $TO
 ### PUT /api/auth/email (인증 필요)
 
 ```json
-{ "email": "Alice@Example.com" }
+{ "email": "Alice@Example.com", "current_password": "correct-horse-battery" }
 ```
 
-이메일을 등록하거나 바꾼다. 저장값은 앞뒤 공백 제거·소문자(`alice@example.com`). 바꾸면 `email_verified`가 `false`가 되고 옛 주소로 보낸 인증 링크는 무효,
-새 주소로 인증 메일을 보낸다. **현재 비밀번호는 묻지 않는다**(요구사항). 이 때문에 로그인 토큰(JWT)을 훔친 사람은 자기 주소를 등록·인증한 뒤
-비밀번호를 재설정해 계정을 계속 가질 수 있다(아래 "한계"). 지금과 같은 주소면 아무것도 바꾸지 않는다(`verification_sent: false`).
+**요청 계약(2026-10-30 보강): `current_password`는 필수다. 처음 등록할 때도 똑같이 요구한다.** 프론트는 아직 이 엔드포인트를 연동하지 않았으므로
+필수 필드 추가가 기존 클라이언트를 깨지 않는다. 응답 형식과 필드는 바뀌지 않았다.
+
+이메일을 등록하거나 바꾼다. 저장값은 앞뒤 공백 제거·소문자(`alice@example.com`). 현재 비밀번호 확인과 변경은 사용자 행을 잠근 한 트랜잭션에서 한다. 바꾸면:
+
+- `email_verified`가 `false`가 되고, 새 주소로 인증 메일을 보낸다.
+- 그 사용자의 **미사용 인증 링크와 미사용 비밀번호 재설정 링크를 모두 무효**로 한다. 옛 주소로 간 재설정 링크가 변경 뒤에도 살아 있지 않게 한다.
+- **이전 주소가 인증돼 있었으면** 그 주소로 "계정 이메일이 변경되었습니다" 알림을 보낸다. 알림은 응답 뒤 best-effort라 실패해도 응답이 같다.
+  알림에는 링크·토큰이 없고 새 주소는 가려서 쓴다(`ne***@ex***.org`). 이메일 없이 처음 등록할 때와 이전 주소가 인증 전이었을 때는 알림이 없다.
+
+지금과 같은 주소면 아무것도 바꾸지 않는다(`verification_sent: false`, 비밀번호는 확인한다).
+
+**판단 근거**: 비밀번호를 묻지 않으면, 로그인 토큰(JWT, 24시간)을 훔친 사람이 자기 주소를 등록·인증한 뒤 비밀번호 찾기로 계정을 영구히 가져갈 수 있다.
+이메일은 복구 경로이므로 비밀번호 변경과 같은 수준으로 보호한다. 이전 주소 알림은 비밀번호까지 털린 경우에도 원래 주인이 알 수 있게 한다.
 
 ```json
 { "email": "alice@example.com", "email_verified": false, "verification_sent": true, "message": "인증 메일을 보냈습니다. 메일의 링크를 열면 인증이 끝납니다." }
@@ -422,15 +433,18 @@ curl -X POST http://localhost:8000/api/auth/logout -H "Authorization: Bearer $TO
 
 | 상태 | 언제 |
 | --- | --- |
-| 401 | 토큰 없음·무효(본문 검증보다 먼저) |
+| 400 | 비밀번호가 없는 계정(`password_hash`가 비어 있음: 이후 소셜 로그인 계정). `{"detail": "비밀번호가 설정되지 않은 계정은 여기서 이메일을 바꿀 수 없습니다. 이 계정의 이메일은 로그인에 쓴 외부 계정(소셜 로그인)에서 관리됩니다."}`. 지금은 `users.password_hash`가 NOT NULL이라 실제로는 생기지 않지만, 확인 없이 통과시키지 않게 코드가 막는다(단위 테스트로 보장) |
+| 401 | 토큰 없음·무효(본문 검증보다 먼저), 또는 처리 중 그 토큰이 폐기됨(다른 기기의 로그아웃) |
 | 409 | 다른 계정이 쓰는 이메일(대소문자 무시) `{"detail": "이미 사용 중인 이메일입니다."}` |
-| 422 | 이메일 형식 위반(최대 254자, ASCII 주소만) |
-| 429 | 사용자당 시간당 인증 메일 5회 초과(재발송과 합산) |
+| 422 | 이메일 형식 위반(최대 254자, ASCII 주소만), `current_password` 누락·빈 값·128자 초과, **현재 비밀번호 틀림**. 틀림은 비밀번호 변경과 같은 형식 `{"detail": [{"type": "invalid_current_password", "loc": ["body", "current_password"], "msg": "현재 비밀번호가 올바르지 않습니다."}]}`이다. 401이 아닌 이유: 프론트는 401을 받으면 로그아웃하는데 토큰은 유효하고 입력 하나가 틀린 것이다 |
+| 429 | 사용자당 시간당 인증 메일 5회 초과(재발송과 합산), 또는 **현재 비밀번호 연속 5회 오류로 5분 잠금**. 잠금은 `POST /api/auth/change-password`와 **같은 사용자 키를 공유**해서, 두 엔드포인트를 번갈아 써도 시도 횟수가 늘지 않는다(`PASSWORD_CHANGE_LOCK_*`) |
 
 ### POST /api/auth/resend-verification (인증 필요, 본문 없음)
 
 인증 메일을 다시 보낸다(이전 인증 링크는 무효). 200 `{"ok": true, "message": "인증 메일을 다시 보냈습니다. ..."}`.
 400 `"등록된 이메일이 없습니다. 먼저 이메일을 등록해주세요."` / `"이미 인증된 이메일입니다."`(본인 계정 상태만 알린다), 401, 429(위와 같은 한도).
+**현재 비밀번호는 요구하지 않는다**: 이미 등록된(비밀번호 확인을 거쳐 저장된) 주소로만 보내고 주소를 바꾸지 않으므로, 토큰을 훔친 쪽이 이것으로 복구 경로를 얻지 못한다.
+남용(메일 폭탄)은 사용자당 시간당 5회 한도로 막는다.
 
 ### POST /api/auth/verify-email (공개)
 
@@ -493,7 +507,7 @@ curl -X POST http://localhost:8000/api/auth/logout -H "Authorization: Bearer $TO
 | 단계 | 결과 |
 | --- | --- |
 | 가입(이메일 없음, 기존 형식) | 201 `{"user": {"id": ..., "username": "captest_..."}, "access_token": "eyJhbGci...", "token_type": "bearer"}` |
-| `PUT /email` (`CAPTEST-DEMO...@EXAMPLE.COM`) | 200 `email`은 소문자로 저장, `email_verified: false`, `verification_sent: true`. 메일 링크 `http://localhost:5173/verify-email#token=bYUJXpOj...` |
+| `PUT /email` (`CAPTEST-DEMO...@EXAMPLE.COM`, 보강 전 측정: 지금은 `current_password`도 보내야 한다) | 200 `email`은 소문자로 저장, `email_verified: false`, `verification_sent: true`. 메일 링크 `http://localhost:5173/verify-email#token=bYUJXpOj...` |
 | `verify-email` | 200 → `/me`의 `email_verified: true`. 같은 토큰 다시 쓰면 400 |
 | `find-username`(인증된 이메일 / 없는 이메일) | 둘 다 200 + 같은 본문. 아이디는 메일에만 |
 | `forgot-password` | 200(같은 본문), 메일 링크 `.../reset-password#token=I_UL3Y4U...` |
@@ -502,13 +516,25 @@ curl -X POST http://localhost:8000/api/auth/logout -H "Authorization: Bearer $TO
 | 기존 JWT로 `/me` / 옛 비밀번호 로그인 / 새 비밀번호 로그인 | 401 / 401 / 200 |
 | `account_token` 행 | `verify_email`·`reset_password` 두 행, 해시 64자, 둘 다 사용됨. 원문으로 찾으면 0행 |
 
+이메일 변경 보강 뒤(2026-10-30, 같은 조건):
+
+| 단계 | 결과 |
+| --- | --- |
+| `PUT /email`, `current_password` 없음 | 422 `{"detail": [{"type": "missing", "loc": ["body", "current_password"], "msg": "Field required"}]}` |
+| `PUT /email`, 현재 비밀번호 틀림 | 422 `{"detail": [{"type": "invalid_current_password", "loc": ["body", "current_password"], "msg": "현재 비밀번호가 올바르지 않습니다."}]}` |
+| `PUT /email`, 처음 등록(맞음) → `verify-email` | 200 `verification_sent: true`(알림 없음) → 200 |
+| 옛 주소로 `forgot-password` | 재설정 링크 `...#token=ZuBLtEpO...` 대기 중 |
+| `PUT /email`, 인증된 주소를 새 주소로(맞음) | 200 `email_verified: false`. 메일 두 통: 새 주소엔 인증 링크, 옛 주소엔 "계정 이메일이 변경되었습니다"(링크 없음, 새 주소는 `ca***@ex***.com`) |
+| 변경 전에 받은 재설정 링크 사용 | 400(무효) |
+
 ### 한계
 
 - **이메일 중복 409는 이메일 존재를 드러낸다**(가입과 `PUT /email`). 같은 주소를 두 계정에 쓰지 못하게 하려는 선택이다. 가입은 IP당 시간당 10회, `PUT /email`은 사용자당 시간당 5회로 묶여 대량 확인은 어렵다.
   복구 API(`find-username`, `forgot-password`)는 이 정보를 드러내지 않는다.
 - **레이트 리밋은 메모리 기반**이다(서버 재시작 시 초기화, 여러 워커·인스턴스면 따로 센다, 프록시 뒤에서는 모든 요청이 같은 IP). 위 "레이트 리밋" 참고.
-- **이메일 변경에 현재 비밀번호 확인이 없다.** 탈취한 JWT(유효 24시간)로 공격자가 자기 이메일을 등록·인증하고 비밀번호를 재설정하면 원래 사용자는 쫓겨난다.
-  보완책(아직 없음): 이메일 변경 시 현재 비밀번호 확인, 옛 인증 주소로 변경 알림 메일, 변경 직후 일정 시간 재설정 금지.
+- **이메일 변경 보호(2026-10-30 보강)**: 이제 현재 비밀번호가 필수이고, 이전 인증 주소로 변경 알림이 가고, 남은 재설정 링크가 무효가 된다(위 `PUT /api/auth/email`).
+  남은 위험: 비밀번호와 토큰이 **둘 다** 털리면 여전히 이메일을 바꿀 수 있다(알림으로 알 수만 있다). 알림 메일에는 "되돌리기" 링크가 없어서,
+  원래 주인은 로그인해 직접 되돌려야 한다. 변경 직후 일정 시간 재설정 금지나 되돌리기 링크는 아직 없다.
 - **기존 계정은 로그인한 뒤 이메일을 등록·인증해야 복구할 수 있다.** 이메일이 없거나 인증 전인 계정은 아이디·비밀번호를 잊으면 복구할 수 없다.
 - 이메일 형식은 보수적인 ASCII 규칙이다(국제화 도메인, 따옴표가 있는 로컬파트는 422).
 - 메일은 응답 뒤 같은 프로세스에서 보낸다(큐 없음). 서버가 그 사이에 멈추면 메일이 가지 않을 수 있고 재시도하지 않는다. SMTP가 느리면(최대 10초) 그 작업이 워커 스레드를 잡는다.
