@@ -24,7 +24,7 @@ class TestTokens:
 
     def test_ttl(self):
         assert R.expires_at(R.PURPOSE_VERIFY_EMAIL, NOW) == NOW + timedelta(hours=24)
-        assert R.expires_at(R.PURPOSE_RESET_PASSWORD, NOW) == NOW + timedelta(minutes=30)
+        assert R.expires_at(R.PURPOSE_RESET, NOW) == NOW + timedelta(minutes=30)
 
     def test_usable_boundaries(self):
         exp = NOW + timedelta(minutes=30)
@@ -76,13 +76,13 @@ class TestEmail:
 class TestLinksAndMail:
     def test_token_is_in_fragment_only(self):
         raw, _ = R.new_token()
-        for purpose, path in [(R.PURPOSE_VERIFY_EMAIL, "/verify-email"), (R.PURPOSE_RESET_PASSWORD, "/reset-password")]:
+        for purpose, path in [(R.PURPOSE_VERIFY_EMAIL, "/verify-email"), (R.PURPOSE_RESET, "/reset-password")]:
             u = urlsplit(R.link(purpose, raw))
             assert (u.scheme, u.netloc, u.path, u.query, u.fragment) == ("http", "localhost:5173", path, "", f"token={raw}")
 
     def test_base_url_from_env(self, monkeypatch):
         monkeypatch.setenv("FRONTEND_BASE_URL", "https://app.example.com/ ")
-        assert R.link(R.PURPOSE_RESET_PASSWORD, "t") == "https://app.example.com/reset-password#token=t"
+        assert R.link(R.PURPOSE_RESET, "t") == "https://app.example.com/reset-password#token=t"
 
     @pytest.mark.parametrize("make", [R.verify_mail, R.reset_mail])
     def test_mail_bodies_carry_the_token_only_in_the_fragment(self, make):

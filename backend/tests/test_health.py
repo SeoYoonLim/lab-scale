@@ -116,6 +116,9 @@ class TestAccessLog:
 
         monkeypatch.setattr(deps, "decode_token_claims", lambda t: (77, 0))
         monkeypatch.setattr(deps, "load_user", lambda uid: deps.CurrentUser(id=uid, username="u"))
+        from app.api import auth as auth_api
+
+        monkeypatch.setattr(auth_api.recovery_db, "account_email", lambda db, uid: (None, False))  # /me의 이메일 조회(2026-10-30)도 DB 없이
         token = "eyJhbGciOiJIUzI1NiJ9.secret-token-value.sig"
         with caplog.at_level(logging.INFO, logger="app.access"):
             client.get("/api/auth/me", params={"q": "private-query"}, headers={"Authorization": f"Bearer {token}"})

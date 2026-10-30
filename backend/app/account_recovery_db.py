@@ -130,7 +130,7 @@ def verify_email(db, raw: str, at: datetime) -> bool:
 def reset_password(db, raw: str, new_password_hash: str, at: datetime) -> CurrentUser | None:
     """토큰을 쓰고 해시를 바꾸고 token_version을 올려 기존 JWT를 전부 폐기한다. 그 사용자의 남은 재설정 토큰도 무효로 한다.
     한 트랜잭션이다. 토큰이 맞지 않으면 None(아무것도 바꾸지 않음)."""
-    user_id = consume_token(db, raw, R.PURPOSE_RESET_PASSWORD, at)
+    user_id = consume_token(db, raw, R.PURPOSE_RESET, at)
     if user_id is None:
         db.rollback()
         return None
@@ -142,7 +142,7 @@ def reset_password(db, raw: str, new_password_hash: str, at: datetime) -> Curren
     if row is None:
         db.rollback()
         return None
-    invalidate_tokens(db, user_id, R.PURPOSE_RESET_PASSWORD, at)
+    invalidate_tokens(db, user_id, R.PURPOSE_RESET, at)
     db.commit()
     return CurrentUser(id=row.id, username=row.username, token_version=row.token_version)
 
@@ -184,7 +184,7 @@ def deliver_reset(email: str) -> None:
         if not found:
             db.rollback()
             return
-        raw = issue_token(db, found[0], R.PURPOSE_RESET_PASSWORD, now())
+        raw = issue_token(db, found[0], R.PURPOSE_RESET, now())
         db.commit()
         mailer.send_safely(R.reset_mail(email, found[1], raw))
     _with_session(job, "forgot_password", email)

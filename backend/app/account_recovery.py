@@ -18,14 +18,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 PURPOSE_VERIFY_EMAIL = "verify_email"
-PURPOSE_RESET_PASSWORD = "reset_password"
-TOKEN_TTL = {PURPOSE_VERIFY_EMAIL: timedelta(hours=24), PURPOSE_RESET_PASSWORD: timedelta(minutes=30)}
+PURPOSE_RESET = "reset_password"
+TOKEN_TTL = {PURPOSE_VERIFY_EMAIL: timedelta(hours=24), PURPOSE_RESET: timedelta(minutes=30)}
 TOKEN_BYTES = 32
 TOKEN_MAX_LEN = 128  # 요청 본문의 토큰 길이 상한(token_urlsafe(32)는 43자)
 EMAIL_MAX_LEN = 254
 EMAIL_LOCAL_MAX_LEN = 64
 DEFAULT_FRONTEND_BASE_URL = "http://localhost:5173"
-LINK_PATHS = {PURPOSE_VERIFY_EMAIL: "/verify-email", PURPOSE_RESET_PASSWORD: "/reset-password"}
+LINK_PATHS = {PURPOSE_VERIFY_EMAIL: "/verify-email", PURPOSE_RESET: "/reset-password"}
 
 _LOCAL_RE = re.compile(r"[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*", re.ASCII)
 _LABEL_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", re.ASCII)
@@ -123,11 +123,11 @@ def verify_mail(to: str, username: str, raw_token: str, base_url: str | None = N
 
 
 def reset_mail(to: str, username: str, raw_token: str, base_url: str | None = None) -> Mail:
-    minutes = int(TOKEN_TTL[PURPOSE_RESET_PASSWORD].total_seconds() // 60)
+    minutes = int(TOKEN_TTL[PURPOSE_RESET].total_seconds() // 60)
     return Mail(to, "[AI 투자 리서치] 비밀번호 재설정", (
         f"안녕하세요, {username}님.\n\n비밀번호 재설정을 요청하셨습니다. 아래 링크에서 새 비밀번호를 정할 수 있습니다. "
         f"링크는 {minutes}분 동안 한 번만 쓸 수 있습니다. 재설정하면 모든 기기에서 로그아웃됩니다.\n\n"
-        f"{link(PURPOSE_RESET_PASSWORD, raw_token, base_url)}\n\n{_IGNORE}\n"
+        f"{link(PURPOSE_RESET, raw_token, base_url)}\n\n{_IGNORE}\n"
     ))
 
 
