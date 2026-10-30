@@ -7,6 +7,7 @@ from app.models.exchange_rate import ExchangeRate
 from app.models.holding import Holding
 from app.models.market_index import MarketIndex
 from app.models.news import News
+from app.models.oauth_identity import OAuthIdentity
 from app.models.portfolio_diagnosis import PortfolioDiagnosis
 from app.models.research_report import ResearchReport
 from app.models.stock_price import StockPrice
@@ -21,6 +22,7 @@ __all__ = [
     "Company",
     "StockPrice",
     "News",
+    "OAuthIdentity",
     "Disclosure",
     "EtfHolding",
     "MarketIndex",

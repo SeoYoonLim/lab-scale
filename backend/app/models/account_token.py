@@ -13,7 +13,8 @@ class AccountToken(Base):
 
     __tablename__ = "account_token"
     __table_args__ = (
-        CheckConstraint("purpose IN ('verify_email', 'reset_password')", name="ck_account_token_purpose"),
+        # oauth_login(2026-10-30): 소셜 로그인 콜백이 프론트에 넘기는 60초 1회용 코드(app/oauth_db.py)
+        CheckConstraint("purpose IN ('verify_email', 'reset_password', 'oauth_login')", name="ck_account_token_purpose"),
         Index("uq_account_token_hash", "token_hash", unique=True),
         Index("idx_account_token_user_purpose", "user_id", "purpose"),
     )

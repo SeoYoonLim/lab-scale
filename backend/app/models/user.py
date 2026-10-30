@@ -24,7 +24,9 @@ class User(Base):
 
     id = Column(BigInteger, primary_key=True)
     username = Column(String(20), nullable=False)
-    password_hash = Column(String(255), nullable=False)
+    # 소셜 로그인(2026-10-30)으로 만든 계정은 NULL이다. NULL이면 아이디/비밀번호 로그인은 항상 실패하고(app.auth.authenticate),
+    # 비밀번호 변경·이메일 변경은 400이며, 인증된 이메일이 있으면 비밀번호 찾기로 새로 정할 수 있다.
+    password_hash = Column(String(255), nullable=True)
     # 로그아웃·비밀번호 변경 때 1씩 올린다. JWT의 tv 클레임과 다르면 그 토큰은 폐기된 것이다(app.auth).
     token_version = Column(Integer, nullable=False, default=0, server_default="0")
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())

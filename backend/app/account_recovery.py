@@ -19,7 +19,9 @@ from datetime import datetime, timedelta
 
 PURPOSE_VERIFY_EMAIL = "verify_email"
 PURPOSE_RESET = "reset_password"
-TOKEN_TTL = {PURPOSE_VERIFY_EMAIL: timedelta(hours=24), PURPOSE_RESET: timedelta(minutes=30)}
+PURPOSE_OAUTH_LOGIN = "oauth_login"  # 소셜 로그인 1회용 코드(app/oauth_db.py). 같은 테이블·같은 1회용 규칙을 쓴다
+TOKEN_TTL = {PURPOSE_VERIFY_EMAIL: timedelta(hours=24), PURPOSE_RESET: timedelta(minutes=30),
+             PURPOSE_OAUTH_LOGIN: timedelta(seconds=60)}
 TOKEN_BYTES = 32
 TOKEN_MAX_LEN = 128  # 요청 본문의 토큰 길이 상한(token_urlsafe(32)는 43자)
 EMAIL_MAX_LEN = 254
