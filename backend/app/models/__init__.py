@@ -1,3 +1,4 @@
+from app.models.account_token import AccountToken
 from app.models.company import Company
 from app.models.data_refresh_log import DataRefreshLog
 from app.models.disclosure import Disclosure
@@ -16,6 +17,7 @@ from app.models.virtual_account import VirtualAccount
 from app.models.watchlist import Watchlist
 
 __all__ = [
+    "AccountToken",
     "Company",
     "StockPrice",
     "News",

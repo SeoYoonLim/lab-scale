@@ -253,7 +253,7 @@ class TestMigrationRoundTrip:
         try:
             alembic("upgrade", "e2a9c4f71b03")
             assert table()[0] == []
-            alembic("upgrade", "head")
+            alembic("upgrade", "f4b81d29c6e5")  # head가 아니라 이 리비전까지(뒤에 마이그레이션이 더 생겨도 그대로)
             cols, idx, ver = table()
             assert ver == "f4b81d29c6e5"
             assert dict(cols) == {"id": "NO", "company_id": "NO", "as_of_date": "NO", "holding_name": "NO", "holding_code": "YES",
@@ -271,7 +271,7 @@ class TestMigrationRoundTrip:
             alembic("downgrade", "-1")
             cols, idx, ver = table()
             assert cols == [] and idx == [] and ver == "e2a9c4f71b03"
-            alembic("upgrade", "head")
+            alembic("upgrade", "f4b81d29c6e5")  # head가 아니라 이 리비전까지(뒤에 마이그레이션이 더 생겨도 그대로)
             assert table()[2] == "f4b81d29c6e5"
         finally:
             with psycopg.connect(admin, autocommit=True) as c:
