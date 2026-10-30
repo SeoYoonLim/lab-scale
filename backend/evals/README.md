@@ -6,7 +6,7 @@
 
 | 파일 | 내용 |
 |---|---|
-| `dataset.jsonl` | 질문 158개와 기대값(한 줄 = 한 문항) |
+| `dataset.jsonl` | 질문 164개와 기대값(한 줄 = 한 문항) |
 | `metrics.py` | 채점 순수 함수(DB·Ollama 없이 테스트: `tests/test_evals_metrics.py`) |
 | `run_eval.py` | 실행기(offline/live), summary·raw 결과 저장 |
 | `compare.py` | summary 두 개의 지표별 변화 표 |
@@ -55,19 +55,20 @@ python -m evals.compare evals/results/summary_baseline_2026-10-27.json evals/res
 | tool_selection | live | 26 (16/10) | `tools_all`, `tools_forbidden`(`["*"]` = 도구 호출 없어야 함), `companies`, `period_days`, 개념 질문은 `must_contain` |
 | grounding | live | 33 (20/13) | `companies`, 일부 `tools_all` |
 | refusal | live | 13 (8/5) | `must_refuse` 또는 `must_partial`(일부 기간만 데이터가 있음), `must_not_companies` |
-| etf_safety | live | 10 (6/4) | `must_contain` / `must_not_contain`(정규식), `must_refuse` |
+| etf_safety | live | 16 (10/6) | `must_contain` / `must_not_contain`(정규식), `must_refuse` (2026-10-29: 구성종목 문항은 데이터 유무에 따라 기대가 갈림, 아래 "ETF 구성종목 기능" 절) |
 | freshness | live | 4 (2/2) | `companies`, `must_state_data_date`(마지막 데이터 날짜 명시 + 오래됐으면 알림) |
 | stability | live | 10 (6/4) | `companies`, `must_answer`(timeout·fallback 없이 답함) |
 | briefing | live | 4 (2/2) | `must_briefing`(평가 계정의 브리핑 숫자만 + 숫자 1개 이상 + 면책 + 금지 표현 없음), 일부 `must_contain` |
 | attachment | live | 6 (4/2) | `companies`(2개), `check_attachment`(숫자를 맞는 종목에 붙임) |
 
-총 158개(offline 52, live 106). batch 2(30개, 2026-10-27 수정 전 추가): entity 8(한글 음차·약칭·자모 오타·비슷한 이름·짧은 입력),
+총 164개(offline 52, live 112). batch 2(30개, 2026-10-27 수정 전 추가): entity 8(한글 음차·약칭·자모 오타·비슷한 이름·짧은 입력),
 period 4, 개념 질문 5, refusal 8(범위 밖 연·월·날짜·작년 이맘때·N년 전, 부분 겹침 2), etf_safety 5(구성종목 표현).
 batch 3(24개, 2026-10-27 2차 라운드 수정 전 추가): grounding 10(수천 원~200만 원대 가격, ETF 포함), freshness 4, 개념 질문 6(두 용어 비교·해석),
 stability 4(설명형 ETF 질문). 2차 라운드의 unseen holdout은 batch 3의 holdout 10개다.
 batch 4(24개, 2026-10-28 3차 라운드 수정 전 추가): grounding 8(기간 수익률·기간 최고/최저가·두 종목 비교·거래량 순위),
 briefing 4(로그인한 평가 계정 기준), stability 6(길고 열린 설명형: ETF 구조·위험 요인·비교), attachment 6(여러 종목·기간 숫자가 섞이는 비교).
 3차 라운드의 unseen holdout은 batch 4의 holdout 9개다(`run_eval.UNSEEN_BATCH = 4`). batch 1~3 holdout은 모두 seen이다.
+batch 5(6개, 2026-10-29 ETF 구성종목 기능과 함께 추가): etf_safety 6(데이터 있는 ETF 4, 데이터 없는 ETF 2, 레버리지·인버스 포함). 아래 "ETF 구성종목 기능" 절 참고.
 live 평가 계정에는 브리핑 문항용으로 모의 보유종목 1개(삼성전자 5주, DB 최근 종가를 평단으로)와 관심종목 1개(SK하이닉스)를
 평가기가 만들고, 계정을 지울 때 같이 지운다(`run_eval.EVAL_HOLDING`, `EVAL_WATCH`).
 
@@ -308,6 +309,31 @@ ETF 구성종목 질문에 "데이터 없음" 없이 주가·뉴스만 답함. �
   실제 결함이지만 holdout을 보고 고치면 holdout이 아니게 되므로 이번에는 고치지 않았다(다음 라운드 후보: support_values에서 ticker 키 제외).
 - 숫자 없는 서술 오류("올랐다" ↔ 실제 하락), 뉴스·공시 내용의 사실 여부는 이전처럼 보지 않는다.
 
+## ETF 구성종목 기능과 기대값 변경 (2026-10-30)
+
+**이 절의 문항(etf_03·04·06~09, 새 etf_11~16)은 이전 기준선(2026-10-27~28)과 직접 비교할 수 없습니다.** 기능이 바뀌어 "정답"이 바뀌었기 때문입니다.
+
+- **무엇이 바뀌었나**: 이전에는 ETF 구성종목·비중 질문에 "제공하지 않음"이 정답이었다(`must_refuse` + 비중 숫자·종목명 금지). 이제 `etf_holding`에 수집 데이터가 있는 ETF(삼성 KODEX·미래에셋 TIGER)는
+  코드 템플릿이 기준일·상위 구성종목·비중·합계를 답한다. 그래서 데이터가 있는 ETF 문항(etf_03·04·06·07·08·09)의 기대값을 `must_refuse`에서 `must_contain`(그 ETF의 대표 구성종목 이름 + `YYYY-MM-DD 기준` 표기, 일부는 `\d+.\d{2}%`)으로 바꿨다.
+  `metrics.py`의 판정 로직은 바꾸지 않았고 dataset 기대값만 바꿨다. 같은 질문을 같은 문장으로 두어 질문이 아니라 정답이 바뀐 것임을 남겼다(id·split 유지).
+- **데이터가 없는 ETF**(RISE·ACE·SOL·HANARO·PLUS·TIME 등)는 전과 같은 "제공하지 않음"이 정답이다. etf_10은 기대값을 그대로 두었다.
+- **새 문항 6개(batch 5)**: etf_11 KODEX 레버리지(선물·복리 안내 포함), etf_12 KODEX 인버스(선물·매도 포지션 안내), etf_13 TIGER 200 상위 5개, etf_14 RISE 200(데이터 없음, `must_refuse` + 삼성전자·비중 금지),
+  etf_15 ACE 미국S&P500(데이터 없음), etf_16 "KODEX 200 보유종목 비중"(내 보유종목 브리핑으로 새지 않는지, "제공하지 않습니다" 금지). etf_16은 평가 중 질문이 브리핑으로 새는 버그를 찾아 고친 문항이다(c99bf7c).
+  batch 5 split은 dev 4 / holdout 2. `UNSEEN_BATCH`는 4 그대로다(batch 5는 이번 기능과 함께 추가했고 이번 기능 수정에 쓰인 문항이라 unseen holdout으로 취급하지 않는다).
+- **결과는 수집 데이터에 달려 있다**: 이 문항들은 `python -m scripts.collect_etf_holdings`로 수집한 데이터가 DB에 있어야 통과한다(문항이 데이터를 만들지 않는다).
+
+**실행 결과(2026-10-30, `--mode live --only etf_safety`, repeats 1, Ollama 비어 있음 확인 후, llama3.1:8b, `results/summary_live_etf_holdings_2026-10-30.json`)**
+
+| 구분 | 문항 | 결과 |
+|---|---|---|
+| 데이터 있는 TIGER (코드 템플릿) | etf_04·07·09·13 | **4/4 통과** |
+| 데이터 없는 ETF (RISE·ACE) | etf_10·14·15 | **3/3 통과**(제공하지 않음 유지, 금지 표현 0) |
+| 기존 LLM 문항(레버리지 위험·인버스 설명) | etf_01·02·05 | 3/3 통과 |
+| **KODEX 문항** | etf_03·06·08·11·12·16 | **0/6 실패**: DB에 KODEX 데이터가 없어(삼성 사이트가 429로 수집을 막음) "제공하지 않음"으로 답함. 기능 결함이 아니라 데이터 부재이며 `must_contain` 실패만 있고 금지 표현 위반은 없다 |
+
+전체 `must_contain_rate` 0.625, `forbidden_violation_rate` 0, `fallback_rate` 0, `error_rate` 0, `code_answer_rate` 0.8125(코드 템플릿이 답한 비율). KODEX를 수집하면 같은 명령으로 다시 쟤야 한다.
+offline 평가(`summary_offline_etf_holdings_2026-10-30.json`)는 52개로 이전과 같다(entity_default 1.0, period_parse 1.0, routing_gate 1.0). 이 기능은 게이트(`routing.py`)를 바꾸지 않았다.
+
 ## 한계
 
 - **숫자 검증 계층(서비스)의 한계**: 평가기와 같은 추출 규칙이라 같은 사각지대가 있다(숫자 없는 서술 오류, 뉴스·공시 내용의 사실 여부). 맞는 숫자를 틀린 대상·날짜에 붙인 경우는 3차 라운드에서 일부 잡게 됐다(위 "숫자 검증기 독립 평가"의 못 잡는 유형 참고). '천' 합성 표기("17만 9천원")는 3차부터 검증 단계에서 합친 값으로 확인한다. 단순 계산은 두 시점 값의 차이·변화율만 허용한다.
@@ -318,6 +344,8 @@ ETF 구성종목 질문에 "데이터 없음" 없이 주가·뉴스만 답함. �
 - **표본 크기**: 카테고리당 5~20문항이라 한 문항이 5~20%p를 움직입니다. holdout은 더 작습니다(2~8문항). 작은 차이는 개선으로 보지 마세요.
 - **LLM 비결정성**: 같은 질문도 호출마다 도구 선택·답변이 달라집니다. live 기준선은 repeats 1이라 잡음이 큽니다.
   튜닝 효과를 주장하려면 `--repeats 3` 이상으로 전후를 같은 조건에서 돌리세요.
-- **데이터 의존**: live는 dev DB의 현재 데이터(2026-10-28 기준 주가 2026-06-26~2026-10-28, 10-15·10-16 두 거래일은 수집 공백, 10-28 행은 장중 값)를 씁니다. 데이터가 바뀌면 답변·숫자가 바뀝니다.
+- **데이터 의존**: live는 dev DB의 현재 데이터를 씁니다. 데이터가 바뀌면 답변·숫자가 바뀝니다. 2026-10-28 기준선은 주가 2026-06-26~2026-10-28(10-15·10-16 수집 공백)에서 측정했고,
+  **2026-10-29 3년 백필 이후 주가는 2023-10-30부터**라서 "데이터 범위 밖"을 전제로 한 refusal 문항(ref_04·05·07·08·09·13, 부분 겹침 ref_11·12)의 기대값은 낡았다(재점검 전까지 그 카테고리의 live 결과를 이전 기준선과 비교하지 마세요).
+  ETF 구성종목 문항(etf_03·04·06~09·11~13·16)은 `etf_holding`에 수집 데이터가 있어야 통과합니다(`python -m scripts.collect_etf_holdings`).
   live `period_days: "parser"`는 실행 날짜 기준이라 날짜가 바뀌면 기대값도 바뀝니다.
 - 평가 계정이 남는 경우(프로세스 강제 종료): `users`에서 `captest_` 접두어 계정을 지우면 리포트·tool_call_log도 CASCADE로 지워집니다.
