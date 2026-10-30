@@ -130,8 +130,15 @@ def hash_password(password: str) -> str:
     return _hasher.hash(password)
 
 
-def verify_password(password: str, password_hash: str) -> bool:
-    """일치하면 True. 불일치/손상된 해시 등 어떤 실패든 False(예외를 밖으로 내지 않는다)."""
+def verify_password(password: str, password_hash: str | None) -> bool:
+    """일치하면 True. 불일치/손상된 해시/해시 없음(NULL, 소셜 계정) 등 어떤 실패든 False(예외를 밖으로 내지 않는다).
+    해시가 없을 때는 더미 해시로 검증을 한 번 해서 응답 시간으로 "비밀번호 없는 계정"이 드러나지 않게 한다."""
+    if not password_hash:
+        try:
+            _hasher.verify(_dummy_hash(), password)
+        except (VerifyMismatchError, VerificationError, InvalidHashError):
+            pass
+        return False
     try:
         return _hasher.verify(password_hash, password)
     except (VerifyMismatchError, VerificationError, InvalidHashError):
@@ -214,6 +221,7 @@ def authenticate(db, username: str, password: str) -> CurrentUser | None:
     if user is None:
         verify_password(password, _dummy_hash())
         return None
+    # 비밀번호 없는 계정(소셜 로그인, password_hash NULL)은 verify_password가 더미 검증 후 False → 같은 401, 같은 시간
     if not verify_password(password, user.password_hash):
         return None
     return _current(user)
@@ -245,12 +253,18 @@ def change_password(db, user: CurrentUser, current_password: str, new_password: 
 
     new_password는 validate_password를 거친 값이어야 한다. 행을 FOR UPDATE로 잠그고, 그 사이 token_version이 요청 토큰의
     것과 달라졌으면(다른 곳에서 로그아웃) TokenRevoked. 사용자가 지워졌으면 TokenRevoked.
+    비밀번호가 없는 계정(소셜 로그인)이면 PasswordNotSet(라우트가 400으로 알린다. 비밀번호 찾기로 새로 정할 수 있다).
     """
     row = db.execute(select(User).where(User.id == user.id).with_for_update()).scalar_one_or_none()
     if row is None or row.token_version != user.token_version:
         db.rollback()
         raise TokenRevoked()
-    if not verify_password(current_password, row.password_hash):
+    try:
+        ok = check_current_password(row.password_hash, current_password)
+    except PasswordNotSet:
+        db.rollback()
+        raise
+    if not ok:
         db.rollback()
         return None
     row.password_hash = hash_password(new_password)

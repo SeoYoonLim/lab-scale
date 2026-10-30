@@ -58,6 +58,9 @@ CURRENT_PASSWORD_WRONG = [
     {"type": "invalid_current_password", "loc": ["body", "current_password"], "msg": "현재 비밀번호가 올바르지 않습니다."}
 ]
 EMAIL_TAKEN_DETAIL = "이미 사용 중인 이메일입니다."
+SOCIAL_NO_PASSWORD_DETAIL = (
+    "소셜 계정은 비밀번호가 없습니다. 인증된 이메일이 있으면 비밀번호 찾기로 새 비밀번호를 정할 수 있습니다."
+)
 NO_PASSWORD_DETAIL = (
     "비밀번호가 설정되지 않은 계정은 여기서 이메일을 바꿀 수 없습니다. 이 계정의 이메일은 로그인에 쓴 외부 계정(소셜 로그인)에서 관리됩니다."
 )
@@ -278,6 +281,8 @@ def change_password_route(
     db = SessionLocal()
     try:
         updated = change_password(db, user, request.current_password, request.new_password)
+    except PasswordNotSet:
+        raise HTTPException(status_code=400, detail=SOCIAL_NO_PASSWORD_DETAIL) from None
     except TokenRevoked:
         raise unauthorized() from None
     except DBAPIError as e:
