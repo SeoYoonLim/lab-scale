@@ -13,7 +13,9 @@
 
 import math
 import re
+from calendar import monthrange
 from dataclasses import dataclass
+from datetime import date
 from itertools import combinations
 
 # ---------- 숫자 추출 (evals/metrics.py와 같은 규칙) ----------
@@ -220,6 +222,46 @@ def _dates_in(text: str) -> list[tuple[re.Match, tuple[int, int]]]:
     return out
 
 
+def _full_date(m: re.Match) -> tuple[int, int, int] | None:
+    """날짜 표현에 연도가 있으면 (연, 월, 일), 없으면 None."""
+    g = m.groups()
+    if g[0]:
+        return int(g[0]), int(g[1]), int(g[2])
+    return (int(g[3]), int(g[4]), int(g[5])) if g[3] else None
+
+
+def _strings_in(obj):
+    if isinstance(obj, str):
+        yield obj
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            yield from _strings_in(v)
+    elif isinstance(obj, (list, tuple)):
+        for v in obj:
+            yield from _strings_in(v)
+
+
+def _known_full_dates(results, question: str, today) -> set[tuple[int, int, int]]:
+    """도구 결과(문자열 속 날짜 포함)·질문·오늘의 (연, 월, 일)."""
+    known = {(today.year, today.month, today.day)} if today else set()
+    for text in [*_strings_in(results), question or ""]:
+        known.update(full for m, _ in _dates_in(text) if (full := _full_date(m)))
+    return known
+
+
+def _string_date_values(results) -> dict[tuple[int, int, int], list[float]]:
+    """도구 결과의 문장에 날짜와 함께 나온 값(요약 문장의 "2026-10-16 종가 314,000원 대비": 시계열 행이 아닌 기준일의 값)."""
+    out: dict[tuple[int, int, int], list[float]] = {}
+    for text in _strings_in(results):
+        for sentence in _SENTENCE_SPLIT_RE.split(text):
+            found = [full for m, _ in _dates_in(sentence) if (full := _full_date(m))]
+            if found:
+                values = [n.value for n in extract_numbers(sentence)]
+                for full in found:
+                    out.setdefault(full, []).extend(values)
+    return out
+
+
 def _known_dates(results, question: str, today) -> set[tuple[int, int]]:
     """도구 결과(문자열 속 날짜 포함)·질문·오늘의 (월, 일)."""
     known = {(today.month, today.day)} if today else set()
@@ -240,15 +282,23 @@ def _known_dates(results, question: str, today) -> set[tuple[int, int]]:
 
 
 def _row_values_by_date(results) -> dict[tuple[int, int], list[float]]:
-    """시계열 행(price_date가 있는 dict)의 날짜별 숫자 값."""
+    """시계열 행(price_date가 있는 dict)의 날짜별 숫자 값. 키는 (월, 일)이다(연도까지 보는 값은 _row_values_by_full_date)."""
     out: dict[tuple[int, int], list[float]] = {}
+    for full, values in _row_values_by_full_date(results).items():
+        out.setdefault(full[1:], []).extend(values)
+    return out
+
+
+def _row_values_by_full_date(results) -> dict[tuple[int, int, int], list[float]]:
+    """시계열 행(price_date가 있는 dict)의 날짜(연, 월, 일)별 숫자 값."""
+    out: dict[tuple[int, int, int], list[float]] = {}
 
     def walk(o):
         if isinstance(o, dict):
             d = next((o[k] for k in _ROW_DATE_KEYS if isinstance(o.get(k), str)), None)
-            found = _dates_in(d) if d else []
+            found = [full for m, _ in _dates_in(d) if (full := _full_date(m))] if d else []
             if found:
-                out.setdefault(found[0][1], []).extend(
+                out.setdefault(found[0], []).extend(
                     abs(float(v)) for v in o.values() if isinstance(v, (int, float)) and not isinstance(v, bool))
             for v in o.values():
                 walk(v)
@@ -265,8 +315,11 @@ def _value_like(n: Number) -> bool:
 
 
 def date_violations(answer: str, results: list, question: str = "", today=None) -> list[str]:
-    """(1) 답변의 날짜가 도구 결과·질문·오늘 어디에도 없으면 위반. (2) 날짜 바로 뒤(다음 날짜 전까지)의 첫 값 숫자는,
-    그 날짜의 시계열 행이 있으면 그 행의 값이어야 한다("10월 24일 종가는 225,000원" - 10월 24일 행에 없는 값).
+    """(1) 답변의 날짜가 도구 결과·질문·오늘 어디에도 없으면 위반. 연도를 쓴 날짜는 연도까지 본다: 같은 월·일이 다른 해로만 있으면
+    위반이다("2024-10-30 종가" - 결과에는 2026-10-30뿐, 2026-10-31 ref_13).
+    (2) 날짜 바로 뒤(다음 날짜 전까지)의 첫 값 숫자는, 그 날짜의 시계열 행이 있으면 그 행의 값이어야 한다("10월 24일 종가는 225,000원"
+    - 10월 24일 행에 없는 값). 연도를 쓴 날짜의 행이 없는데(질문에만 있는 날짜 등) 값이 다른 날짜의 행에서 온 것이어도 위반이다.
+    (3) 날짜 없이 기간 라벨("2024년 등락률은 -12.71%")을 쓴 문장은 _label_violations가 본다.
     날짜가 든 결과가 하나도 없으면(날짜를 말할 근거 자체가 없는 답변) 보지 않는다."""
     known = _known_dates(results, question, None)
     if not known:
@@ -274,15 +327,24 @@ def date_violations(answer: str, results: list, question: str = "", today=None) 
     if today is not None:
         known.add((today.month, today.day))
     rows = _row_values_by_date(results)
-    bad = []
+    rows_full = _row_values_by_full_date(results)
+    all_row_values = [v for values in rows_full.values() for v in values]
+    known_full = _known_full_dates(results, question, today)
+    string_values = _string_date_values(results)
+    bad = _label_violations(answer, rows_full, all_row_values, today)
     for sentence in _SENTENCE_SPLIT_RE.split(answer or ""):
         dates = _dates_in(sentence)
         for i, (m, md) in enumerate(dates):
-            if md not in known:
+            full = _full_date(m)
+            if md not in known or (full and full not in known_full and any(k[1:] == md for k in known_full)):
                 bad.append(m.group(0).strip())
                 continue
             if md not in rows:
                 continue
+            row_values = rows[md]
+            if full is not None:
+                # 이 날짜의 행이 없으면(다른 해의 같은 월·일만 있음) row_values=None: 값이 다른 날짜 행의 것인지 아래에서 본다
+                row_values = rows_full.get(full)
             if sentence[:m.start()].rstrip().endswith("("):
                 # "120원(2026-10-28)": 괄호 속 날짜는 바로 앞의 값과 짝이다(stock_tool 요약 문장의 형식)
                 start = dates[i - 1][0].end() if i > 0 else 0
@@ -299,8 +361,55 @@ def date_violations(answer: str, results: list, question: str = "", today=None) 
             if values and (sentence[:m.start()].rstrip().endswith("~") or _RANGE_WORDS_RE.search(
                     sentence[m.end():m.end() + sentence[m.end():].find(values[0].raw)])):
                 values = []
-            if values and not is_supported(values[0], rows[md]):
+            if not values:
+                continue
+            if row_values is None:
+                if is_supported(values[0], all_row_values) and not is_supported(values[0], string_values.get(full, [])):
+                    bad.append(f"{m.group(0).strip()} {values[0].raw}")
+            elif not is_supported(values[0], row_values):
                 bad.append(f"{m.group(0).strip()} {values[0].raw}")
+    return bad
+
+
+_LABEL_RE = re.compile(r"((?:19|20)\d{2})\s*년(?:\s*(\d{1,2})\s*월)?|(재작년|(?<!재)작년|지난해)|(?<!\d)(\d{1,2})\s*년\s*전")
+
+
+def _label_range(m: re.Match, today) -> tuple[date, date] | None:
+    year, month, word, ago = m.groups()
+    if year:
+        y = int(year)
+        if month and 1 <= int(month) <= 12:
+            return date(y, int(month), 1), date(y, int(month), monthrange(y, int(month))[1])
+        return (date(y, 1, 1), date(y, 12, 31)) if not month else None
+    if today is None:
+        return None
+    if word:
+        y = today.year - (2 if word == "재작년" else 1)
+        return date(y, 1, 1), date(y, 12, 31)
+    y = today.year - int(ago)
+    if y < 1:
+        return None
+    return date(y, 1, 1), date(y, 12, 31)
+
+
+def _label_violations(answer: str, rows_full: dict, all_row_values: list[float], today) -> list[str]:
+    """날짜 없이 기간 라벨을 쓴 문장의 값이 그 기간에 한 행도 없는 결과에서 왔으면 위반("기아의 2024년 등락률은 -12.71%" - 결과는
+    2026-10-30 하루치, 2026-10-31 ref_13). 시계열 행이 없는 결과(뉴스의 "2025년 영업이익")와 정확한 날짜를 함께 쓴 문장은 보지 않는다."""
+    if not rows_full:
+        return []
+    row_dates = [date(*full) for full in rows_full]
+    bad = []
+    for sentence in _SENTENCE_SPLIT_RE.split(answer or ""):
+        if _dates_in(sentence):
+            continue
+        for m in _LABEL_RE.finditer(sentence):
+            rng = _label_range(m, today)
+            if rng is None or any(rng[0] <= d <= rng[1] for d in row_dates):
+                continue
+            values = [n for n in extract_numbers(sentence) if _value_like(n) and is_supported(n, all_row_values)]
+            if values:
+                bad.append(f"{m.group(0).strip()} {values[0].raw}")
+                break
     return bad
 
 
