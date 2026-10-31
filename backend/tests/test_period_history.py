@@ -164,6 +164,22 @@ def test_compare_question_calls_the_same_tool_for_the_company_the_model_skipped(
     assert len(other) == 1
 
 
+def test_rag_searches_every_named_company_even_without_compare_words(monkeypatch):
+    samsung, hynix = co("삼성전자", 1), co("SK하이닉스", 2)
+    monkeypatch.setattr(agent, "SessionLocal", lambda: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(agent, "extract_from_text", lambda db, text: [c for c in (samsung, hynix) if c.name in text])
+    monkeypatch.setattr(agent, "resolve_company", lambda db, r, allow_fuzzy=True: SimpleNamespace(
+        company=next((c for c in (samsung, hynix) if c.name == r), None)))
+    q = "삼성전자와 SK하이닉스에 투자할 때 고려할 위험 요인을 정리해줘"
+    calls = [{"function": {"name": "rag_search_tool", "arguments": {"query": "위험", "company_name": "삼성전자"}}}]
+    agent._expand_multi_company_calls(calls, q, [samsung, hynix])
+    assert [c["function"]["arguments"]["company_name"] for c in calls] == ["삼성전자", "SK하이닉스"]
+    # 다른 도구는 비교 질문일 때만 덧붙인다(모델이 종목별로 다른 도구를 고른 경우를 건드리지 않는다)
+    other = [{"function": {"name": "stock_tool", "arguments": {"ticker": "삼성전자"}}}]
+    agent._expand_multi_company_calls(other, "삼성전자 주가랑 SK하이닉스 뉴스 알려줘", [samsung, hynix])
+    assert len(other) == 1
+
+
 def test_expand_leaves_calls_alone_without_named_companies_or_when_db_fails(monkeypatch):
     def boom():
         raise RuntimeError("no db")
@@ -709,7 +725,7 @@ class TestForeignScript:
     @pytest.mark.parametrize("text", ["현대차는 시장シェア가 큽니다.", "ひらがな 문장입니다.", "기간期间 동안 올랐습니다.", "市場 상황이 나쁩니다.", "ｼｪｱ 반각입니다."])
     def test_sentence_with_unknown_foreign_script_is_removed(self, text):
         answer, n = self._strip(f"첫 문장입니다.\n{text}\n끝 문장입니다.")
-        assert n == 1 and answer.split() == "첫 문장입니다. 끝 문장입니다.".split() or answer.replace("\n", " ").split() == "첫 문장입니다. 끝 문장입니다.".split()
+        assert n == 1 and answer.split() == "첫 문장입니다. 끝 문장입니다.".split()
 
     def test_only_the_bad_sentence_in_a_line_goes(self):
         answer, n = self._strip("좋은 문장입니다. 나쁜シェア 문장입니다. 또 좋은 문장입니다.")
@@ -733,6 +749,12 @@ class TestForeignScript:
         records = [{"tool_name": "stock_tool", "result": {"found": True, "company_name": "기아", "summary": "기아 요약입니다.", "prices": []}}]
         assert "기아 요약입니다." in agent._guard("すべて日本語です。", records, "기아 주가 알려줘")
         assert agent._meta()["answer_guard"]["foreign_script_sentences"] == 1
+
+    def test_original_is_kept_in_internal_log_only(self, monkeypatch):
+        agent._reset_llm_state()
+        monkeypatch.setattr(agent, "guard_answer", lambda a, r, q: (a, {"replaced": False, "violations": [], "mode": None}))
+        out = agent._guard("좋은 문장입니다. 나쁜シェア 문장입니다.", [], "기아 어때?")
+        assert "シェア" not in out and "シェア" in agent._meta()["answer_guard"]["foreign_script_original"]
 
     def test_empty_section_is_removed_after_stripping(self, monkeypatch):
         agent._reset_llm_state()

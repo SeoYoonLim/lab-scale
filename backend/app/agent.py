@@ -41,6 +41,7 @@ from app.etf import (
     remove_empty_sections,
 )
 from app.answer_guard import (
+    ORIGINAL_LOG_CHARS,
     code_summary,
     freshness_note,
     guard_answer,
@@ -608,11 +609,13 @@ _COMPANY_ARG = {
 _COMPARE_QUESTION_RE = re.compile(code_answers._COMPARE_RE.pattern + r"|차이")
 
 
-def _add_missing_compared(db, calls: list[dict], named: list) -> list[dict]:
-    """종목 인자를 받는 호출마다, 질문의 종목 중 그 도구로 조회하지 않은 종목의 호출을 바로 뒤에 덧붙인다."""
+def _add_missing_compared(db, calls: list[dict], named: list, tools: tuple[str, ...] | None = None) -> list[dict]:
+    """종목 인자를 받는 호출마다(tools를 주면 그 도구만), 질문의 종목 중 그 도구로 조회하지 않은 종목의 호출을 바로 뒤에 덧붙인다."""
     called: dict[str, set[int]] = {}
     for call in calls:
         key = _COMPANY_ARG.get(call["function"]["name"])
+        if tools is not None and call["function"]["name"] not in tools:
+            key = None
         company = resolve_company(db, _as_args(call["function"]["arguments"]).get(key)).company if key else None
         if company is not None:
             called.setdefault(call["function"]["name"], set()).add(company.id)
@@ -669,6 +672,9 @@ def _expand_multi_company_calls(calls: list[dict], question: str, named: list | 
                 expanded.extend({"function": {"name": fn_name, "arguments": {**args, key: c.name}}} for c in targets)
         if _COMPARE_QUESTION_RE.search(question):
             expanded = _add_missing_compared(db, expanded, named)
+        else:
+            # 문서 검색은 비교 질문이 아니어도 질문의 종목을 모두 찾는다("삼성전자와 SK하이닉스 위험 요인"에 한 종목만 검색하던 stab_11)
+            expanded = _add_missing_compared(db, expanded, named, ("rag_search_tool",))
         calls[:] = expanded
     except Exception:
         return  # DB를 읽지 못하면 모델이 만든 호출 그대로 간다
@@ -1617,8 +1623,10 @@ def _guard(answer: str, records: list[dict], question: str) -> str:
     # 근거 링크가 아닌 URL이 든 문장은 지운다(프롬프트 인젝션으로 들어온 피싱 링크 방지, 2026-10-30)
     guarded, log["untrusted_url_sentences"] = strip_untrusted_urls(guarded, records)
     # 질문·도구 결과에 없는 일본어·중국어가 든 문장을 지운다. 남는 내용이 없으면 코드 요약으로 바꾼다(2026-10-31)
+    before_strip = guarded
     guarded, log["foreign_script_sentences"] = strip_foreign_script(guarded, records, question)
     if log["foreign_script_sentences"]:
+        log["foreign_script_original"] = before_strip[:ORIGINAL_LOG_CHARS]  # 내부 기록(오탐 분석용, API 응답에 나가지 않는다)
         guarded = remove_empty_sections(guarded)
         if not guarded.strip():
             guarded = code_summary(records) or ""
