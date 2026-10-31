@@ -109,17 +109,13 @@ def compare_range(
     return compare_returns([(d, c) for d, c in window], [(d, index_by_date[d]) for d, _ in window], max(len(window) - 1, 1))
 
 
-def _range_note(index_name: str, cmp: dict, start: date, end: date, first_common: date | None, last_common: date | None) -> str | None:
-    """지수·종목 데이터가 요청 구간을 다 덮지 못하면 실제로 비교한 범위를 밝힌다."""
-    notes = []
-    if first_common is not None and first_common > start:
-        notes.append(f"요청 구간의 시작({start.isoformat()})보다 뒤인 {first_common.isoformat()}부터 데이터가 있습니다")
-    if last_common is not None and last_common < end:
-        notes.append(f"{last_common.isoformat()}까지만 데이터가 있습니다")
-    if not notes:
+def _range_note(index_name: str, cmp: dict, start: date, end: date, first_common: date, last_common: date) -> str | None:
+    """보유 데이터(종목·지수 공통 날짜 first_common~last_common 전체)가 요청 구간을 다 덮지 못하면 실제로 비교한 범위를 밝힌다.
+    구간 끝이 휴장일이라 첫·끝 거래일이 다른 것("2024년"의 12-31)은 덮지 못한 것이 아니다."""
+    if first_common <= start and last_common >= end:
         return None
-    return (f"요청 구간 {start.isoformat()}~{end.isoformat()} 중 {' / '.join(notes)}. "
-            f"{cmp['start_date']}~{cmp['end_date']} 구간만 {index_name}와 비교했습니다.")
+    return (f"비교할 수 있는 데이터는 {first_common.isoformat()}~{last_common.isoformat()}라서, 요청 구간 {start.isoformat()}~{end.isoformat()} 중 "
+            f"{cmp['start_date']}~{cmp['end_date']}만 {index_name}와 비교했습니다.")
 
 
 def market_tool(ticker: str, period_days: int = 5, start_date=None, end_date=None) -> dict:
@@ -212,13 +208,13 @@ def _market_range_result(db, company, base: dict, index_code: str, index_name: s
     requested = {"requested_start": start.isoformat(), "requested_end": end.isoformat()}
     stock_rows = (
         db.query(StockPrice.price_date, StockPrice.close_price)
-        .filter(StockPrice.company_id == company.id, StockPrice.price_date <= end)
+        .filter(StockPrice.company_id == company.id)
         .order_by(StockPrice.price_date)
         .all()
     )
     index_rows = (
         db.query(MarketIndex.price_date, MarketIndex.close_price)
-        .filter(MarketIndex.index_code == index_code, MarketIndex.price_date <= end)
+        .filter(MarketIndex.index_code == index_code)
         .order_by(MarketIndex.price_date)
         .all()
     )
@@ -229,9 +225,9 @@ def _market_range_result(db, company, base: dict, index_code: str, index_name: s
         return {**base, **requested, "found": False,
                 "message": f"요청 구간 {start.isoformat()}~{end.isoformat()}에 '{company.name}'와 {index_name}를 비교할 데이터가 없습니다."}
     index_dates = {d for d, _ in index_closes}
-    inside = [d for d, _ in stock_closes if d in index_dates and start <= d <= end]
+    common = [d for d, _ in stock_closes if d in index_dates]
     out = {**base, **requested, **cmp, "found": True, "summary": _summary(company.name, index_name, cmp)}
-    note = _range_note(index_name, cmp, start, end, inside[0], inside[-1])
+    note = _range_note(index_name, cmp, start, end, common[0], common[-1])
     if note:
         out["note"] = note
     return out

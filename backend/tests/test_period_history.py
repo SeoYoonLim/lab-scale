@@ -9,7 +9,7 @@ import pytest
 from app import agent, code_answers, period_answers
 from app.answer_guard import date_violations, guard_answer
 from app.period_answers import closed_day_text, closed_reason, day_text, is_history_question, needs_date_lookup, window_text
-from app.period_parser import KST, parse_period
+from app.period_parser import KST, mentions_period, parse_period
 from app.period_scope import RequestedPeriod, classify, requested_period
 from app.tools import stock_tool as stock_module
 from evals.metrics import forbidden_hits, is_refusal, match_numbers
@@ -591,6 +591,20 @@ class TestCalendarExpressions:
                                    "작년 같은 달 수익률", "24년 3월 주가", "24년 주가", "22년 주가", "24년 3분기"])
     def test_parser_does_not_read_part_of_a_calendar_expression(self, q):
         assert parse_period(q, NOW) is None
+        # 값은 달력 표현이 맡아도 "기간을 말했다"는 사실은 남아야 한다(단순 시세로 새던 ref_09 "작년 이맘때 주가")
+        assert mentions_period(q)
+
+    @pytest.mark.parametrize("q", ["NAVER 작년 이맘때 주가는 얼마였어?", "카카오 작년 같은 달 주가", "삼성전자 24년 주가 얼마야", "기아 올해 1분기 주가"])
+    def test_calendar_expression_is_not_a_simple_quote(self, q):
+        from app.answer_guard import is_simple_quote
+
+        assert not is_simple_quote(q, mentions_period(q), agent._period_text(q))
+
+    def test_plain_quote_is_still_simple(self):
+        from app.answer_guard import is_simple_quote
+
+        q = "NAVER 주가 얼마야?"
+        assert not mentions_period(q) and is_simple_quote(q, False, None)
 
     @pytest.mark.parametrize("q,text", [("올해 수익률", "올해"), ("작년 주가", "작년"), ("5년 주가", "5년"), ("30년 주가", "30년"),
                                         ("최근 24년 주가", "24년"), ("24년간 주가", "24년"), ("27년 주가", "27년"), ("1년 수익률", "1년")])
@@ -666,8 +680,21 @@ class TestMarketRange:
 
         start, end = D(2023, 1, 1), D(2024, 12, 31)
         r = _market_range_result(self._fake_db(STOCK, INDEX), co(), {"company_name": "기아"}, "KS11", "코스피", start, end)
-        assert r["found"] and r["requested_start"] == "2023-01-01" and "2023-12-27" in r["note"]
+        assert r["found"] and r["requested_start"] == "2023-01-01" and "2023-12-27~2026-10-30" in r["note"]
         assert r["start_date"] == "2023-12-27"
+
+    def test_holiday_at_the_edge_of_the_range_is_not_a_gap(self):
+        # hist_28: 2024-01-01과 2024-12-31은 휴장일이다. "데이터가 12-30까지만 있다"고 말하면 안 된다
+        from app.tools.market_tool import _market_range_result
+
+        r = _market_range_result(self._fake_db(STOCK, INDEX), co(), {"company_name": "기아"}, "KS11", "코스피", D(2024, 1, 1), D(2024, 12, 31))
+        assert r["found"] and "note" not in r and r["end_date"] == "2024-12-30"
+
+    def test_range_past_the_last_data_is_noted(self):
+        from app.tools.market_tool import _market_range_result
+
+        r = _market_range_result(self._fake_db(STOCK, INDEX), co(), {"company_name": "기아"}, "KS11", "코스피", D(2026, 1, 1), D(2026, 12, 31))
+        assert r["found"] and "2026-10-30" in r["note"]
 
     def test_range_result_without_note_when_covered(self):
         from app.tools.market_tool import _market_range_result

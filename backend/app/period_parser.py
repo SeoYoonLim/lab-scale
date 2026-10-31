@@ -275,7 +275,7 @@ def mentions_period(question: str) -> bool:
     나와도 이전처럼 LLM이 추론한 값을 그대로 쓸 뿐이라 안전한 쪽이다. 6자리 종목코드("005930")는 숫자로 치지 않는다."""
     if not question:
         return False
-    if parse_period(question) is not None:
+    if parse_period(question) is not None or calendar_spans(question, _today()):
         return True
     # ETF 이름 속 숫자("KODEX 200", "TIGER 미국S&P500")는 기간을 말한 것이 아니다
     text = mask_etf_names(question)
