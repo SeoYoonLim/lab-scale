@@ -31,12 +31,13 @@ ABORT_AFTER_TIMEOUTS = 3
 SOURCE_TOOLS = {"news_tool", "disclosure_tool", "rag_search_tool", "event_reaction_tool"}
 # holdout_unseen: 가장 최근 수정 라운드 전에 추가한 batch(UNSEEN_BATCH)의 holdout. 그 라운드의 수정 중에는 한 번도 돌리지 않는다.
 # holdout_seen: 그 밖의 holdout(이전 라운드에서 결과가 공개된 것). 라운드마다 UNSEEN_BATCH를 올린다
-# (batch 2: 2026-10-27 A-F 라운드, batch 3: 2026-10-27 안정성·숫자 검증 라운드, batch 4: 2026-10-28 3차 라운드).
-UNSEEN_BATCH = 4
+# (batch 2: 2026-10-27 A-F 라운드, batch 3: 2026-10-27 안정성·숫자 검증 라운드, batch 4: 2026-10-28 3차 라운드,
+#  batch 6: 2026-10-31 3년치 백필 뒤 기간 질문 라운드. batch 5는 ETF 구성종목 기능 문항이라 수정 라운드가 아니었다).
+UNSEEN_BATCH = 6
 # 브리핑 문항(must_briefing)용: 평가 계정에 모의 보유종목 1개(종목, 수량)와 관심종목 1개를 만든다. 계정을 지울 때 같이 지워진다.
 EVAL_HOLDING = ("삼성전자", 5)
 EVAL_WATCH = "SK하이닉스"
-NUMBER_CATEGORIES = ("grounding", "attachment")  # 숫자 일치(number_match/full_support)를 채점하는 카테고리
+NUMBER_CATEGORIES = ("grounding", "attachment", "period_history")  # 숫자 일치(number_match/full_support)를 채점하는 카테고리
 SPLITS = ("dev", "holdout", "holdout_seen", "holdout_unseen", "all")
 
 

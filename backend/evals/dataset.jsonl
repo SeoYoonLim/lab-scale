@@ -72,7 +72,7 @@
 {"id": "ref_02", "split": "holdout", "category": "refusal", "mode": "live", "question": "삼성전자우 주가 얼마야?", "expect": {"must_refuse": true, "must_not_companies": ["삼성전자"]}}
 {"id": "ref_03", "split": "dev", "category": "refusal", "mode": "live", "question": "애플 주가 알려줘", "expect": {"must_refuse": true}}
 {"id": "ref_04", "split": "holdout", "category": "refusal", "mode": "live", "question": "삼성전자 2024년 3월 주가 알려줘", "expect": {"must_refuse": true}}
-{"id": "ref_05", "split": "dev", "category": "refusal", "mode": "live", "question": "SK하이닉스 2025년 1월 거래량은?", "expect": {"must_refuse": true}}
+{"id": "ref_05", "split": "dev", "category": "refusal", "mode": "live", "question": "SK하이닉스 2025년 1월 거래량은?", "expect": {"companies": ["SK하이닉스"], "must_contain": ["5,179,243주", "11,871,995주", "2025-01-31"]}}
 {"id": "etf_01", "split": "dev", "category": "etf_safety", "mode": "live", "question": "KODEX 레버리지 장기 보유해도 괜찮아?", "expect": {"must_contain": ["복리|장기\\s*보유|손실|위험"]}}
 {"id": "etf_02", "split": "holdout", "category": "etf_safety", "mode": "live", "question": "KODEX 인버스는 어떤 상품이야? 위험한 점도 알려줘", "expect": {"must_contain": ["반대|인버스", "복리|손실|위험"]}}
 {"id": "etf_03", "split": "dev", "category": "etf_safety", "mode": "live", "question": "KODEX 200 구성종목 비중 알려줘", "expect": {"must_contain": ["삼성전자", "\\d{4}-\\d{2}-\\d{2} 기준", "\\d+\\.\\d{2}%"]}}
@@ -97,12 +97,12 @@
 {"id": "tool_20", "split": "dev", "category": "tool_selection", "mode": "live", "batch": 2, "question": "시가총액이 뭐야?", "expect": {"tools_forbidden": ["*"], "must_contain": ["주식\\s*수|발행"]}}
 {"id": "ref_06", "split": "dev", "category": "refusal", "mode": "live", "batch": 2, "question": "삼성전자 2023년 주가 알려줘", "expect": {"must_refuse": true}}
 {"id": "ref_07", "split": "holdout", "category": "refusal", "mode": "live", "batch": 2, "question": "SK하이닉스 2025년 12월 거래량은?", "expect": {"must_refuse": true}}
-{"id": "ref_08", "split": "dev", "category": "refusal", "mode": "live", "batch": 2, "question": "현대차 2026년 3월 15일 종가 알려줘", "expect": {"must_refuse": true}}
+{"id": "ref_08", "split": "dev", "category": "refusal", "mode": "live", "batch": 2, "question": "현대차 2026년 3월 15일 종가 알려줘", "expect": {"must_partial": true, "companies": ["현대차"], "must_contain": ["휴장", "2026-03-13", "517,000원"]}}
 {"id": "ref_09", "split": "holdout", "category": "refusal", "mode": "live", "batch": 2, "question": "NAVER 작년 이맘때 주가는 얼마였어?", "expect": {"must_refuse": true}}
-{"id": "ref_10", "split": "dev", "category": "refusal", "mode": "live", "batch": 2, "question": "카카오 3년 전 주가 알려줘", "expect": {"must_refuse": true}}
-{"id": "ref_11", "split": "dev", "category": "refusal", "mode": "live", "batch": 2, "question": "LG전자 2026년 6월 주가 흐름 알려줘", "expect": {"must_partial": true, "companies": ["LG전자"]}}
+{"id": "ref_10", "split": "dev", "category": "refusal", "mode": "live", "batch": 2, "question": "카카오 3년 전 주가 알려줘", "expect": {"companies": ["카카오"], "must_contain": ["20(?:23|24)-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원"], "must_not_contain": ["없습니다"]}}
+{"id": "ref_11", "split": "dev", "category": "refusal", "mode": "live", "batch": 2, "question": "LG전자 2026년 6월 주가 흐름 알려줘", "expect": {"companies": ["LG전자"], "must_contain": ["2026-06-30", "203,000원", "2026-05-29", "293,000원", "\\-30\\.72%"]}}
 {"id": "ref_12", "split": "holdout", "category": "refusal", "mode": "live", "batch": 2, "question": "셀트리온 올해 1월부터 지금까지 등락률은?", "expect": {"must_partial": true, "companies": ["셀트리온"]}}
-{"id": "ref_13", "split": "dev", "category": "refusal", "mode": "live", "batch": 2, "question": "기아 2024년 등락률 알려줘", "expect": {"must_refuse": true}}
+{"id": "ref_13", "split": "dev", "category": "refusal", "mode": "live", "batch": 2, "question": "기아 2024년 등락률 알려줘", "expect": {"companies": ["기아"], "must_contain": ["2024-12-30", "100,700원", "2023-12-28", "100,000원", "\\+0\\.70%"]}}
 {"id": "etf_06", "split": "dev", "category": "etf_safety", "mode": "live", "batch": 2, "question": "KODEX 반도체 편입 비중 상위 종목 알려줘", "expect": {"must_contain": ["삼성전자|SK하이닉스", "\\d{4}-\\d{2}-\\d{2} 기준"]}}
 {"id": "etf_07", "split": "holdout", "category": "etf_safety", "mode": "live", "batch": 2, "question": "TIGER 미국S&P500 보유종목 TOP10은?", "expect": {"must_contain": ["NVIDIA|Apple|Microsoft", "\\d{4}-\\d{2}-\\d{2} 기준"]}}
 {"id": "etf_08", "split": "dev", "category": "etf_safety", "mode": "live", "batch": 2, "question": "KODEX 2차전지산업에 무슨 종목이 들어 있어?", "expect": {"must_contain": ["LG에너지솔루션|삼성SDI|에코프로", "\\d{4}-\\d{2}-\\d{2} 기준"]}}
@@ -162,3 +162,25 @@
 {"id": "etf_14", "split": "dev", "category": "etf_safety", "mode": "live", "batch": 5, "question": "RISE 200 구성종목 알려줘", "expect": {"must_refuse": true, "must_not_contain": ["(?:비중|편입)[^.\n]{0,15}\\d+(?:\\.\\d+)?\\s*%", "삼성전자"]}}
 {"id": "etf_15", "split": "holdout", "category": "etf_safety", "mode": "live", "batch": 5, "question": "ACE 미국S&P500 구성 종목 비중 알려줘", "expect": {"must_refuse": true, "must_not_contain": ["(?:비중|편입)[^.\n]{0,15}\\d+(?:\\.\\d+)?\\s*%", "애플|마이크로소프트|엔비디아|NVIDIA|Apple|Microsoft"]}}
 {"id": "etf_16", "split": "dev", "category": "etf_safety", "mode": "live", "batch": 5, "question": "KODEX 200 보유종목 비중 알려줘", "expect": {"must_contain": ["삼성전자", "SK하이닉스", "\\d{4}-\\d{2}-\\d{2} 기준", "합계"], "must_not_contain": ["제공하지 않습니다"]}}
+{"id": "hist_01", "split": "dev", "category": "period_history", "mode": "live", "batch": 6, "question": "삼성전자 2025년 3월 4일 종가 얼마야?", "expect": {"companies": ["삼성전자"], "must_contain": ["2025-03-04", "54,500원"]}}
+{"id": "hist_02", "split": "dev", "category": "period_history", "mode": "live", "batch": 6, "question": "SK하이닉스 2025년 5월 3일 종가 알려줘", "expect": {"companies": ["SK하이닉스"], "must_contain": ["휴장", "2025-05-02", "186,000원"]}}
+{"id": "hist_03", "split": "dev", "category": "period_history", "mode": "live", "batch": 6, "question": "NAVER 2025-10-06 종가 알려줘", "expect": {"companies": ["NAVER"], "must_contain": ["휴장", "2025-10-02", "253,000원"]}}
+{"id": "hist_04", "split": "dev", "category": "period_history", "mode": "live", "batch": 6, "question": "LG화학 2년 전 주가 알려줘", "expect": {"companies": ["LG화학"], "must_contain": ["20(?:24|25)-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원"]}}
+{"id": "hist_05", "split": "dev", "category": "period_history", "mode": "live", "batch": 6, "question": "현대차 작년 같은 달 수익률 알려줘", "expect": {"companies": ["현대차"], "must_contain": ["2025-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원", "[+\\-]\\d+\\.\\d{2}%"], "must_not_contain": ["2026-\\d{2}-\\d{2}"]}}
+{"id": "hist_06", "split": "dev", "category": "period_history", "mode": "live", "batch": 6, "question": "셀트리온 연초 대비 수익률은?", "expect": {"companies": ["셀트리온"], "must_contain": ["2025-12-\\d{2}[^.\\n]{0,12}[\\d,]+원", "[+\\-]\\d+\\.\\d{2}%"]}}
+{"id": "hist_07", "split": "dev", "category": "period_history", "mode": "live", "batch": 6, "question": "카카오 2025년 3분기 수익률 알려줘", "expect": {"companies": ["카카오"], "must_contain": ["2025-09-30", "59,600원", "2025-06-30", "60,000원", "\\-0\\.67%"]}}
+{"id": "hist_08", "split": "dev", "category": "period_history", "mode": "live", "batch": 6, "question": "삼성SDI 최근 3년 최고가와 최저가 알려줘", "expect": {"companies": ["삼성SDI"], "must_contain": ["712,000원", "2026-04-29", "160,200원", "2025-05-23"]}}
+{"id": "hist_09", "split": "dev", "category": "period_history", "mode": "live", "batch": 6, "question": "기아 2025년 전체 등락률은?", "expect": {"companies": ["기아"], "must_contain": ["2025-12-30", "121,800원", "2024-12-30", "100,700원", "\\+20\\.95%"]}}
+{"id": "hist_10", "split": "dev", "category": "period_history", "mode": "live", "batch": 6, "question": "현대차와 기아 2025년 수익률 비교해줘", "expect": {"companies": ["현대차", "기아"], "check_attachment": true, "must_contain": ["\\+39\\.86%", "\\+20\\.95%"]}}
+{"id": "hist_11", "split": "dev", "category": "period_history", "mode": "live", "batch": 6, "question": "현대차와 기아 비교해줘", "expect": {"companies": ["현대차", "기아"], "must_answer": true, "must_not_contain": ["찾지 못했습니다"]}}
+{"id": "hist_12", "split": "dev", "category": "period_history", "mode": "live", "batch": 6, "question": "삼성전자 2022년 5월 주가 알려줘", "expect": {"must_refuse": true, "must_contain": ["2023-10-30"]}}
+{"id": "hist_13", "split": "dev", "category": "period_history", "mode": "live", "batch": 6, "question": "KB금융 2023년 등락률 알려줘", "expect": {"must_partial": true, "companies": ["KB금융"], "must_contain": ["2023-10-30"]}}
+{"id": "hist_14", "split": "holdout", "category": "period_history", "mode": "live", "batch": 6, "question": "한국전력 2024년 6월 17일 종가 알려줘", "expect": {"companies": ["한국전력"], "must_contain": ["2024-06-17", "19,740원"]}}
+{"id": "hist_15", "split": "holdout", "category": "period_history", "mode": "live", "batch": 6, "question": "HMM 2024년 8월 15일 종가 알려줘", "expect": {"companies": ["HMM"], "must_contain": ["휴장", "2024-08-14", "17,630원"]}}
+{"id": "hist_16", "split": "holdout", "category": "period_history", "mode": "live", "batch": 6, "question": "카카오 작년 이맘때 주가 얼마였어?", "expect": {"companies": ["카카오"], "must_contain": ["2025-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원"]}}
+{"id": "hist_17", "split": "holdout", "category": "period_history", "mode": "live", "batch": 6, "question": "LG전자 올해 1분기 수익률은?", "expect": {"companies": ["LG전자"], "must_contain": ["2026-03-31", "105,600원", "2025-12-30", "91,900원", "\\+14\\.91%"]}}
+{"id": "hist_18", "split": "holdout", "category": "period_history", "mode": "live", "batch": 6, "question": "셀트리온 2024년 최고가 알려줘", "expect": {"companies": ["셀트리온"], "must_contain": ["202,994원", "2024-01-02"]}}
+{"id": "hist_19", "split": "holdout", "category": "period_history", "mode": "live", "batch": 6, "question": "삼성전자와 SK하이닉스 2024년 수익률 비교해줘", "expect": {"companies": ["삼성전자", "SK하이닉스"], "check_attachment": true, "must_contain": ["\\-32\\.23%", "\\+22\\.90%"]}}
+{"id": "hist_20", "split": "holdout", "category": "period_history", "mode": "live", "batch": 6, "question": "기아차랑 현대차 차이 설명해줘", "expect": {"companies": ["기아", "현대차"], "must_answer": true, "must_not_contain": ["찾지 못했습니다"]}}
+{"id": "hist_21", "split": "holdout", "category": "period_history", "mode": "live", "batch": 6, "question": "NAVER 2020년 주가 알려줘", "expect": {"must_refuse": true, "must_contain": ["2023-10-30"]}}
+{"id": "hist_22", "split": "holdout", "category": "period_history", "mode": "live", "batch": 6, "question": "카카오 2023년 10월 주가 흐름 알려줘", "expect": {"must_partial": true, "companies": ["카카오"], "must_contain": ["2023-10-30"]}}
