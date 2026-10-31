@@ -1803,7 +1803,8 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
         return _llm_fallback(LLMUnavailable("length"), records, subjects if etf_mode else None)
     answer = strip_role_prefix(extract_answer_text(final["message"]["content"]))
     if _mentions_tool_call(answer):
-        answer = FALLBACK_ANSWER
+        # 모델이 답 대신 호출 JSON을 글로 썼다. 도구 결과가 있으면 "죄송합니다" 대신 코드 요약으로 답한다(hist_11, 2026-10-31)
+        answer = (_finish_etf_answer("", records, subjects) if etf_mode else code_summary(records)) or FALLBACK_ANSWER
     else:
         # 결과가 없는 섹션에 "(이 섹션은 ... 빈칸입니다.)" 같은 자리표시만 쓴 경우 그 섹션을 지운다
         answer = remove_empty_sections(answer)

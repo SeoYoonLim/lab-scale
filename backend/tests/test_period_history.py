@@ -788,3 +788,44 @@ class TestForeignScript:
         monkeypatch.setattr(agent, "guard_answer", lambda a, r, q: (a, {"replaced": False, "violations": [], "mode": None}))
         out = agent._guard("## 주가 동향\n오름세입니다.\n\n## 시장 상황\nシェア가 큽니다.", [], "기아 어때?")
         assert "오름세입니다." in out and "시장 상황" not in out and "シェア" not in out
+
+
+class TestGuardShareUnit:
+    RESULT = {"found": True, "company_name": "에코프로", "prices": [
+        {"price_date": "2026-10-29", "close_price": 72000.0, "volume": 5000, "change_pct": 1.0},
+        {"price_date": "2026-10-30", "close_price": 70900.0, "volume": 7000, "change_pct": -1.53}]}
+
+    def test_price_difference_is_not_a_share_count(self):
+        from app.answer_guard import unsupported_numbers
+
+        assert [n.raw for n in unsupported_numbers("1,100주에 거래했습니다.", [self.RESULT])] == ["1,100주"]
+
+    def test_price_difference_in_won_and_volume_difference_in_shares_still_pass(self):
+        from app.answer_guard import unsupported_numbers
+
+        assert unsupported_numbers("전일 대비 1,100원 내렸고 거래량은 2,000주 늘었습니다.", [self.RESULT]) == []
+
+    def test_real_volume_passes(self):
+        from app.answer_guard import unsupported_numbers
+
+        assert unsupported_numbers("거래량은 7,000주입니다.", [self.RESULT]) == []
+
+
+def test_tool_call_text_with_results_answers_with_code_summary(monkeypatch):
+    calls = [{"function": {"name": "stock_tool", "arguments": {"ticker": "기아", "period_days": 1}}}]
+    result = {"found": True, "company_name": "기아", "summary": "기아 요약입니다.", "prices": []}
+    monkeypatch.setattr(agent, "_question_companies", lambda q: [])
+    monkeypatch.setattr(agent, "_answer_briefing", lambda q, u: None)
+    monkeypatch.setattr(agent, "_event_subject", lambda q, p: None)
+    monkeypatch.setattr(agent, "_answer_concept", lambda q, c: None)
+    monkeypatch.setattr(agent, "_first_call", lambda m, msgs, tools=None: ({"role": "assistant", "content": "", "tool_calls": calls}, calls))
+    monkeypatch.setattr(agent, "_expand_multi_company_calls", lambda *a: None)
+    monkeypatch.setattr(agent, "_repair_company_args", lambda *a: {})
+    monkeypatch.setattr(agent, "_add_requested_tools", lambda *a: [])
+    monkeypatch.setattr(agent, "_question_subjects", lambda *a: [])
+    monkeypatch.setattr(agent, "_unresolved_company_answer", lambda *a: None)
+    monkeypatch.setattr(agent, "_run_tool", lambda name, args: result)
+    monkeypatch.setattr(agent, "_llm_chat", lambda **kw: {"message": {"content": '{"name": "stock_tool", "parameters": {"ticker": "기아"}}'}})
+    agent._reset_llm_state()
+    response, _ = agent._answer("기아 어때?", "m")
+    assert "기아 요약입니다." in response["answer"] and response["answer"] != agent.FALLBACK_ANSWER

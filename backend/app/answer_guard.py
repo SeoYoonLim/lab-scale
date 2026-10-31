@@ -137,8 +137,9 @@ def support_values(obj) -> list[float]:
     return out
 
 
-def derived_values(results) -> list[float]:
-    """도구 결과의 시계열(prices 등)에서 두 시점 값의 차이와 변화율(%). 등락률·증감을 계산해서 말한 답변을 허용하기 위해서다."""
+def derived_values(results, keys: tuple[str, ...] = _SERIES_KEYS) -> list[float]:
+    """도구 결과의 시계열(prices 등)에서 두 시점 값의 차이와 변화율(%). 등락률·증감을 계산해서 말한 답변을 허용하기 위해서다.
+    keys를 주면 그 시계열만 본다."""
     out: list[float] = []
 
     def series_in(o):
@@ -146,7 +147,7 @@ def derived_values(results) -> list[float]:
             for v in o.values():
                 yield from series_in(v)
         elif isinstance(o, list) and o and all(isinstance(x, dict) for x in o):
-            for key in _SERIES_KEYS:
+            for key in keys:
                 vals = [x[key] for x in o if isinstance(x.get(key), (int, float)) and not isinstance(x.get(key), bool)]
                 if len(vals) >= 2:
                     yield vals[-MAX_SERIES:]
@@ -167,9 +168,13 @@ def is_supported(n: Number, supports: list[float]) -> bool:
 
 
 def unsupported_numbers(answer: str, results: list, question: str = "") -> list[Number]:
-    supports = support_values(results) + support_values(question) + derived_values(results) + cross_differences(results)
+    direct = support_values(results) + support_values(question) + cross_differences(results)
+    supports = direct + derived_values(results)
+    # "주"가 붙은 값의 계산 근거는 거래량 차이뿐이다: 종가 차이 1,100원이 "1,100주"로 통과했다(grd_13, 2026-10-31)
+    shares = direct + derived_values(results, ("volume",))
     cheon_ok = _supported_cheon_parts(answer, supports)
-    return [n for n in extract_numbers(answer) if not is_supported(n, supports) and n.raw not in cheon_ok]
+    return [n for n in extract_numbers(answer)
+            if not is_supported(n, shares if n.unit == "주" else supports) and n.raw not in cheon_ok]
 
 
 # ---------- 추가 검증 (2026-10-28 3차): 날짜, 다른 종목에 붙인 숫자, 하루/기간 등락률 혼동, 종목 간 차이 ----------
