@@ -37,8 +37,7 @@
 날짜로 필터링하지 않고 `ORDER BY price_date DESC LIMIT period_days`로 가장 최근 N행을 가져온다). 그래서 이 모듈은
 날짜 범위를 구한 뒤, 그 범위의 **평일(월~금) 수**를 세서 돌려준다(`_business_days_between`). 공휴일은 고려하지
 않는 근사치다(KRX 휴장일 캘린더가 없음) - "거래일 수"의 정확한 값이 아니라 기존 LLM 추측보다 훨씬 믿을 만한
-근사치를 제공하는 것이 목표다. stock_tool은 2026-10-31부터 긴 기간을 자르지 않는다(요약은 전체 기간, LLM에 넘기는 행만 최근 60개).
-market_tool의 상한 60은 그대로다.
+근사치를 제공하는 것이 목표다. stock_tool·market_tool은 2026-10-31부터 긴 기간을 자르지 않는다(stock_tool이 LLM에 넘기는 행만 최근 60개).
 """
 
 import calendar

@@ -825,7 +825,7 @@ def test_tool_call_text_with_results_answers_with_code_summary(monkeypatch):
     monkeypatch.setattr(agent, "_question_subjects", lambda *a: [])
     monkeypatch.setattr(agent, "_unresolved_company_answer", lambda *a: None)
     monkeypatch.setattr(agent, "_run_tool", lambda name, args: result)
-    monkeypatch.setattr(agent, "_llm_chat", lambda **kw: {"message": {"content": '{"name": "stock_tool", "parameters": {"ticker": "기아"}}'}})
+    monkeypatch.setattr(agent, "_llm_chat", lambda **kw: {"message": {"content": '조회합니다. {"name": "stock_tool", "arguments": {"ticker": "기아"}}'}})
     agent._reset_llm_state()
     response, _ = agent._answer("기아 어때?", "m")
     assert "기아 요약입니다." in response["answer"] and response["answer"] != agent.FALLBACK_ANSWER

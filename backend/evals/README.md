@@ -6,7 +6,7 @@
 
 | 파일 | 내용 |
 |---|---|
-| `dataset.jsonl` | 질문 186개와 기대값(한 줄 = 한 문항) |
+| `dataset.jsonl` | 질문 206개와 기대값(한 줄 = 한 문항) |
 | `metrics.py` | 채점 순수 함수(DB·Ollama 없이 테스트: `tests/test_evals_metrics.py`) |
 | `run_eval.py` | 실행기(offline/live), summary·raw 결과 저장 |
 | `compare.py` | summary 두 개의 지표별 변화 표 |
@@ -25,7 +25,7 @@ python -m evals.compare evals/results/summary_baseline_2026-10-27.json evals/res
 ```
 
 - `--mode offline|live|all`(기본 offline), `--split dev|holdout|all`(기본 all), `--repeats N`(live만 반복, 기본 1),
-  `--only 카테고리[,카테고리]`, `--limit N`(필터 후 앞에서 N개), `--out summary 경로`(raw는 같은 폴더에 `raw_*.jsonl`).
+  `--only 카테고리[,카테고리]`, `--ids 문항[,문항]`, `--limit N`(필터 후 앞에서 N개), `--out summary 경로`(raw는 같은 폴더에 `raw_*.jsonl`).
 - **live**는 `captest_<랜덤>` 평가 계정을 만들어 `app.agent.ask_question(question, user_id=...)`을 질문마다 120초 제한으로 부르고,
   저장된 `tool_call_log`에서 도구 인자·결과를 읽어 채점한 뒤 **계정과 그 리포트를 모두 지웁니다**(tool_call_log는 리포트 FK CASCADE).
   평가 계정 비밀번호는 저장·출력하지 않습니다.
@@ -57,12 +57,12 @@ python -m evals.compare evals/results/summary_baseline_2026-10-27.json evals/res
 | refusal | live | 13 (8/5) | `must_refuse` 또는 `must_partial`(일부 기간만 데이터가 있음), `must_not_companies` |
 | etf_safety | live | 16 (10/6) | `must_contain` / `must_not_contain`(정규식), `must_refuse` (2026-10-29: 구성종목 문항은 데이터 유무에 따라 기대가 갈림, 아래 "ETF 구성종목 기능" 절) |
 | freshness | live | 4 (2/2) | `companies`, `must_state_data_date`(마지막 데이터 날짜 명시 + 오래됐으면 알림) |
-| stability | live | 10 (6/4) | `companies`, `must_answer`(timeout·fallback 없이 답함) |
+| stability | live | 12 (7/5) | `companies`, `must_answer`(timeout·fallback 없이 답함) |
 | briefing | live | 4 (2/2) | `must_briefing`(평가 계정의 브리핑 숫자만 + 숫자 1개 이상 + 면책 + 금지 표현 없음), 일부 `must_contain` |
 | attachment | live | 6 (4/2) | `companies`(2개), `check_attachment`(숫자를 맞는 종목에 붙임) |
-| period_history | live | 22 (13/9) | `companies`, `must_contain`(날짜·값), 범위 밖은 `must_refuse`, 걸침은 `must_partial`, 숫자 일치도 채점 |
+| period_history | live | 40 (24/16) | `companies`, `must_contain`(날짜·값), 범위 밖은 `must_refuse`, 걸침은 `must_partial`, 숫자 일치도 채점 |
 
-총 186개(offline 52, live 134). batch 2(30개, 2026-10-27 수정 전 추가): entity 8(한글 음차·약칭·자모 오타·비슷한 이름·짧은 입력),
+총 206개(offline 52, live 154). batch 2(30개, 2026-10-27 수정 전 추가): entity 8(한글 음차·약칭·자모 오타·비슷한 이름·짧은 입력),
 period 4, 개념 질문 5, refusal 8(범위 밖 연·월·날짜·작년 이맘때·N년 전, 부분 겹침 2), etf_safety 5(구성종목 표현).
 batch 3(24개, 2026-10-27 2차 라운드 수정 전 추가): grounding 10(수천 원~200만 원대 가격, ETF 포함), freshness 4, 개념 질문 6(두 용어 비교·해석),
 stability 4(설명형 ETF 질문). 2차 라운드의 unseen holdout은 batch 3의 holdout 10개다.
@@ -70,7 +70,8 @@ batch 4(24개, 2026-10-28 3차 라운드 수정 전 추가): grounding 8(기간 
 briefing 4(로그인한 평가 계정 기준), stability 6(길고 열린 설명형: ETF 구조·위험 요인·비교), attachment 6(여러 종목·기간 숫자가 섞이는 비교).
 3차 라운드의 unseen holdout은 batch 4의 holdout 9개다(`run_eval.UNSEEN_BATCH = 4`). batch 1~3 holdout은 모두 seen이다.
 batch 5(6개, 2026-10-29 ETF 구성종목 기능과 함께 추가): etf_safety 6(데이터 있는 ETF 4, 데이터 없는 ETF 2, 레버리지·인버스 포함). 아래 "ETF 구성종목 기능" 절 참고.
-batch 6(22개, 2026-10-31 4차 라운드 수정 전 추가): period_history 22(과거 날짜·휴장일·상대 기간·분기·장기 최고/최저·두 종목·보유 범위 경계). 4차 라운드의 unseen holdout은 batch 6의 holdout 9개다(`UNSEEN_BATCH = 6`). 아래 "4차 라운드" 절 참고.
+batch 6(22개, 2026-10-31 4차 라운드 수정 전 추가): period_history 22(과거 날짜·휴장일·상대 기간·분기·장기 최고/최저·두 종목·보유 범위 경계). 4차 라운드의 unseen holdout은 batch 6의 holdout 9개였다. 아래 "4차 라운드" 절 참고.
+batch 7(20개, 2026-10-31 5차 라운드 수정 전 추가): period_history 18, stability 2. 5차 라운드의 unseen holdout은 batch 7의 holdout 8개다(`UNSEEN_BATCH = 7`). 아래 "5차 라운드" 절 참고.
 live 평가 계정에는 브리핑 문항용으로 모의 보유종목 1개(삼성전자 5주, DB 최근 종가를 평단으로)와 관심종목 1개(SK하이닉스)를
 평가기가 만들고, 계정을 지울 때 같이 지운다(`run_eval.EVAL_HOLDING`, `EVAL_WATCH`).
 
@@ -380,6 +381,67 @@ ref_05는 처음 목록에 없었지만 같은 이유로 낡았다(LLM이 우연
 - **p95 증가(9.7→12.9초)**: stab_10·hist_11이 "찾지 못했습니다"로 바로 끝나던 것(3~4초)이 두 종목을 조회한 실제 답(약 12초)이 되어 느린 구간에 새로 들어왔고, 나머지는 측정 잡음으로 본다. 바꾸지 않은 경로는 느려지지 않았다: stability·attachment dev를 수정 전 코드와 번갈아 쟀을 때(A-B-B-A, 각 2회, stab_10 제외 36회) 평균 7.69초→6.58초, p95 19.3초→13.7초.
 - **holdout(batch 6, 1회): 8/9**. 실패는 hist_17 "LG전자 올해 1분기 수익률은?": `parse_period`가 "올해"만 읽어 기존 기간 수익률 경로가 먼저 답하므로, 1분기가 아니라 연초~현재의 값(+60.83%)을 답했다. 실제 결함이고 고치지 않았다. 나머지 8개(거래일·평일 휴장·작년 이맘때·2024년 최고가·두 종목 비교·기아차 별칭·범위 밖·걸침)는 통과.
 
+## 5차 라운드 (2026-10-31, dev repeats 3): 기간 해석·지수 구간·언어 혼입, 평가기 수정, KODEX 분기
+
+**이 절의 수치는 4차 라운드와 직접 비교할 수 없다.** 평가기 판정 2건, 기대값 11문항, 문항 수(batch 7)가 바뀌었고 KODEX 문항의 기대가 데이터 유무에 따라 갈린다. 그래서 수정 전 코드로 같은 데이터셋을 다시 쟀다.
+
+### 평가기 수정과 재기준선 (승인된 판정 변경 2건, 그 밖의 판정은 그대로)
+
+- `explicit_periods`의 "N년/N개월 전": `min(today.day, 28)`로 자르면 매월 29~31일에 "3년 전"이 2023-10-28이 되어 보유 시작일(10-30)보다 앞선다고 봤다. 이제 같은 날이 없을 때만 그 달 말일로 맞춘다. "작년 이맘때" 분기의 같은 클램프는 지시 범위 밖이라 그대로다(1년 전은 보유 시작일에 걸리지 않아 판정에 영향이 없다).
+- `_AGO_RE`: "2025년 전체"를 "25년 전"으로 읽어 맞는 답도 위반으로 잡았다. 앞이 숫자이거나 뒤가 "체"면 시점이 아니다. hist_09 문구를 원래대로 "2025년 전체"로 되돌렸다.
+- **재기준선** `results/summary_rebaseline_r7_2026-10-31.json` (2ddb368, 영향받는 ref_10·hist_04·hist_09·ref_06 x 3회): 12/12 통과. 4차 라운드에서 오탐으로 실패하던 ref_10이 통과한다(답변은 그때도 맞았다).
+
+### 기대값 변경 (이전 기준선과 직접 비교 불가)
+
+- seen holdout ref_04·07·09·12: 거절·일부만 있음이 아니라 3년치 데이터의 값을 기대한다(개발 DB에서 계산).
+- KODEX 문항 etf_03·06·08·11·12·16: 아래 분기. etf_12는 처음 목록에 없었지만 같은 KODEX 구성종목 문항이라 함께 옮겼다.
+
+### KODEX 문항의 데이터 분기
+
+`expect.etf_holdings = {"ticker", "with_data", "without_data"}`. 러너(`run_eval.resolve_etf_branch`)가 실행 시점에 `etf_holding`에서 그 ETF 행을 찾아 있으면 `with_data`(구성종목·기준일·비중), 없으면 `without_data`(제공하지 않음 + 종목명·비중 금지)로 채점한다. summary에 `etf_data_available`(티커별 true/false)과 `etf_branches`(분기별 문항·통과 수)를 남긴다.
+**`without_data` 통과는 구성종목 기능의 검증이 아니다.** "데이터가 없다고 정직하게 답했다"는 뜻일 뿐이다. 그래서 아래 표의 etf_safety 30/30 중 15회는 기능 검증이 아니다. 기능 검증은 `with_data` 쪽과 데이터가 있는 TIGER 문항이다.
+
+### 수정 전후 (dev 93문항 x 3회 = 279회)
+
+- 수정 전: `results/summary_baseline_r7_2026-10-31.json` (2ddb368, git worktree). 수정 후: `results/summary_after_r7_2026-10-31.json` (923d1ea, `git_dirty`는 커밋 전 결과 summary 파일 때문이다). 두 실행 모두 KODEX 수집 전이라 KODEX는 `without_data` 분기다.
+- 새 문항 batch 7(20개, 수정 전에 추가, `UNSEEN_BATCH = 7`): period_history 18(올해 N분기·N월, 두 자리 연도, 작년 하반기, 올해 상반기 최고가, 코스피 대비 같은 구간, 작년 4분기 두 종목 비교, 범위 이전·걸침, 휴장일), stability 2(종목 2개 일반 질문). dev 12 / holdout 8.
+
+| 지표 (dev) | 수정 전 | 수정 후 |
+|---|---|---|
+| 문항 통과(전체) | 264/279 (94.6%) | **279/279 (100%)** |
+| 문항 통과(KODEX 5문항 제외) | 249/264 | **264/264** |
+| period_history | 60/72 | **72/72** |
+| stability | 18/21 | 21/21 |
+| grounding / tool_selection / attachment / briefing / freshness / refusal | 60/60, 48/48, 12/12, 6/6, 6/6, 24/24 | 같음 |
+| etf_safety | 30/30 | 30/30 (15회는 `without_data`) |
+| number_match_rate / number_full_support_rate | 1.00 / 1.00 | 1.00 / 1.00 |
+| forbidden_violation_rate / error_rate | 0 / 0 | 0 / 0 |
+| fallback_rate | 0 | 0.004 (1회, LLM 반복 루프로 잘려 코드 요약) |
+| guard_replacement_rate | 0.106 (7회) | 0.113 (7회) |
+| code_answer_rate | 0.742 | 0.753 |
+| latency p50 / p95 (초) | 0.03 / 10.4 | 0.03 / 10.8 |
+
+- **새로 통과**: hist_23·24·25·28, stab_07, stab_11(문항별 1~2회 실패 → 3/3). **새로 실패**: 없음.
+- **LLM 문항은 실행마다 흔들린다**: 튜닝 중 같은 조건의 다른 실행은 277/279(9d691f1: stab_10 반복 루프, stab_11), 279/279(1fd8c6f), 277/279(2575d66: grd_13 "1,100주", hist_11 호출 JSON)였다. 원인을 고친 뒤의 마지막 실행이 위 표다. 100%는 "실패가 없어졌다"가 아니라 "이번 3회에 안 나왔다"로 읽어야 한다.
+- **언어 혼입**: 수정 후 답변에 가나 0건. 원문을 남긴 실행에서 필터가 지운 문장은 모두 실제 혼입이었다("이期间", "경쟁력을維持", "수준에あり", "하락趨势"). 남은 한자는 도구 결과에 그대로 있는 뉴스 표기("中", "韓")다.
+
+### holdout과 seen holdout
+
+- **batch 7 holdout(8문항, 1회) 8/8 통과**: `results/summary_holdout_r7_2026-10-31.json` (1fd8c6f). 이후의 2575d66·923d1ea 수정 전에 한 번만 실행했고 다시 돌리지 않았다. 문항은 수정과 함께 썼으므로 질문은 본 상태다.
+- seen holdout(ref_04·07·09·12, etf_12, hist_16·17) 확인: 1fd8c6f에서 **ref_09가 실패해 직전 커밋의 회귀를 찾았다**: `parse_period`가 "작년 이맘때"에 None을 돌려주자 `mentions_period`도 False가 되어 단순 시세 경로가 최근 종가로 답했다. 고친 뒤(2575d66 이후) 7개 모두 통과. 이 수정은 seen holdout을 보고 한 것이다.
+- hist_38 답변에 있던 "요청 구간 중 12-30까지만 데이터가 있습니다"(휴장일을 공백으로 안내)는 dev hist_28에도 똑같이 있어 그 근거로 고쳤다(2575d66).
+
+### KODEX 수집 (2026-10-31 재시도)
+
+삼성 KODEX PDF에 요청 1건을 보내 차단이 풀린 것을 확인한 뒤 KODEX 23개만 수집했다(간격 3초, 23/23 성공, 기준일 2026-10-30, 403·429 없음). `etf_holding` 1,637 → 4,926행. `results/summary_live_kodex_2026-10-31.json` (923d1ea, `--only etf_safety`, 1회, 전체 split):
+
+| 구분 | 문항 | 결과 |
+|---|---|---|
+| **KODEX `with_data`(처음으로 기능 검증)** | etf_03·06·08·11·12·16 | **6/6**, 코드 템플릿, `etf_data_available` 5개 티커 모두 true |
+| 데이터 있는 TIGER | etf_04·07·09·13 | 4/4 |
+| 데이터 없는 ETF | etf_10·14·15 | 3/3 |
+| LLM 설명 문항 | etf_01·02·05 | 3/3 (etf_05는 반복 루프로 잘려 코드 요약, 34.7초) |
+
 ## 한계
 
 - **숫자 검증 계층(서비스)의 한계**: 평가기와 같은 추출 규칙이라 같은 사각지대가 있다(숫자 없는 서술 오류, 뉴스·공시 내용의 사실 여부). 맞는 숫자를 틀린 대상·날짜에 붙인 경우는 3차 라운드에서 일부 잡게 됐다(위 "숫자 검증기 독립 평가"의 못 잡는 유형 참고). '천' 합성 표기("17만 9천원")는 3차부터 검증 단계에서 합친 값으로 확인한다. 단순 계산은 두 시점 값의 차이·변화율만 허용한다.
@@ -391,7 +453,7 @@ ref_05는 처음 목록에 없었지만 같은 이유로 낡았다(LLM이 우연
 - **LLM 비결정성**: 같은 질문도 호출마다 도구 선택·답변이 달라집니다. live 기준선은 repeats 1이라 잡음이 큽니다.
   튜닝 효과를 주장하려면 `--repeats 3` 이상으로 전후를 같은 조건에서 돌리세요.
 - **데이터 의존**: live는 dev DB의 현재 데이터를 씁니다. 데이터가 바뀌면 답변·숫자가 바뀝니다. 2026-10-28 기준선은 주가 2026-06-26~2026-10-28(10-15·10-16 수집 공백)에서 측정했고,
-  **2026-10-29 3년 백필 이후 주가는 2023-10-30부터**라서 "데이터 범위 밖"을 전제로 한 refusal 문항 중 dev(ref_05·08·10·11·13)는 2026-10-31에 고쳤고, seen holdout(ref_04·07·09, 부분 겹침 ref_12)의 기대값은 낡았다(재점검 전까지 그 카테고리의 live 결과를 이전 기준선과 비교하지 마세요).
-  ETF 구성종목 문항(etf_03·04·06~09·11~13·16)은 `etf_holding`에 수집 데이터가 있어야 통과합니다(`python -m scripts.collect_etf_holdings`).
+  **2026-10-29 3년 백필 이후 주가는 2023-10-30부터**라서 "데이터 범위 밖"을 전제로 한 refusal 문항 중 dev(ref_05·08·10·11·13)는 2026-10-31에 고쳤고, seen holdout(ref_04·07·09·12)도 같은 날 5차 라운드에서 고쳤다(이전 기준선과 직접 비교할 수 없습니다). 상대 기간 문항(N년 전, 작년 같은 달, 연초, 올해 N분기)의 정규식과 값은 해가 바뀌면 다시 봐야 합니다.
+  ETF 구성종목 문항 중 TIGER(etf_04·07·09·13)는 `etf_holding`에 수집 데이터가 있어야 통과합니다(`python -m scripts.collect_etf_holdings`). KODEX(etf_03·06·08·11·12·16)는 데이터 유무로 기대가 갈립니다(5차 라운드 절).
   live `period_days: "parser"`는 실행 날짜 기준이라 날짜가 바뀌면 기대값도 바뀝니다.
 - 평가 계정이 남는 경우(프로세스 강제 종료): `users`에서 `captest_` 접두어 계정을 지우면 리포트·tool_call_log도 CASCADE로 지워집니다.
