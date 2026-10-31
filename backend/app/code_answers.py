@@ -62,20 +62,23 @@ def _price_dict(row) -> dict:
     }
 
 
-def window_result(company, rows_desc: list, start: date, now: datetime, called_via: str) -> dict | None:
+def window_result(company, rows_desc: list, start: date, now: datetime, called_via: str, end: date | None = None,
+                  require_base: bool = True) -> dict | None:
     """최신순 시세 행으로 stock_tool 결과와 같은 모양의 dict를 만든다(평가·검증·출처가 stock_tool 결과처럼 읽는다).
 
     창은 날짜 기준이다: start(질문 기간의 시작일, parse_period) 이후의 행을 쓰고, start 직전 거래일 종가를 기준으로 삼는다.
     행 수(N거래일) 기준이면 연휴로 행이 없는 날만큼 창이 앞으로 밀린다("한 달"이 9월 중순부터가 됨). rows_desc에는 기준 종가가
-    들어갈 만큼 여유 있게(start 이전 행 포함) 넘긴다. 창이 2거래일이 안 되거나 기준 종가가 없으면 None."""
+    들어갈 만큼 여유 있게(start 이전 행 포함) 넘긴다. end(질문 기간의 끝, "지난주"·"지난달")를 주면 그 뒤의 행은 쓰지 않는다.
+    창이 2거래일이 안 되면 None, 기준 종가가 없어도 None이다. require_base=False면 기준 종가 없이 창의 첫 종가를 기준으로 삼는다
+    (창이 보유 데이터의 첫 거래일에서 시작할 때)."""
     kept = drop_open_session(list(rows_desc), now, lambda r: r.price_date)
     dropped = len(kept) < len(rows_desc)
     rows = kept
-    inside = [r for r in rows if r.price_date >= start]
+    inside = [r for r in rows if r.price_date >= start and (end is None or r.price_date <= end)]
     before = [r for r in rows if r.price_date < start]
     base_row = before[0] if before else None
     prices = [_price_dict(r) for r in reversed(inside)]
-    if not prices or base_row is None:
+    if not prices or (base_row is None and require_base):
         return None
     period_days = len(prices)
     base = {"price_date": base_row.price_date.isoformat(), "close_price": float(base_row.close_price)} if base_row else None
@@ -146,7 +149,7 @@ def compare(a: dict, b: dict) -> tuple[str, float] | None:
     diff = round(pa - pb, 2)
     head = f"{a['period_start_date']} 종가 대비 {a['period_end_date']}까지 {a['trading_days']}거래일 기준 비교입니다(종가 기준)."
     if diff == 0:
-        last = f"같은 기간 {josa(a['company_name'], '와/과')} {b['company_name']}의 등락률은 같습니다."
+        last = f"같은 기간 {josa(a['company_name'], '과/와')} {b['company_name']}의 등락률은 같습니다."
     else:
         hi, lo = (a, b) if diff > 0 else (b, a)
         last = f"같은 기간 등락률은 {josa(hi['company_name'], '이/가')} {lo['company_name']}보다 {abs(diff):.2f}%p 높았습니다."

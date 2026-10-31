@@ -27,7 +27,7 @@ from app.event_answer import (
     event_result_for_llm,
     trim_result,
 )
-from app import briefing_text, code_answers, period_scope
+from app import briefing_text, code_answers, period_answers, period_scope
 from app.etf import (
     ETF_ANSWER_RULES,
     asks_constituents,
@@ -46,7 +46,7 @@ from app.etf_holdings_db import chat_views
 from app.glossary import comparison_answer, concept_answer, find_term, term_answer
 from app.models import Company, StockPrice
 from app.period_parser import KST, mentions_period, parse_period
-from app.price_history import recent_price_rows
+from app.price_history import last_row_before, market_has_rows, price_range, price_rows_between, recent_price_rows
 from app.reports import save_report as save_report_row
 from app.sources import build_sources
 from app.tools.company_resolver import MAX_CANDIDATES, extract_from_text, normalize_name, resolve_company
@@ -597,6 +597,67 @@ _COMPANY_ARG = {
 }
 
 
+_COMPARE_QUESTION_RE = re.compile(code_answers._COMPARE_RE.pattern + r"|차이")
+
+
+def _add_missing_compared(db, calls: list[dict], named: list) -> list[dict]:
+    """종목 인자를 받는 호출마다, 질문의 종목 중 그 도구로 조회하지 않은 종목의 호출을 바로 뒤에 덧붙인다."""
+    called: dict[str, set[int]] = {}
+    for call in calls:
+        key = _COMPANY_ARG.get(call["function"]["name"])
+        company = resolve_company(db, _as_args(call["function"]["arguments"]).get(key)).company if key else None
+        if company is not None:
+            called.setdefault(call["function"]["name"], set()).add(company.id)
+    out = []
+    for call in calls:
+        out.append(call)
+        fn_name = call["function"]["name"]
+        key = _COMPANY_ARG.get(fn_name)
+        if fn_name in called:
+            args = _as_args(call["function"]["arguments"])
+            for c in named:
+                if c.id not in called[fn_name]:
+                    called[fn_name].add(c.id)
+                    out.append({"function": {"name": fn_name, "arguments": {**args, key: c.name}}})
+    return out
+
+
+def _expand_multi_company_calls(calls: list[dict], question: str) -> None:
+    """질문에 종목이 둘 이상일 때, 모델이 한 호출에 종목을 묶었으면 종목별 호출로 나눈다(calls를 직접 수정).
+
+    "현대차와 기아의 사업 구조 차이" 질문에서 모델이 company_name="현대차, 기아"로 넘겨 종목을 못 찾았다고 답하거나(stab_10,
+    종목 이름 자체는 정확히 해석된다), 종목 필터 없이 RAG를 검색해 두 회사 문서를 고르지 못했다. 나눈 인자는 질문·인자에서 찾은 등록명이다.
+    비교 질문("현대차와 기아 비교해줘")에서 모델이 한 종목만 호출했으면 같은 도구를 나머지 종목에도 호출한다."""
+    if not any(_COMPANY_ARG.get(call["function"]["name"]) for call in calls):
+        return
+    db = SessionLocal()
+    try:
+        named = extract_from_text(db, question)
+        if len(named) < 2:
+            return
+        expanded = []
+        for call in calls:
+            fn_name = call["function"]["name"]
+            key = _COMPANY_ARG.get(fn_name)
+            args = _as_args(call["function"]["arguments"])
+            raw = args.get(key) if key else None
+            targets = None
+            if key and not normalize_name(raw):
+                targets = named if fn_name == "rag_search_tool" else None
+            elif key and resolve_company(db, raw).company is None:
+                found = extract_from_text(db, str(raw))
+                targets = found if len(found) >= 2 else None
+            if targets is None:
+                expanded.append(call)
+            else:
+                expanded.extend({"function": {"name": fn_name, "arguments": {**args, key: c.name}}} for c in targets)
+        if _COMPARE_QUESTION_RE.search(question):
+            expanded = _add_missing_compared(db, expanded, named)
+        calls[:] = expanded
+    finally:
+        db.close()
+
+
 def _repair_company_args(calls: list[dict], question: str, previous_question: str | None = None) -> dict[int, str]:
     """모델이 만든 종목 인자가 DB 종목으로 해석되지 않으면, 질문 원문에서 회사명을 찾아 대신 넣는다.
 
@@ -689,6 +750,20 @@ def _apply_period_override(calls: list[dict], question: str) -> dict[int, object
         overridden[i] = args.get(key)
         args[key] = parsed.period_days
     return overridden
+
+
+def _apply_past_window(calls: list[dict], question: str) -> None:
+    """최근 N거래일 창으로 답할 수 없는 기간("2024년 3월 주가와 뉴스")이면 stock_tool에 날짜 범위를 넘긴다(LLM이 정한 period_days로
+    최근 시세를 조회해 그 기간의 값처럼 답하던 문제, 2026-10-31). LLM 스키마에는 없는 인자다. calls를 직접 수정한다."""
+    today = datetime.now(KST).date()
+    requested = period_scope.requested_period(question, today)
+    if not period_answers.needs_date_lookup(requested, parse_period(question), today):
+        return
+    for call in calls:
+        if call["function"]["name"] == "stock_tool":
+            args = _as_args(call["function"]["arguments"])
+            call["function"]["arguments"] = args
+            args["start_date"], args["end_date"] = requested.start.isoformat(), requested.end.isoformat()
 
 
 # 기간을 말하지 않은 흐름 질문에서 stock_tool에 채우는 기본 기간(거래일 수). 진단의 20거래일 수익률,
@@ -1177,17 +1252,8 @@ def _price_dict(row) -> dict:
     }
 
 
-def _answer_period_scope(question: str, companies: list | None, today=None):
-    """(A) 질문에 명시한 기간이 그 종목의 보유 시세보다 앞서면 코드가 답한다. 범위 안이거나 기간이 없으면 None(기존 흐름).
-
-    종목이 정확히 하나이고 시세를 묻는 질문일 때만 본다. 기록은 stock_tool 이름으로 남기되 result.called_via="period_scope"다."""
-    if not companies or len(companies) != 1 or not period_scope.PRICE_INTENT_RE.search(question or ""):
-        return None
-    requested = period_scope.requested_period(question, today or datetime.now(KST).date())
-    if requested is None:
-        return None
-    company = companies[0]
-    called_at = datetime.now(timezone.utc)
+def _period_scope_parts(company, requested) -> tuple[str, dict] | None:
+    """요청 기간이 그 종목의 보유 시세보다 앞서거나 걸치면 (답변 문장, stock_tool 모양의 결과). 범위 안이거나 읽지 못하면 None."""
     try:
         db = SessionLocal()
         try:
@@ -1239,6 +1305,24 @@ def _answer_period_scope(question: str, companies: list | None, today=None):
             db.close()
     except Exception:
         return None
+    return answer, result
+
+
+def _answer_period_scope(question: str, companies: list | None, today=None):
+    """(A) 질문에 명시한 기간이 그 종목의 보유 시세보다 앞서면 코드가 답한다. 범위 안이거나 기간이 없으면 None(기존 흐름).
+
+    종목이 정확히 하나이고 시세를 묻는 질문일 때만 본다. 기록은 stock_tool 이름으로 남기되 result.called_via="period_scope"다."""
+    if not companies or len(companies) != 1 or not period_scope.PRICE_INTENT_RE.search(question or ""):
+        return None
+    requested = period_scope.requested_period(question, today or datetime.now(KST).date())
+    if requested is None:
+        return None
+    company = companies[0]
+    called_at = datetime.now(timezone.utc)
+    parts = _period_scope_parts(company, requested)
+    if parts is None:
+        return None
+    answer, result = parts
     if getattr(company, "asset_type", None) == "etf" and (kind := leverage_kind(company.name)):
         answer += "\n\n" + leverage_notice(company.name, kind)
     record = {
@@ -1308,13 +1392,13 @@ def _load_price_rows(company, limit: int) -> list:
         db.close()
 
 
-def _price_window(company, period_days: int, start) -> dict | None:
-    """start 이후의 날짜 창으로 만든 stock_tool 결과 모양의 dict(장중 규칙 적용). 실패하면 None(기존 흐름으로 간다)."""
+def _price_window(company, period_days: int, start, end=None) -> dict | None:
+    """start~end의 날짜 창으로 만든 stock_tool 결과 모양의 dict(장중 규칙 적용). 실패하면 None(기존 흐름으로 간다)."""
     try:
         rows = _load_price_rows(company, period_days + _WINDOW_SLACK_ROWS)
     except Exception:
         return None
-    return code_answers.window_result(company, rows, start, datetime.now(KST), "period_quote")
+    return code_answers.window_result(company, rows, start, datetime.now(KST), "period_quote", end=end)
 
 
 def _answer_period_quote(question: str, companies: list | None):
@@ -1327,7 +1411,7 @@ def _answer_period_quote(question: str, companies: list | None):
     if kind is None:
         return None
     called_at = datetime.now(timezone.utc)
-    results = [_price_window(c, parsed.period_days, parsed.start_date) for c in companies]
+    results = [_price_window(c, parsed.period_days, parsed.start_date, parsed.end_date) for c in companies]
     if any(r is None for r in results):
         return None
     if kind == code_answers.KIND_COMPARE:
@@ -1343,6 +1427,98 @@ def _answer_period_quote(question: str, companies: list | None):
         if getattr(c, "asset_type", None) == "etf" and (lk := leverage_kind(c.name)):
             answer += "\n\n" + leverage_notice(c.name, lk)
     records = [{"tool_name": "stock_tool", "arguments": {"ticker": c.name, "period_days": parsed.period_days},
+                "result": r, "called_at": called_at, "elapsed_ms": 0} for c, r in zip(companies, results)]
+    return _code_answer(_with_intraday_note(answer, records), records)
+
+
+def _history_day_parts(db, company, day, requested, data_end, question: str) -> tuple[str, dict] | None:
+    """특정 하루의 답(거래일이면 그날 값, 아니면 사유와 직전 거래일 값)."""
+    rows = price_rows_between(db, company.id, day, day)
+    base = {"ticker": company.ticker, "company_name": company.name, "found": True, "called_via": "period_history",
+            "requested_start": requested.start.isoformat(), "requested_end": requested.end.isoformat()}
+    if rows:
+        row = {**_price_dict(rows[0]), "open_price": float(rows[0].open_price) if rows[0].open_price is not None else None,
+               "high_price": float(rows[0].high_price) if rows[0].high_price is not None else None,
+               "low_price": float(rows[0].low_price) if rows[0].low_price is not None else None}
+        result = {**base, "period_days": 1, "change_pct": row["change_pct"], "volume": row["volume"], "prices": [row]}
+        return period_answers.day_text(company.name, row, question), result
+    previous_row = last_row_before(db, company.id, day)
+    if previous_row is None:
+        return None
+    reason = period_answers.closed_reason(day, market_has_rows(db, day), data_end)
+    previous = _price_dict(previous_row)
+    result = {**base, "period_days": 1, "closed_reason": reason, "change_pct": previous["change_pct"],
+              "volume": previous["volume"], "prices": [previous]}
+    return period_answers.closed_day_text(company.name, day, reason, previous), result
+
+
+def _history_parts(company, requested, now, question: str) -> tuple[str, dict] | None:
+    """종목 하나의 과거 기간 답(문장, stock_tool 모양의 결과). 시세가 없거나 읽지 못하면 None(기존 흐름). requested가 None이면 보유 데이터 전체."""
+    db = SessionLocal()
+    try:
+        data_start, data_end = price_range(db, company.id)
+        if data_start is None:
+            return None
+        if requested is None:
+            requested = period_scope.RequestedPeriod(data_start, data_end, period_answers.ALL_TIME_LABEL)
+        elif period_scope.classify(requested, data_start, data_end) is not None:
+            return _period_scope_parts(company, requested)
+        if requested.start == requested.end:
+            return _history_day_parts(db, company, requested.start, requested, data_end, question)
+        if requested.start > data_end:
+            text = period_answers.after_data_text(company.name, requested, data_start, data_end)
+            return text, {"ticker": company.ticker, "company_name": company.name, "found": True, "called_via": "period_history",
+                          "requested_start": requested.start.isoformat(), "requested_end": requested.end.isoformat(),
+                          "data_start": data_start.isoformat(), "data_end": data_end.isoformat()}
+        rows = price_rows_between(db, company.id, requested.start, requested.end)
+        previous_row = last_row_before(db, company.id, requested.start)
+        rows_desc = list(reversed(rows)) + ([previous_row] if previous_row is not None else [])
+        result = code_answers.window_result(company, rows_desc, requested.start, now, "period_history", end=requested.end,
+                                            require_base=False)
+        if result is None:
+            # 창에 거래일이 하나뿐이거나 없는 경우(연휴 등): 하루 답으로 간다
+            return _history_day_parts(db, company, rows[0].price_date if len(rows) == 1 else requested.start, requested,
+                                      data_end, question)
+
+        result.update(period_answers.volume_stats(result["prices"]), requested_start=requested.start.isoformat(),
+                      requested_end=requested.end.isoformat())
+        return period_answers.window_text(result, requested, data_end, question), result
+    finally:
+        db.close()
+
+
+def _answer_period_history(question: str, companies: list | None):
+    """(2026-10-31) 날짜로 조회해야 하는 과거 시세 질문은 LLM 없이 코드가 답한다(app/period_answers.py): 특정 날짜 종가, 휴장일 안내,
+    "2024년 등락률", "2025년 3분기 수익률", "작년 같은 달", "역대 최고가", 같은 기간 두 종목 비교. 대상이 아니면 None(기존 흐름)."""
+    if not companies or len(companies) > 2 or not period_answers.is_history_question(question):
+        return None
+    now = datetime.now(KST)
+    requested = period_scope.requested_period(question, now.date())
+    parsed = parse_period(question)
+    all_time = requested is None and bool(period_answers.ALL_TIME_RE.search(question))
+    if not all_time and not period_answers.code_answers_period(requested, parsed, now.date()):
+        return None
+    called_at = datetime.now(timezone.utc)
+    try:
+        parts = [_history_parts(c, requested, now, question) for c in companies]
+    except Exception:
+        return None
+    if any(p is None for p in parts):
+        return None
+    results = [r for _, r in parts]
+    answer = "\n\n".join(text for text, _ in parts)
+    if len(results) == 2 and all(r.get("period_change_pct") is not None for r in results):
+        compared = code_answers.compare(results[0], results[1])
+        if compared is not None:
+            answer, diff = compared
+            for r in results:
+                r["compared_diff_pct_point"] = diff
+    for c in companies:
+        if getattr(c, "asset_type", None) == "etf" and (lk := leverage_kind(c.name)):
+            answer += "\n\n" + leverage_notice(c.name, lk)
+    records = [{"tool_name": "stock_tool",
+                "arguments": {"ticker": c.name, "period_days": parsed.period_days if parsed else r.get("period_days"),
+                              "start_date": r.get("requested_start"), "end_date": r.get("requested_end")},
                 "result": r, "called_at": called_at, "elapsed_ms": 0} for c, r in zip(companies, results)]
     return _code_answer(_with_intraday_note(answer, records), records)
 
@@ -1458,7 +1634,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     _reset_llm_state()
     companies = _question_companies(question)
     for handler in (_answer_concept, _answer_etf_constituents, _answer_period_scope, _answer_simple_quote,
-                    _answer_period_quote):
+                    _answer_period_quote, _answer_period_history):
         handled = handler(question, companies)
         if handled is not None:
             return handled
@@ -1498,6 +1674,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     # 2. 모델이 만든 종목 인자가 깨졌으면 질문 원문에서 회사명을 찾아 보정한 뒤, tool을 실제로 실행하고
     #    결과를 다시 넘겨줌. 질문이 이름으로 요청한 tool이 빠졌으면 덧붙이고(보정된 종목 인자를 쓰도록 보정 뒤에),
     #    기간은 질문에서 인식한 값 > 흐름 질문의 기본 기간 > LLM 추론값 순으로 정한다.
+    _expand_multi_company_calls(tool_calls, question)
     repaired = _repair_company_args(tool_calls, question, previous["question"] if previous else None)
     added = set(_add_requested_tools(tool_calls, question)) | set(etf_added)
     subjects = _question_subjects(question, tool_calls)
@@ -1505,6 +1682,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     if etf_mode:
         added |= set(_add_etf_tools(tool_calls, subjects))
     period_overrides = _apply_period_override(tool_calls, question)
+    _apply_past_window(tool_calls, question)
     period_defaults = _apply_default_period(tool_calls, question)
     etf_periods = _apply_etf_period(tool_calls, question) if etf_mode else {}
     unresolved = _unresolved_company_answer(tool_calls, question)

@@ -11,8 +11,10 @@
   "오늘 주가"는 가장 최근 데이터로 답하는 기존 동작을 바꾸지 않는다.
 
 인식하는 기간: 연도("2024년"), 연+월("2024년 3월"), 날짜("2026년 3월 15일", "2026-03-15"), 연도 없는 월·날짜("6월", "3월 15일":
-올해, 아직 오지 않은 달이면 작년), "작년", "재작년", "작년 이맘때", "N년/N개월/N주/N일 전"(그날 하루), "X부터"(X의 시작~오늘),
+올해, 아직 오지 않은 달이면 작년), "작년"·"지난해", "재작년", "작년 이맘때", "작년 같은 달", "작년 3월"·"올해 3월 15일", 분기("2025년 3분기",
+"작년 4분기", "1분기"), 반기("2025년 상반기"), "연초", "N년/N개월/N주/N일 전"(그날 하루), "X부터"(X의 시작~오늘), "X부터 Y까지",
 그리고 app.period_parser.parse_period가 인식하는 상대 기간("올해", "1년", "반년", "3개월" 등).
+범위 안의 기간은 여기서 답하지 않는다(None). 그중 날짜로 조회해야 하는 질문은 app.period_answers가 답한다.
 """
 
 import re
@@ -28,11 +30,19 @@ PRICE_INTENT_RE = re.compile(r"주가|종가|시가|고가|저가|시세|가격|
 
 _YMD_RE = re.compile(r"((?:19|20)\d{2})\s*(?:년\s*|[-.]\s*)(\d{1,2})\s*(?:월\s*|[-.]\s*)(\d{1,2})\s*일?")
 _YM_RE = re.compile(r"((?:19|20)\d{2})\s*년\s*(\d{1,2})\s*월")
-_Y_RE = re.compile(r"((?:19|20)\d{2})\s*년(?!\s*(?:전|간|동안))")
+_Y_RE = re.compile(r"((?:19|20)\d{2})\s*년(?!\s*(?:전(?!체)|간|동안))")
 _MD_RE = re.compile(r"(?<!\d)(\d{1,2})\s*월\s*(\d{1,2})\s*일")
 _M_RE = re.compile(r"(?<!\d)(\d{1,2})\s*월(?!\s*\d|요일|간|별)")
-_AGO_RE = re.compile(r"(\d{1,3})\s*(년|개월|주|일)\s*전")
+# "2025년 전체"의 "025년 전"을 시점으로 읽지 않는다(2026-10-31)
+_AGO_RE = re.compile(r"(?<!\d)(\d{1,3})\s*(년|개월|주|일)\s*전(?!체)")
 _FROM_RE = re.compile(r"^\s*(?:부터|이후|이래)")
+_UNTIL_RE = re.compile(r"^\s*까지")
+_YEAR_WORD = r"(재작년|작년|지난해|올해|금년)"
+_WORD_YM_RE = re.compile(_YEAR_WORD + r"\s*(\d{1,2})\s*월(?:\s*(\d{1,2})\s*일)?")
+_SAME_MONTH_RE = re.compile(r"(?:작년|지난해)\s*(?:같은\s*달|동월)")
+_YEAR_PREFIX = r"(?:((?:19|20)\d{2})\s*년\s*|" + _YEAR_WORD + r"\s*)?"
+_QUARTER_RE = re.compile(_YEAR_PREFIX + r"([1-4])\s*분기")
+_HALF_RE = re.compile(_YEAR_PREFIX + r"([상하])반기")
 
 
 @dataclass
@@ -59,6 +69,22 @@ def _past_year_for_month(month: int, today: date) -> int:
     return today.year if month <= today.month else today.year - 1
 
 
+def _word_year(word: str, today: date) -> int:
+    return today.year - {"재작년": 2, "작년": 1, "지난해": 1}.get(word, 0)
+
+
+def _month_range_of_year(m: re.Match, first_month: int, last_month: int, today: date) -> tuple[date, date]:
+    """분기·반기: 연도를 말했으면 그 해, 안 했으면 올해(그 구간이 아직 시작 전이면 작년). 끝은 오늘을 넘지 않는다."""
+    if m.group(1):
+        year = int(m.group(1))
+    elif m.group(2):
+        year = _word_year(m.group(2), today)
+    else:
+        year = _past_year_for_month(first_month, today)
+    end = date(year, last_month, monthrange(year, last_month)[1])
+    return date(year, first_month, 1), min(end, today)
+
+
 def requested_period(question: str, today: date) -> RequestedPeriod | None:
     """질문에서 기간 표현 하나(가장 먼저 나온 것)를 날짜 범위로 바꾼다. 없으면 None."""
     q = question or ""
@@ -79,6 +105,25 @@ def requested_period(question: str, today: date) -> RequestedPeriod | None:
         y, mo = int(m.group(1)), int(m.group(2))
         if 1 <= mo <= 12:
             add(m, date(y, mo, 1), date(y, mo, monthrange(y, mo)[1]))
+    for m in _SAME_MONTH_RE.finditer(q):
+        y = today.year - 1
+        add(m, date(y, today.month, 1), date(y, today.month, monthrange(y, today.month)[1]))
+    for m in _WORD_YM_RE.finditer(q):
+        y, mo = _word_year(m.group(1), today), int(m.group(2))
+        if 1 <= mo <= 12:
+            if m.group(3):
+                day = _safe_date(y, mo, int(m.group(3)))
+                add(m, day, day)
+            else:
+                add(m, date(y, mo, 1), min(date(y, mo, monthrange(y, mo)[1]), today))
+    for m in _QUARTER_RE.finditer(q):
+        quarter = int(m.group(3))
+        add(m, *_month_range_of_year(m, quarter * 3 - 2, quarter * 3, today))
+    for m in _HALF_RE.finditer(q):
+        first, last = (1, 6) if m.group(3) == "상" else (7, 12)
+        add(m, *_month_range_of_year(m, first, last, today))
+    for m in re.finditer(r"연초", q):
+        add(m, date(today.year, 1, 1), today)
     for m in _Y_RE.finditer(q):
         y = int(m.group(1))
         add(m, date(y, 1, 1), date(y, 12, 31))
@@ -97,7 +142,7 @@ def requested_period(question: str, today: date) -> RequestedPeriod | None:
         add(m, day, day)
     for m in re.finditer(r"재작년", q):
         add(m, date(today.year - 2, 1, 1), date(today.year - 2, 12, 31))
-    for m in re.finditer(r"(?<!재)작년", q):
+    for m in re.finditer(r"(?<!재)작년|지난해", q):
         add(m, date(today.year - 1, 1, 1), date(today.year - 1, 12, 31))
     for m in _AGO_RE.finditer(q):
         n, unit = int(m.group(1)), m.group(2)
@@ -109,10 +154,15 @@ def requested_period(question: str, today: date) -> RequestedPeriod | None:
             day = today - timedelta(days=n * (7 if unit == "주" else 1))
         add(m, day, day)
 
-    # "X부터(지금까지)"는 X의 시작부터 오늘까지
+    # "X부터(지금까지)"는 X의 시작부터 오늘까지, "X부터 Y까지"는 Y의 끝까지. 연도 없는 Y("2023년 9월부터 11월까지")는 X의 해다.
     for i, (st, en, start, end, label) in enumerate(found):
         if _FROM_RE.match(q[en:]):
-            found[i] = (st, en, start, today, label + "부터")
+            later = sorted((f for f in found if f[0] >= en), key=lambda f: f[0])
+            if later and _UNTIL_RE.match(q[later[0][1]:]):
+                until = later[0][3] if "년" in later[0][4] else _safe_date(start.year, later[0][3].month, later[0][3].day)
+                found[i] = (st, later[0][1], start, until or later[0][3], q[st:later[0][1]].strip())
+            else:
+                found[i] = (st, en, start, today, label + "부터")
 
     # 호출측이 정한 today를 그대로 쓴다(생략하면 parse_period가 실제 현재 시각을 써서 today와 어긋난다)
     parsed = parse_period(q, datetime.combine(today, time(12), tzinfo=ZoneInfo("Asia/Seoul")))
