@@ -10,7 +10,7 @@
 ## 지금 상태 요약 (2026-10-14 기준)
 
 **한 줄 요약:** 백엔드(API + 에이전트 + 데이터 수집·일괄 갱신 + 로그인 + 관심종목/모의투자 + 포트폴리오 AI 진단과 이력 + 환율 영향 분석 +
-시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응 + 오늘의 개인화 브리핑(API·채팅))는 동작하고, 빠른 테스트 **3947개**가 통과합니다(`pytest`, 순수 로직 3463 + 개발 DB 통합 484. KODEX 수집 데이터가 DB에 없으면 그중 수집 데이터 대조 3개가 사유와 함께 skip, 2026-10-30).
+시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응 + 오늘의 개인화 브리핑(API·채팅))는 동작하고, 빠른 테스트 **4054개**가 통과합니다(`pytest`, 순수 로직 3570 + 개발 DB 통합 484. KODEX 수집 데이터가 DB에 없으면 그중 수집 데이터 대조 3개가 사유와 함께 skip, 2026-10-31).
 실제 Ollama를 부르는 slow 테스트 61개는 기본에서 빠지고 `pytest -m slow`로 따로 돌립니다. 백엔드 작업 브랜치는 `feature/backend`(원격 push 완료)이고
 아직 main에 병합하지 않았습니다. 프론트엔드는 서윤님이 `feature/frontend`에서 React + Vite + zod로 진행 중이며, 2026-10-14에 실제 백엔드 응답을
 프론트의 zod 스키마로 검증했을 때 불일치가 없었습니다(프론트 테스트 20개·빌드·lint 통과). 남은 큰 일은 화면 연동과 아래 "알려진 한계"입니다.
@@ -437,6 +437,23 @@ uvicorn app.main:app --port 8000    # 개발 중에는 --reload 추가
 
 `http://localhost:8000/docs`에서 Swagger UI로 바로 호출해볼 수 있습니다.
 
+**재부팅 뒤 11434가 막혔을 때 (Windows)**: Windows가 부팅할 때 예약 포트 범위를 다시 잡으면서 11434가 들어가는 일이 있습니다(2026-10-31 실측: 11356~11455,
+`ollama serve`가 `bind: An attempt was made to access a socket in a way forbidden by its access permissions`로 실패하고 트레이 앱만 남음). DB의 호스트 포트를 5432 대신 15432로 쓰는 것과 같은 원인입니다.
+범위는 `netsh int ipv4 show excludedportrange protocol=tcp`로 확인하고, 그 밖의 포트로 띄웁니다. 시스템 설정은 바꾸지 않아도 됩니다.
+
+```powershell
+# 터미널 1: Ollama (이 터미널에서만 유효)
+$env:OLLAMA_HOST = "127.0.0.1:12434"; ollama serve
+
+# 터미널 2: 백엔드·평가·갱신 (같은 주소를 프로세스마다 지정)
+$env:OLLAMA_HOST = "http://127.0.0.1:12434"
+uvicorn app.main:app --port 8000      # 또는 python -m scripts.refresh_data, python -m evals.run_eval --mode live
+```
+
+- 백엔드는 `OLLAMA_HOST`를 그대로 따릅니다. 에이전트·진단·임베딩은 `ollama` 라이브러리의 `Client`가, `/api/health`와 평가기의 연결 확인은 `os.getenv`가 읽습니다(코드에 포트가 박혀 있지 않습니다).
+- **이미 떠 있는 8000 서버는 환경변수가 바뀌지 않으므로** 위처럼 지정해 다시 시작해야 합니다. 지정하지 않으면 11434로 접속해 LLM 답변이 실패하고 `/api/health`의 Ollama 검사가 실패합니다.
+- 프론트(5173)는 백엔드만 부르므로 바꿀 것이 없습니다. 모델은 포트와 상관없이 같은 저장소(`~/.ollama`)를 쓰므로 다시 받을 필요가 없습니다.
+
 **6. 데이터 채우기/갱신** — DB가 비어 있으면 아래 "(선택) 데이터 수집"의 개별 스크립트를 순서대로 한 번 실행하고(종목 목록 json 생성 포함),
 이후 평소에는 평일 **15:30(KST) 이후** `python -m scripts.refresh_data` 한 번으로 갱신합니다(약 14분, Ollama 필요 - 임베딩 단계).
 기준일은 `GET /api/status`로 확인합니다. 상세는 아래 "한 번에 갱신".
@@ -511,8 +528,8 @@ python -m scripts.backfill_history --tickers 005930,069500 --years 5 --end 2026-
 `backend/`에서 실행합니다. 세 단계로 나뉩니다(마커: `integration`, `slow`).
 
 ```bash
-pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-30 보안 점검 후 3947개: 마이그레이션 왕복용 `MIGRATION_TEST_DATABASE_URL`을 주면 3944 통과 + 수집 데이터 대조 3 skip, 약 71초). slow는 기본 제외
-pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 3463개)
+pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-31 기간 질문 수정 후 4054개: 마이그레이션 왕복용 `MIGRATION_TEST_DATABASE_URL`을 주면 3944 통과 + 수집 데이터 대조 3 skip, 약 71초). slow는 기본 제외
+pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 3570개)
 pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(484개). DB가 꺼져 있으면 자동 skip
 pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)를 부르는 테스트(61개, 느리고 비결정적)
 ```

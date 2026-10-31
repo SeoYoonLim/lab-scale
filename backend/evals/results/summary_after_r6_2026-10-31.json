@@ -1,0 +1,704 @@
+{
+  "git_commit": "974b373e7110bce035195a5dd81b1b10038fabbf",
+  "git_dirty": true,
+  "date": "2026-10-31T13:44:03",
+  "model": "llama3.1:8b",
+  "args": {
+    "mode": "live",
+    "split": "dev",
+    "repeats": 3,
+    "only": null,
+    "limit": null,
+    "out": "C:\\project\\lab-scale\\backend\\evals\\results\\summary_after_r6_2026-10-31.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 0,
+    "live": 81,
+    "records": 243
+  },
+  "live": {
+    "ran": true,
+    "repeats": 3,
+    "eval_user": "captest_21c623e56d90",
+    "deleted_reports": 243,
+    "elapsed_s": 537.1
+  },
+  "elapsed_s": 542.3,
+  "metrics": {
+    "tool_selection_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 54,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 54
+      }
+    },
+    "live_company_accuracy": {
+      "dev": 0.9942,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.9942,
+      "n": {
+        "dev": 171,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 171
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 171,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 171
+      }
+    },
+    "live_period_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 12,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 12
+      }
+    },
+    "number_match_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 680,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 680
+      }
+    },
+    "number_full_support_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 111,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 111
+      }
+    },
+    "source_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 36,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 36
+      }
+    },
+    "refusal_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 24,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 24
+      }
+    },
+    "period_label_violation_rate": {
+      "dev": 0.5,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.5,
+      "n": {
+        "dev": 6,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 6
+      }
+    },
+    "must_contain_rate": {
+      "dev": 0.8611,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.8611,
+      "n": {
+        "dev": 108,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 108
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 243,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 243
+      }
+    },
+    "data_date_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 6
+      }
+    },
+    "briefing_link_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 6
+      }
+    },
+    "number_attachment_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 15,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 15
+      }
+    },
+    "code_answer_rate": {
+      "dev": 0.7284,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.7284,
+      "n": {
+        "dev": 243,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 243
+      }
+    },
+    "loop_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 243,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 243
+      }
+    },
+    "stability_answer_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 21,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 21
+      }
+    },
+    "guard_replacement_rate": {
+      "dev": 0.0833,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0833,
+      "n": {
+        "dev": 60,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 60
+      }
+    },
+    "fallback_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 243,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 243
+      }
+    },
+    "error_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 243,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 243
+      }
+    },
+    "latency_p50_s": {
+      "dev": 0.03,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.03,
+      "n": {
+        "dev": 243,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 243
+      }
+    },
+    "latency_p95_s": {
+      "dev": 12.941,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 12.941,
+      "n": {
+        "dev": 243,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 243
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "stab_07",
+      "split": "dev",
+      "category": "stability",
+      "run": 2,
+      "question": "삼성전자에 투자할 때 고려해야 할 위험 요인을 전반적으로 정리해줘",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "삼성전자"
+        ],
+        "must_not": null
+      },
+      "actual": []
+    },
+    {
+      "id": "ref_10",
+      "split": "dev",
+      "category": "refusal",
+      "run": 0,
+      "question": "카카오 3년 전 주가 알려줘",
+      "check": "period_label",
+      "expected": "보유 범위 밖 기간의 값처럼 쓴 숫자 없음",
+      "actual": "카카오의 2023-10-31 종가는 37,800원입니다. 전일 대비 등락률은 -0.53%, 거래량은 1,791,726주입니다."
+    },
+    {
+      "id": "ref_10",
+      "split": "dev",
+      "category": "refusal",
+      "run": 1,
+      "question": "카카오 3년 전 주가 알려줘",
+      "check": "period_label",
+      "expected": "보유 범위 밖 기간의 값처럼 쓴 숫자 없음",
+      "actual": "카카오의 2023-10-31 종가는 37,800원입니다. 전일 대비 등락률은 -0.53%, 거래량은 1,791,726주입니다."
+    },
+    {
+      "id": "ref_10",
+      "split": "dev",
+      "category": "refusal",
+      "run": 2,
+      "question": "카카오 3년 전 주가 알려줘",
+      "check": "period_label",
+      "expected": "보유 범위 밖 기간의 값처럼 쓴 숫자 없음",
+      "actual": "카카오의 2023-10-31 종가는 37,800원입니다. 전일 대비 등락률은 -0.53%, 거래량은 1,791,726주입니다."
+    },
+    {
+      "id": "etf_03",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "KODEX 200 구성종목 비중 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자",
+          "\\d{4}-\\d{2}-\\d{2} 기준",
+          "\\d+\\.\\d{2}%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:삼성전자",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준",
+        "missing:\\d+\\.\\d{2}%"
+      ]
+    },
+    {
+      "id": "etf_03",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "KODEX 200 구성종목 비중 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자",
+          "\\d{4}-\\d{2}-\\d{2} 기준",
+          "\\d+\\.\\d{2}%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:삼성전자",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준",
+        "missing:\\d+\\.\\d{2}%"
+      ]
+    },
+    {
+      "id": "etf_03",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 2,
+      "question": "KODEX 200 구성종목 비중 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자",
+          "\\d{4}-\\d{2}-\\d{2} 기준",
+          "\\d+\\.\\d{2}%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:삼성전자",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준",
+        "missing:\\d+\\.\\d{2}%"
+      ]
+    },
+    {
+      "id": "etf_06",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "KODEX 반도체 편입 비중 상위 종목 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자|SK하이닉스",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:삼성전자|SK하이닉스",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_06",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "KODEX 반도체 편입 비중 상위 종목 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자|SK하이닉스",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:삼성전자|SK하이닉스",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_06",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 2,
+      "question": "KODEX 반도체 편입 비중 상위 종목 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자|SK하이닉스",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:삼성전자|SK하이닉스",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_08",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "KODEX 2차전지산업에 무슨 종목이 들어 있어?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "LG에너지솔루션|삼성SDI|에코프로",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:LG에너지솔루션|삼성SDI|에코프로",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_08",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "KODEX 2차전지산업에 무슨 종목이 들어 있어?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "LG에너지솔루션|삼성SDI|에코프로",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:LG에너지솔루션|삼성SDI|에코프로",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_08",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 2,
+      "question": "KODEX 2차전지산업에 무슨 종목이 들어 있어?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "LG에너지솔루션|삼성SDI|에코프로",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:LG에너지솔루션|삼성SDI|에코프로",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_11",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "KODEX 레버리지 구성종목 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "선물",
+          "레버리지",
+          "복리",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:선물",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_11",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "KODEX 레버리지 구성종목 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "선물",
+          "레버리지",
+          "복리",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:선물",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_11",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 2,
+      "question": "KODEX 레버리지 구성종목 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "선물",
+          "레버리지",
+          "복리",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:선물",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_16",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "KODEX 200 보유종목 비중 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자",
+          "SK하이닉스",
+          "\\d{4}-\\d{2}-\\d{2} 기준",
+          "합계"
+        ],
+        "must_not": [
+          "제공하지 않습니다"
+        ]
+      },
+      "actual": [
+        "missing:삼성전자",
+        "missing:SK하이닉스",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준",
+        "missing:합계",
+        "present:제공하지 않습니다"
+      ]
+    },
+    {
+      "id": "etf_16",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "KODEX 200 보유종목 비중 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자",
+          "SK하이닉스",
+          "\\d{4}-\\d{2}-\\d{2} 기준",
+          "합계"
+        ],
+        "must_not": [
+          "제공하지 않습니다"
+        ]
+      },
+      "actual": [
+        "missing:삼성전자",
+        "missing:SK하이닉스",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준",
+        "missing:합계",
+        "present:제공하지 않습니다"
+      ]
+    },
+    {
+      "id": "etf_16",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 2,
+      "question": "KODEX 200 보유종목 비중 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자",
+          "SK하이닉스",
+          "\\d{4}-\\d{2}-\\d{2} 기준",
+          "합계"
+        ],
+        "must_not": [
+          "제공하지 않습니다"
+        ]
+      },
+      "actual": [
+        "missing:삼성전자",
+        "missing:SK하이닉스",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준",
+        "missing:합계",
+        "present:제공하지 않습니다"
+      ]
+    }
+  ]
+}

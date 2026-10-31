@@ -1,0 +1,308 @@
+{
+  "git_commit": "6323165abafab391582b32d57a15a98fca0f28e8",
+  "git_dirty": true,
+  "date": "2026-10-31T13:55:41",
+  "model": "llama3.1:8b",
+  "args": {
+    "mode": "live",
+    "split": "holdout",
+    "repeats": 1,
+    "only": "period_history",
+    "limit": null,
+    "out": "evals/results/summary_holdout_r6_2026-10-31.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 0,
+    "live": 9,
+    "records": 9
+  },
+  "live": {
+    "ran": true,
+    "repeats": 1,
+    "eval_user": "captest_4f2b445b2ed1",
+    "deleted_reports": 9,
+    "elapsed_s": 15.8
+  },
+  "elapsed_s": 21.0,
+  "metrics": {
+    "live_company_accuracy": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 8,
+        "holdout_seen": 0,
+        "holdout_unseen": 8,
+        "all": 8
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 8,
+        "holdout_seen": 0,
+        "holdout_unseen": 8,
+        "all": 8
+      }
+    },
+    "number_match_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 49,
+        "holdout_seen": 0,
+        "holdout_unseen": 49,
+        "all": 49
+      }
+    },
+    "number_full_support_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 9,
+        "holdout_seen": 0,
+        "holdout_unseen": 9,
+        "all": 9
+      }
+    },
+    "source_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 1,
+        "holdout_seen": 0,
+        "holdout_unseen": 1,
+        "all": 1
+      }
+    },
+    "refusal_accuracy": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 0,
+        "holdout_unseen": 2,
+        "all": 2
+      }
+    },
+    "period_label_violation_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 1,
+        "holdout_seen": 0,
+        "holdout_unseen": 1,
+        "all": 1
+      }
+    },
+    "must_contain_rate": {
+      "dev": null,
+      "holdout": 0.8889,
+      "holdout_seen": null,
+      "holdout_unseen": 0.8889,
+      "all": 0.8889,
+      "n": {
+        "dev": 0,
+        "holdout": 9,
+        "holdout_seen": 0,
+        "holdout_unseen": 9,
+        "all": 9
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 9,
+        "holdout_seen": 0,
+        "holdout_unseen": 9,
+        "all": 9
+      }
+    },
+    "number_attachment_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 1,
+        "holdout_seen": 0,
+        "holdout_unseen": 1,
+        "all": 1
+      }
+    },
+    "code_answer_rate": {
+      "dev": null,
+      "holdout": 0.8889,
+      "holdout_seen": null,
+      "holdout_unseen": 0.8889,
+      "all": 0.8889,
+      "n": {
+        "dev": 0,
+        "holdout": 9,
+        "holdout_seen": 0,
+        "holdout_unseen": 9,
+        "all": 9
+      }
+    },
+    "loop_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 9,
+        "holdout_seen": 0,
+        "holdout_unseen": 9,
+        "all": 9
+      }
+    },
+    "stability_answer_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 1,
+        "holdout_seen": 0,
+        "holdout_unseen": 1,
+        "all": 1
+      }
+    },
+    "guard_replacement_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 1,
+        "holdout_seen": 0,
+        "holdout_unseen": 1,
+        "all": 1
+      }
+    },
+    "fallback_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 9,
+        "holdout_seen": 0,
+        "holdout_unseen": 9,
+        "all": 9
+      }
+    },
+    "error_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 9,
+        "holdout_seen": 0,
+        "holdout_unseen": 9,
+        "all": 9
+      }
+    },
+    "latency_p50_s": {
+      "dev": null,
+      "holdout": 0.03,
+      "holdout_seen": null,
+      "holdout_unseen": 0.03,
+      "all": 0.03,
+      "n": {
+        "dev": 0,
+        "holdout": 9,
+        "holdout_seen": 0,
+        "holdout_unseen": 9,
+        "all": 9
+      }
+    },
+    "latency_p95_s": {
+      "dev": null,
+      "holdout": 8.274,
+      "holdout_seen": null,
+      "holdout_unseen": 8.274,
+      "all": 8.274,
+      "n": {
+        "dev": 0,
+        "holdout": 9,
+        "holdout_seen": 0,
+        "holdout_unseen": 9,
+        "all": 9
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "hist_17",
+      "split": "holdout",
+      "category": "period_history",
+      "run": 0,
+      "question": "LG전자 올해 1분기 수익률은?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2026-03-31",
+          "105,600원",
+          "2025-12-30",
+          "91,900원",
+          "\\+14\\.91%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2026-03-31",
+        "missing:105,600원",
+        "missing:\\+14\\.91%"
+      ]
+    }
+  ]
+}
