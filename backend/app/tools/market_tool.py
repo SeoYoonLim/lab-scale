@@ -7,6 +7,7 @@ from app.korean import josa
 from app.models import MarketIndex, StockPrice
 from app.models.market_index import MARKET_INDEXES
 from app.tools.company_resolver import not_found_response, resolve_company, to_int
+from app.tools.stock_tool import MAX_PERIOD_DAYS, _to_date
 
 # 종목-시장 등락률 차이가 이 값(%p) 미만이면 "비슷한 흐름"으로 본다.
 IN_LINE_PP = 0.5
@@ -93,9 +94,41 @@ def market_data_is_current(ticker: str) -> bool:
         db.close()
 
 
-def market_tool(ticker: str, period_days: int = 5) -> dict:
-    """종목의 최근 N거래일 등락률을 그 종목이 상장된 시장(코스피/코스닥) 지수의 같은 기간 등락률과 비교한다."""
-    period_days = to_int(period_days, default=5, hi=60)
+def compare_range(
+    stock_closes: list[tuple[date, float]], index_closes: list[tuple[date, float]], start: date, end: date
+) -> dict | None:
+    """종목과 지수의 start~end 등락률을 같은 날짜 구간으로 비교한다. 기준은 start 직전의 공통 거래일 종가다(없으면 구간의 첫 공통 거래일).
+    겹치는 날짜가 2개 미만이면 None."""
+    index_by_date = dict(index_closes)
+    common = [(d, c) for d, c in stock_closes if d in index_by_date and d <= end]
+    inside = [(d, c) for d, c in common if d >= start]
+    before = [(d, c) for d, c in common if d < start]
+    if not inside:
+        return None
+    window = before[-1:] + inside
+    return compare_returns([(d, c) for d, c in window], [(d, index_by_date[d]) for d, _ in window], max(len(window) - 1, 1))
+
+
+def _range_note(index_name: str, cmp: dict, start: date, end: date, first_common: date | None, last_common: date | None) -> str | None:
+    """지수·종목 데이터가 요청 구간을 다 덮지 못하면 실제로 비교한 범위를 밝힌다."""
+    notes = []
+    if first_common is not None and first_common > start:
+        notes.append(f"요청 구간의 시작({start.isoformat()})보다 뒤인 {first_common.isoformat()}부터 데이터가 있습니다")
+    if last_common is not None and last_common < end:
+        notes.append(f"{last_common.isoformat()}까지만 데이터가 있습니다")
+    if not notes:
+        return None
+    return (f"요청 구간 {start.isoformat()}~{end.isoformat()} 중 {' / '.join(notes)}. "
+            f"{cmp['start_date']}~{cmp['end_date']} 구간만 {index_name}와 비교했습니다.")
+
+
+def market_tool(ticker: str, period_days: int = 5, start_date=None, end_date=None) -> dict:
+    """종목의 최근 N거래일 등락률을 그 종목이 상장된 시장(코스피/코스닥) 지수의 같은 기간 등락률과 비교한다.
+
+    start_date·end_date(ISO 날짜)는 LLM 스키마에 없고 코드(app.agent._apply_past_window)만 넘긴다. 둘 다 있으면 최근 N거래일 대신 그 구간을
+    비교한다(stock_tool과 같은 구간). 기간을 60거래일로 자르지 않는다(2026-10-31: "2024년 코스피 대비"가 최근 구간과 비교되던 문제)."""
+    period_days = to_int(period_days, default=5, hi=MAX_PERIOD_DAYS)
+    start, end = _to_date(start_date), _to_date(end_date)
     db = SessionLocal()
     try:
         res = resolve_company(db, ticker)
@@ -130,6 +163,9 @@ def market_tool(ticker: str, period_days: int = 5) -> dict:
         )
         if last_index_date is None:
             return {**base, "found": False, "message": f"{index_name} 지수 데이터가 아직 수집되지 않았습니다."}
+
+        if start is not None and end is not None:
+            return _market_range_result(db, company, base, index_code, index_name, start, end)
 
         # 겹치지 않는 날짜가 섞일 수 있어 여유를 두고 가져온다.
         stock_rows = (
@@ -169,3 +205,33 @@ def market_tool(ticker: str, period_days: int = 5) -> dict:
         return out
     finally:
         db.close()
+
+
+def _market_range_result(db, company, base: dict, index_code: str, index_name: str, start: date, end: date) -> dict:
+    """start~end 구간의 종목·지수 비교. 데이터가 구간을 다 덮지 못하면 덮는 범위만 비교하고 note로 밝힌다. 겹치는 날이 없으면 found=False."""
+    requested = {"requested_start": start.isoformat(), "requested_end": end.isoformat()}
+    stock_rows = (
+        db.query(StockPrice.price_date, StockPrice.close_price)
+        .filter(StockPrice.company_id == company.id, StockPrice.price_date <= end)
+        .order_by(StockPrice.price_date)
+        .all()
+    )
+    index_rows = (
+        db.query(MarketIndex.price_date, MarketIndex.close_price)
+        .filter(MarketIndex.index_code == index_code, MarketIndex.price_date <= end)
+        .order_by(MarketIndex.price_date)
+        .all()
+    )
+    stock_closes = [(d, float(c)) for d, c in stock_rows]
+    index_closes = [(d, float(c)) for d, c in index_rows]
+    cmp = compare_range(stock_closes, index_closes, start, end)
+    if cmp is None:
+        return {**base, **requested, "found": False,
+                "message": f"요청 구간 {start.isoformat()}~{end.isoformat()}에 '{company.name}'와 {index_name}를 비교할 데이터가 없습니다."}
+    index_dates = {d for d, _ in index_closes}
+    inside = [d for d, _ in stock_closes if d in index_dates and start <= d <= end]
+    out = {**base, **requested, **cmp, "found": True, "summary": _summary(company.name, index_name, cmp)}
+    note = _range_note(index_name, cmp, start, end, inside[0], inside[-1])
+    if note:
+        out["note"] = note
+    return out

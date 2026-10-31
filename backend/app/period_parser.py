@@ -25,6 +25,11 @@
   "KODEX 200 3개월"의 "3개월"처럼 이름 뒤의 진짜 기간 표현은 남긴다). 주식 질문은 바뀌지 않는다.
 - **상한**: 비현실적으로 큰 숫자(예: "2024년"의 "2024")는 기간 수량이 아니라 연도 등 다른 의미일 가능성이 높아
   인식하지 않는다(일 3650/주 520/개월 120/년 50까지만).
+- **달력 표현은 수량·고정 표현이 아니다**(2026-10-31): "올해 1분기", "작년 3월", "작년 이맘때", "24년 3월"은 이 함수가 일부("올해", "24년")만
+  읽으면 다른 기간이 되므로 None을 돌려준다. 값은 app.period_scope.requested_period가 이 모듈의 정규식으로 계산한다
+  (호출측은 parse_period가 None이어야 "최근 창"이 아니라 날짜로 조회해야 할 기간임을 안다).
+- **두 자리 연도**: "24년 3월"처럼 뒤에 월·분기·반기가 오면 언제나 20YY년이다. 숫자만 있는 "24년"은 20~올해 연도(YY)이면 연도이고
+  ("최근 24년", "24년간"은 수량), 그 밖은 수량이다("5년", "30년"). 올해를 넘는 "27년 3월"은 미래 연도로 보고(19YY로 고치지 않는다) 데이터 없음 안내로 간다.
 
 ## period_days 계산
 
@@ -119,6 +124,43 @@ _FIXED_PATTERNS: list[tuple[re.Pattern, "callable"]] = [
 ]
 
 
+# --- 달력 표현(app.period_scope.requested_period와 함께 쓴다) --------------------
+
+YEAR_WORD = r"(재작년|작년|지난해|올해|금년)"
+# 연도 앞부분. 그룹 1: 네 자리 또는 두 자리 연도, 그룹 2: 올해·작년 같은 말
+YEAR_PREFIX = r"(?:(?<![\d.,])((?:19|20)?\d{2})\s*년\s*|" + YEAR_WORD + r"\s*)?"
+WORD_MONTH_RE = re.compile(YEAR_WORD + r"\s*(\d{1,2})\s*월(?:\s*(\d{1,2})\s*일)?")
+QUARTER_RE = re.compile(YEAR_PREFIX + r"([1-4])\s*분기")
+HALF_RE = re.compile(YEAR_PREFIX + r"([상하])반기")
+SAME_MONTH_RE = re.compile(r"(?:작년|지난해)\s*(?:같은\s*달|동월)")
+SAME_TIME_RE = re.compile(r"작년\s*이맘때")
+# "24년 3월", "24년 3월 15일"
+SHORT_YEAR_MONTH_RE = re.compile(r"(?<![\d.,])(\d{2})\s*년\s*(\d{1,2})\s*월(?:\s*(\d{1,2})\s*일)?")
+# 숫자만 있는 "24년". 수량("최근 24년", "24년간", "24년 동안", "24년 전")이면 제외한다
+_SHORT_YEAR_RE = re.compile(r"(?<![\d.,])(?<!최근\s)(?<!지난\s)(?<!과거\s)(\d{2})\s*년(?!\s*(?:간|동안|째|치|전(?!체)))")
+_COMPOUND_RES = (WORD_MONTH_RE, QUARTER_RE, HALF_RE, SAME_MONTH_RE, SAME_TIME_RE, SHORT_YEAR_MONTH_RE)
+
+
+def full_year(text: str) -> int:
+    """두 자리 연도는 언제나 20YY다("24" -> 2024, "27" -> 2027, "95" -> 2095). 19YY로 고치지 않는다(보유 시세보다 앞서 어차피 답이 없다)."""
+    return int(text) if len(text) == 4 else 2000 + int(text)
+
+
+def short_year_spans(question: str, today: date) -> list[tuple[int, int, int]]:
+    """숫자만 있는 두 자리 연도("24년 주가")의 (시작, 끝, 연도). 20~올해 연도일 때만이다("5년", "30년"은 수량)."""
+    out = []
+    for m in _SHORT_YEAR_RE.finditer(question):
+        if 20 <= int(m.group(1)) <= today.year % 100:
+            out.append((m.start(), m.end(), full_year(m.group(1))))
+    return out
+
+
+def calendar_spans(question: str, today: date) -> list[tuple[int, int]]:
+    """수량·고정 표현으로 읽으면 안 되는 달력 표현의 위치."""
+    spans = [m.span() for pattern in _COMPOUND_RES for m in pattern.finditer(question)]
+    return spans + [s[:2] for s in short_year_spans(question, today)]
+
+
 # --- 수량 표현 ---------------------------------------------------------------
 
 _MAX_QUANTITY = {"일": 3650, "주": 520, "개월": 120, "년": 50}
@@ -175,13 +217,18 @@ _NATIVE_PATTERNS: list[tuple[re.Pattern, "callable", str]] = [
 
 def _candidates(question: str, today: date) -> list[tuple[int, str, tuple[date, date]]]:
     found = []
+    taken = calendar_spans(question, today)
+
+    def free(m: re.Match) -> bool:
+        return all(m.end() <= a or m.start() >= b for a, b in taken)
+
     for pattern, to_range in _FIXED_PATTERNS:
         m = pattern.search(question)
-        if m:
+        if m and free(m):
             found.append((m.start(), m.group(), to_range(today)))
     for m in _QUANTITY_RE.finditer(question):
         rng = _quantity_range(today, int(m.group(1)), m.group(2))
-        if rng is not None:
+        if rng is not None and free(m):
             found.append((m.start(), m.group(), rng))
     for pattern, quantity, unit in _NATIVE_PATTERNS:
         for m in pattern.finditer(question):

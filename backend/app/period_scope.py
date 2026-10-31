@@ -23,7 +23,16 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from app.period_parser import parse_period
+from app.period_parser import (
+    HALF_RE,
+    QUARTER_RE,
+    SAME_MONTH_RE,
+    SHORT_YEAR_MONTH_RE,
+    WORD_MONTH_RE,
+    full_year,
+    parse_period,
+    short_year_spans,
+)
 
 # 시세(가격·거래량·등락)를 묻는 질문만 대상으로 한다. "2024년 실적 뉴스"처럼 시세가 아닌 질문은 기존 흐름이다.
 PRICE_INTENT_RE = re.compile(r"주가|종가|시가|고가|저가|시세|가격|거래량|등락|수익률|올랐|내렸|떨어|상승|하락|흐름|추이|움직")
@@ -37,12 +46,6 @@ _M_RE = re.compile(r"(?<!\d)(\d{1,2})\s*월(?!\s*\d|요일|간|별)")
 _AGO_RE = re.compile(r"(?<!\d)(\d{1,3})\s*(년|개월|주|일)\s*전(?!체)")
 _FROM_RE = re.compile(r"^\s*(?:부터|이후|이래)")
 _UNTIL_RE = re.compile(r"^\s*까지")
-_YEAR_WORD = r"(재작년|작년|지난해|올해|금년)"
-_WORD_YM_RE = re.compile(_YEAR_WORD + r"\s*(\d{1,2})\s*월(?:\s*(\d{1,2})\s*일)?")
-_SAME_MONTH_RE = re.compile(r"(?:작년|지난해)\s*(?:같은\s*달|동월)")
-_YEAR_PREFIX = r"(?:((?:19|20)\d{2})\s*년\s*|" + _YEAR_WORD + r"\s*)?"
-_QUARTER_RE = re.compile(_YEAR_PREFIX + r"([1-4])\s*분기")
-_HALF_RE = re.compile(_YEAR_PREFIX + r"([상하])반기")
 
 
 @dataclass
@@ -74,15 +77,20 @@ def _word_year(word: str, today: date) -> int:
 
 
 def _month_range_of_year(m: re.Match, first_month: int, last_month: int, today: date) -> tuple[date, date]:
-    """분기·반기: 연도를 말했으면 그 해, 안 했으면 올해(그 구간이 아직 시작 전이면 작년). 끝은 오늘을 넘지 않는다."""
+    """분기·반기: 연도를 말했으면 그 해, 안 했으면 올해(그 구간이 아직 시작 전이면 작년). 진행 중인 구간의 끝은 오늘이다.
+    "올해 4분기"를 1월에 물으면 아직 오지 않은 구간 그대로 돌려준다(호출측이 데이터 없음으로 안내한다)."""
     if m.group(1):
-        year = int(m.group(1))
+        year = full_year(m.group(1))
     elif m.group(2):
         year = _word_year(m.group(2), today)
     else:
         year = _past_year_for_month(first_month, today)
-    end = date(year, last_month, monthrange(year, last_month)[1])
-    return date(year, first_month, 1), min(end, today)
+    return _until_today(date(year, first_month, 1), date(year, last_month, monthrange(year, last_month)[1]), today)
+
+
+def _until_today(start: date, end: date, today: date) -> tuple[date, date]:
+    """진행 중인 구간은 오늘까지, 아직 시작하지 않은 구간은 그대로(시작이 끝보다 뒤로 가지 않게)."""
+    return (start, end) if start > today else (start, min(end, today))
 
 
 def requested_period(question: str, today: date) -> RequestedPeriod | None:
@@ -92,7 +100,7 @@ def requested_period(question: str, today: date) -> RequestedPeriod | None:
     taken: list[tuple[int, int]] = []
 
     def add(m, start, end, span=None):
-        st, en = span or m.span()
+        st, en = span or m.span()  # m 없이 span만 줄 수 있다(두 자리 연도)
         if start is None or any(not (en <= a or st >= b) for a, b in taken):
             return
         taken.append((st, en))
@@ -105,25 +113,35 @@ def requested_period(question: str, today: date) -> RequestedPeriod | None:
         y, mo = int(m.group(1)), int(m.group(2))
         if 1 <= mo <= 12:
             add(m, date(y, mo, 1), date(y, mo, monthrange(y, mo)[1]))
-    for m in _SAME_MONTH_RE.finditer(q):
+    for m in SHORT_YEAR_MONTH_RE.finditer(q):
+        y, mo = full_year(m.group(1)), int(m.group(2))
+        if 1 <= mo <= 12:
+            if m.group(3):
+                day = _safe_date(y, mo, int(m.group(3)))
+                add(m, day, day)
+            else:
+                add(m, date(y, mo, 1), date(y, mo, monthrange(y, mo)[1]))
+    for m in SAME_MONTH_RE.finditer(q):
         y = today.year - 1
         add(m, date(y, today.month, 1), date(y, today.month, monthrange(y, today.month)[1]))
-    for m in _WORD_YM_RE.finditer(q):
+    for m in WORD_MONTH_RE.finditer(q):
         y, mo = _word_year(m.group(1), today), int(m.group(2))
         if 1 <= mo <= 12:
             if m.group(3):
                 day = _safe_date(y, mo, int(m.group(3)))
                 add(m, day, day)
             else:
-                add(m, date(y, mo, 1), min(date(y, mo, monthrange(y, mo)[1]), today))
-    for m in _QUARTER_RE.finditer(q):
+                add(m, *_until_today(date(y, mo, 1), date(y, mo, monthrange(y, mo)[1]), today))
+    for m in QUARTER_RE.finditer(q):
         quarter = int(m.group(3))
         add(m, *_month_range_of_year(m, quarter * 3 - 2, quarter * 3, today))
-    for m in _HALF_RE.finditer(q):
+    for m in HALF_RE.finditer(q):
         first, last = (1, 6) if m.group(3) == "상" else (7, 12)
         add(m, *_month_range_of_year(m, first, last, today))
     for m in re.finditer(r"연초", q):
         add(m, date(today.year, 1, 1), today)
+    for st, en, y in short_year_spans(q, today):
+        add(None, date(y, 1, 1), date(y, 12, 31), span=(st, en))
     for m in _Y_RE.finditer(q):
         y = int(m.group(1))
         add(m, date(y, 1, 1), date(y, 12, 31))

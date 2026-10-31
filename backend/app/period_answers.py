@@ -41,6 +41,21 @@ def is_history_question(question: str) -> bool:
                 or routing.needs_discovery_tool(q) or routing.explicitly_requested_tools(q) or routing.needs_fx_tool(q))
 
 
+def is_market_period_question(question: str) -> bool:
+    """시장 비교만 묻는 질문인지(뉴스·원인·전망 등을 함께 묻거나 다른 도구가 필요하면 False)."""
+    q = question or ""
+    return not (_OTHER_INTENT_RE.search(q) or routing.is_cause_question(q) or routing.needs_event_reaction_tool(q)
+                or routing.needs_discovery_tool(q) or routing.needs_fx_tool(q))
+
+
+def market_text(result: dict, requested: RequestedPeriod) -> str:
+    """종목·지수 같은 구간 비교의 답: 요청 기간, market_tool 요약, 덮지 못한 범위 안내."""
+    parts = [f"요청하신 기간({requested.label}: {requested.start.isoformat()}~{requested.end.isoformat()}) 기준입니다.", result["summary"]]
+    if result.get("note"):
+        parts.append(result["note"])
+    return " ".join(parts)
+
+
 def needs_date_lookup(requested: RequestedPeriod | None, parsed, today: date) -> bool:
     """최근 N거래일 창으로는 답할 수 없는 기간인지: 특정 하루(오늘 제외), 파서가 인식하지 못한 기간("2024년", "3분기"),
     끝이 오늘 이전인 기간("지난달"). 끝이 오늘인 창("최근 1년", "3개월 추이")은 기존 흐름이다(stock_tool이 전체 기간을 요약한다)."""

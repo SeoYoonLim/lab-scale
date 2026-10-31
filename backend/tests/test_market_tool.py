@@ -199,7 +199,7 @@ class TestMarketToolShape:
         r = market_tool("삼성전자", 5)
         assert r["found"] is False and "부족" in r["message"]
 
-    @pytest.mark.parametrize("raw, expected", [("abc", 5), (None, 5), ("3", 3), (0, 1), (9999, 60)])
+    @pytest.mark.parametrize("raw, expected", [("abc", 5), (None, 5), ("3", 3), (0, 1), (9999, 2600)])  # 2026-10-31: 60거래일 상한을 없앴다(MAX_PERIOD_DAYS)
     def test_period_days_is_sanitized(self, monkeypatch, raw, expected):
         patch_db(monkeypatch, last_index_date=None, stock_rows=[], index_rows=[], latest_stock_date=None)
         assert market_tool("삼성전자", raw)["period_days"] == expected

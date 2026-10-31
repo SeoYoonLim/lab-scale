@@ -40,7 +40,15 @@ from app.etf import (
     news_result_for_llm,
     remove_empty_sections,
 )
-from app.answer_guard import code_summary, freshness_note, guard_answer, is_simple_quote, quote_answer, strip_untrusted_urls
+from app.answer_guard import (
+    code_summary,
+    freshness_note,
+    guard_answer,
+    is_simple_quote,
+    quote_answer,
+    strip_foreign_script,
+    strip_untrusted_urls,
+)
 from app.etf_holdings import constituents_chat_answer, requested_top_n
 from app.etf_holdings_db import chat_views
 from app.glossary import comparison_answer, concept_answer, find_term, term_answer
@@ -623,12 +631,20 @@ def _add_missing_compared(db, calls: list[dict], named: list) -> list[dict]:
 
 
 def _expand_multi_company_calls(calls: list[dict], question: str, named: list | None) -> None:
-    """질문에 종목이 둘 이상일 때(named: _question_companies의 결과), 모델이 한 호출에 종목을 묶었으면 종목별 호출로 나눈다(calls를 직접 수정).
+    """질문의 종목(named: _question_companies의 결과)으로 모델의 종목 인자를 바로잡는다(calls를 직접 수정).
+    종목이 하나이고 모델이 종목 필터 없이 RAG를 검색했으면 그 종목으로 채운다(stab_07 "삼성전자에 투자할 때 위험 요인").
+    종목이 둘 이상이고 모델이 한 호출에 종목을 묶었으면 종목별 호출로 나눈다.
 
     "현대차와 기아의 사업 구조 차이" 질문에서 모델이 company_name="현대차, 기아"로 넘겨 종목을 못 찾았다고 답하거나(stab_10,
     종목 이름 자체는 정확히 해석된다), 종목 필터 없이 RAG를 검색해 두 회사 문서를 고르지 못했다. 나눈 인자는 질문·인자에서 찾은 등록명이다.
     비교 질문("현대차와 기아 비교해줘")에서 모델이 한 종목만 호출했으면 같은 도구를 나머지 종목에도 호출한다."""
-    if not named or len(named) < 2 or not any(_COMPANY_ARG.get(call["function"]["name"]) for call in calls):
+    if not named or not any(_COMPANY_ARG.get(call["function"]["name"]) for call in calls):
+        return
+    if len(named) == 1:
+        for call in calls:
+            args = _as_args(call["function"]["arguments"])
+            if call["function"]["name"] == "rag_search_tool" and not normalize_name(args.get("company_name")):
+                call["function"]["arguments"] = {**args, "company_name": named[0].name}
         return
     try:
         db = SessionLocal()
@@ -755,14 +771,15 @@ def _apply_period_override(calls: list[dict], question: str) -> dict[int, object
 
 
 def _apply_past_window(calls: list[dict], question: str) -> None:
-    """최근 N거래일 창으로 답할 수 없는 기간("2024년 3월 주가와 뉴스")이면 stock_tool에 날짜 범위를 넘긴다(LLM이 정한 period_days로
-    최근 시세를 조회해 그 기간의 값처럼 답하던 문제, 2026-10-31). LLM 스키마에는 없는 인자다. calls를 직접 수정한다."""
+    """최근 N거래일 창으로 답할 수 없는 기간("2024년 3월 주가와 뉴스")이면 stock_tool·market_tool에 같은 날짜 범위를 넘긴다(LLM이 정한
+    period_days로 최근 시세를 조회해 그 기간의 값처럼 답하던 문제, 종목과 지수의 구간이 어긋나던 문제, 2026-10-31).
+    LLM 스키마에는 없는 인자다. calls를 직접 수정한다."""
     today = datetime.now(KST).date()
     requested = period_scope.requested_period(question, today)
     if not period_answers.needs_date_lookup(requested, parse_period(question), today):
         return
     for call in calls:
-        if call["function"]["name"] == "stock_tool":
+        if call["function"]["name"] in ("stock_tool", "market_tool"):
             args = _as_args(call["function"]["arguments"])
             call["function"]["arguments"] = args
             args["start_date"], args["end_date"] = requested.start.isoformat(), requested.end.isoformat()
@@ -1489,6 +1506,33 @@ def _history_parts(company, requested, now, question: str) -> tuple[str, dict] |
         db.close()
 
 
+def _answer_market_period(question: str, companies: list | None):
+    """(2026-10-31) "2024년 코스피 대비 삼성전자 수익률"처럼 날짜로 조회해야 하는 기간의 시장 비교는 코드가 답한다: 종목과 지수의 같은 구간.
+    뉴스·원인을 함께 묻거나 ETF·여러 종목이면 기존 흐름이다(LLM 경로의 market_tool에도 같은 구간을 넘긴다)."""
+    if (not companies or len(companies) != 1 or getattr(companies[0], "asset_type", None) == "etf"
+            or not needs_market_tool(question) or not period_answers.is_market_period_question(question)):
+        return None
+    today = datetime.now(KST).date()
+    requested = period_scope.requested_period(question, today)
+    parsed = parse_period(question)
+    if not period_answers.code_answers_period(requested, parsed, today):
+        return None
+    company = companies[0]
+    called_at = datetime.now(timezone.utc)
+    args = {"ticker": company.name, "period_days": parsed.period_days if parsed else 1,
+            "start_date": requested.start.isoformat(), "end_date": requested.end.isoformat()}
+    result = market_tool(**args)
+    if not isinstance(result, dict) or not result.get("found"):
+        message = (result or {}).get("message") if isinstance(result, dict) else None
+        if not message:
+            return None
+        answer = message
+    else:
+        answer = period_answers.market_text(result, requested)
+    record = {"tool_name": "market_tool", "arguments": args, "result": result, "called_at": called_at, "elapsed_ms": 0}
+    return _code_answer(answer, [record])
+
+
 def _answer_period_history(question: str, companies: list | None):
     """(2026-10-31) 날짜로 조회해야 하는 과거 시세 질문은 LLM 없이 코드가 답한다(app/period_answers.py): 특정 날짜 종가, 휴장일 안내,
     "2024년 등락률", "2025년 3분기 수익률", "작년 같은 달", "역대 최고가", 같은 기간 두 종목 비교. 대상이 아니면 None(기존 흐름)."""
@@ -1572,6 +1616,12 @@ def _guard(answer: str, records: list[dict], question: str) -> str:
     guarded, log = guard_answer(answer, records, question)
     # 근거 링크가 아닌 URL이 든 문장은 지운다(프롬프트 인젝션으로 들어온 피싱 링크 방지, 2026-10-30)
     guarded, log["untrusted_url_sentences"] = strip_untrusted_urls(guarded, records)
+    # 질문·도구 결과에 없는 일본어·중국어가 든 문장을 지운다. 남는 내용이 없으면 코드 요약으로 바꾼다(2026-10-31)
+    guarded, log["foreign_script_sentences"] = strip_foreign_script(guarded, records, question)
+    if log["foreign_script_sentences"]:
+        guarded = remove_empty_sections(guarded)
+        if not guarded.strip():
+            guarded = code_summary(records) or ""
     _meta()["answer_guard"] = log
     if log["replaced"]:
         logger.info("답변 숫자 검증: %s로 대체(설명되지 않는 숫자 %s)", log["mode"], log["violations"])
@@ -1635,7 +1685,8 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
 
     _reset_llm_state()
     companies = _question_companies(question)
-    for handler in (_answer_concept, _answer_etf_constituents, _answer_period_scope, _answer_simple_quote,
+    # 시장 비교(_answer_market_period)는 범위 안내(_answer_period_scope)보다 먼저다: 종목 값만 답하면 지수 비교가 빠진다
+    for handler in (_answer_concept, _answer_etf_constituents, _answer_market_period, _answer_period_scope, _answer_simple_quote,
                     _answer_period_quote, _answer_period_history):
         handled = handler(question, companies)
         if handled is not None:

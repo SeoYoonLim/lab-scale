@@ -597,6 +597,28 @@ def strip_untrusted_urls(answer: str, records: list[dict]) -> tuple[str, int]:
     return "\n".join(kept).strip(), removed
 
 
+# 한국어 답변에 섞여 나오는 일본어·중국어(2026-10-31: "시장シェア", "期间", "市場"). 도구 결과와 질문에 그대로 있는 표기(뉴스 제목의 "韓", "中")는 허용한다.
+_HANGUL_RE = re.compile(r"[가-힣]")
+_FOREIGN_RUN_RE = re.compile(r"[぀-ヿㇰ-ㇿｦ-ﾟ㐀-䶿一-鿿]+")
+
+
+def strip_foreign_script(answer: str, records: list[dict], question: str = "") -> tuple[str, int]:
+    """(답변, 지운 문장 수). 한국어 질문의 답변에서 도구 결과·질문에 없는 히라가나·가타카나·한자가 든 문장을 지운다.
+    영문(티커, 괄호 안 영문명)은 대상이 아니다. 질문이 한국어가 아니면 보지 않는다."""
+    if not _FOREIGN_RUN_RE.search(answer or "") or not _HANGUL_RE.search(question or ""):
+        return answer, 0
+    evidence = "\n".join([question or "", *_strings_in([r.get("result") for r in records])])
+    removed = 0
+    kept = []
+    for line in answer.split("\n"):
+        sentences = [s for s in _SENTENCE_SPLIT_RE.split(line) if s]
+        good = [s for s in sentences if all(run in evidence for run in _FOREIGN_RUN_RE.findall(s))]
+        removed += len(sentences) - len(good)
+        if good or not line.strip():
+            kept.append(" ".join(good))
+    return "\n".join(kept).strip(), removed
+
+
 def guard_answer(answer: str, records: list[dict], question: str = "", today=None) -> tuple[str, dict]:
     """(내보낼 답변, 검증 기록). 기록: {"replaced": bool, "violations": [원문 숫자], "mode": "code_summary"|"drop_sentences"|None,
     "kinds": {"number", "date", "target", "period": 건수}}. today(오늘 날짜, 기본 KST 오늘)는 답변에 오늘 날짜를 써도 되게 한다."""

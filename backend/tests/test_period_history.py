@@ -135,10 +135,18 @@ class TestSymptoms:
                {"function": {"name": "fx_tool", "arguments": {}}}]
         agent._expand_multi_company_calls(two, "현대차와 기아 비교해줘", [hyundai, kia])
         assert [c["function"]["arguments"].get("ticker") for c in two] == ["현대차", "기아", None]
-        # 질문의 종목이 하나면 종목 없는 RAG 호출을 건드리지 않는다
-        one = [{"function": {"name": "rag_search_tool", "arguments": {"query": "x"}}}]
+        # 질문의 종목이 하나면 종목 없는 RAG 호출에 그 종목을 채운다(stab_07)
+        one = [{"function": {"name": "rag_search_tool", "arguments": {"query": "x"}}},
+               {"function": {"name": "rag_search_tool", "arguments": {"query": "y", "company_name": "현대차"}}},
+               {"function": {"name": "news_tool", "arguments": {"limit": 3}}}]
         agent._expand_multi_company_calls(one, "기아 사업 구조 설명해줘", [kia])
-        assert one[0]["function"]["arguments"] == {"query": "x"}
+        assert one[0]["function"]["arguments"] == {"query": "x", "company_name": "기아"}
+        assert one[1]["function"]["arguments"]["company_name"] == "현대차"  # 모델이 고른 종목은 그대로
+        assert one[2]["function"]["arguments"] == {"limit": 3}
+        # 질문에 종목이 없으면 그대로
+        none = [{"function": {"name": "rag_search_tool", "arguments": {"query": "반도체 업황"}}}]
+        agent._expand_multi_company_calls(none, "반도체 업황 알려줘", [])
+        assert none[0]["function"]["arguments"] == {"query": "반도체 업황"}
 
 
 def test_compare_question_calls_the_same_tool_for_the_company_the_model_skipped(monkeypatch):
@@ -513,3 +521,221 @@ def test_alias_is_exact_only_and_strict_mode_is_not_loosened():
 
     assert COMPANY_ALIASES["기아차"] == "기아"
     assert "현대" not in COMPANY_ALIASES and "기아" not in COMPANY_ALIASES
+
+
+class TestCalendarExpressions:
+    """올해·작년 + 월·분기·반기, 두 자리 연도(2026-10-31). 파서가 일부만 읽어 다른 기간을 답하던 문제."""
+
+    @pytest.mark.parametrize("q,start,end", [
+        ("LG전자 올해 1분기 수익률", "2026-01-01", "2026-03-31"),
+        ("올해 2분기 수익률", "2026-04-01", "2026-06-30"),
+        ("올해 3분기 수익률", "2026-07-01", "2026-09-30"),
+        ("올해 4분기 수익률", "2026-10-01", "2026-10-31"),  # 진행 중
+        ("올해 3월 수익률", "2026-03-01", "2026-03-31"),
+        ("올해 상반기 최고가", "2026-01-01", "2026-06-30"),
+        ("올해 하반기 주가", "2026-07-01", "2026-10-31"),
+        ("금년 2월 주가", "2026-02-01", "2026-02-28"),
+        ("작년 3월 주가", "2025-03-01", "2025-03-31"),
+        ("작년 4분기 비교", "2025-10-01", "2025-12-31"),
+        ("작년 상반기 최저가", "2025-01-01", "2025-06-30"),
+        ("지난해 하반기 수익률", "2025-07-01", "2025-12-31"),
+        ("재작년 2분기 수익률", "2024-04-01", "2024-06-30"),
+        ("24년 3월 주가", "2024-03-01", "2024-03-31"),
+        ("24년 2월 주가", "2024-02-01", "2024-02-29"),  # 윤년
+        ("25년 2월 주가", "2025-02-01", "2025-02-28"),
+        ("24년 3월 15일 종가", "2024-03-15", "2024-03-15"),
+        ("24년 3분기 수익률", "2024-07-01", "2024-09-30"),
+        ("25년 상반기 주가", "2025-01-01", "2025-06-30"),
+        ("24년 주가", "2024-01-01", "2024-12-31"),
+        ("24년 전체 등락률", "2024-01-01", "2024-12-31"),
+        ("27년 3월 주가", "2027-03-01", "2027-03-31"),  # 올해를 넘어도 20YY(데이터 없음 안내로 간다)
+        ("95년 3월 주가", "2095-03-01", "2095-03-31"),  # 19YY로 고치지 않는다
+        ("올해 12월 주가", "2026-12-01", "2026-12-31"),  # 아직 오지 않은 달: 시작이 끝보다 뒤로 가지 않는다
+    ])
+    def test_requested_period(self, q, start, end):
+        r = requested_period(q, TODAY)
+        assert (r.start.isoformat(), r.end.isoformat()) == (start, end)
+
+    @pytest.mark.parametrize("today,q,start,end", [
+        (date(2026, 1, 15), "올해 4분기 수익률", "2026-10-01", "2026-12-31"),  # 1월에 묻는 미래 구간
+        (date(2026, 1, 15), "4분기 수익률", "2025-10-01", "2025-12-31"),  # 연도 없으면 지난 4분기
+        (date(2026, 1, 15), "1분기 수익률", "2026-01-01", "2026-01-15"),  # 진행 중
+        (date(2026, 3, 31), "1분기 수익률", "2026-01-01", "2026-03-31"),  # 분기 마지막 날
+        (date(2026, 4, 1), "2분기 수익률", "2026-04-01", "2026-04-01"),  # 분기 첫날
+        (date(2026, 4, 1), "3분기 수익률", "2025-07-01", "2025-09-30"),
+        (date(2028, 2, 29), "올해 2월 주가", "2028-02-01", "2028-02-29"),  # 윤년
+        (date(2026, 6, 30), "상반기 수익률", "2026-01-01", "2026-06-30"),
+        (date(2026, 6, 30), "하반기 수익률", "2025-07-01", "2025-12-31"),
+    ])
+    def test_boundaries(self, today, q, start, end):
+        r = requested_period(q, today)
+        assert (r.start.isoformat(), r.end.isoformat()) == (start, end) and r.start <= r.end
+
+    @pytest.mark.parametrize("q", ["올해 1분기 수익률", "올해 3월 수익률", "작년 3월 수익률", "작년 4분기", "작년 상반기", "작년 이맘때 수익률",
+                                   "작년 같은 달 수익률", "24년 3월 주가", "24년 주가", "22년 주가", "24년 3분기"])
+    def test_parser_does_not_read_part_of_a_calendar_expression(self, q):
+        assert parse_period(q, NOW) is None
+
+    @pytest.mark.parametrize("q,text", [("올해 수익률", "올해"), ("작년 주가", "작년"), ("5년 주가", "5년"), ("30년 주가", "30년"),
+                                        ("최근 24년 주가", "24년"), ("24년간 주가", "24년"), ("27년 주가", "27년"), ("1년 수익률", "1년")])
+    def test_plain_year_words_and_quantities_still_parse(self, q, text):
+        assert parse_period(q, NOW).matched_text == text
+
+    def test_quarter_answer_is_not_the_year_to_date_path(self, fake_prices, monkeypatch):
+        # hist_17: "올해"만 읽어 _answer_period_quote가 연초~현재로 답하던 문제
+        monkeypatch.setattr(agent, "parse_period", parse_period)
+        q = "기아 올해 1분기 수익률은?"
+        assert agent._answer_period_quote(q, [co()]) is None
+        resp, records = agent._answer_period_history(q, [co()])
+        assert records[0]["result"]["period_end_date"] == "2026-03-31"
+        assert "2026-01-01~2026-03-31" in resp["answer"]
+
+    def test_two_digit_year_answer_states_the_range(self, fake_prices):
+        resp, records = agent._answer_period_history("기아 24년 3월 주가 알려줘", [co()])
+        assert "24년 3월: 2024-03-01~2024-03-31" in resp["answer"]
+        assert records[0]["result"]["period_end_date"] == "2024-03-29"
+
+    def test_future_month_says_no_data(self, fake_prices):
+        resp, _ = agent._answer_period_history("기아 올해 12월 주가 알려줘", [co()])
+        assert is_refusal(resp["answer"]) and "2026-12-01~2026-12-31" in resp["answer"]
+        resp, _ = agent._answer_period_history("기아 27년 3월 주가 알려줘", [co()])
+        assert is_refusal(resp["answer"]) and "2027-03-01~2027-03-31" in resp["answer"]
+
+
+D = date
+STOCK = [(D(2023, 12, 27), 100.0), (D(2023, 12, 28), 100.0), (D(2024, 1, 2), 101.0), (D(2024, 6, 3), 110.0), (D(2024, 12, 30), 120.0), (D(2026, 10, 30), 300.0)]
+INDEX = [(D(2023, 12, 27), 2000.0), (D(2023, 12, 28), 2000.0), (D(2024, 1, 2), 2010.0), (D(2024, 6, 3), 2100.0), (D(2024, 12, 30), 2200.0), (D(2026, 10, 30), 4000.0)]
+
+
+class TestMarketRange:
+    def test_stock_and_index_use_the_same_window(self):
+        from app.tools.market_tool import compare_range
+
+        cmp = compare_range(STOCK, INDEX, D(2024, 1, 1), D(2024, 12, 31))
+        assert (cmp["start_date"], cmp["end_date"]) == ("2023-12-28", "2024-12-30")
+        assert cmp["stock_change_pct"] == 20.0 and cmp["market_change_pct"] == 10.0 and cmp["period_days"] == 3
+
+    def test_long_window_is_not_cut_to_sixty_days(self):
+        from app.tools.market_tool import compare_range
+
+        stock = [(D(2024, 1, 1) + timedelta(days=i), 100.0 + i) for i in range(400)]
+        index = [(d, 1000.0 + i) for i, (d, _) in enumerate(stock)]
+        cmp = compare_range(stock, index, D(2024, 1, 2), D(2025, 1, 30))
+        assert cmp["period_days"] > 60 and cmp["start_date"] == "2024-01-01"
+
+    def test_no_overlap_is_none(self):
+        from app.tools.market_tool import compare_range
+
+        assert compare_range(STOCK, INDEX, D(2022, 1, 1), D(2022, 12, 31)) is None
+        assert compare_range(STOCK[:2], [], D(2023, 12, 1), D(2023, 12, 31)) is None
+
+    def test_uses_only_days_both_have(self):
+        from app.tools.market_tool import compare_range
+
+        cmp = compare_range(STOCK, [x for x in INDEX if x[0] != D(2024, 12, 30)], D(2024, 1, 1), D(2024, 12, 31))
+        assert cmp["end_date"] == "2024-06-03"
+
+    def _fake_db(self, stock, index):
+        from app.models import StockPrice
+
+        def query(*cols):
+            rows = stock if cols[0].class_ is StockPrice else index
+            chain = SimpleNamespace(filter=lambda *a: chain, order_by=lambda *a: chain, all=lambda: rows)
+            return chain
+
+        return SimpleNamespace(query=query)
+
+    def test_range_result_notes_what_the_index_does_not_cover(self):
+        from app.tools.market_tool import _market_range_result
+
+        start, end = D(2023, 1, 1), D(2024, 12, 31)
+        r = _market_range_result(self._fake_db(STOCK, INDEX), co(), {"company_name": "기아"}, "KS11", "코스피", start, end)
+        assert r["found"] and r["requested_start"] == "2023-01-01" and "2023-12-27" in r["note"]
+        assert r["start_date"] == "2023-12-27"
+
+    def test_range_result_without_note_when_covered(self):
+        from app.tools.market_tool import _market_range_result
+
+        r = _market_range_result(self._fake_db(STOCK, INDEX), co(), {"company_name": "기아"}, "KS11", "코스피", D(2024, 1, 2), D(2024, 6, 3))
+        assert r["found"] and "note" not in r
+
+    def test_range_result_not_found(self):
+        from app.tools.market_tool import _market_range_result
+
+        r = _market_range_result(self._fake_db([], []), co(), {"company_name": "기아"}, "KS11", "코스피", D(2022, 1, 1), D(2022, 12, 31))
+        assert r["found"] is False and is_refusal(r["message"])
+
+    def test_agent_answers_with_requested_range_and_summary(self, monkeypatch):
+        monkeypatch.setattr(agent, "datetime", type("D", (datetime,), {"now": classmethod(lambda cls, tz=None: NOW)}))
+        got = {}
+
+        def fake_market(**kw):
+            got.update(kw)
+            return {"found": True, "company_name": "기아", "summary": "요약."}
+
+        monkeypatch.setattr(agent, "market_tool", fake_market)
+        resp, records = agent._answer_market_period("2024년 코스피 대비 기아 수익률 알려줘", [co()])
+        assert got["start_date"] == "2024-01-01" and got["end_date"] == "2024-12-31"
+        assert "2024-01-01~2024-12-31" in resp["answer"] and records[0]["tool_name"] == "market_tool"
+
+    @pytest.mark.parametrize("q", ["기아 코스피 대비 수익률", "기아 최근 3개월 코스피 대비 수익률", "2024년 코스피 대비 기아 왜 떨어졌어", "기아 2024년 수익률"])
+    def test_other_questions_keep_existing_flow(self, monkeypatch, q):
+        monkeypatch.setattr(agent, "datetime", type("D", (datetime,), {"now": classmethod(lambda cls, tz=None: NOW)}))
+        monkeypatch.setattr(agent, "market_tool", lambda **kw: pytest.fail("호출하면 안 된다"))
+        assert agent._answer_market_period(q, [co()]) is None
+
+    def test_etf_and_two_companies_keep_existing_flow(self, monkeypatch):
+        monkeypatch.setattr(agent, "market_tool", lambda **kw: pytest.fail("호출하면 안 된다"))
+        assert agent._answer_market_period("2024년 코스피 대비 KODEX 200", [co("KODEX 200", asset_type="etf")]) is None
+        assert agent._answer_market_period("2024년 코스피 대비 현대차 기아", [co("현대차"), co("기아", 2)]) is None
+
+    def test_past_window_is_passed_to_market_tool_too(self, monkeypatch):
+        monkeypatch.setattr(agent, "datetime", type("D", (datetime,), {"now": classmethod(lambda cls, tz=None: NOW)}))
+        calls = [{"function": {"name": "market_tool", "arguments": {"ticker": "기아", "period_days": 5}}},
+                 {"function": {"name": "stock_tool", "arguments": {"ticker": "기아", "period_days": 1}}}]
+        agent._apply_past_window(calls, "기아 2024년 코스피 대비 왜 떨어졌어")
+        ranges = [(c["function"]["arguments"]["start_date"], c["function"]["arguments"]["end_date"]) for c in calls]
+        assert ranges == [("2024-01-01", "2024-12-31")] * 2
+
+
+class TestForeignScript:
+    REC = [{"tool_name": "news_tool", "result": {"found": True, "news": [{"title": "中 시장 판매 급감, 韓 기업 영향"}]}}]
+
+    def _strip(self, text, records=None, q="현대차 위험 요인 알려줘"):
+        from app.answer_guard import strip_foreign_script
+
+        return strip_foreign_script(text, records if records is not None else self.REC, q)
+
+    @pytest.mark.parametrize("text", ["현대차는 시장シェア가 큽니다.", "ひらがな 문장입니다.", "기간期间 동안 올랐습니다.", "市場 상황이 나쁩니다.", "ｼｪｱ 반각입니다."])
+    def test_sentence_with_unknown_foreign_script_is_removed(self, text):
+        answer, n = self._strip(f"첫 문장입니다.\n{text}\n끝 문장입니다.")
+        assert n == 1 and answer.split() == "첫 문장입니다. 끝 문장입니다.".split() or answer.replace("\n", " ").split() == "첫 문장입니다. 끝 문장입니다.".split()
+
+    def test_only_the_bad_sentence_in_a_line_goes(self):
+        answer, n = self._strip("좋은 문장입니다. 나쁜シェア 문장입니다. 또 좋은 문장입니다.")
+        assert n == 1 and answer == "좋은 문장입니다. 또 좋은 문장입니다."
+
+    @pytest.mark.parametrize("text", ["中 시장에서 판매가 줄었습니다.", "韓 기업 영향이 있습니다.",  # 도구 결과에 그대로 있는 표기
+                                      "NVIDIA(엔비디아)와 TSMC 영향입니다.", "삼성전자(Samsung Electronics, 005930)는 상승했습니다.",
+                                      "KODEX 200 ETF의 PER은 10배입니다.", "S&P500과 AI 수요가 큽니다.", "주가는 123,400원(+1.5%)입니다.", "**굵게** 쓴 # 마크다운 - 항목"])
+    def test_normal_answers_pass_unchanged(self, text):
+        assert self._strip(text) == (text, 0)
+
+    def test_question_text_counts_as_evidence(self):
+        assert self._strip("三星 관련 답입니다.", [], "三星 주가 알려줘")[1] == 0
+
+    def test_non_korean_question_is_not_checked(self):
+        assert self._strip("シェア is share.", [], "what is share?")[1] == 0
+
+    def test_answer_with_only_foreign_sentences_falls_back_to_code_summary(self, monkeypatch):
+        agent._reset_llm_state()
+        monkeypatch.setattr(agent, "guard_answer", lambda a, r, q: (a, {"replaced": False, "violations": [], "mode": None}))
+        records = [{"tool_name": "stock_tool", "result": {"found": True, "company_name": "기아", "summary": "기아 요약입니다.", "prices": []}}]
+        assert "기아 요약입니다." in agent._guard("すべて日本語です。", records, "기아 주가 알려줘")
+        assert agent._meta()["answer_guard"]["foreign_script_sentences"] == 1
+
+    def test_empty_section_is_removed_after_stripping(self, monkeypatch):
+        agent._reset_llm_state()
+        monkeypatch.setattr(agent, "guard_answer", lambda a, r, q: (a, {"replaced": False, "violations": [], "mode": None}))
+        out = agent._guard("## 주가 동향\n오름세입니다.\n\n## 시장 상황\nシェア가 큽니다.", [], "기아 어때?")
+        assert "오름세입니다." in out and "시장 상황" not in out and "シェア" not in out
