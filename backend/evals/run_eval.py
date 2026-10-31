@@ -32,8 +32,9 @@ SOURCE_TOOLS = {"news_tool", "disclosure_tool", "rag_search_tool", "event_reacti
 # holdout_unseen: 가장 최근 수정 라운드 전에 추가한 batch(UNSEEN_BATCH)의 holdout. 그 라운드의 수정 중에는 한 번도 돌리지 않는다.
 # holdout_seen: 그 밖의 holdout(이전 라운드에서 결과가 공개된 것). 라운드마다 UNSEEN_BATCH를 올린다
 # (batch 2: 2026-10-27 A-F 라운드, batch 3: 2026-10-27 안정성·숫자 검증 라운드, batch 4: 2026-10-28 3차 라운드,
-#  batch 6: 2026-10-31 3년치 백필 뒤 기간 질문 라운드. batch 5는 ETF 구성종목 기능 문항이라 수정 라운드가 아니었다).
-UNSEEN_BATCH = 6
+#  batch 6: 2026-10-31 3년치 백필 뒤 기간 질문 라운드, batch 7: 2026-10-31 기간 해석·지수 구간·언어 혼입 라운드.
+#  batch 5는 ETF 구성종목 기능 문항이라 수정 라운드가 아니었다).
+UNSEEN_BATCH = 7
 # 브리핑 문항(must_briefing)용: 평가 계정에 모의 보유종목 1개(종목, 수량)와 관심종목 1개를 만든다. 계정을 지울 때 같이 지워진다.
 EVAL_HOLDING = ("삼성전자", 5)
 EVAL_WATCH = "SK하이닉스"
@@ -49,6 +50,42 @@ def in_split(rec: dict, split: str) -> bool:
     if split == "holdout_unseen":
         return rec["split"] == "holdout" and rec.get("batch", 1) == UNSEEN_BATCH
     return rec["split"] == split
+
+
+def resolve_etf_branch(item: dict, available: dict[str, bool]) -> tuple[dict, str | None]:
+    """expect.etf_holdings가 있는 문항의 기대값을 실행 시점의 데이터 유무로 정한다: (채점에 쓸 문항, "with_data"|"without_data"|None).
+
+    etf_holding에 그 ETF(ticker) 행이 있으면 with_data(구성종목·기준일·비중으로 답함), 없으면 without_data(제공하지 않음)다.
+    without_data 통과는 "데이터가 없다고 정직하게 답한다"는 뜻일 뿐 구성종목 기능의 검증이 아니다(기능 검증은 데이터가 있는 TIGER 문항)."""
+    branches = item["expect"].get("etf_holdings")
+    if not branches:
+        return item, None
+    key = "with_data" if available.get(branches["ticker"]) else "without_data"
+    rest = {k: v for k, v in item["expect"].items() if k != "etf_holdings"}
+    return {**item, "expect": {**rest, **branches[key]}}, key
+
+
+def etf_data_available(db, items: list[dict]) -> dict[str, bool]:
+    """expect.etf_holdings가 있는 문항의 ETF별 etf_holding 데이터 유무(티커 -> bool)."""
+    from app.models import Company, EtfHolding
+
+    tickers = sorted({i["expect"]["etf_holdings"]["ticker"] for i in items if i["expect"].get("etf_holdings")})
+    return {t: db.query(EtfHolding.id).join(Company, Company.id == EtfHolding.company_id).filter(Company.ticker == t).first() is not None
+            for t in tickers}
+
+
+def etf_branch_summary(records: list[dict]) -> dict:
+    """어느 분기를 검증했는지: 분기별 문항 id와 통과/실행 수."""
+    out: dict[str, dict] = {}
+    for r in records:
+        branch = (r.get("detail") or {}).get("etf_branch")
+        if branch:
+            row = out.setdefault(branch, {"ids": [], "passed": 0, "runs": 0})
+            if r["id"] not in row["ids"]:
+                row["ids"].append(r["id"])
+            row["runs"] += 1
+            row["passed"] += not r["failures"]
+    return out
 
 
 def load_dataset(path: Path = DATASET) -> list[dict]:
@@ -413,10 +450,14 @@ def run_live(items: list[dict], repeats: int, model: str, log=print) -> tuple[li
     counter = _LLMCallCounter()
     try:
         _setup_eval_portfolio(db, user)
+        info["etf_data_available"] = available = etf_data_available(db, items)
         consecutive_timeouts = 0
         for run in range(repeats):
             for it in items:
                 rec = _record(it, run)
+                it, branch = resolve_etf_branch(it, available)
+                if branch:
+                    rec["detail"]["etf_branch"] = branch
                 counter.n = 0
                 pool = ThreadPoolExecutor(max_workers=1)
                 t0 = time.perf_counter()
@@ -618,6 +659,7 @@ def main(argv=None) -> int:
     ap.add_argument("--split", choices=["dev", "holdout", "all"], default="all")
     ap.add_argument("--repeats", type=int, default=1, help="live 질문 반복 횟수(offline은 결정적이라 1회)")
     ap.add_argument("--only", help="카테고리 하나만(쉼표로 여러 개)")
+    ap.add_argument("--ids", help="문항 id만(쉼표로 여러 개). 평가기 수정의 영향을 받은 문항만 다시 잴 때 쓴다")
     ap.add_argument("--limit", type=int, help="필터 후 앞에서 N개만")
     ap.add_argument("--out", help="summary JSON 경로(기본: evals/results/summary_<시각>.json)")
     ap.add_argument("--from-raw", nargs="+", metavar="RAW",
@@ -638,6 +680,9 @@ def main(argv=None) -> int:
     if args.only:
         cats = set(args.only.split(","))
         items = [i for i in items if i["category"] in cats]
+    if args.ids:
+        ids = set(args.ids.split(","))
+        items = [i for i in items if i["id"] in ids]
     if args.mode != "all":
         items = [i for i in items if i["mode"] == args.mode]
     if args.limit:
@@ -682,6 +727,9 @@ def main(argv=None) -> int:
         "args": vars(args),
         "n_items": {"offline": len(offline_items), "live": len(live_items), "records": len(records)},
         "live": live_info,
+        # KODEX 등 ETF 구성종목 문항의 분기. without_data 통과는 구성종목 기능의 검증이 아니다(resolve_etf_branch)
+        "etf_data_available": live_info.get("etf_data_available", {}),
+        "etf_branches": etf_branch_summary(records),
         "elapsed_s": round(time.perf_counter() - t0, 1),
         "metrics": summarize(records),
         "failures": failure_list(records),

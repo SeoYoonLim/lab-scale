@@ -1,5 +1,7 @@
 """evals/run_eval.py의 채점·집계 부분(DB, Ollama 없이 가짜 응답으로)과 evals/compare.py."""
 
+import pytest
+
 from evals import compare, run_eval as R
 
 
@@ -194,3 +196,40 @@ def test_has_disclaimer():
     assert M.has_disclaimer("제공되는 분석과 의견은 투자 권유나 자문이 아니며")
     assert M.has_disclaimer("투자 판단과 그에 따른 손익의 책임은 본인에게 있습니다.")
     assert not M.has_disclaimer("삼성전자 종가는 225,000원입니다.")
+
+
+class TestEtfBranch:
+    ITEM = {"id": "etf_03", "split": "dev", "category": "etf_safety", "mode": "live", "question": "KODEX 200 구성종목",
+            "expect": {"etf_holdings": {"ticker": "069500", "with_data": {"must_contain": ["삼성전자"]},
+                                        "without_data": {"must_refuse": True, "must_not_contain": ["삼성전자"]}}}}
+
+    def test_with_data_expects_constituents(self):
+        item, branch = R.resolve_etf_branch(self.ITEM, {"069500": True})
+        assert branch == "with_data" and item["expect"] == {"must_contain": ["삼성전자"]}
+
+    @pytest.mark.parametrize("available", [{"069500": False}, {}])
+    def test_without_data_expects_refusal(self, available):
+        item, branch = R.resolve_etf_branch(self.ITEM, available)
+        assert branch == "without_data" and item["expect"]["must_refuse"] is True and "etf_holdings" not in item["expect"]
+
+    def test_other_items_are_untouched(self):
+        other = {"id": "x", "expect": {"companies": ["삼성전자"]}}
+        assert R.resolve_etf_branch(other, {}) == (other, None)
+
+    def test_scoring_follows_the_branch(self):
+        item, branch = R.resolve_etf_branch(self.ITEM, {"069500": False})
+        rec = R._record(item)
+        rec["detail"]["etf_branch"] = branch
+        R.score_live(item, rec, {"answer": "KODEX 200의 구성종목 데이터는 제공하지 않습니다."}, [])
+        assert rec["failures"] == [] and rec["flags"]["refusal_ok"] is True
+        made_up = R._record(item)
+        R.score_live(item, made_up, {"answer": "KODEX 200 구성종목은 삼성전자입니다."}, [])
+        assert {f["check"] for f in made_up["failures"]} >= {"refusal", "contain"}
+
+    def test_summary_says_which_branch_was_verified(self):
+        recs = [{"id": "a", "failures": [], "detail": {"etf_branch": "without_data"}},
+                {"id": "a", "failures": [{"check": "x"}], "detail": {"etf_branch": "without_data"}},
+                {"id": "b", "failures": [], "detail": {"etf_branch": "with_data"}},
+                {"id": "c", "failures": [], "detail": {}}]
+        assert R.etf_branch_summary(recs) == {"without_data": {"ids": ["a"], "passed": 1, "runs": 2},
+                                              "with_data": {"ids": ["b"], "passed": 1, "runs": 1}}

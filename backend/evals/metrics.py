@@ -212,7 +212,8 @@ def regex_checks(text: str, must_contain=None, must_not_contain=None) -> list[st
 _YMD_RE = re.compile(r"((?:19|20)\d{2})\s*(?:년\s*|[-.]\s*)(\d{1,2})\s*(?:월\s*|[-.]\s*)(\d{1,2})\s*일?")
 _YM_RE = re.compile(r"((?:19|20)\d{2})\s*년\s*(\d{1,2})\s*월")
 _Y_RE = re.compile(r"((?:19|20)\d{2})\s*년")
-_AGO_RE = re.compile(r"(\d{1,2})\s*(년|개월)\s*전")
+# "2025년 전체"의 "25년 전"을 시점으로 읽지 않는다(앞이 숫자면 연도의 일부, 뒤가 "체"면 "전체"다. 2026-10-31 승인된 수정)
+_AGO_RE = re.compile(r"(?<!\d)(\d{1,2})\s*(년|개월)\s*전(?!체)")
 
 
 def _month_end(y: int, m: int):
@@ -260,7 +261,9 @@ def explicit_periods(question: str, today) -> list[tuple]:
         n, unit = int(m.group(1)), m.group(2)
         months = n * 12 if unit == "년" else n
         total = today.year * 12 + today.month - 1 - months
-        day = date(total // 12, total % 12 + 1, min(today.day, 28))
+        # 같은 날짜가 없으면 그 달의 마지막 날이다(10-31의 "3년 전"을 10-28로 잘라 보유 시작일 10-30보다 앞선다고 보던 오탐, 2026-10-31)
+        y, mo = total // 12, total % 12 + 1
+        day = date(y, mo, min(today.day, _month_end(y, mo).day))
         out.append((day, day, rf"{n}\s*{unit}\s*전"))
     return out
 

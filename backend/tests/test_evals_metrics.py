@@ -1,5 +1,7 @@
 """evals/metrics.py 채점 함수 단위 테스트(DB, Ollama 없음)."""
 
+from datetime import date
+
 import pytest
 
 from evals import metrics as M
@@ -198,3 +200,40 @@ class TestDataDate:
 
     def test_unknown_last_date(self):
         assert M.data_date_ok("x", None, self.TODAY) is None
+
+
+class TestExplicitPeriodsAgoFixes:
+    """2026-10-31 승인된 평가기 수정: 날짜 계산(29~31일, 2월 말)과 "2025년 전체"."""
+
+    @staticmethod
+    def _ago_days(question, today):
+        return [p[0] for p in M.explicit_periods(question, today) if "전" in p[2]]
+
+    @pytest.mark.parametrize("today,q,want", [
+        (date(2026, 10, 31), "3년 전 주가", date(2023, 10, 31)),
+        (date(2026, 10, 29), "3년 전 주가", date(2023, 10, 29)),
+        (date(2026, 10, 30), "3년 전 주가", date(2023, 10, 30)),
+        (date(2026, 3, 31), "1개월 전 주가", date(2026, 2, 28)),  # 2월 말로 맞춘다
+        (date(2028, 3, 30), "1개월 전 주가", date(2028, 2, 29)),  # 윤년
+        (date(2028, 2, 29), "1년 전 주가", date(2027, 2, 28)),
+        (date(2026, 11, 1), "3년 전 주가", date(2023, 11, 1)),
+    ])
+    def test_ago_keeps_the_day_or_uses_month_end(self, today, q, want):
+        assert self._ago_days(q, today) == [want]
+
+    def test_three_years_ago_on_the_31st_is_in_range(self):
+        # ref_10: 2023-10-31은 보유 시작일(10-30) 뒤다. 답이 맞으면 위반이 아니다
+        answer = "카카오의 2023-10-31 종가는 37,800원입니다."
+        assert M.period_label_violation("카카오 3년 전 주가 알려줘", answer, date(2023, 10, 30), date(2026, 10, 31)) is None
+
+    def test_really_out_of_range_ago_is_still_a_violation(self):
+        answer = "카카오의 5년 전 주가는 37,800원입니다."
+        assert M.period_label_violation("카카오 5년 전 주가 알려줘", answer, date(2023, 10, 30), date(2026, 10, 31)) is True
+
+    @pytest.mark.parametrize("q", ["기아 2025년 전체 등락률은?", "2025년 전체", "2025년 전체 수익률"])
+    def test_whole_year_is_not_years_ago(self, q):
+        assert self._ago_days(q, date(2026, 10, 31)) == []
+        assert M.period_label_violation(q, "2025-12-30 종가는 121,800원, +20.95%입니다.", date(2023, 10, 30), date(2026, 10, 31)) is None
+
+    def test_year_label_before_data_is_still_checked(self):
+        assert M.period_label_violation("2022년 전체 등락률", "2022년 등락률은 +5.00%입니다.", date(2023, 10, 30), date(2026, 10, 31)) is True
