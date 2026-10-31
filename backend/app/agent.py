@@ -622,19 +622,19 @@ def _add_missing_compared(db, calls: list[dict], named: list) -> list[dict]:
     return out
 
 
-def _expand_multi_company_calls(calls: list[dict], question: str) -> None:
-    """질문에 종목이 둘 이상일 때, 모델이 한 호출에 종목을 묶었으면 종목별 호출로 나눈다(calls를 직접 수정).
+def _expand_multi_company_calls(calls: list[dict], question: str, named: list | None) -> None:
+    """질문에 종목이 둘 이상일 때(named: _question_companies의 결과), 모델이 한 호출에 종목을 묶었으면 종목별 호출로 나눈다(calls를 직접 수정).
 
     "현대차와 기아의 사업 구조 차이" 질문에서 모델이 company_name="현대차, 기아"로 넘겨 종목을 못 찾았다고 답하거나(stab_10,
     종목 이름 자체는 정확히 해석된다), 종목 필터 없이 RAG를 검색해 두 회사 문서를 고르지 못했다. 나눈 인자는 질문·인자에서 찾은 등록명이다.
     비교 질문("현대차와 기아 비교해줘")에서 모델이 한 종목만 호출했으면 같은 도구를 나머지 종목에도 호출한다."""
-    if not any(_COMPANY_ARG.get(call["function"]["name"]) for call in calls):
+    if not named or len(named) < 2 or not any(_COMPANY_ARG.get(call["function"]["name"]) for call in calls):
         return
-    db = SessionLocal()
     try:
-        named = extract_from_text(db, question)
-        if len(named) < 2:
-            return
+        db = SessionLocal()
+    except Exception:
+        return
+    try:
         expanded = []
         for call in calls:
             fn_name = call["function"]["name"]
@@ -654,6 +654,8 @@ def _expand_multi_company_calls(calls: list[dict], question: str) -> None:
         if _COMPARE_QUESTION_RE.search(question):
             expanded = _add_missing_compared(db, expanded, named)
         calls[:] = expanded
+    except Exception:
+        return  # DB를 읽지 못하면 모델이 만든 호출 그대로 간다
     finally:
         db.close()
 
@@ -1674,7 +1676,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     # 2. 모델이 만든 종목 인자가 깨졌으면 질문 원문에서 회사명을 찾아 보정한 뒤, tool을 실제로 실행하고
     #    결과를 다시 넘겨줌. 질문이 이름으로 요청한 tool이 빠졌으면 덧붙이고(보정된 종목 인자를 쓰도록 보정 뒤에),
     #    기간은 질문에서 인식한 값 > 흐름 질문의 기본 기간 > LLM 추론값 순으로 정한다.
-    _expand_multi_company_calls(tool_calls, question)
+    _expand_multi_company_calls(tool_calls, question, companies)
     repaired = _repair_company_args(tool_calls, question, previous["question"] if previous else None)
     added = set(_add_requested_tools(tool_calls, question)) | set(etf_added)
     subjects = _question_subjects(question, tool_calls)

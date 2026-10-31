@@ -120,7 +120,7 @@ class TestSymptoms:
         monkeypatch.setattr(agent, "resolve_company", lambda db, r, allow_fuzzy=True: SimpleNamespace(
             company=next((c for c in (hyundai, kia) if c.name == r), None)))
         calls = [{"function": {"name": "rag_search_tool", "arguments": {"company_name": raw, "query": "사업 구조"}}}]
-        agent._expand_multi_company_calls(calls, "현대차와 기아의 사업 구조 차이와 각각의 위험 요인을 설명해줘")
+        agent._expand_multi_company_calls(calls, "현대차와 기아의 사업 구조 차이와 각각의 위험 요인을 설명해줘", [hyundai, kia])
         assert [c["function"]["arguments"]["company_name"] for c in calls] == ["현대차", "기아"]
         assert all(c["function"]["arguments"]["query"] == "사업 구조" for c in calls)
 
@@ -133,11 +133,11 @@ class TestSymptoms:
         two = [{"function": {"name": "stock_tool", "arguments": {"ticker": "현대차"}}},
                {"function": {"name": "stock_tool", "arguments": {"ticker": "기아"}}},
                {"function": {"name": "fx_tool", "arguments": {}}}]
-        agent._expand_multi_company_calls(two, "현대차와 기아 비교해줘")
+        agent._expand_multi_company_calls(two, "현대차와 기아 비교해줘", [hyundai, kia])
         assert [c["function"]["arguments"].get("ticker") for c in two] == ["현대차", "기아", None]
         # 질문의 종목이 하나면 종목 없는 RAG 호출을 건드리지 않는다
         one = [{"function": {"name": "rag_search_tool", "arguments": {"query": "x"}}}]
-        agent._expand_multi_company_calls(one, "기아 사업 구조 설명해줘")
+        agent._expand_multi_company_calls(one, "기아 사업 구조 설명해줘", [kia])
         assert one[0]["function"]["arguments"] == {"query": "x"}
 
 
@@ -148,12 +148,23 @@ def test_compare_question_calls_the_same_tool_for_the_company_the_model_skipped(
     monkeypatch.setattr(agent, "resolve_company", lambda db, r, allow_fuzzy=True: SimpleNamespace(
         company=next((c for c in (hyundai, kia) if c.name == r), None)))
     calls = [{"function": {"name": "stock_tool", "arguments": {"ticker": "현대차", "period_days": 1}}}]
-    agent._expand_multi_company_calls(calls, "현대차와 기아 비교해줘")
+    agent._expand_multi_company_calls(calls, "현대차와 기아 비교해줘", [hyundai, kia])
     assert [c["function"]["arguments"] for c in calls] == [{"ticker": "현대차", "period_days": 1}, {"ticker": "기아", "period_days": 1}]
     # 비교가 아니면 모델이 고른 대로 둔다
     other = [{"function": {"name": "stock_tool", "arguments": {"ticker": "현대차"}}}]
-    agent._expand_multi_company_calls(other, "현대차 주가랑 기아 뉴스 알려줘")
+    agent._expand_multi_company_calls(other, "현대차 주가랑 기아 뉴스 알려줘", [hyundai, kia])
     assert len(other) == 1
+
+
+def test_expand_leaves_calls_alone_without_named_companies_or_when_db_fails(monkeypatch):
+    def boom():
+        raise RuntimeError("no db")
+
+    monkeypatch.setattr(agent, "SessionLocal", boom)
+    calls = [{"function": {"name": "rag_search_tool", "arguments": {"company_name": "현대차, 기아"}}}]
+    agent._expand_multi_company_calls(calls, "현대차와 기아", None)  # DB를 열지 않는다
+    agent._expand_multi_company_calls(calls, "현대차와 기아", [co("현대차", 1), co("기아", 2)])  # DB를 못 열면 그대로
+    assert calls[0]["function"]["arguments"]["company_name"] == "현대차, 기아"
 
 
 class TestHistoryAnswers:
