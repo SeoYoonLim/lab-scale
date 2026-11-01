@@ -16,7 +16,7 @@ CATEGORY_SIZE = {"entity": 28, "period": 14, "routing_gate": 10, "tool_selection
                  "period_history": 40, "narrative": 40}
 EXPECT_KEYS = {"companies", "must_not_companies", "tools_all", "tools_forbidden", "period_days", "must_refuse",
                "must_contain", "must_not_contain", "gates", "ref_date", "start", "end", "must_partial",
-               "must_state_data_date", "must_answer", "must_briefing", "check_attachment", "etf_holdings"}
+               "must_state_data_date", "must_answer", "must_briefing", "check_attachment", "etf_holdings", "number_scored"}
 TOOLS = {"stock_tool", "news_tool", "disclosure_tool", "rag_search_tool", "market_tool", "fx_tool",
          "discovery_tool", "event_reaction_tool", "*"}
 

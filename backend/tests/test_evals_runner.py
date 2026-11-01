@@ -233,3 +233,15 @@ class TestEtfBranch:
                 {"id": "c", "failures": [], "detail": {}}]
         assert R.etf_branch_summary(recs) == {"without_data": {"ids": ["a"], "passed": 1, "runs": 2},
                                               "with_data": {"ids": ["b"], "passed": 1, "runs": 1}}
+
+
+def test_number_scored_false_skips_number_support_only():
+    calls = [{"tool_name": "event_reaction_tool", "arguments": {}, "result": {"found": True, "company_name": "삼성전자"}}]
+    item = _item("narrative", {"companies": ["삼성전자"], "must_answer": True, "number_scored": False})
+    rec = R._record(item)
+    R.score_live(item, rec, {"answer": "평균 -2.96%입니다.", "sources": []}, calls)
+    assert "number_support" not in [f["check"] for f in rec["failures"]] and "num_counts" not in rec
+    scored = _item("narrative", {"companies": ["삼성전자"], "must_answer": True})
+    rec = R._record(scored)
+    R.score_live(scored, rec, {"answer": "평균 -2.96%입니다.", "sources": []}, calls)
+    assert "number_support" in [f["check"] for f in rec["failures"]]

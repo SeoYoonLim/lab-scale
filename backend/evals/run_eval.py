@@ -247,7 +247,8 @@ def score_live(item: dict, rec: dict, response: dict | None, calls: list[dict], 
     evidence = [c["result"] for c in calls] + [item["question"]]
     matched, unmatched = M.match_numbers(answer, evidence)
     rec["detail"]["numbers"] = {"matched": [n.raw for n in matched], "unmatched": [n.raw for n in unmatched]}
-    if item["category"] in NUMBER_CATEGORIES and response is not None:
+    # number_scored=false: 사건 반응 답변은 코드가 날짜별로 계산한 평균을 쓴다. 평가기는 계산값을 근거로 보지 않아 맞는 답도 실패로 센다
+    if item["category"] in NUMBER_CATEGORIES and response is not None and exp.get("number_scored", True):
         rec["num_counts"] = (len(matched), len(matched) + len(unmatched))
         if matched or unmatched:
             flags["numbers_all_supported"] = not unmatched
