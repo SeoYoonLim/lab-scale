@@ -624,6 +624,159 @@ def strip_foreign_script(answer: str, records: list[dict], question: str = "") -
     return "\n".join(kept).strip(), removed
 
 
+# ---------- 설명형 문장 검증 (2026-11-01) ----------
+# 설명형 질문 40개 x 3회를 사람이 함께 확인한 측정에서, 숫자는 도구 결과 "어딘가에" 있어 통과했지만 대상·맥락이 틀린 문장이 나왔다:
+# "태성" 질문에 이름이 비슷한 다른 회사 "태성자산운용"의 제재 금액, 날짜 없이 쓴 기사 속 시세("태성의 주가는 장중 4.62% 상승하며
+# 47,600원" - 9월 기사), 거래량을 돈으로 쓴 문장("들어온 자금은 23,223,639주"). 문장 전체가 틀린 것이라 어긋난 문장만 지운다.
+# 지운 뒤 남는 글이 부족한 처리는 호출측(agent._guard)이 한다. 뉴스·공시 내용의 사실 여부와 인과 서술은 여전히 보지 않는다.
+
+_DOC_KEYS = ("news", "disclosures", "results")
+_ENTITY_SUFFIX_RE = "자산운용|투자증권|증권|캐피탈|저축은행|은행|생명|화재|손해보험|건설|엔지니어링|파트너스|재단|장학회"
+_FIN_NOUN_RE = re.compile(r"영업이익|영업손실|순이익|순손실|매출|실적|수주|점유율|배당|비중|성장률|판매|수출")
+_MONEY_NOUN_RE = re.compile(r"자금|금액|매출|영업이익|순이익|현금")
+_VOLUME_COUNT_RE = re.compile(r"거래량[은는이가]?\s*\d[\d,]*\s*건")
+_QUOTE_WORD_RE = re.compile(r"주가|장중|장초반|거래됐|거래되|거래를|마감|종가|등락률|시초가|애프터마켓|급락|급등|상승|하락|올랐|내렸|떨어")
+_TIME_WORD_RE = re.compile(r"\d{1,2}\s*[월일]|오늘|금일|분기|지난해|작년|올해")
+_CAUSE_WORD_RE = re.compile(r"발표|덕분|때문|영향|힘입어|따르면")
+_UP_DOWN = r"(?:하락|상승|내린|오른|내려|올라|떨어진|빠진)[가-힣]*"
+_CHANGE_TO_RE = re.compile(rf"(\d[\d,]*)\s*원\s*{_UP_DOWN}\s*(\d[\d,]*)\s*원")
+_BASE_DATE_RE = re.compile(r"\s*(?:종가\s*)?(?:대비|보다)")
+
+
+def _subject_names(records: list[dict]) -> set[str]:
+    """도구 결과가 말하는 종목 이름(종목별 결과의 company_name, RAG 항목의 company_names)."""
+    names: set[str] = set()
+    for rec in records:
+        r = rec.get("result")
+        if isinstance(r, dict):
+            if r.get("company_name"):
+                names.add(r["company_name"])
+            for it in r.get("results") or []:
+                if isinstance(it, dict):
+                    names.update(n for n in it.get("company_names") or [] if n)
+    return names
+
+
+def _doc_items(records: list[dict]) -> list[dict]:
+    return [it for rec in records if isinstance(rec.get("result"), dict)
+            for key in _DOC_KEYS for it in rec["result"].get(key) or [] if isinstance(it, dict)]
+
+
+def _close_series(records: list[dict]) -> list[list[dict]]:
+    out = []
+    for rec in records:
+        r = rec.get("result")
+        rows = [p for p in (r.get("prices") or []) if isinstance(p, dict) and isinstance(p.get("close_price"), (int, float))
+                and p.get("price_date")] if isinstance(r, dict) else []
+        if rows:
+            out.append(sorted(rows, key=lambda p: str(p["price_date"])))
+    return out
+
+
+def _same_value(a: float, b: float) -> bool:
+    return abs(a - b) <= max(1.0, abs(b) * 0.002)
+
+
+def _change_pair_violation(sentence: str, series: list[list[dict]]) -> str | None:
+    """"2,400원 하락한 89,800원" 짝이 시세 행과 맞는지. 문장에 시세 행이 있는 날짜를 쓰면 수준은 그날 종가여야 하고("...대비"로 쓴 날짜는
+    비교 기준), 변동폭은 그 종가와 기준 종가(기준 날짜가 없으면 직전 행)의 차이여야 한다. 수준이 어느 행의 종가도 아니면 기사 값일 수 있어 보지 않는다."""
+    for m in _CHANGE_TO_RE.finditer(sentence):
+        delta, level = float(m.group(1).replace(",", "")), float(m.group(2).replace(",", ""))
+        on_day, base_day = [], []
+        for dm, md in _dates_in(sentence[:m.start()]):
+            (base_day if _BASE_DATE_RE.match(sentence[dm.end():m.start()]) else on_day).append(md)
+        matched = ok = False
+        for rows in series:
+            for i, p in enumerate(rows):
+                md = tuple(int(x) for x in str(p["price_date"])[5:10].split("-"))
+                if on_day and md != on_day[-1]:
+                    continue
+                if not _same_value(level, float(p["close_price"])):
+                    continue
+                matched = True
+                bases = [q["close_price"] for q in rows if tuple(int(x) for x in str(q["price_date"])[5:10].split("-")) == base_day[-1]] \
+                    if base_day else ([rows[i - 1]["close_price"]] if i else [])
+                ok = ok or any(_same_value(delta, abs(float(p["close_price"]) - float(b))) for b in bases)
+        day_has_row = bool(on_day) and any(
+            tuple(int(x) for x in str(q["price_date"])[5:10].split("-")) == on_day[-1] for rows in series for q in rows)
+        if (matched and not ok) or (day_has_row and not matched):
+            return m.group(0)
+    return None
+
+
+def _narrative_violation(sentence: str, ctx: dict) -> str | None:
+    """이 문장을 지울 이유(짧은 기록), 없으면 None."""
+    for name in ctx["names"]:
+        m = re.search(re.escape(name) + f"(?:{_ENTITY_SUFFIX_RE})", sentence)
+        if m and m.group(0) not in ctx["question"] and not any(m.group(0) in n for n in ctx["names"]):
+            return f"other_company:{m.group(0)}"
+    if _VOLUME_COUNT_RE.search(sentence):
+        return "volume_unit"
+    numbers = extract_numbers(sentence)
+    has_money_noun = bool(_MONEY_NOUN_RE.search(sentence))
+    if has_money_noun and "거래량" not in sentence and any(n.unit == "주" for n in numbers):
+        return "money_as_shares"
+    pair = _change_pair_violation(sentence, ctx["series"])
+    if pair:
+        return f"change_pair:{pair}"
+    subject = [n for n in ctx["names"] if n in sentence]
+    fin = bool(_FIN_NOUN_RE.search(sentence))
+    for n in numbers:
+        if n.unit == "원" and n.value >= 1e8 and fin:
+            if re.search(r"주가[는은가이]\s*[^,.]{0,40}?" + re.escape(n.raw), sentence) and not _CAUSE_WORD_RE.search(sentence):
+                return f"financial_in_price:{n.raw}"
+            hits = [it for it in ctx["docs"] if is_supported(n, support_values(it))]
+            if len(subject) == 1 and hits and not any(
+                    subject[0] in " ".join(_strings_in(it)) for it in hits):
+                return f"other_company_value:{n.raw}"
+    if subject and not fin and _QUOTE_WORD_RE.search(sentence) and not _dates_in(sentence) and not _TIME_WORD_RE.search(sentence):
+        for n in numbers:
+            if n.unit in ("원", "%") and n.value < 1e8 and not is_supported(n, ctx["structured"]) and is_supported(n, ctx["doc_values"]):
+                return f"undated_article_quote:{n.raw}"
+    return None
+
+
+_LIST_MARK_RE = re.compile(r"^[\s\-*\d.()]*$")
+
+
+def strip_narrative_mismatch(answer: str, records: list[dict], question: str = "") -> tuple[str, list[str]]:
+    """(답변, 지운 이유 목록). 대상·맥락이 어긋난 문장만 지운다(위 설명). 도구 결과가 없으면 보지 않는다."""
+    if not answer or not records:
+        return answer, []
+    results = [{k: v for k, v in r.items() if k not in _DOC_KEYS} if isinstance(r, dict) else r
+               for r in (rec.get("result") for rec in records)]
+    docs = _doc_items(records)
+    ctx = {"names": _subject_names(records), "question": question or "", "docs": docs, "series": _close_series(records),
+           "doc_values": support_values(docs),
+           "structured": support_values(results) + support_values(question) + derived_values(results) + cross_differences(results)}
+    reasons: list[str] = []
+    kept = []
+    for line in answer.split("\n"):
+        sentences = [s for s in _SENTENCE_SPLIT_RE.split(line) if s]
+        good = []
+        for s in sentences:
+            why = _narrative_violation(s, ctx)
+            if why:
+                reasons.append(why)
+            else:
+                good.append(s)
+        if len(good) != len(sentences) and all(_LIST_MARK_RE.match(s) for s in good):
+            good = []
+        if good or not line.strip():
+            kept.append(" ".join(good))
+    return ("\n".join(kept).strip(), reasons) if reasons else (answer, [])
+
+
+# 지운 뒤 소제목·안내를 뺀 글이 이보다 짧으면 답변으로 부족하다고 보고 코드 요약으로 바꾼다
+MIN_NARRATIVE_BODY_CHARS = 40
+
+
+def narrative_body_is_thin(answer: str) -> bool:
+    body = [line.strip() for line in (answer or "").split("\n")
+            if line.strip() and not line.startswith("#") and not line.lstrip().startswith("※")]
+    return sum(len(line) for line in body) < MIN_NARRATIVE_BODY_CHARS
+
+
 def guard_answer(answer: str, records: list[dict], question: str = "", today=None) -> tuple[str, dict]:
     """(내보낼 답변, 검증 기록). 기록: {"replaced": bool, "violations": [원문 숫자], "mode": "code_summary"|"drop_sentences"|None,
     "kinds": {"number", "date", "target", "period": 건수}}. today(오늘 날짜, 기본 KST 오늘)는 답변에 오늘 날짜를 써도 되게 한다."""

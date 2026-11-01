@@ -496,6 +496,8 @@ def run_live(items: list[dict], repeats: int, model: str, log=print) -> tuple[li
                     if meta.get("answer_guard") is not None:
                         rec["flags"]["guard_replaced"] = bool(meta["answer_guard"].get("replaced"))
                         rec["detail"]["answer_guard"] = meta["answer_guard"]
+                        if "narrative_sentences" in meta["answer_guard"]:
+                            rec["flags"]["narrative_dropped"] = meta["answer_guard"]["narrative_sentences"] > 0
                 if error:
                     _fail(rec, "error", "정상 응답", error)
                 resolved = [c["result"]["company_name"] for c in calls
@@ -553,6 +555,7 @@ METRICS = [
     ("loop_rate", "flag", "llm_truncated", False),
     ("stability_answer_rate", "flag", "answered_ok", True),
     ("guard_replacement_rate", "flag", "guard_replaced", False),
+    ("narrative_drop_rate", "flag", "narrative_dropped", False),
     ("fallback_rate", "flag", "fallback", False),
     ("error_rate", "flag", "error", False),
     ("latency_p50_s", "latency", 50, False),

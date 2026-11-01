@@ -46,8 +46,10 @@ from app.answer_guard import (
     freshness_note,
     guard_answer,
     is_simple_quote,
+    narrative_body_is_thin,
     quote_answer,
     strip_foreign_script,
+    strip_narrative_mismatch,
     strip_untrusted_urls,
 )
 from app.etf_holdings import constituents_chat_answer, requested_top_n
@@ -1630,6 +1632,17 @@ def _guard(answer: str, records: list[dict], question: str) -> str:
         guarded = remove_empty_sections(guarded)
         if not guarded.strip():
             guarded = code_summary(records) or ""
+    # 대상·맥락이 어긋난 문장을 지운다(다른 회사, 날짜 없는 기사 시세, 지표-단위 불일치). 남는 글이 부족하면 코드 요약으로 바꾼다(2026-11-01)
+    if not log["replaced"]:
+        before_strip = guarded
+        guarded, reasons = strip_narrative_mismatch(guarded, records, question)
+        log["narrative_sentences"] = len(reasons)
+        if reasons:
+            log["narrative_reasons"] = reasons
+            log["narrative_original"] = before_strip[:ORIGINAL_LOG_CHARS]  # 내부 기록(오탐 분석용, API 응답에 나가지 않는다)
+            guarded = remove_empty_sections(guarded)
+            if narrative_body_is_thin(guarded):
+                guarded = code_summary(records) or guarded
     _meta()["answer_guard"] = log
     if log["replaced"]:
         logger.info("답변 숫자 검증: %s로 대체(설명되지 않는 숫자 %s)", log["mode"], log["violations"])
