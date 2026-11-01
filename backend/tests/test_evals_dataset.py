@@ -10,10 +10,12 @@ DATASET = Path(__file__).resolve().parents[1] / "evals" / "dataset.jsonl"
 CATEGORY_MODE = {"entity": "offline", "period": "offline", "routing_gate": "offline",
                  "tool_selection": "live", "grounding": "live", "refusal": "live", "etf_safety": "live",
                  "freshness": "live", "stability": "live", "briefing": "live", "attachment": "live",
-                 "period_history": "live", "narrative": "live", "news_relevance": "live"}
-CATEGORY_SIZE = {"entity": 28, "period": 14, "routing_gate": 10, "tool_selection": 26, "grounding": 33,
-                 "refusal": 13, "etf_safety": 16, "freshness": 4, "stability": 12, "briefing": 4, "attachment": 6,
-                 "period_history": 40, "narrative": 40, "news_relevance": 12}
+                 "period_history": "live", "narrative": "live", "news_relevance": "live", "safety": "live"}
+CATEGORY_SIZE = {"entity": 31, "period": 14, "routing_gate": 10, "tool_selection": 26, "grounding": 35,
+                 "refusal": 16, "etf_safety": 20, "freshness": 4, "stability": 12, "briefing": 6, "attachment": 8,
+                 "period_history": 47, "narrative": 53, "news_relevance": 12, "safety": 4}
+# batch 10은 전부 holdout이다(모델 비교용 미사용 평가셋, evals/reports/model_comparison_20261101.md). 카테고리 비율 계산에서 뺀다.
+ALL_HOLDOUT_BATCH = 10
 EXPECT_KEYS = {"companies", "must_not_companies", "tools_all", "tools_forbidden", "period_days", "must_refuse",
                "must_contain", "must_not_contain", "gates", "ref_date", "start", "end", "must_partial",
                "must_state_data_date", "must_answer", "must_briefing", "check_attachment", "etf_holdings", "number_scored"}
@@ -33,7 +35,7 @@ def test_required_fields(rows):
         assert r["split"] in ("dev", "holdout")
         assert r["mode"] in ("offline", "live")
         assert r["question"].strip()
-        assert r.get("batch", 1) in (1, 2, 3, 4, 5, 6, 7, 8, 9)
+        assert r.get("batch", 1) in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
         assert isinstance(r["expect"], dict) and r["expect"], r["id"]
         assert set(r["expect"]) <= EXPECT_KEYS, r["id"]
 
@@ -47,14 +49,24 @@ def test_category_mode_and_size(rows):
     assert Counter(r["category"] for r in rows) == CATEGORY_SIZE
     for r in rows:
         assert r["mode"] == CATEGORY_MODE[r["category"]], r["id"]
-    assert Counter(r["mode"] for r in rows) == {"offline": 52, "live": 206}
-    assert Counter(r.get("batch", 1) for r in rows) == {1: 80, 2: 30, 3: 24, 4: 24, 5: 6, 6: 22, 7: 20, 8: 40, 9: 12}
+    assert Counter(r["mode"] for r in rows) == {"offline": 55, "live": 243}
+    assert Counter(r.get("batch", 1) for r in rows) == {1: 80, 2: 30, 3: 24, 4: 24, 5: 6, 6: 22, 7: 20, 8: 40, 9: 12, 10: 40}
 
 
 def test_split_is_60_40_per_category(rows):
-    for cat, size in CATEGORY_SIZE.items():
-        holdout = sum(1 for r in rows if r["category"] == cat and r["split"] == "holdout")
-        assert holdout == round(size * 0.4), cat
+    for cat in CATEGORY_SIZE:
+        items = [r for r in rows if r["category"] == cat and r.get("batch") != ALL_HOLDOUT_BATCH]
+        if items:
+            assert sum(r["split"] == "holdout" for r in items) == round(len(items) * 0.4), cat
+
+
+def test_batch_10_is_all_holdout_with_new_questions(rows):
+    batch = [r for r in rows if r.get("batch") == ALL_HOLDOUT_BATCH]
+    assert len(batch) == 40 and all(r["split"] == "holdout" for r in batch)
+    assert sum(r["category"] == "narrative" for r in batch) >= 12
+    others = {r["question"] for r in rows if r.get("batch") != ALL_HOLDOUT_BATCH}
+    assert not {r["question"] for r in batch} & others
+    assert len({r["question"] for r in batch}) == 40
 
 
 @pytest.mark.parametrize("batch", [2, 3, 4, 5, 6, 7, 8, 9])
