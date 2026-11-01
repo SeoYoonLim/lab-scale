@@ -246,7 +246,7 @@
 {"id": "nar_40", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "KODEX 레버리지 관련 최근 뉴스 설명해줘", "expect": {"companies": ["KODEX 레버리지"], "must_answer": true}}
 {"id": "rel_01", "split": "dev", "category": "news_relevance", "mode": "live", "batch": 9, "question": "태성 최근 뉴스 알려줘", "expect": {"companies": ["태성"], "must_answer": true, "must_not_contain": ["이태성", "태성무역", "태성자산운용"]}}
 {"id": "rel_02", "split": "holdout", "category": "news_relevance", "mode": "live", "batch": 9, "question": "동서 최근 뉴스 알려줘", "expect": {"companies": ["동서"], "must_answer": true, "must_not_contain": ["동서횡단", "동서지간", "동서관통"]}}
-{"id": "rel_03", "split": "dev", "category": "news_relevance", "mode": "live", "batch": 9, "question": "SK 최근 뉴스 요약해줘", "expect": {"companies": ["SK"], "must_answer": true, "must_not_contain": ["KF-21", "SK텔레콤 0.92%"]}}
+{"id": "rel_03", "split": "dev", "category": "news_relevance", "mode": "live", "batch": 9, "question": "SK 최근 뉴스 요약해줘", "expect": {"must_refuse": true, "must_not_contain": ["KF-21", "SK텔레콤 0.92%"]}}
 {"id": "rel_04", "split": "holdout", "category": "news_relevance", "mode": "live", "batch": 9, "question": "NAVER 최근 뉴스 알려줘", "expect": {"companies": ["NAVER"], "must_answer": true, "must_not_contain": ["@naver\\.com", "해바라기"]}}
 {"id": "rel_05", "split": "dev", "category": "news_relevance", "mode": "live", "batch": 9, "question": "GS 최근 소식 설명해줘", "expect": {"companies": ["GS"], "must_answer": true, "must_not_contain": ["뮤지컬", "와인25플러스"]}}
 {"id": "rel_06", "split": "dev", "category": "news_relevance", "mode": "live", "batch": 9, "question": "스피어 최근 뉴스 알려줘", "expect": {"companies": ["스피어"], "must_answer": true, "must_not_contain": ["유스피어", "크로노스피어", "웍스피어", "알바몬"]}}

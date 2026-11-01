@@ -143,6 +143,9 @@ def _llm_chat(**kwargs):
         raise LLMUnavailable("timeout") from None
     except (ConnectionError, httpx.TransportError):
         raise LLMUnavailable("connection") from None
+    except ollama.ResponseError:
+        # Ollama가 생성을 중단한 경우("token repeat limit reached" 등). 잘린 반복 루프처럼 도구 결과의 코드 요약으로 답한다(nar_15, 2026-11-01)
+        raise LLMUnavailable("response_error") from None
     try:
         done_reason = resp["done_reason"]
     except (KeyError, TypeError):

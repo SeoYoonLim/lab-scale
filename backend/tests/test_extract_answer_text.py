@@ -23,3 +23,19 @@ def test_tool_call_json_reaches_the_tool_call_check():
 def test_answer_json_is_still_extracted():
     assert extract_answer_text('{"name": "answer", "parameters": {"content": "기아는 자동차 회사입니다."}}') == "기아는 자동차 회사입니다."
     assert extract_answer_text("그냥 글입니다.") == "그냥 글입니다."
+
+
+def test_ollama_response_error_becomes_llm_unavailable(monkeypatch):
+    """Ollama가 생성을 중단하면("token repeat limit reached") 예외로 답변 전체가 실패하지 않고 코드 요약 경로로 간다."""
+    import ollama
+
+    from app import agent
+
+    def abort(**kwargs):
+        raise ollama.ResponseError("prediction aborted, token repeat limit reached", 500)
+
+    monkeypatch.setattr(ollama, "chat", abort)
+    agent._reset_llm_state()
+    with pytest.raises(agent.LLMUnavailable) as e:
+        agent._llm_chat(model="m", messages=[])
+    assert e.value.reason == "response_error"
