@@ -26,6 +26,7 @@ from app import http_retry
 from app.db.session import SessionLocal
 from app.etf import mentions_etf_name
 from app.models import Company, Disclosure, ExchangeRate, MarketIndex, News, StockPrice
+from app.news_relevance import is_relevant_news, needs_context
 
 load_dotenv()
 
@@ -66,12 +67,19 @@ NAME_COLLISION_COMPANIES = frozenset(
     }
 )
 NAME_COLLISION_ANCHOR = "주가 실적"
+AMBIGUOUS_NAME_ANCHOR = "주가"
+NEWS_QUERY_NAMES = {"NAVER": "네이버"}
 
 
 def news_search_query(company_name: str) -> str:
-    """네이버 뉴스 검색어. 이름 충돌 종목이면 재무 키워드를 붙이고, 아니면 회사명 단독이다."""
+    """네이버 뉴스 검색어. 이름 충돌 종목이면 재무 키워드를 붙이고, 문맥이 필요한 모호한 이름이면 정확한 구문에 "주가"를 붙이고,
+    아니면 회사명 단독이다. NAVER는 영문으로 찾으면 기자 이메일(@naver.com)이 걸려 한글로 찾는다."""
     if company_name in NAME_COLLISION_COMPANIES:
         return f"{company_name} {NAME_COLLISION_ANCHOR}"
+    if company_name in NEWS_QUERY_NAMES:
+        return NEWS_QUERY_NAMES[company_name]
+    if needs_context(company_name):
+        return f'"{company_name}" {AMBIGUOUS_NAME_ANCHOR}'
     return company_name
 
 
@@ -627,6 +635,7 @@ def fetch_and_save_news(
                     return CollectResult(ok=False, fetched=len(items), error=msg)
                 company = get_or_create_company(db, ticker=resolved, name=company_name)
 
+        listed_names = [n for (n,) in db.query(Company.name)]
         to_insert = []
         for item in items:
             url = item.get("link") or item.get("originallink")
@@ -640,14 +649,16 @@ def fetch_and_save_news(
             if exists:
                 continue
 
+            title, content = _clean_text(item["title"]), _clean_text(item["description"])
             to_insert.append(
                 News(
                     company_id=company.id,
-                    title=_clean_text(item["title"]),
-                    content=_clean_text(item["description"]),
+                    title=title,
+                    content=content,
                     source=urlparse(item.get("originallink") or url).netloc,
                     url=url,
                     published_at=parsedate_to_datetime(item["pubDate"]),
+                    is_relevant=is_relevant_news(company.name, company.ticker, company.asset_type, title, content, listed_names),
                 )
             )
 
