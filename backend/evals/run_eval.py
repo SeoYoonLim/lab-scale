@@ -33,9 +33,10 @@ SOURCE_TOOLS = {"news_tool", "disclosure_tool", "rag_search_tool", "event_reacti
 # holdout_seen: 그 밖의 holdout(이전 라운드에서 결과가 공개된 것). 라운드마다 UNSEEN_BATCH를 올린다
 # (batch 2: 2026-10-27 A-F 라운드, batch 3: 2026-10-27 안정성·숫자 검증 라운드, batch 4: 2026-10-28 3차 라운드,
 #  batch 6: 2026-10-31 3년치 백필 뒤 기간 질문 라운드, batch 7: 2026-10-31 기간 해석·지수 구간·언어 혼입 라운드,
-#  batch 8: 2026-11-01 설명형 답변 라운드, batch 9: 2026-11-01 뉴스 관련성 라운드.
+#  batch 8: 2026-11-01 설명형 답변 라운드, batch 9: 2026-11-01 뉴스 관련성 라운드,
+#  batch 10: 2026-11-01 모델 비교(전부 holdout, 후보 결과를 보기 전에 작성).
 #  batch 5는 ETF 구성종목 기능 문항이라 수정 라운드가 아니었다).
-UNSEEN_BATCH = 9
+UNSEEN_BATCH = 10
 # 브리핑 문항(must_briefing)용: 평가 계정에 모의 보유종목 1개(종목, 수량)와 관심종목 1개를 만든다. 계정을 지울 때 같이 지워진다.
 EVAL_HOLDING = ("삼성전자", 5)
 EVAL_WATCH = "SK하이닉스"
@@ -439,7 +440,7 @@ def _data_start(db, company_names: list[str]):
     return q.scalar()
 
 
-def run_live(items: list[dict], repeats: int, model: str, log=print) -> tuple[list[dict], dict]:
+def run_live(items: list[dict], repeats: int, model: str, log=print, keep_tool_results: bool = False) -> tuple[list[dict], dict]:
     from app.agent import ask_question
     from app.db.session import SessionLocal
     from app.models import ToolCallLog
@@ -497,6 +498,8 @@ def run_live(items: list[dict], repeats: int, model: str, log=print) -> tuple[li
                     if meta.get("answer_guard") is not None:
                         rec["flags"]["guard_replaced"] = bool(meta["answer_guard"].get("replaced"))
                         rec["detail"]["answer_guard"] = meta["answer_guard"]
+                        if "foreign_script_sentences" in meta["answer_guard"]:
+                            rec["flags"]["foreign_stripped"] = meta["answer_guard"]["foreign_script_sentences"] > 0
                         if "narrative_sentences" in meta["answer_guard"]:
                             rec["flags"]["narrative_dropped"] = meta["answer_guard"]["narrative_sentences"] > 0
                 if error:
@@ -506,6 +509,8 @@ def run_live(items: list[dict], repeats: int, model: str, log=print) -> tuple[li
                 briefing = _eval_briefing(db, user) if it["expect"].get("must_briefing") else None
                 score_live(it, rec, response, calls, data_start=_data_start(db, resolved),
                            data_end=_data_end(db, resolved), briefing=briefing)
+                if keep_tool_results:  # 사람 판독용(raw에만 남고 raw는 커밋하지 않는다)
+                    rec["detail"]["tool_results"] = [{"name": c["tool_name"], "result": c["result"]} for c in calls]
                 out.append(rec)
                 log(f"[live] {it['id']} run{run} {rec['latency_s']}s fail={[f['check'] for f in rec['failures']]}")
                 consecutive_timeouts = consecutive_timeouts + 1 if (error or "").startswith("timeout") else 0
@@ -557,6 +562,7 @@ METRICS = [
     ("stability_answer_rate", "flag", "answered_ok", True),
     ("guard_replacement_rate", "flag", "guard_replaced", False),
     ("narrative_drop_rate", "flag", "narrative_dropped", False),
+    ("foreign_strip_rate", "flag", "foreign_stripped", False),
     ("fallback_rate", "flag", "fallback", False),
     ("error_rate", "flag", "error", False),
     ("latency_p50_s", "latency", 50, False),
@@ -665,6 +671,10 @@ def main(argv=None) -> int:
     ap.add_argument("--repeats", type=int, default=1, help="live 질문 반복 횟수(offline은 결정적이라 1회)")
     ap.add_argument("--only", help="카테고리 하나만(쉼표로 여러 개)")
     ap.add_argument("--ids", help="문항 id만(쉼표로 여러 개). 평가기 수정의 영향을 받은 문항만 다시 잴 때 쓴다")
+    ap.add_argument("--batch", help="batch 번호만(쉼표로 여러 개, batch 없는 문항은 1). 모델 비교에서 batch 10만 돌릴 때 쓴다")
+    ap.add_argument("--exclude-batch", help="이 batch는 뺀다(쉼표로 여러 개)")
+    ap.add_argument("--model", help="평가할 채팅 모델(기본: app.agent.MODEL_NAME = OLLAMA_CHAT_MODEL 또는 llama3.1:8b)")
+    ap.add_argument("--keep-tool-results", action="store_true", help="raw에 도구 결과도 남긴다(사람 판독용)")
     ap.add_argument("--limit", type=int, help="필터 후 앞에서 N개만")
     ap.add_argument("--out", help="summary JSON 경로(기본: evals/results/summary_<시각>.json)")
     ap.add_argument("--from-raw", nargs="+", metavar="RAW",
@@ -678,7 +688,9 @@ def main(argv=None) -> int:
         return _summarize_raw(args)
 
     from app.agent import MODEL_NAME
+    from app.llm_settings import keep_alive, think_option
 
+    model = args.model or MODEL_NAME
     items = load_dataset()
     if args.split != "all":
         items = [i for i in items if i["split"] == args.split]
@@ -688,6 +700,12 @@ def main(argv=None) -> int:
     if args.ids:
         ids = set(args.ids.split(","))
         items = [i for i in items if i["id"] in ids]
+    if args.batch:
+        keep = {int(b) for b in args.batch.split(",")}
+        items = [i for i in items if i.get("batch", 1) in keep]
+    if args.exclude_batch:
+        drop = {int(b) for b in args.exclude_batch.split(",")}
+        items = [i for i in items if i.get("batch", 1) not in drop]
     if args.mode != "all":
         items = [i for i in items if i["mode"] == args.mode]
     if args.limit:
@@ -708,12 +726,12 @@ def main(argv=None) -> int:
         records += run_offline(offline_items)
         print(f"[offline] {len(offline_items)}개 채점")
     if live_items:
-        ok, why = ollama_status(MODEL_NAME)
+        ok, why = ollama_status(model)
         if not ok:
             live_info = {"ran": False, "skipped_reason": why}
             print(f"[live] 건너뜀: {why}")
         else:
-            recs, info = run_live(live_items, max(1, args.repeats), MODEL_NAME)
+            recs, info = run_live(live_items, max(1, args.repeats), model, keep_tool_results=args.keep_tool_results)
             records += recs
             live_info = {"ran": True, "repeats": max(1, args.repeats), **info}
 
@@ -728,7 +746,9 @@ def main(argv=None) -> int:
         "git_commit": git_commit,
         "git_dirty": git_dirty,
         "date": datetime.now().isoformat(timespec="seconds"),
-        "model": MODEL_NAME,
+        "model": model,
+        "think": think_option(),
+        "keep_alive": keep_alive(),
         "args": vars(args),
         "n_items": {"offline": len(offline_items), "live": len(live_items), "records": len(records)},
         "live": live_info,

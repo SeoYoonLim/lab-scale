@@ -30,6 +30,7 @@ import ollama
 from sqlalchemy import func, select
 
 from app.agent import MODEL_NAME
+from app.llm_settings import call_options
 from app.company_aliases import COMPANY_ALIASES
 from app.disclaimer import DISCLAIMER
 from app.etf import leverage_kind
@@ -579,7 +580,7 @@ def _chat(messages: list[dict]) -> str:
     global _client
     if _client is None:
         _client = ollama.Client(timeout=LLM_TIMEOUT_SECONDS)
-    resp = _client.chat(model=MODEL_NAME, messages=messages, format="json", options={"temperature": 0.2})
+    resp = _client.chat(model=MODEL_NAME, messages=messages, format="json", options={"temperature": 0.2}, **call_options())
     return resp["message"]["content"]
 
 

@@ -7,15 +7,16 @@ from sqlalchemy import Text, cast, func
 
 from app.db.session import SessionLocal
 from app.embeddings import EMBEDDING_MODEL
+from app.llm_settings import embed_options
 from app.models import Company, Disclosure, News
 from app.tools.company_resolver import not_found_response, resolve_company, to_int
 
 
 def _embed_query(query: str) -> list[float]:
     if ollama.embed is _LIBRARY_EMBED:
-        response = ollama.Client(timeout=EMBED_TIMEOUT_S).embed(model=EMBEDDING_MODEL, input=[query])
+        response = ollama.Client(timeout=EMBED_TIMEOUT_S).embed(model=EMBEDDING_MODEL, input=[query], **embed_options())
     else:
-        response = ollama.embed(model=EMBEDDING_MODEL, input=[query])
+        response = ollama.embed(model=EMBEDDING_MODEL, input=[query], **embed_options())
     return response["embeddings"][0]
 
 

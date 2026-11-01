@@ -11,8 +11,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+from app.llm_settings import chat_model
+
 CHECK_TIMEOUT_S = 2.0
-OLLAMA_MODEL = "llama3.1:8b"  # app.agent.MODEL_NAME과 같은 값(health가 agent를 import하지 않게 따로 둔다)
+OLLAMA_MODEL = chat_model()  # app.agent.MODEL_NAME과 같은 값(health가 agent를 import하지 않게 설정 모듈에서 읽는다)
 _ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 
 

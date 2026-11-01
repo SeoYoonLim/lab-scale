@@ -53,6 +53,7 @@ from app.answer_guard import (
     strip_untrusted_urls,
 )
 from app.etf_holdings import constituents_chat_answer, requested_top_n
+from app.llm_settings import call_options, chat_model
 from app.etf_holdings_db import chat_views
 from app.glossary import comparison_answer, concept_answer, find_term, term_answer
 from app.models import Company, StockPrice
@@ -90,7 +91,7 @@ from app.utils import extract_answer_text
 # 실패 시 tool 없이 가짜 등락률·가짜 뉴스 제목을 지어내는 hallucination을 보인 반면
 # llama는 no_tool 실패(불필요한 tool 호출) 시에도 답변 내용 자체는 사실 왜곡이 없어
 # 금융 정보 서비스 특성상 더 안전한 실패 모드로 판단.
-MODEL_NAME = "llama3.1:8b"
+MODEL_NAME = chat_model()  # OLLAMA_CHAT_MODEL, 기본 llama3.1:8b(app/llm_settings.py)
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +135,7 @@ def _llm_chat(**kwargs):
     if remaining < 2:
         raise LLMUnavailable("question_budget")
     kwargs["options"] = {**(kwargs.get("options") or {}), "num_predict": LLM_NUM_PREDICT}
+    kwargs.update(call_options())
     try:
         if ollama.chat is _LIBRARY_CHAT:
             resp = ollama.Client(timeout=min(LLM_CALL_TIMEOUT_S, remaining)).chat(**kwargs)
@@ -1195,7 +1197,7 @@ def _answer_event(question: str, model: str, company: str, previous: dict | None
             {"role": "system", "content": EVENT_ANSWER_RULES},
         ]
         try:
-            final = ollama.chat(model=model, messages=messages)
+            final = ollama.chat(model=model, messages=messages, **call_options())
             text = strip_role_prefix(extract_answer_text(final["message"]["content"]))
             if isinstance(text, str) and not _mentions_tool_call(text):
                 interpretation, dropped = check_event_answer(remove_empty_sections(text), result, _company_names())

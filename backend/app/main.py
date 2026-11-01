@@ -31,6 +31,7 @@ from app.api.stocks import router as stocks_router
 from app.api.watchlist import router as watchlist_router
 from app.auth import get_jwt_secret
 from app.config import check_jwt_secret_for_startup, cors_expose_headers, cors_origins
+from app.warmup import start_warmup
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,8 @@ async def lifespan(app: FastAPI):
     get_jwt_secret()
     # 길이는 충분해도 예시 문구·반복 문자면: 운영(APP_ENV=production)은 기동 거부, 개발은 경고 로그(app/config.py)
     check_jwt_secret_for_startup()
+    # 채팅·임베딩 모델을 미리 올린다(백그라운드, 실패 무시, 테스트·CI에서는 돌지 않음)
+    start_warmup()
     yield
 
 

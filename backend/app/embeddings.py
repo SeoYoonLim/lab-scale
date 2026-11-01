@@ -16,6 +16,7 @@ from sqlalchemy.orm import joinedload
 
 from app import http_retry
 from app.db.session import SessionLocal
+from app.llm_settings import embed_options
 from app.models import Disclosure, News
 
 EMBEDDING_MODEL = "bge-m3"
@@ -82,7 +83,7 @@ def _embed_pending(
             texts = [to_text(r) for r in batch]
             # 배치마다 상한 120초 + 일시적 오류(timeout·연결) 최대 2회 재시도(app/http_retry)
             response = http_retry.call_with_retry(
-                lambda: ollama.Client(timeout=EMBED_BATCH_TIMEOUT_S).embed(model=EMBEDDING_MODEL, input=texts),
+                lambda: ollama.Client(timeout=EMBED_BATCH_TIMEOUT_S).embed(model=EMBEDDING_MODEL, input=texts, **embed_options()),
                 label="Ollama embed")
             for row, vector in zip(batch, response["embeddings"]):
                 row.embedding = vector
