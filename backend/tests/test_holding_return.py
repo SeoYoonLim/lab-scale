@@ -25,7 +25,8 @@ def test_date_pair(q, start, end):
     assert date_pair(q, TODAY) == (start, end)
 
 
-@pytest.mark.parametrize("q", ["삼성전자 2025년 1월 2일 종가 알려줘", "삼성전자 주가 알려줘", "2024년 등락률은?"])
+@pytest.mark.parametrize("q", ["삼성전자 2025년 1월 2일 종가 알려줘", "삼성전자 주가 알려줘", "2024년 등락률은?",
+                               "셀트리온 올해 1월부터 지금까지 등락률은?"])  # 달 단위는 기간 등락률 경로다(전년 말 종가 기준, ref_12)
 def test_date_pair_needs_two_points(q):
     assert date_pair(q, TODAY) is None
 

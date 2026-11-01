@@ -134,11 +134,11 @@ def date_spans(question: str, today: date) -> list[tuple[int, date, date]]:
 
 def date_pair(question: str, today: date) -> tuple[date, date] | None:
     """두 시점(시작, 끝). 첫 표현의 시작과 둘째 표현의 끝이다("2025년 3월부터 6월까지"는 쓰지 않고 연월은 연도까지 있어야 한다).
-    표현이 하나면 "지금까지"가 있을 때만 끝을 오늘로 본다. 그 밖에는 None."""
+    표현이 정확한 날짜 하나면 "지금까지"가 있을 때만 끝을 오늘로 본다("올해 1월부터 지금까지"는 기간 등락률 경로다). 그 밖에는 None."""
     spans = date_spans(question, today)
     if len(spans) == 2:
         return spans[0][1], spans[1][2]
-    if len(spans) == 1 and _UNTIL_NOW_RE.search(question or ""):
+    if len(spans) == 1 and spans[0][1] == spans[0][2] and _UNTIL_NOW_RE.search(question or ""):
         return spans[0][1], today
     return None
 
