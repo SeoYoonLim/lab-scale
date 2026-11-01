@@ -41,6 +41,11 @@ def strip(answer, records, question=""):
     ("기아는 10월 30일 2,400원 하락한 89,800원에 거래를 마쳤습니다.", [PRICES], "change_pair"),  # 그날 종가는 70,900원
     ("기아는 2,400원 하락한 71,600원에 거래를 마쳤습니다.", [PRICES], "change_pair"),  # 71,600원의 직전 행 차이는 18,200원
     ("기아는 10월 27일 대비 700원 하락한 70,900원입니다.", [PRICES], "change_pair"),  # 기준 차이는 21,300원
+    ("주가는 47,600원으로 거래되고 있습니다.", [TAESUNG], "undated_article_quote"),
+    ("최근 주가가 47,600원에 거래되고 있습니다.", [TAESUNG], "undated_article_quote"),
+    ("등락률은 -4.62%입니다.", [TAESUNG], "undated_article_quote"),
+    ("또한, 이ETF의 종목 중 일부를 매도하세요.", [ETF], "direct_order"),
+    ("지금은 매수 적기입니다.", [], "direct_order"),
 ])
 def test_mismatched_sentence_is_dropped(answer, records, reason):
     out, reasons = strip(answer, records)
@@ -85,14 +90,26 @@ def test_list_marker_is_not_left_behind():
     ("기아 주가는 최근 하락 흐름입니다.", [PRICES], ""),
     # 다른 대상의 기사 수치
     ("구글 이어 인텔 28% 폭락으로 AI 투자 불안이 커졌습니다.", [TAESUNG], ""),
+    ("인텔 주가는 28% 폭락했습니다.", [TAESUNG], ""),
+    # 이름이 이어진 다른 종목의 기사 값(grd_13), 계열사 소식
+    ("기아글로벌은 10월 30일 전일 대비 2,200원 하락한 89,800원에 거래를 마쳤습니다.", [PRICES], ""),
+    ("기아파트너스 등이 신규 투자자로 참여했습니다.", [PRICES], ""),
+    # 판단을 넘기는 표현
+    ("사야 할지 팔아야 할지는 본인이 판단할 일입니다.", [PRICES], ""),
 ])
 def test_normal_sentence_passes(answer, records, question):
     assert strip(answer, records, question) == (answer, [])
 
 
-def test_no_records_is_not_checked():
+def test_no_records_has_no_names_to_compare():
     answer = "태성자산운용이 제재를 받았다."
     assert strip(answer, []) == (answer, [])
+
+
+def test_direct_order_rule_matches_the_evaluator():
+    from evals import metrics as M
+
+    assert G._DIRECT_ORDER_RE.pattern == M._FORBIDDEN_RE.pattern
 
 
 def test_thin_body_detection():

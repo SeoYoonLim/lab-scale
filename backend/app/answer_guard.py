@@ -631,7 +631,19 @@ def strip_foreign_script(answer: str, records: list[dict], question: str = "") -
 # 지운 뒤 남는 글이 부족한 처리는 호출측(agent._guard)이 한다. 뉴스·공시 내용의 사실 여부와 인과 서술은 여전히 보지 않는다.
 
 _DOC_KEYS = ("news", "disclosures", "results")
-_ENTITY_SUFFIX_RE = "자산운용|투자증권|증권|캐피탈|저축은행|은행|생명|화재|손해보험|건설|엔지니어링|파트너스|재단|장학회"
+# 금융회사 접미어만 본다. "에코프로파트너스" 같은 계열사 소식은 질문 종목과 관련 있는 정상 문장이었다(grd_13)
+_ENTITY_SUFFIX_RE = "자산운용|투자증권|증권|캐피탈|저축은행|은행|생명|화재|손해보험"
+# 직접 매수·매도 지시(evals/metrics.py의 금지 표현과 같은 규칙. 동기화는 tests/test_narrative_guard.py가 확인한다)
+_DIRECT_ORDER_RE = re.compile(
+    r"(?:지금\s*)?(?:사세요|사십시오|사두세요|사 두세요|매수하세요|매수하십시오|매수해\s*보세요|매도하세요|매도하십시오|파세요|파십시오|정리하세요)"
+    r"|(?:매수|매도|팔아야|사야)\s*(?:합니다|해요|한다|할\s*때입니다|할\s*시점입니다)(?!\s*(?:할지|는지))"
+    r"|팔아야\s*(?:합니다|해요|한다|겠습니다)"
+    r"|(?:매수|매도)(?:를|을)?\s*(?:추천합니다|추천드립니다|권합니다|권해\s*드립니다|권장합니다)"
+    r"|(?:지금이|지금은)\s*(?:매수|매도|살|팔)\s*(?:적기|타이밍|때)"
+)
+# 종목명 없이 시세를 말하는 문장("주가는 58,000원으로", "최근 주가가", "등락률은 -3.83%")
+_BARE_QUOTE_RE = re.compile(r"(?:^|,\s*|최근\s+|현재\s+|지난\s+)(?:주가|종가|등락률)[는은가이]?\s")
+_JOSA_AFTER_NAME = r"(?=[은는이가의을를도와과에]|\s|[,.:)]|$)"
 _FIN_NOUN_RE = re.compile(r"영업이익|영업손실|순이익|순손실|매출|실적|수주|점유율|배당|비중|성장률|판매|수출")
 _MONEY_NOUN_RE = re.compile(r"자금|금액|매출|영업이익|순이익|현금")
 _VOLUME_COUNT_RE = re.compile(r"거래량[은는이가]?\s*\d[\d,]*\s*건")
@@ -706,6 +718,8 @@ def _change_pair_violation(sentence: str, series: list[list[dict]]) -> str | Non
 
 def _narrative_violation(sentence: str, ctx: dict) -> str | None:
     """이 문장을 지울 이유(짧은 기록), 없으면 None."""
+    if m := _DIRECT_ORDER_RE.search(sentence):
+        return f"direct_order:{m.group(0)}"
     for name in ctx["names"]:
         m = re.search(re.escape(name) + f"(?:{_ENTITY_SUFFIX_RE})", sentence)
         if m and m.group(0) not in ctx["question"] and not any(m.group(0) in n for n in ctx["names"]):
@@ -716,7 +730,9 @@ def _narrative_violation(sentence: str, ctx: dict) -> str | None:
     has_money_noun = bool(_MONEY_NOUN_RE.search(sentence))
     if has_money_noun and "거래량" not in sentence and any(n.unit == "주" for n in numbers):
         return "money_as_shares"
-    pair = _change_pair_violation(sentence, ctx["series"])
+    # "에코프로비엠은 ... 2,200원 하락한 89,800원": 질문 종목의 시세 행과 비교할 값이 아니다(이름이 이어진 다른 종목, grd_13)
+    other_listed = any(name in sentence and not re.search(re.escape(name) + _JOSA_AFTER_NAME, sentence) for name in ctx["names"])
+    pair = None if other_listed else _change_pair_violation(sentence, ctx["series"])
     if pair:
         return f"change_pair:{pair}"
     subject = [n for n in ctx["names"] if n in sentence]
@@ -729,7 +745,8 @@ def _narrative_violation(sentence: str, ctx: dict) -> str | None:
             if len(subject) == 1 and hits and not any(
                     subject[0] in " ".join(_strings_in(it)) for it in hits):
                 return f"other_company_value:{n.raw}"
-    if subject and not fin and _QUOTE_WORD_RE.search(sentence) and not _dates_in(sentence) and not _TIME_WORD_RE.search(sentence):
+    if (subject or _BARE_QUOTE_RE.search(sentence)) and not fin and _QUOTE_WORD_RE.search(sentence) and not _dates_in(sentence) \
+            and not _TIME_WORD_RE.search(sentence):
         for n in numbers:
             if n.unit in ("원", "%") and n.value < 1e8 and not is_supported(n, ctx["structured"]) and is_supported(n, ctx["doc_values"]):
                 return f"undated_article_quote:{n.raw}"
@@ -740,8 +757,8 @@ _LIST_MARK_RE = re.compile(r"^[\s\-*\d.()]*$")
 
 
 def strip_narrative_mismatch(answer: str, records: list[dict], question: str = "") -> tuple[str, list[str]]:
-    """(답변, 지운 이유 목록). 대상·맥락이 어긋난 문장만 지운다(위 설명). 도구 결과가 없으면 보지 않는다."""
-    if not answer or not records:
+    """(답변, 지운 이유 목록). 대상·맥락이 어긋난 문장과 직접 매수·매도 지시 문장만 지운다(위 설명)."""
+    if not answer:
         return answer, []
     results = [{k: v for k, v in r.items() if k not in _DOC_KEYS} if isinstance(r, dict) else r
                for r in (rec.get("result") for rec in records)]
