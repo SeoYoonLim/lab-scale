@@ -6,7 +6,7 @@
 
 | 파일 | 내용 |
 |---|---|
-| `dataset.jsonl` | 질문 298개와 기대값(한 줄 = 한 문항) |
+| `dataset.jsonl` | 질문 350개와 기대값(한 줄 = 한 문항) |
 | `metrics.py` | 채점 순수 함수(DB·Ollama 없이 테스트: `tests/test_evals_metrics.py`) |
 | `run_eval.py` | 실행기(offline/live), summary·raw 결과 저장 |
 | `compare.py` | summary 두 개의 지표별 변화 표 |
@@ -49,23 +49,23 @@ python -m evals.compare evals/results/summary_baseline_2026-10-27.json evals/res
 
 | category | mode | 개수(dev/holdout) | 기대값(expect) |
 |---|---|---|---|
-| entity | offline | 31 (17/14) | `companies`(정답 1개, DB에 없는 종목이면 `[]`), `must_not_companies` |
+| entity | offline | 33 (17/16) | `companies`(정답 1개, DB에 없는 종목이면 `[]`), `must_not_companies` |
 | period | offline | 14 (8/6) | `ref_date`, `period_days`(평일 수, 기간이 아니면 `null`), `start`, `end` |
 | routing_gate | offline | 10 (6/4) | `gates`: `routing.py` 함수 이름 → 기대값(True/False 또는 tool 목록) |
 | tool_selection | live | 26 (16/10) | `tools_all`, `tools_forbidden`(`["*"]` = 도구 호출 없어야 함), `companies`, `period_days`, 개념 질문은 `must_contain` |
 | grounding | live | 35 (20/15) | `companies`, 일부 `tools_all` |
-| refusal | live | 16 (8/8) | `must_refuse` 또는 `must_partial`(일부 기간만 데이터가 있음), `must_not_companies` |
+| refusal | live | 18 (8/10) | `must_refuse` 또는 `must_partial`(일부 기간만 데이터가 있음), `must_not_companies` |
 | etf_safety | live | 20 (10/10) | `must_contain` / `must_not_contain`(정규식), `must_refuse` (2026-10-29: 구성종목 문항은 데이터 유무에 따라 기대가 갈림, 아래 "ETF 구성종목 기능" 절) |
 | freshness | live | 4 (2/2) | `companies`, `must_state_data_date`(마지막 데이터 날짜 명시 + 오래됐으면 알림) |
 | stability | live | 12 (7/5) | `companies`, `must_answer`(timeout·fallback 없이 답함) |
 | briefing | live | 6 (2/4) | `must_briefing`(평가 계정의 브리핑 숫자만 + 숫자 1개 이상 + 면책 + 금지 표현 없음), 일부 `must_contain` |
 | attachment | live | 8 (4/4) | `companies`(2개), `check_attachment`(숫자를 맞는 종목에 붙임) |
-| period_history | live | 47 (24/23) | `companies`, `must_contain`(날짜·값), 범위 밖은 `must_refuse`, 걸침은 `must_partial`, 숫자 일치도 채점 |
-| narrative | live | 53 (24/29) | `companies`, `must_answer`, 사건 반응은 `number_scored: false`, 숫자 일치도 채점 |
+| period_history | live | 64 (29/35) | `companies`, `must_contain`(날짜·값), 범위 밖은 `must_refuse`, 걸침은 `must_partial`, 숫자 일치도 채점 |
+| narrative | live | 80 (31/49) | `companies`, `must_answer`, 사건 반응은 `number_scored: false`, 숫자 일치도 채점 |
 | news_relevance | live | 12 (7/5) | `companies`, `must_answer`, `must_not_contain`(동명 표기), SK는 `must_refuse`, 숫자 일치도 채점 |
-| safety | live | 4 (0/4) | 프롬프트 인젝션·주문 실행 요구. `must_not_contain`, 일부 `must_answer` |
+| safety | live | 8 (0/8) | 프롬프트 인젝션·주문 실행 요구. `must_not_contain`, 일부 `must_answer` |
 
-총 298개(offline 55, live 243). batch 2(30개, 2026-10-27 수정 전 추가): entity 8(한글 음차·약칭·자모 오타·비슷한 이름·짧은 입력),
+총 350개(offline 57, live 293). batch 2(30개, 2026-10-27 수정 전 추가): entity 8(한글 음차·약칭·자모 오타·비슷한 이름·짧은 입력),
 period 4, 개념 질문 5, refusal 8(범위 밖 연·월·날짜·작년 이맘때·N년 전, 부분 겹침 2), etf_safety 5(구성종목 표현).
 batch 3(24개, 2026-10-27 2차 라운드 수정 전 추가): grounding 10(수천 원~200만 원대 가격, ETF 포함), freshness 4, 개념 질문 6(두 용어 비교·해석),
 stability 4(설명형 ETF 질문). 2차 라운드의 unseen holdout은 batch 3의 holdout 10개다.
@@ -78,6 +78,7 @@ batch 7(20개, 2026-10-31 5차 라운드 수정 전 추가): period_history 18, 
 batch 8(40개, 2026-11-01 6차 라운드 수정 전 추가): narrative 40(설명형 5유형 x 8, 종목 20개). 6차 라운드의 unseen holdout은 batch 8의 holdout 16개다(`UNSEEN_BATCH = 8`). 아래 "6차 라운드" 절 참고.
 batch 9(12개, 2026-11-01 7차 라운드 수정 전 추가): news_relevance 12(모호한 이름 9, 대형주 회귀 3). 7차 라운드의 unseen holdout은 batch 9의 holdout 5개다. 아래 "7차 라운드" 절 참고.
 batch 10(40개, 2026-11-01 모델 비교 전 추가, 전부 holdout, `UNSEEN_BATCH = 10`): narrative 13, period_history 7, etf_safety 4, briefing 2, attachment 2, grounding 2, entity 3, refusal 3, safety 4(프롬프트 인젝션 3, 주문 실행 요구 1, 새 카테고리). 아래 표의 개수에 포함된다. 아래 "모델 비교" 절 참고.
+batch 11(40개, 2026-11-02 구현 전 추가, 전부 holdout, `UNSEEN_BATCH = 11`): period_history 12(두 날짜 수익률), narrative 20, entity 2, refusal 2, safety 4. batch 12(12개, 같은 라운드의 개발용, 전부 dev): period_history 5, narrative 7. 아래 "8차 라운드" 절 참고.
 live 평가 계정에는 브리핑 문항용으로 모의 보유종목 1개(삼성전자 5주, DB 최근 종가를 평단으로)와 관심종목 1개(SK하이닉스)를
 평가기가 만들고, 계정을 지울 때 같이 지운다(`run_eval.EVAL_HOLDING`, `EVAL_WATCH`).
 

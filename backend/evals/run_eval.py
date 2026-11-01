@@ -34,9 +34,10 @@ SOURCE_TOOLS = {"news_tool", "disclosure_tool", "rag_search_tool", "event_reacti
 # (batch 2: 2026-10-27 A-F 라운드, batch 3: 2026-10-27 안정성·숫자 검증 라운드, batch 4: 2026-10-28 3차 라운드,
 #  batch 6: 2026-10-31 3년치 백필 뒤 기간 질문 라운드, batch 7: 2026-10-31 기간 해석·지수 구간·언어 혼입 라운드,
 #  batch 8: 2026-11-01 설명형 답변 라운드, batch 9: 2026-11-01 뉴스 관련성 라운드,
-#  batch 10: 2026-11-01 모델 비교(전부 holdout, 후보 결과를 보기 전에 작성).
+#  batch 10: 2026-11-01 모델 비교(전부 holdout, 후보 결과를 보기 전에 작성),
+#  batch 11: 2026-11-02 두 날짜 수익률·근거 우선 답변(전부 holdout, 구현 전에 작성). batch 12는 같은 라운드의 개발용 dev다.
 #  batch 5는 ETF 구성종목 기능 문항이라 수정 라운드가 아니었다).
-UNSEEN_BATCH = 10
+UNSEEN_BATCH = 11
 # 브리핑 문항(must_briefing)용: 평가 계정에 모의 보유종목 1개(종목, 수량)와 관심종목 1개를 만든다. 계정을 지울 때 같이 지워진다.
 EVAL_HOLDING = ("삼성전자", 5)
 EVAL_WATCH = "SK하이닉스"
