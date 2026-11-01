@@ -67,7 +67,7 @@ def _load_events(db, company: Company, since: date) -> list[dict]:
             )
     rows = db.execute(
         select(News.title, News.url, News.published_at)
-        .where(News.company_id == company.id, News.published_at >= since_dt)
+        .where(News.company_id == company.id, News.published_at >= since_dt, News.is_relevant.isnot(False))
         .order_by(News.published_at.desc())
     ).all()
     # 종목 관련 뉴스만 사건으로 쓴다: 수집 단계에서는 종목명으로 검색해 온 기사라 제목에 종목이 없는 기사(시황 기사, 다른 종목 기사)가 섞여 있다.

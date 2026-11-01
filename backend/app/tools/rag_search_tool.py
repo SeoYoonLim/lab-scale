@@ -30,6 +30,8 @@ def _top_unique(db, model, url_attr, query_vector, company, limit):
     key = func.coalesce(url_attr, cast(model.id, Text))
 
     base = db.query(model.id.label("id"), distance).filter(model.embedding.isnot(None))
+    if model is News:
+        base = base.filter(News.is_relevant.isnot(False))
     if company is not None:
         base = base.filter(model.company_id == company.id)
     best_per_doc = base.distinct(key).order_by(key, distance).subquery()

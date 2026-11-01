@@ -96,7 +96,7 @@ def _load_company_data(db: Session, inputs: BriefingInputs, companies: dict, new
         News,
         [News.company_id, News.title, News.content, News.source, News.url, News.published_at],
         News.company_id, News.published_at, news_limit * ETF_NEWS_OVERFETCH,
-        News.company_id.in_(ids), News.published_at >= cutoff,
+        News.company_id.in_(ids), News.published_at >= cutoff, News.is_relevant.isnot(False),
     )
     news_rows = db.execute(news_q).all()
     etf_names = None

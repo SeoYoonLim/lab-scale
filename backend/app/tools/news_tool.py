@@ -23,7 +23,7 @@ def news_tool(company_name: str, limit: int = 5) -> dict:
         is_etf = company.asset_type == "etf"
         rows = (
             db.query(News)
-            .filter(News.company_id == company.id)
+            .filter(News.company_id == company.id, News.is_relevant.isnot(False))
             .order_by(News.published_at.desc())
             # ETF는 이름이 나오지 않는 기사를 아래에서 걸러내므로 여유 있게 읽는다
             .limit(limit * ETF_NEWS_OVERFETCH if is_etf else limit)
@@ -49,11 +49,13 @@ def news_tool(company_name: str, limit: int = 5) -> dict:
                 }
 
         if not rows:
+            hidden = db.query(News.id).filter(News.company_id == company.id).first() is not None
             return {
                 "company_name": company.name,
                 "limit": limit,
                 "found": False,
-                "message": f"'{company.name}'는 등록된 종목이지만 아직 수집된 뉴스가 없습니다.",
+                "message": f"'{company.name}' 관련 뉴스를 찾지 못했습니다." if hidden
+                else f"'{company.name}'는 등록된 종목이지만 아직 수집된 뉴스가 없습니다.",
                 **corrected,
             }
 
