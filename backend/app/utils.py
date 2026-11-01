@@ -19,6 +19,10 @@ def extract_answer_text(content: str) -> str:
     if not isinstance(parsed, dict):
         return content
 
+    # 도구 호출을 글로 쓴 것이면 답변이 아니다: 인자 값("기아")을 답으로 뽑지 않고 원본을 돌려줘 호출측의 호출 JSON 처리로 넘긴다
+    if str(parsed.get("name") or "").endswith("_tool"):
+        return content
+
     params = parsed.get("parameters")
     if not isinstance(params, dict) or not params:
         return content
