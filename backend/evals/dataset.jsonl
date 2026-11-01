@@ -204,3 +204,43 @@
 {"id": "hist_39", "split": "holdout", "category": "period_history", "mode": "live", "batch": 7, "question": "한국전력 22년 주가 알려줘", "expect": {"must_refuse": true, "must_contain": ["2023-10-30"]}}
 {"id": "hist_40", "split": "holdout", "category": "period_history", "mode": "live", "batch": 7, "question": "삼성바이오로직스 2026년 1월 1일 종가 알려줘", "expect": {"companies": ["삼성바이오로직스"], "must_contain": ["휴장", "2025-12-30", "1,681,952원"]}}
 {"id": "stab_12", "split": "holdout", "category": "stability", "mode": "live", "batch": 7, "question": "현대차와 LG에너지솔루션의 사업 위험 차이를 설명해줘", "expect": {"companies": ["현대차", "LG에너지솔루션"], "must_answer": true, "must_not_contain": ["[ぁ-ヿ]"]}}
+{"id": "nar_01", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "삼성전자 최근에 왜 올랐어?", "expect": {"companies": ["삼성전자"], "must_answer": true}}
+{"id": "nar_02", "split": "holdout", "category": "narrative", "mode": "live", "batch": 8, "question": "카카오 최근 뉴스 배경을 설명해줘", "expect": {"companies": ["카카오"], "must_answer": true}}
+{"id": "nar_03", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "LG에너지솔루션 최근 실적 요약해줘", "expect": {"companies": ["LG에너지솔루션"], "must_answer": true}}
+{"id": "nar_04", "split": "holdout", "category": "narrative", "mode": "live", "batch": 8, "question": "카카오 리스크 요인 뭐가 있어?", "expect": {"companies": ["카카오"], "must_answer": true}}
+{"id": "nar_05", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "삼성전자 실적 발표 후 주가 반응 어땠어?", "expect": {"companies": ["삼성전자"], "must_answer": true}}
+{"id": "nar_06", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "기아 최근 공시 내용이 뭐고 어떤 의미야?", "expect": {"companies": ["기아"], "must_answer": true}}
+{"id": "nar_07", "split": "holdout", "category": "narrative", "mode": "live", "batch": 8, "question": "NAVER 사업 구조를 설명해줘", "expect": {"companies": ["NAVER"], "must_answer": true}}
+{"id": "nar_08", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "고려아연 투자 위험 요인을 정리해줘", "expect": {"companies": ["고려아연"], "must_answer": true}}
+{"id": "nar_09", "split": "holdout", "category": "narrative", "mode": "live", "batch": 8, "question": "SK하이닉스 최근 공시 이후 주가 어떻게 움직였어?", "expect": {"companies": ["SK하이닉스"], "must_answer": true}}
+{"id": "nar_10", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "SK하이닉스 주가 요즘 왜 떨어졌어?", "expect": {"companies": ["SK하이닉스"], "must_answer": true}}
+{"id": "nar_11", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "셀트리온 실적과 사업 구조를 요약해줘", "expect": {"companies": ["셀트리온"], "must_answer": true}}
+{"id": "nar_12", "split": "holdout", "category": "narrative", "mode": "live", "batch": 8, "question": "NAVER 주요 리스크 설명해줘", "expect": {"companies": ["NAVER"], "must_answer": true}}
+{"id": "nar_13", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "셀트리온 최근 뉴스 이후 주가 반응 설명해줘", "expect": {"companies": ["셀트리온"], "must_answer": true}}
+{"id": "nar_14", "split": "holdout", "category": "narrative", "mode": "live", "batch": 8, "question": "산일전기 최근 주가가 움직인 이유가 뭐야?", "expect": {"companies": ["산일전기"], "must_answer": true}}
+{"id": "nar_15", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "고려아연 최근 공시와 뉴스를 요약해줘", "expect": {"companies": ["고려아연"], "must_answer": true}}
+{"id": "nar_16", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "서진시스템 위험 요인이 뭐야?", "expect": {"companies": ["서진시스템"], "must_answer": true}}
+{"id": "nar_17", "split": "holdout", "category": "narrative", "mode": "live", "batch": 8, "question": "한화오션 수주 뉴스 이후 주가 움직임 설명해줘", "expect": {"companies": ["한화오션"], "must_answer": true}}
+{"id": "nar_18", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "펄어비스 왜 주가가 빠졌어?", "expect": {"companies": ["펄어비스"], "must_answer": true}}
+{"id": "nar_19", "split": "holdout", "category": "narrative", "mode": "live", "batch": 8, "question": "일진전기 요즘 뉴스 어떤 내용이 있어?", "expect": {"companies": ["일진전기"], "must_answer": true}}
+{"id": "nar_20", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "태성은 어떤 사업을 하는 회사야?", "expect": {"companies": ["태성"], "must_answer": true}}
+{"id": "nar_21", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "산일전기 실적 발표 이후 주가 반응 알려줘", "expect": {"companies": ["산일전기"], "must_answer": true}}
+{"id": "nar_22", "split": "holdout", "category": "narrative", "mode": "live", "batch": 8, "question": "현대차 최근 주가 움직임의 원인을 설명해줘", "expect": {"companies": ["현대차"], "must_answer": true}}
+{"id": "nar_23", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "한화오션 최근 뉴스 핵심만 설명해줘", "expect": {"companies": ["한화오션"], "must_answer": true}}
+{"id": "nar_24", "split": "holdout", "category": "narrative", "mode": "live", "batch": 8, "question": "기아 최근 영업이익 상황을 설명해줘", "expect": {"companies": ["기아"], "must_answer": true}}
+{"id": "nar_25", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "태성 리스크를 최근 뉴스 기준으로 알려줘", "expect": {"companies": ["태성"], "must_answer": true, "must_not_contain": ["태성자산운용"]}}
+{"id": "nar_26", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "KODEX 200 요즘 왜 올랐어?", "expect": {"companies": ["KODEX 200"], "must_answer": true}}
+{"id": "nar_27", "split": "holdout", "category": "narrative", "mode": "live", "batch": 8, "question": "에스엠 최근 공시 배경이 궁금해", "expect": {"companies": ["에스엠"], "must_answer": true}}
+{"id": "nar_28", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "일진전기 사업 구조와 최근 실적 알려줘", "expect": {"companies": ["일진전기"], "must_answer": true}}
+{"id": "nar_29", "split": "holdout", "category": "narrative", "mode": "live", "batch": 8, "question": "에스엠 요즘 우려되는 점이 뭐야?", "expect": {"companies": ["에스엠"], "must_answer": true}}
+{"id": "nar_30", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "펄어비스 신작 소식 이후 주가 어떻게 됐어?", "expect": {"companies": ["펄어비스"], "must_answer": true}}
+{"id": "nar_31", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "서진시스템 최근 소식 설명해줘", "expect": {"companies": ["서진시스템"], "must_answer": true}}
+{"id": "nar_32", "split": "holdout", "category": "narrative", "mode": "live", "batch": 8, "question": "현대차 최근 실적이 어땠는지 설명해줘", "expect": {"companies": ["현대차"], "must_answer": true}}
+{"id": "nar_33", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "TIGER 미국나스닥100 투자할 때 위험 요인이 뭐야?", "expect": {"companies": ["TIGER 미국나스닥100"], "must_answer": true}}
+{"id": "nar_34", "split": "holdout", "category": "narrative", "mode": "live", "batch": 8, "question": "KODEX 200 최근 시장 뉴스 이후 주가 반응 설명해줘", "expect": {"companies": ["KODEX 200"], "must_answer": true}}
+{"id": "nar_35", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "LG에너지솔루션 주가가 최근에 왜 움직였는지 설명해줘", "expect": {"companies": ["LG에너지솔루션"], "must_answer": true}}
+{"id": "nar_36", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "TIGER 미국나스닥100은 어떤 구조의 상품이고 최근 어땠어?", "expect": {"companies": ["TIGER 미국나스닥100"], "must_answer": true}}
+{"id": "nar_37", "split": "holdout", "category": "narrative", "mode": "live", "batch": 8, "question": "KODEX 레버리지 변동성 위험 요인을 설명해줘", "expect": {"companies": ["KODEX 레버리지"], "must_answer": true}}
+{"id": "nar_38", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "TIGER 반도체TOP10 최근 뉴스 이후 어떻게 움직였어?", "expect": {"companies": ["TIGER 반도체TOP10"], "must_answer": true}}
+{"id": "nar_39", "split": "holdout", "category": "narrative", "mode": "live", "batch": 8, "question": "TIGER 반도체TOP10 최근에 왜 움직였어?", "expect": {"companies": ["TIGER 반도체TOP10"], "must_answer": true}}
+{"id": "nar_40", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "KODEX 레버리지 관련 최근 뉴스 설명해줘", "expect": {"companies": ["KODEX 레버리지"], "must_answer": true}}
