@@ -646,7 +646,7 @@ _BARE_QUOTE_RE = re.compile(r"(?:^|,\s*|최근\s+|현재\s+|지난\s+)(?:주가|
 _JOSA_AFTER_NAME = r"(?=[은는이가의을를도와과에]|\s|[,.:)]|$)"
 _FIN_NOUN_RE = re.compile(r"영업이익|영업손실|순이익|순손실|매출|실적|수주|점유율|배당|비중|성장률|판매|수출")
 _MONEY_NOUN_RE = re.compile(r"자금|금액|매출|영업이익|순이익|현금")
-_VOLUME_COUNT_RE = re.compile(r"거래량[은는이가]?\s*\d[\d,]*\s*건")
+_VOLUME_COUNT_RE = re.compile(r"거래량[은는이가]?\s*(\d[\d,]*)\s*건")
 _QUOTE_WORD_RE = re.compile(r"주가|장중|장초반|거래됐|거래되|거래를|마감|종가|등락률|시초가|애프터마켓|급락|급등|상승|하락|올랐|내렸|떨어")
 _TIME_WORD_RE = re.compile(r"\d{1,2}\s*[월일]|오늘|금일|분기|지난해|작년|올해")
 _CAUSE_WORD_RE = re.compile(r"발표|덕분|때문|영향|힘입어|따르면")
@@ -767,6 +767,16 @@ def strip_narrative_mismatch(answer: str, records: list[dict], question: str = "
            "doc_values": support_values(docs),
            "structured": support_values(results) + support_values(question) + derived_values(results) + cross_differences(results)}
     reasons: list[str] = []
+
+    def fix_volume_unit(m: re.Match) -> str:
+        # "거래량은 186,663건": 값이 시세와 맞으면 단위만 고친다. 지우면 거래량을 물은 질문의 답이 사라진다(att_05)
+        n = Number(float(m.group(1).replace(",", "")), m.group(1), 1.0, "주")
+        if not is_supported(n, ctx["structured"]):
+            return m.group(0)
+        reasons.append(f"volume_unit_fixed:{m.group(1)}")
+        return m.group(0)[:m.start(1) - m.start()] + m.group(1) + "주"
+
+    answer = _VOLUME_COUNT_RE.sub(fix_volume_unit, answer)
     kept = []
     for line in answer.split("\n"):
         sentences = [s for s in _SENTENCE_SPLIT_RE.split(line) if s]

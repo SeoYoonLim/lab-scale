@@ -35,7 +35,7 @@ def strip(answer, records, question=""):
     ("태성의 최근 뉴스에 나타난 사실은 태성자산운용이 총 6100만원의 제재를 받았다는 점입니다.", [TAESUNG], "other_company"),
     ("또한, 태성의 주가는 장중 4.62% 상승하며 47,600원을 기록하였습니다.", [TAESUNG], "undated_article_quote"),
     ("KODEX 레버리지 ETF에 들어온 자금은 2026-10-30일 23,223,639주입니다.", [ETF], "money_as_shares"),
-    ("기아의 거래량은 4,000 건으로 기록되었습니다.", [PRICES], "volume_unit"),
+    ("기아의 거래량은 5,500 건으로 기록되었습니다.", [PRICES], "volume_unit"),  # 시세에 없는 값
     ("LG에너지솔루션의 주가는 최근 7560억원의 영업이익을 보였다.", [NEWS], "financial_in_price"),
     ("기아의 영업이익은 8500억원입니다.", [PRICES, OTHER_DOC], "other_company_value"),
     ("기아는 10월 30일 2,400원 하락한 89,800원에 거래를 마쳤습니다.", [PRICES], "change_pair"),  # 그날 종가는 70,900원
@@ -51,6 +51,12 @@ def test_mismatched_sentence_is_dropped(answer, records, reason):
     out, reasons = strip(answer, records)
     assert out == ""
     assert reasons and reasons[0].startswith(reason)
+
+
+def test_volume_with_count_unit_is_fixed_not_dropped():
+    out, reasons = strip("기아의 최근 거래량은 4,000 건이며, 수익률은 -0.98%입니다.", [PRICES])
+    assert out == "기아의 최근 거래량은 4,000주이며, 수익률은 -0.98%입니다."
+    assert reasons == ["volume_unit_fixed:4,000"]
 
 
 def test_only_the_mismatched_sentence_is_dropped():
