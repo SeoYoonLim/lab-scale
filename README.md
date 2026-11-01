@@ -10,7 +10,7 @@
 ## 지금 상태 요약 (2026-10-14 기준)
 
 **한 줄 요약:** 백엔드(API + 에이전트 + 데이터 수집·일괄 갱신 + 로그인 + 관심종목/모의투자 + 포트폴리오 AI 진단과 이력 + 환율 영향 분석 +
-시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응 + 오늘의 개인화 브리핑(API·채팅))는 동작하고, 빠른 테스트 **4288개**가 통과합니다(`pytest`, 순수 로직 3797 + 개발 DB 통합 491. KODEX 수집 데이터가 DB에 없으면 그중 수집 데이터 대조 3개가 사유와 함께 skip, 2026-10-31).
+시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응 + 오늘의 개인화 브리핑(API·채팅))는 동작하고, 빠른 테스트 **4310개**가 통과합니다(`pytest`, 순수 로직 3819 + 개발 DB 통합 491. KODEX 수집 데이터가 DB에 없으면 그중 수집 데이터 대조 3개가 사유와 함께 skip, 2026-10-31).
 실제 Ollama를 부르는 slow 테스트 61개는 기본에서 빠지고 `pytest -m slow`로 따로 돌립니다. 백엔드 작업 브랜치는 `feature/backend`(원격 push 완료)이고
 아직 main에 병합하지 않았습니다. 프론트엔드는 서윤님이 `feature/frontend`에서 React + Vite + zod로 진행 중이며, 2026-10-14에 실제 백엔드 응답을
 프론트의 zod 스키마로 검증했을 때 불일치가 없었습니다(프론트 테스트 20개·빌드·lint 통과). 남은 큰 일은 화면 연동과 아래 "알려진 한계"입니다.
@@ -379,6 +379,7 @@ FastAPI  ──  POST /api/research ─▶ 에이전트(app/agent.py)
 ```
 
 - **백엔드:** FastAPI, SQLAlchemy 2, Alembic. 질문/답변/tool 호출 이력은 매 요청마다 DB에 저장되고 `GET /api/research`로 다시 볼 수 있습니다.
+- **모델 설정(2026-11-01):** 채팅 모델은 `OLLAMA_CHAT_MODEL`(기본 `llama3.1:8b`, 되돌리려면 이 값을 지운다), `OLLAMA_KEEP_ALIVE`(기본 `30m`, 빈 값이면 서버 기본값), `OLLAMA_THINK`(생각 모드가 있는 모델만, `false` 권장), `OLLAMA_WARMUP`(`0`이면 시작 시 미리 적재하지 않음). 백엔드 시작 시 채팅 모델과 `bge-m3`를 백그라운드에서 한 번씩 호출한다(실패 무시, 테스트·CI에서는 돌지 않음). 후보 비교는 `backend/evals/reports/model_comparison_20261101.md`: qwen3:8b, qwen2.5:7b-instruct 모두 조건을 못 채워 기본 모델을 유지했다.
 - **모델:** 답변·tool 선택은 `llama3.1:8b`, 임베딩은 `bge-m3`(1024차원, HNSW 인덱스). 모두 로컬 Ollama에서 돌아갑니다.
 - **데이터 소스:** 주가와 시장 지수(코스피 KS11, 코스닥 KQ11)는 FinanceDataReader, 뉴스는 네이버 검색 API, 공시는 DART OpenAPI(목록 + 원문).
 - **프론트엔드:** React + Vite(+ react-query, zod)로 서윤님이 `feature/frontend` 브랜치에서 진행 중입니다. 백엔드 응답 형식은 `backend/API.md`가 기준입니다.
@@ -529,8 +530,8 @@ python -m scripts.backfill_history --tickers 005930,069500 --years 5 --end 2026-
 `backend/`에서 실행합니다. 세 단계로 나뉩니다(마커: `integration`, `slow`).
 
 ```bash
-pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-11-01 뉴스 관련성 필터 후 4288개, 약 2분. 왕복 마이그레이션·수집 데이터 대조는 환경에 따라 skip). slow는 기본 제외
-pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 3797개)
+pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-11-01 모델 설정·워밍업 후 4310개, 약 2분. 왕복 마이그레이션·수집 데이터 대조는 환경에 따라 skip). slow는 기본 제외
+pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 3819개)
 pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(491개). DB가 꺼져 있으면 자동 skip
 pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)를 부르는 테스트(61개, 느리고 비결정적)
 ```
