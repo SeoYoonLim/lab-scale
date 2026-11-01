@@ -52,7 +52,6 @@ from app.answer_guard import (
     strip_narrative_mismatch,
     strip_untrusted_urls,
 )
-from app import evidence_answer
 from app.etf_holdings import constituents_chat_answer, requested_top_n
 from app.llm_settings import call_options, chat_model
 from app.etf_holdings_db import chat_views
@@ -1710,67 +1709,6 @@ def _guard(answer: str, records: list[dict], question: str) -> str:
 UNRESOLVED_COMPANY_ANSWER = "해당 종목을 찾지 못했습니다. 종목명 또는 종목코드를 정확히 입력해주세요."
 
 
-def _evidence_tool_args(name: str, company, question: str) -> dict:
-    if name in ("stock_tool", "market_tool"):
-        return {"ticker": company.name, "period_days": DEFAULT_TREND_PERIOD_DAYS}
-    if name == "rag_search_tool":
-        return {"query": question, "company_name": company.name, "limit": 5}
-    return {"company_name": company.name, "limit": 5}
-
-
-def _answer_evidence(question: str, companies: list | None, model: str):
-    """(2026-11-02) 설명형·원인형 질문은 근거 우선으로 답한다(app/evidence_answer.py): 조회는 코드가 고르고, 시세·기사 목록은 코드가 쓰고,
-    LLM은 번호 붙은 근거를 바꿔 말하는 문장만 쓴다(호출 1회). 근거가 없으면 LLM을 부르지 않는다. ETF, 기간을 말한 질문은 기존 흐름이다."""
-    if not companies or len(companies) > 2 or any(getattr(c, "asset_type", None) == "etf" for c in companies):
-        return None
-    cause = is_cause_question(question)
-    today = datetime.now(KST).date()
-    if (not evidence_answer.is_narrative_question(question, cause) or parse_period(question) is not None
-            or period_scope.requested_period(question, today) is not None or needs_market_tool(question) and not cause):
-        return None
-    names = [c.name for c in companies]
-    records = []
-    for company in companies:
-        for name in evidence_answer.wanted_tools(question, cause):
-            if name == "market_tool" and not _market_comparison_available(company.name):
-                continue
-            args = _evidence_tool_args(name, company, question)
-            called_at = datetime.now(timezone.utc)
-            started = time.perf_counter()
-            result = _run_tool(name, args)
-            records.append({"tool_name": name, "arguments": args, "result": result, "called_at": called_at,
-                            "elapsed_ms": round((time.perf_counter() - started) * 1000)})
-    price_lines = []
-    for rec in records:
-        r = rec["result"]
-        if isinstance(r, dict) and r.get("found") and r.get("summary") and rec["tool_name"] in ("stock_tool", "market_tool"):
-            price_lines.append(r["summary"])
-            if rec["tool_name"] == "stock_tool" and len(companies) == 1 and (note := evidence_answer.premise_note(question, r.get("period_change_pct"))):
-                price_lines.append(note)
-    items = evidence_answer.collect_items(records, names)
-    sentences: list[str] = []
-    if items:
-        guard_log = {"replaced": False, "violations": [], "mode": None}
-        try:
-            final = _llm_chat(model=model, messages=[{"role": "system", "content": evidence_answer.SYSTEM_PROMPT},
-                                                     {"role": "user", "content": evidence_answer.user_prompt(question, items)}])
-        except LLMUnavailable as e:
-            _meta()["fallback"] = e.reason
-        else:
-            if _meta()["llm_truncated"]:
-                _meta()["fallback"] = "length"
-            else:
-                text = str(strip_role_prefix(extract_answer_text(final["message"]["content"])) or "")
-                kept, dropped = evidence_answer.check_sentences(text, items, names)
-                checked = _guard(" ".join(kept), records, question) if kept else ""
-                guard_log = _meta()["answer_guard"] or guard_log
-                sentences = [] if guard_log.get("replaced") or not checked.strip() or checked == FALLBACK_ANSWER else [checked]
-                guard_log.update(evidence_dropped=dropped, evidence_original=text[:ORIGINAL_LOG_CHARS])
-        _meta()["answer_guard"] = guard_log
-    answer = evidence_answer.compose(price_lines, items, sentences, cause)
-    return _code_answer(_with_freshness(answer, question, records), records)
-
-
 def _unresolved_company_answer(calls: list[dict], question: str = "") -> str | None:
     """(F) 종목을 받는 호출만 있고 그 종목 인자가 하나도 DB 종목으로 해석되지 않으면(보정 후에도) 코드가 답할 문장, 아니면 None.
 
@@ -1829,11 +1767,6 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     for handler in (_answer_concept, _answer_etf_constituents, _answer_holding_return, _answer_market_period, _answer_period_scope, _answer_simple_quote,
                     _answer_period_quote, _answer_period_history):
         handled = handler(question, companies)
-        if handled is not None:
-            return handled
-
-    if previous is None:
-        handled = _answer_evidence(question, companies, model)
         if handled is not None:
             return handled
 
