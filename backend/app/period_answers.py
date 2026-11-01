@@ -41,6 +41,47 @@ def is_history_question(question: str) -> bool:
                 or routing.needs_discovery_tool(q) or routing.explicitly_requested_tools(q) or routing.needs_fx_tool(q))
 
 
+# 두 시점 사이 수익률(2026-11-02): "X에 사서 Y까지 들고 있었으면", "X부터 Y까지 얼마나 올랐어", "X 대비 Y"
+_HOLDING_INTENT_RE = re.compile(r"사서|샀|사면|사뒀|매수|투자|들고|보유|갖고|가지고|수익률|얼마나|몇\s*(?:퍼센트|%|프로)|대비|벌었|올랐|내렸|떨어|변했|등락률")
+_HOLDING_EXCLUDE_RE = re.compile(r"왜|이유|원인|뉴스|공시|기사|전망|분석|거래량|거래대금|최고|최저|평균|흐름|추이|배당|실적|코스피|코스닥|지수", re.IGNORECASE)
+
+
+def is_holding_return_question(question: str) -> bool:
+    """두 시점 사이 수익률을 묻는 질문인지(날짜가 둘인지는 app.period_scope.date_pair가 본다)."""
+    q = question or ""
+    return bool(_HOLDING_INTENT_RE.search(q)) and not _HOLDING_EXCLUDE_RE.search(q)
+
+
+HOLDING_BASIS_NOTE = "주가 기준이며 배당·수수료·세금은 반영하지 않았습니다."
+
+
+def holding_invalid_text(name: str, start: date, end: date, today: date, data_start: date, data_end: date) -> str | None:
+    """계산하지 않고 거절할 때의 문장. 계산할 수 있으면 None."""
+    period = f"{start.isoformat()}~{end.isoformat()}"
+    if start >= end:
+        return f"시작일이 종료일과 같거나 늦어 {name}의 수익률을 확인할 수 없습니다(요청: {period})."
+    if end > today or start > today:
+        return f"아직 오지 않은 날짜가 있어 {name}의 수익률을 확인할 수 없습니다(요청: {period}, 오늘: {today.isoformat()})."
+    if start < data_start or start > data_end:
+        return (f"요청하신 기간({period})의 {name} 시세 데이터는 제공하지 않습니다. "
+                f"보유한 데이터는 {data_start.isoformat()}부터 {data_end.isoformat()}까지입니다.")
+    return None
+
+
+def holding_text(name: str, requested_start: date, requested_end: date, result: dict) -> str:
+    """시작일 이후 첫 거래일 종가에서 종료일 이전 마지막 거래일 종가까지의 수익률. 실제 쓴 날짜가 요청과 다르면 밝힌다."""
+    first, last = result["base_date"], result["prices"][-1]
+    start_used, end_used = first, last["price_date"]
+    text = (f"{name}의 {start_used} 종가 {result['base_close']:,.0f}원에서 {end_used} 종가 {last['close_price']:,.0f}원까지 "
+            f"수익률은 {result['period_change_pct']:+.2f}%입니다. {HOLDING_BASIS_NOTE}")
+    notes = []
+    if start_used != requested_start.isoformat():
+        notes.append(f"시작일 {requested_start.isoformat()}은 거래일이 아니어서 다음 거래일 {start_used} 종가를 썼습니다.")
+    if end_used != requested_end.isoformat():
+        notes.append(f"종료일 {requested_end.isoformat()}의 시세가 없어 직전 거래일 {end_used} 종가를 썼습니다.")
+    return " ".join([text, *notes])
+
+
 def is_market_period_question(question: str) -> bool:
     """시장 비교만 묻는 질문인지(뉴스·원인·전망 등을 함께 묻거나 다른 도구가 필요하면 False)."""
     q = question or ""

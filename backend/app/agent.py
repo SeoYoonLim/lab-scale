@@ -12,7 +12,7 @@ import os
 import re
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 import ollama
@@ -1519,6 +1519,58 @@ def _history_parts(company, requested, now, question: str) -> tuple[str, dict] |
         db.close()
 
 
+def _holding_part(company, start: date, end: date, now: datetime) -> tuple[str, dict] | None:
+    """종목 하나의 두 시점 수익률(문장, stock_tool 모양의 결과). 시세가 없으면 None(기존 흐름)."""
+    db = SessionLocal()
+    try:
+        data_start, data_end = price_range(db, company.id)
+        if data_start is None:
+            return None
+        meta = {"ticker": company.ticker, "company_name": company.name, "found": True, "called_via": "holding_return",
+                "requested_start": start.isoformat(), "requested_end": end.isoformat(),
+                "data_start": data_start.isoformat(), "data_end": data_end.isoformat()}
+        refused = period_answers.holding_invalid_text(company.name, start, end, now.date(), data_start, data_end)
+        if refused is not None:
+            return refused, meta
+        rows = price_rows_between(db, company.id, start, end)
+        # 시작 행을 기준 종가로 삼으려고 창을 그 다음 날부터 잡는다(code_answers.window_result는 창 직전 행을 기준으로 쓴다)
+        result = code_answers.window_result(company, list(reversed(rows)), rows[0].price_date + timedelta(days=1), now, "holding_return",
+                                            end=end) if rows else None
+        if result is None:
+            return f"요청하신 기간에 {company.name}의 거래일이 둘 이상 없어 수익률을 확인할 수 없습니다. 보유한 데이터는 {data_start.isoformat()}부터 {data_end.isoformat()}까지입니다.", meta
+        result.update(meta, base_date=rows[0].price_date.isoformat(), base_close=float(rows[0].close_price))
+        return period_answers.holding_text(company.name, start, end, result), result
+    finally:
+        db.close()
+
+
+def _answer_holding_return(question: str, companies: list | None):
+    """(2026-11-02) 두 시점 사이 수익률은 LLM 없이 코드가 답한다: "2025년 1월 2일에 사서 2026년 1월 2일까지 들고 있었으면".
+    requested_period는 첫 기간만 돌려줘서, 전에는 시작일 종가만 답했다(b10_20). 시장 비교·원인 질문은 기존 흐름이다."""
+    if (not companies or len(companies) > 2 or not period_answers.is_holding_return_question(question)
+            or needs_market_tool(question)):
+        return None
+    now = datetime.now(KST)
+    pair = period_scope.date_pair(question, now.date())
+    if pair is None:
+        return None
+    called_at = datetime.now(timezone.utc)
+    try:
+        parts = [_holding_part(c, pair[0], pair[1], now) for c in companies]
+    except Exception:
+        return None
+    if any(p is None for p in parts):
+        return None
+    answer = "\n\n".join(text for text, _ in parts)
+    for c in companies:
+        if getattr(c, "asset_type", None) == "etf" and (lk := leverage_kind(c.name)):
+            answer += "\n\n" + leverage_notice(c.name, lk)
+    records = [{"tool_name": "stock_tool",
+                "arguments": {"ticker": c.name, "start_date": pair[0].isoformat(), "end_date": pair[1].isoformat()},
+                "result": r, "called_at": called_at, "elapsed_ms": 0} for c, (_, r) in zip(companies, parts)]
+    return _code_answer(answer, records)
+
+
 def _answer_market_period(question: str, companies: list | None):
     """(2026-10-31) "2024년 코스피 대비 삼성전자 수익률"처럼 날짜로 조회해야 하는 기간의 시장 비교는 코드가 답한다: 종목과 지수의 같은 구간.
     뉴스·원인을 함께 묻거나 ETF·여러 종목이면 기존 흐름이다(LLM 경로의 market_tool에도 같은 구간을 넘긴다)."""
@@ -1712,7 +1764,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     _reset_llm_state()
     companies = _question_companies(question)
     # 시장 비교(_answer_market_period)는 범위 안내(_answer_period_scope)보다 먼저다: 종목 값만 답하면 지수 비교가 빠진다
-    for handler in (_answer_concept, _answer_etf_constituents, _answer_market_period, _answer_period_scope, _answer_simple_quote,
+    for handler in (_answer_concept, _answer_etf_constituents, _answer_holding_return, _answer_market_period, _answer_period_scope, _answer_simple_quote,
                     _answer_period_quote, _answer_period_history):
         handled = handler(question, companies)
         if handled is not None:

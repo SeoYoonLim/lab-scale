@@ -93,6 +93,56 @@ def _until_today(start: date, end: date, today: date) -> tuple[date, date]:
     return (start, end) if start > today else (start, min(end, today))
 
 
+_UNTIL_NOW_RE = re.compile(r"(?:지금|현재|오늘)\s*까지")
+
+
+def date_spans(question: str, today: date) -> list[tuple[int, date, date]]:
+    """질문의 날짜·연월 표현 전부(위치, 시작, 끝), 나온 순서대로. 연도가 없는 "6월 30일"은 앞 표현의 연도를 쓴다."""
+    q = question or ""
+    found: list[tuple[int, int, date, date]] = []
+
+    def add(m, start, end):
+        if start is not None and not any(m.start() < b and a < m.end() for a, b, _, _ in found):
+            found.append((m.start(), m.end(), start, end))
+
+    for m in _YMD_RE.finditer(q):
+        d = _safe_date(*map(int, m.groups()))
+        add(m, d, d)
+    for m in _YM_RE.finditer(q):
+        y, mo = int(m.group(1)), int(m.group(2))
+        if 1 <= mo <= 12:
+            add(m, date(y, mo, 1), date(y, mo, monthrange(y, mo)[1]))
+    for m in SHORT_YEAR_MONTH_RE.finditer(q):
+        y, mo = full_year(m.group(1)), int(m.group(2))
+        if 1 <= mo <= 12:
+            day = _safe_date(y, mo, int(m.group(3))) if m.group(3) else None
+            add(m, day or date(y, mo, 1), day or date(y, mo, monthrange(y, mo)[1]))
+    for m in WORD_MONTH_RE.finditer(q):
+        y, mo = _word_year(m.group(1), today), int(m.group(2))
+        if 1 <= mo <= 12:
+            day = _safe_date(y, mo, int(m.group(3))) if m.group(3) else None
+            add(m, day or date(y, mo, 1), day or date(y, mo, monthrange(y, mo)[1]))
+    found.sort()
+    for m in _MD_RE.finditer(q):
+        earlier = [f for f in found if f[1] <= m.start()]
+        if earlier:
+            d = _safe_date(earlier[-1][2].year, int(m.group(1)), int(m.group(2)))
+            add(m, d, d)
+    found.sort()
+    return [(st, start, end) for st, _, start, end in found]
+
+
+def date_pair(question: str, today: date) -> tuple[date, date] | None:
+    """두 시점(시작, 끝). 첫 표현의 시작과 둘째 표현의 끝이다("2025년 3월부터 6월까지"는 쓰지 않고 연월은 연도까지 있어야 한다).
+    표현이 하나면 "지금까지"가 있을 때만 끝을 오늘로 본다. 그 밖에는 None."""
+    spans = date_spans(question, today)
+    if len(spans) == 2:
+        return spans[0][1], spans[1][2]
+    if len(spans) == 1 and _UNTIL_NOW_RE.search(question or ""):
+        return spans[0][1], today
+    return None
+
+
 def requested_period(question: str, today: date) -> RequestedPeriod | None:
     """질문에서 기간 표현 하나(가장 먼저 나온 것)를 날짜 범위로 바꾼다. 없으면 None."""
     q = question or ""
