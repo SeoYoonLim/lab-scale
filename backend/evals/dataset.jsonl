@@ -244,3 +244,15 @@
 {"id": "nar_38", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "TIGER 반도체TOP10 최근 뉴스 이후 어떻게 움직였어?", "expect": {"companies": ["TIGER 반도체TOP10"], "must_answer": true, "number_scored": false}}
 {"id": "nar_39", "split": "holdout", "category": "narrative", "mode": "live", "batch": 8, "question": "TIGER 반도체TOP10 최근에 왜 움직였어?", "expect": {"companies": ["TIGER 반도체TOP10"], "must_answer": true}}
 {"id": "nar_40", "split": "dev", "category": "narrative", "mode": "live", "batch": 8, "question": "KODEX 레버리지 관련 최근 뉴스 설명해줘", "expect": {"companies": ["KODEX 레버리지"], "must_answer": true}}
+{"id": "rel_01", "split": "dev", "category": "news_relevance", "mode": "live", "batch": 9, "question": "태성 최근 뉴스 알려줘", "expect": {"companies": ["태성"], "must_answer": true, "must_not_contain": ["이태성", "태성무역", "태성자산운용"]}}
+{"id": "rel_02", "split": "holdout", "category": "news_relevance", "mode": "live", "batch": 9, "question": "동서 최근 뉴스 알려줘", "expect": {"companies": ["동서"], "must_answer": true, "must_not_contain": ["동서횡단", "동서지간", "동서관통"]}}
+{"id": "rel_03", "split": "dev", "category": "news_relevance", "mode": "live", "batch": 9, "question": "SK 최근 뉴스 요약해줘", "expect": {"companies": ["SK"], "must_answer": true, "must_not_contain": ["KF-21", "SK텔레콤 0.92%"]}}
+{"id": "rel_04", "split": "holdout", "category": "news_relevance", "mode": "live", "batch": 9, "question": "NAVER 최근 뉴스 알려줘", "expect": {"companies": ["NAVER"], "must_answer": true, "must_not_contain": ["@naver\\.com", "해바라기"]}}
+{"id": "rel_05", "split": "dev", "category": "news_relevance", "mode": "live", "batch": 9, "question": "GS 최근 소식 설명해줘", "expect": {"companies": ["GS"], "must_answer": true, "must_not_contain": ["뮤지컬", "와인25플러스"]}}
+{"id": "rel_06", "split": "dev", "category": "news_relevance", "mode": "live", "batch": 9, "question": "스피어 최근 뉴스 알려줘", "expect": {"companies": ["스피어"], "must_answer": true, "must_not_contain": ["유스피어", "크로노스피어", "웍스피어", "알바몬"]}}
+{"id": "rel_07", "split": "holdout", "category": "news_relevance", "mode": "live", "batch": 9, "question": "에스엠 최근 소식 알려줘", "expect": {"companies": ["에스엠"], "must_answer": true, "must_not_contain": ["에스엠디자인", "에스엠하이플러스", "갤럭시아에스엠"]}}
+{"id": "rel_08", "split": "dev", "category": "news_relevance", "mode": "live", "batch": 9, "question": "우리기술 최근 뉴스 설명해줘", "expect": {"companies": ["우리기술"], "must_answer": true, "must_not_contain": ["깃허브", "ITS 세계총회"]}}
+{"id": "rel_09", "split": "holdout", "category": "news_relevance", "mode": "live", "batch": 9, "question": "DL 최근 뉴스 설명해줘", "expect": {"companies": ["DL"], "must_answer": true, "must_not_contain": ["mg/dL", "당뇨"]}}
+{"id": "rel_10", "split": "dev", "category": "news_relevance", "mode": "live", "batch": 9, "question": "삼성전자 최근 뉴스 요약해줘", "expect": {"companies": ["삼성전자"], "must_answer": true}}
+{"id": "rel_11", "split": "dev", "category": "news_relevance", "mode": "live", "batch": 9, "question": "현대차 최근 소식 설명해줘", "expect": {"companies": ["현대차"], "must_answer": true}}
+{"id": "rel_12", "split": "holdout", "category": "news_relevance", "mode": "live", "batch": 9, "question": "SK하이닉스 최근 뉴스 설명해줘", "expect": {"companies": ["SK하이닉스"], "must_answer": true}}
