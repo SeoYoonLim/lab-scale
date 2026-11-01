@@ -237,3 +237,13 @@ class TestExplicitPeriodsAgoFixes:
 
     def test_year_label_before_data_is_still_checked(self):
         assert M.period_label_violation("2022년 전체 등락률", "2022년 등락률은 +5.00%입니다.", date(2023, 10, 30), date(2026, 10, 31)) is True
+
+
+@pytest.mark.parametrize("text", ["SK 관련 뉴스를 찾지 못했습니다.", "SK 관련 뉴스가 없습니다.", "관련 기사가 없어 확인이 어렵습니다.", "관련 소식이 없습니다."])
+def test_no_related_news_is_a_refusal(text):
+    assert M.is_refusal(text)
+
+
+@pytest.mark.parametrize("text", ["관련 뉴스는 다음과 같습니다.", "반도체 관련 뉴스가 많습니다.", "관련 없는 이야기입니다."])
+def test_related_news_sentences_are_not_refusals(text):
+    assert not M.is_refusal(text)
