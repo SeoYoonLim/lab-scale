@@ -1,0 +1,605 @@
+{
+  "git_commit": "f9dc254c22695a3ed96018d7594dbcbaa94494ea",
+  "git_dirty": false,
+  "date": "2026-11-01T14:40:49",
+  "model": "llama3.1:8b",
+  "args": {
+    "mode": "live",
+    "split": "dev",
+    "repeats": 3,
+    "only": null,
+    "ids": null,
+    "limit": null,
+    "out": "evals/results/summary_baseline_r8_2026-11-01.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 0,
+    "live": 117,
+    "records": 351
+  },
+  "live": {
+    "ran": true,
+    "repeats": 3,
+    "eval_user": "captest_d7b174daf723",
+    "deleted_reports": 351,
+    "etf_data_available": {
+      "069500": true,
+      "091160": true,
+      "122630": true,
+      "305720": true
+    },
+    "elapsed_s": 1081.0
+  },
+  "etf_data_available": {
+    "069500": true,
+    "091160": true,
+    "122630": true,
+    "305720": true
+  },
+  "etf_branches": {
+    "with_data": {
+      "ids": [
+        "etf_03",
+        "etf_06",
+        "etf_08",
+        "etf_11",
+        "etf_16"
+      ],
+      "passed": 15,
+      "runs": 15
+    }
+  },
+  "elapsed_s": 1086.2,
+  "metrics": {
+    "tool_selection_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 57,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 57
+      }
+    },
+    "live_company_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 276,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 276
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 276,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 276
+      }
+    },
+    "live_period_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 12,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 12
+      }
+    },
+    "number_match_rate": {
+      "dev": 0.9737,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.9737,
+      "n": {
+        "dev": 1709,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 1709
+      }
+    },
+    "number_full_support_rate": {
+      "dev": 0.9415,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.9415,
+      "n": {
+        "dev": 205,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 205
+      }
+    },
+    "source_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 110,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 110
+      }
+    },
+    "refusal_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 30,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 30
+      }
+    },
+    "period_label_violation_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 3,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "must_contain_rate": {
+      "dev": 0.9796,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.9796,
+      "n": {
+        "dev": 147,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 147
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 351,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 351
+      }
+    },
+    "data_date_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 6
+      }
+    },
+    "briefing_link_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 6
+      }
+    },
+    "number_attachment_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 18,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 18
+      }
+    },
+    "code_answer_rate": {
+      "dev": 0.641,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.641,
+      "n": {
+        "dev": 351,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 351
+      }
+    },
+    "loop_rate": {
+      "dev": 0.0028,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0028,
+      "n": {
+        "dev": 351,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 351
+      }
+    },
+    "stability_answer_rate": {
+      "dev": 0.9896,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.9896,
+      "n": {
+        "dev": 96,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 96
+      }
+    },
+    "guard_replacement_rate": {
+      "dev": 0.1176,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.1176,
+      "n": {
+        "dev": 119,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 119
+      }
+    },
+    "fallback_rate": {
+      "dev": 0.0028,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0028,
+      "n": {
+        "dev": 351,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 351
+      }
+    },
+    "error_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 351,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 351
+      }
+    },
+    "latency_p50_s": {
+      "dev": 0.03,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.03,
+      "n": {
+        "dev": 351,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 351
+      }
+    },
+    "latency_p95_s": {
+      "dev": 12.285,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 12.285,
+      "n": {
+        "dev": 351,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 351
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "nar_05",
+      "split": "dev",
+      "category": "narrative",
+      "run": 0,
+      "question": "삼성전자 실적 발표 후 주가 반응 어땠어?",
+      "check": "number_support",
+      "expected": "답변 숫자 전부 도구 결과로 설명",
+      "actual": [
+        "-2.96%",
+        "-2.44%"
+      ]
+    },
+    {
+      "id": "nar_05",
+      "split": "dev",
+      "category": "narrative",
+      "run": 1,
+      "question": "삼성전자 실적 발표 후 주가 반응 어땠어?",
+      "check": "number_support",
+      "expected": "답변 숫자 전부 도구 결과로 설명",
+      "actual": [
+        "-2.96%",
+        "-2.44%"
+      ]
+    },
+    {
+      "id": "nar_05",
+      "split": "dev",
+      "category": "narrative",
+      "run": 2,
+      "question": "삼성전자 실적 발표 후 주가 반응 어땠어?",
+      "check": "number_support",
+      "expected": "답변 숫자 전부 도구 결과로 설명",
+      "actual": [
+        "-2.96%",
+        "-2.44%"
+      ]
+    },
+    {
+      "id": "nar_13",
+      "split": "dev",
+      "category": "narrative",
+      "run": 0,
+      "question": "셀트리온 최근 뉴스 이후 주가 반응 설명해줘",
+      "check": "number_support",
+      "expected": "답변 숫자 전부 도구 결과로 설명",
+      "actual": [
+        "+0.31%",
+        "+0.31%p",
+        "+5.91%",
+        "+8.52%p"
+      ]
+    },
+    {
+      "id": "nar_13",
+      "split": "dev",
+      "category": "narrative",
+      "run": 1,
+      "question": "셀트리온 최근 뉴스 이후 주가 반응 설명해줘",
+      "check": "number_support",
+      "expected": "답변 숫자 전부 도구 결과로 설명",
+      "actual": [
+        "+0.31%",
+        "+0.31%p",
+        "+5.91%",
+        "+8.52%p"
+      ]
+    },
+    {
+      "id": "nar_13",
+      "split": "dev",
+      "category": "narrative",
+      "run": 2,
+      "question": "셀트리온 최근 뉴스 이후 주가 반응 설명해줘",
+      "check": "number_support",
+      "expected": "답변 숫자 전부 도구 결과로 설명",
+      "actual": [
+        "+0.31%",
+        "+0.31%p",
+        "+5.91%",
+        "+8.52%p"
+      ]
+    },
+    {
+      "id": "nar_21",
+      "split": "dev",
+      "category": "narrative",
+      "run": 0,
+      "question": "산일전기 실적 발표 이후 주가 반응 알려줘",
+      "check": "number_support",
+      "expected": "답변 숫자 전부 도구 결과로 설명",
+      "actual": [
+        "+1.58%",
+        "+0.48%p",
+        "-7.28%",
+        "-3.56%p",
+        "+13.13%"
+      ]
+    },
+    {
+      "id": "nar_21",
+      "split": "dev",
+      "category": "narrative",
+      "run": 1,
+      "question": "산일전기 실적 발표 이후 주가 반응 알려줘",
+      "check": "number_support",
+      "expected": "답변 숫자 전부 도구 결과로 설명",
+      "actual": [
+        "+1.58%",
+        "+0.48%p",
+        "-7.28%",
+        "-3.56%p",
+        "+13.13%"
+      ]
+    },
+    {
+      "id": "nar_21",
+      "split": "dev",
+      "category": "narrative",
+      "run": 2,
+      "question": "산일전기 실적 발표 이후 주가 반응 알려줘",
+      "check": "number_support",
+      "expected": "답변 숫자 전부 도구 결과로 설명",
+      "actual": [
+        "+1.58%",
+        "+0.48%p",
+        "-7.28%",
+        "-3.56%p",
+        "+13.13%"
+      ]
+    },
+    {
+      "id": "nar_30",
+      "split": "dev",
+      "category": "narrative",
+      "run": 0,
+      "question": "펄어비스 신작 소식 이후 주가 어떻게 됐어?",
+      "check": "number_support",
+      "expected": "답변 숫자 전부 도구 결과로 설명",
+      "actual": [
+        "-1.32%",
+        "-0.08%p",
+        "+2.45%",
+        "+1.45%p"
+      ]
+    },
+    {
+      "id": "nar_30",
+      "split": "dev",
+      "category": "narrative",
+      "run": 1,
+      "question": "펄어비스 신작 소식 이후 주가 어떻게 됐어?",
+      "check": "number_support",
+      "expected": "답변 숫자 전부 도구 결과로 설명",
+      "actual": [
+        "-1.32%",
+        "-0.08%p",
+        "+2.45%",
+        "+1.45%p"
+      ]
+    },
+    {
+      "id": "nar_30",
+      "split": "dev",
+      "category": "narrative",
+      "run": 2,
+      "question": "펄어비스 신작 소식 이후 주가 어떻게 됐어?",
+      "check": "number_support",
+      "expected": "답변 숫자 전부 도구 결과로 설명",
+      "actual": [
+        "-1.32%",
+        "-0.08%p",
+        "+2.45%",
+        "+1.45%p"
+      ]
+    },
+    {
+      "id": "nar_08",
+      "split": "dev",
+      "category": "narrative",
+      "run": 1,
+      "question": "고려아연 투자 위험 요인을 정리해줘",
+      "check": "answered",
+      "expected": "timeout·fallback 없이 정상 답변",
+      "actual": "length"
+    },
+    {
+      "id": "nar_25",
+      "split": "dev",
+      "category": "narrative",
+      "run": 0,
+      "question": "태성 리스크를 최근 뉴스 기준으로 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": null,
+        "must_not": [
+          "태성자산운용"
+        ]
+      },
+      "actual": [
+        "present:태성자산운용"
+      ]
+    },
+    {
+      "id": "nar_25",
+      "split": "dev",
+      "category": "narrative",
+      "run": 1,
+      "question": "태성 리스크를 최근 뉴스 기준으로 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": null,
+        "must_not": [
+          "태성자산운용"
+        ]
+      },
+      "actual": [
+        "present:태성자산운용"
+      ]
+    },
+    {
+      "id": "nar_25",
+      "split": "dev",
+      "category": "narrative",
+      "run": 2,
+      "question": "태성 리스크를 최근 뉴스 기준으로 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": null,
+        "must_not": [
+          "태성자산운용"
+        ]
+      },
+      "actual": [
+        "present:태성자산운용"
+      ]
+    }
+  ]
+}
