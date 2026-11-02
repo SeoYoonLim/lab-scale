@@ -104,6 +104,7 @@ def extract_numbers(text: str, apply_exclusions: bool = True) -> list[Number]:
 
 # 단순 계산을 허용할 시계열 값(같은 결과 안의 두 시점 사이 차이·변화율)
 _SERIES_KEYS = ("close_price", "volume", "close_rate", "close")
+_PRICE_SERIES_KEYS = ("close_price", "close_rate", "close")
 MAX_SERIES = 80
 
 
@@ -169,12 +170,16 @@ def is_supported(n: Number, supports: list[float]) -> bool:
 
 def unsupported_numbers(answer: str, results: list, question: str = "") -> list[Number]:
     direct = support_values(results) + support_values(question) + cross_differences(results)
-    supports = direct + derived_values(results)
     # "주"가 붙은 값의 계산 근거는 거래량 차이뿐이다: 종가 차이 1,100원이 "1,100주"로 통과했다(grd_13, 2026-10-31)
     shares = direct + derived_values(results, ("volume",))
-    cheon_ok = _supported_cheon_parts(answer, supports)
+    # "%"만 시세·거래량 계산을 모두 쓴다. 원·단위 없는 값은 거래량 계산을 근거로 삼지 않는다: 지어낸 EPS "2,420원"이 거래량 차이 2,412로,
+    # 지어낸 ETF 이름의 "TOP 50"이 거래량 변화율 50.77로 통과했다(b11_13, nar_40, 2026-11-02)
+    percents = direct + derived_values(results)
+    others = direct + derived_values(results, _PRICE_SERIES_KEYS)
+    cheon_ok = _supported_cheon_parts(answer, others)
+    by_unit = {"주": shares, "%": percents}
     return [n for n in extract_numbers(answer)
-            if not is_supported(n, shares if n.unit == "주" else supports) and n.raw not in cheon_ok]
+            if not is_supported(n, by_unit.get(n.unit, others)) and n.raw not in cheon_ok]
 
 
 # ---------- 추가 검증 (2026-10-28 3차): 날짜, 다른 종목에 붙인 숫자, 하루/기간 등락률 혼동, 종목 간 차이 ----------

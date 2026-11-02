@@ -216,3 +216,30 @@ def test_replaced_answer_original_is_logged_up_to_2000_chars():
     long = "NAVER의 현재 주가는 1,792,000원입니다. " + "가" * 3000
     _, log = G.guard_answer(long, [STOCK], "NAVER 주가")
     assert log["replaced"] and len(log["original"]) == G.ORIGINAL_LOG_CHARS == 2000
+
+
+# ---------- 거래량 계산은 원·단위 없는 값의 근거가 아니다 (b11_13, nar_40, 2026-11-02) ----------
+
+_VOLUME_RESULT = {"found": True, "company_name": "현대건설", "prices": [
+    {"price_date": "2026-10-14", "close_price": 98900.0, "volume": 676092},
+    {"price_date": "2026-10-30", "close_price": 81200.0, "volume": 678504},
+    {"price_date": "2026-10-31", "close_price": 81300.0, "volume": 1021000}]}
+
+
+def test_won_value_is_not_explained_by_a_volume_difference():
+    assert [n.raw for n in G.unsupported_numbers("EPS는 2,420원입니다.", [_VOLUME_RESULT])] == ["2,420원"]
+
+
+def test_bare_value_is_not_explained_by_a_volume_change_rate():
+    assert [n.raw for n in G.unsupported_numbers("TIGER 반도체 TOP 50 레버리지가 있습니다.", [_VOLUME_RESULT])] == ["50"]
+
+
+def test_price_difference_and_rates_and_share_difference_stay_supported():
+    # 종가 차이 원, 거래량 차이 주, 거래량 변화율 %
+    answer = "종가는 17,700원 내렸고 거래량은 2,412주 늘었으며 거래량은 50.51% 늘었습니다."
+    assert G.unsupported_numbers(answer, [_VOLUME_RESULT]) == []
+
+
+def test_share_rule_still_rejects_price_difference():
+    assert [n.raw for n in G.unsupported_numbers("거래량이 17,700주 늘었습니다.", [_VOLUME_RESULT])] == ["17,700주"]
+
