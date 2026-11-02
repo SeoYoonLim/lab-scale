@@ -8,6 +8,7 @@
 - 근거가 0건이면 모델을 부르지 않는다.
 """
 
+import os
 import re
 
 from app.answer_guard import _SENTENCE_SPLIT_RE, extract_numbers, is_supported, support_values
@@ -20,6 +21,19 @@ MIN_OVERLAP = 0.5
 AUTO_CITE_OVERLAP = 0.75
 AUTO_CITE_MIN_WORDS = 4
 SNIPPET_CHARS = 220
+
+SWITCH_DEFAULT = True  # EXPLAIN_EVIDENCE_FIRST가 없을 때
+
+
+def enabled() -> bool:
+    """EXPLAIN_EVIDENCE_FIRST: 0/false/off/no면 끈다(기존 도구 호출 흐름), 1/true/on/yes면 켠다. 없거나 그 밖의 값이면 SWITCH_DEFAULT."""
+    value = (os.getenv("EXPLAIN_EVIDENCE_FIRST") or "").strip().lower()
+    if value in {"0", "false", "off", "no"}:
+        return False
+    if value in {"1", "true", "on", "yes"}:
+        return True
+    return SWITCH_DEFAULT
+
 
 NARRATIVE_RE = re.compile(r"이슈|분위기|배경|리스크|위험|우려|요약|정리|설명|소식|영향|실적|사업|어떤 회사|뉴스|공시|왜|이유|원인|주목")
 _DOCUMENT_RE = re.compile(r"사업|위험|리스크|우려|실적|공시\s*내용|의미|배경|영향")

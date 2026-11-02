@@ -1832,7 +1832,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
         if handled is not None:
             return handled
 
-    if previous is None:
+    if previous is None and evidence_answer.enabled():
         handled = _answer_evidence(question, companies, model)
         if handled is not None:
             return handled

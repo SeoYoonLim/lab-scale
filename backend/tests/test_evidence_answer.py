@@ -204,3 +204,40 @@ def test_llm_failure_keeps_code_part(tools, monkeypatch):
 def test_other_questions_stay_on_the_existing_path(q, companies, monkeypatch):
     monkeypatch.setattr(agent, "_run_tool", lambda name, args: pytest.fail("조회하면 안 된다"))
     assert agent._answer_evidence(q, companies, "m") is None
+
+
+@pytest.mark.parametrize("value, expected", [
+    (None, E.SWITCH_DEFAULT), ("", E.SWITCH_DEFAULT), ("0", False), ("false", False), ("OFF", False), ("no", False),
+    ("1", True), ("true", True), ("On", True), ("yes", True), ("모름", E.SWITCH_DEFAULT),
+])
+def test_switch_values(monkeypatch, value, expected):
+    if value is None:
+        monkeypatch.delenv("EXPLAIN_EVIDENCE_FIRST", raising=False)
+    else:
+        monkeypatch.setenv("EXPLAIN_EVIDENCE_FIRST", value)
+    assert E.enabled() is expected
+
+
+class _Stop(Exception):
+    pass
+
+
+@pytest.mark.parametrize("value, reaches_evidence", [("1", True), ("0", False)])
+def test_switch_decides_whether_answer_uses_evidence_path(monkeypatch, value, reaches_evidence):
+    """끄면 _answer가 근거 우선 경로를 부르지 않고 기존 흐름(build_request)으로 간다."""
+    monkeypatch.setenv("EXPLAIN_EVIDENCE_FIRST", value)
+    seen = []
+
+    def evidence(*a):
+        seen.append("evidence")
+        raise _Stop
+
+    def build(*a):
+        seen.append("build")
+        raise _Stop
+
+    monkeypatch.setattr(agent, "_answer_evidence", evidence)
+    monkeypatch.setattr(agent, "build_request", build)
+    with pytest.raises(_Stop):
+        agent._answer("한미반도체 왜 떨어졌어?", "m")
+    assert seen[0] == ("evidence" if reaches_evidence else "build")
