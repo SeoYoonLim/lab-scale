@@ -9,6 +9,8 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import text
 
+from app.news_relevance import title_mentions
+
 TOL = Decimal("0.005") + Decimal("1e-9")
 DAY, WEEK, VOL, CONC = Decimal("3.0"), Decimal("7.0"), Decimal("2.0"), Decimal("40.0")
 INITIAL = Decimal(10_000_000)
@@ -101,8 +103,13 @@ def recheck_item(db, rc: Recheck, item: dict, now: datetime, news_limit: int):
     news = item["news"]
     rc.eq(f"{p} news 개수 <= limit", len(news) <= news_limit, True)
     rc.eq(f"{p} news 제목이 DB 최근 7일 기사", all(n["title"] in db_titles for n in news), True)
-    stamps = [n["published_at"] for n in news]
-    rc.eq(f"{p} news 최신순", stamps == sorted(stamps, reverse=True), True)
+    # 주식은 제목에 이름이 있는 기사를 먼저, 각 묶음 안은 최신순(ETF는 전체 최신순)
+    is_etf = item.get("asset_type") == "etf"
+    hits = [False if is_etf else title_mentions(item["name"], n["title"]) for n in news]
+    rc.eq(f"{p} news 제목 일치 먼저", hits == sorted(hits, reverse=True), True)
+    for group in (True, False):
+        stamps = [n["published_at"] for n, h in zip(news, hits) if h is group]
+        rc.eq(f"{p} news 최신순", stamps == sorted(stamps, reverse=True), True)
     rc.eq(f"{p} news 제목 중복 없음", len({n["title"] for n in news}) == len(news), True)
 
     # 공시: 건수 = DB의 최근 7일 공시 수, 표시 항목은 최대 3건

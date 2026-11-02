@@ -13,6 +13,7 @@ import app.portfolio as portfolio_module
 from app.etf import mentions_etf_name
 from app.main import app
 from app.models import News
+from app.news_relevance import title_mentions
 from app.tools.disclosure_tool import disclosure_tool
 from app.tools.market_tool import market_data_is_current, market_tool
 from app.tools.news_tool import news_tool
@@ -69,7 +70,9 @@ class TestToolsOnEtf:
     @pytest.mark.needs_collected_data
     def test_stock_news_tool_returns_the_same_rows_as_before(self, dev_db):
         cid = dev_db.execute(text("SELECT id FROM company WHERE ticker = '005930'")).scalar()
-        expected = [u for (u,) in dev_db.query(News.url).filter(News.company_id == cid).order_by(News.published_at.desc()).limit(5)]
+        recent = dev_db.query(News.url, News.title).filter(News.company_id == cid, News.is_relevant.isnot(False)).order_by(News.published_at.desc()).limit(20).all()
+        # 주식은 최근 20건 안에서 제목에 이름이 있는 기사를 먼저 보여 준다(2026-11-02)
+        expected = [r.url for r in sorted(recent, key=lambda r: not title_mentions("삼성전자", r.title))[:5]]
         assert [n["url"] for n in news_tool("삼성전자", 5)["news"]] == expected
 
     @pytest.mark.needs_collected_data

@@ -30,7 +30,7 @@ def seeded(dev_db):
     now = datetime.now(timezone.utc) + timedelta(days=1)
     rows = [News(company_id=company.id, title=f"{TAG} {label}", content="내용", url=f"https://{TAG}.example/{secrets.token_hex(4)}",
                  published_at=now, is_relevant=flag, embedding=[0.1] * 1024)
-            for label, flag in (("hidden", False), ("kept", True), ("unjudged", None))]
+            for label, flag in (("태성 hidden", False), ("태성 kept", True), ("태성 unjudged", None))]
     dev_db.add_all(rows)
     dev_db.commit()
     yield company
@@ -46,12 +46,12 @@ def _titles(items):
 def test_news_tool_skips_rows_marked_not_relevant(seeded):
     out = news_tool("태성", limit=5)
     assert out["found"] is True
-    assert sorted(_titles(out["news"])) == [f"{TAG} kept", f"{TAG} unjudged"]
+    assert sorted(_titles(out["news"])) == [f"{TAG} 태성 kept", f"{TAG} 태성 unjudged"]
 
 
 def test_rag_skips_rows_marked_not_relevant(seeded, dev_db):
     rows = _top_unique(dev_db, News, News.url, [0.1] * 1024, seeded, 5)
-    assert sorted(r.title for r, _ in rows if r.title.startswith(TAG)) == [f"{TAG} kept", f"{TAG} unjudged"]
+    assert sorted(r.title for r, _ in rows if r.title.startswith(TAG)) == [f"{TAG} 태성 kept", f"{TAG} 태성 unjudged"]
 
 
 def test_event_reactions_skip_rows_marked_not_relevant(seeded, dev_db):
@@ -115,8 +115,8 @@ class TestBriefing:
             news_queries = [s for s in statements if "FROM news" in s]
             assert len(news_queries) == 1 and "is_relevant IS NOT false" in news_queries[0]
             titles = [n["title"] for item in brief["watchlist"] for n in item.get("news") or []]
-            assert f"{TAG} hidden" not in titles
-            assert f"{TAG} kept" in titles
+            assert f"{TAG} 태성 hidden" not in titles
+            assert f"{TAG} 태성 kept" in titles
             # 표시가 없는 행만 있을 때와 같은 쿼리 수: 조건만 추가했다(종목 수와 무관한 기존 고정 수)
             _, again = self._run(owner)
             assert len(again) == len(statements)
