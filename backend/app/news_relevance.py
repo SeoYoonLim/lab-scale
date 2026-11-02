@@ -18,6 +18,8 @@ _ALNUM_RE = re.compile(r"[A-Za-z0-9가-힣&@]")
 _HANGUL_RE = re.compile(r"[가-힣]")
 _ASCII_ALNUM_RE = re.compile(r"[A-Za-z0-9&]")
 _DOMAIN_TAIL_RE = re.compile(r"\.(?:com|co\.kr|net|kr)\b", re.IGNORECASE)
+# 잘린 요약의 끝에 걸친 표기. "LG에..."는 LG에너지솔루션, "두산에너..."는 두산에너빌리티일 수 있어 이름으로 세지 않는다
+_TRUNCATED_TAIL_RE = re.compile(r"[가-힣A-Za-z0-9]{0,4}(?:\.\.\.|…)")
 # 짧은 이름 뒤에 이 말이 붙으면 같은 이름으로 본다(그 밖의 글자가 붙으면 "태성무역"처럼 다른 이름이다)
 _FOLLOW_RE = re.compile(
     r"(?:은|는|이|가|의|을|를|도|와|과|에|로|으로|만|부터|까지|에서|보다|처럼|등|측|주가|주식|株|그룹|계열|이며|이다|에게|라는|이라|랑|하고|및|외|"
@@ -104,7 +106,7 @@ def _mentions_word(text: str, forms: list[str], strict: bool) -> bool:
             prev = text[m.start() - 1] if m.start() else " "
             rest = text[m.end():]
             nxt = rest[0] if rest else " "
-            if _ALNUM_RE.match(prev) or _DOMAIN_TAIL_RE.match(rest):
+            if _ALNUM_RE.match(prev) or _DOMAIN_TAIL_RE.match(rest) or _TRUNCATED_TAIL_RE.match(rest):
                 continue
             if form.isascii() and _ASCII_ALNUM_RE.match(nxt):
                 continue
@@ -114,12 +116,18 @@ def _mentions_word(text: str, forms: list[str], strict: bool) -> bool:
     return False
 
 
+def longer_names(company_name: str, listed_names=()) -> list[str]:
+    """이 이름을 포함한 다른 종목의 이름·별칭("LG" -> "LG에너지솔루션", "LG엔솔"). 긴 것부터."""
+    others = {n for n in listed_names if n != company_name and company_name in n}
+    return sorted(others, key=len, reverse=True)
+
+
 def is_relevant_news(company_name: str, ticker: str | None, asset_type: str | None, title: str | None,
                      content: str | None, listed_names=()) -> bool:
     """이 기사가 그 종목 기사인지. listed_names(상장 종목 이름 전체)에서 이 이름을 포함한 더 긴 이름("SK하이닉스")은 먼저 지운다.
     ETF는 기존 기준(mentions_etf_name)을 그대로 쓴다."""
     text = f"{title or ''} {content or ''}"
-    longer = sorted((n for n in listed_names if n != company_name and company_name in n), key=len, reverse=True)
+    longer = longer_names(company_name, listed_names)
     if asset_type == "etf":
         return mentions_etf_name(text, company_name, longer)
     if ticker and re.search(rf"(?<![0-9A-Za-z]){re.escape(ticker)}(?![0-9A-Za-z])", text):

@@ -208,3 +208,18 @@ def test_lg_cns_is_not_lg():
     """LG CNS는 상장 이름(LG씨엔에스)과 표기가 달라 긴 이름 제거로 지워지지 않는다(2026-11-02 실제 응답)."""
     assert is_relevant_news("LG", "003550", "stock", "LG CNS 인도네시아 데이터센터 완공", "AI 인프라 수주", ["LG", "LG씨엔에스"]) is False
     assert is_relevant_news("LG", "003550", "stock", "LG 지주사 주가 강세", "구광모 회장", ["LG", "LG씨엔에스"]) is True
+
+
+# ---------- 잘린 요약 끝에 걸친 이름 (2026-11-02) ----------
+
+
+@pytest.mark.parametrize("name, ticker, title, content, relevant", [
+    ("LG", "003550", "코스피 5900선 회복", "삼성전기(5.41%), LG에...", False),
+    ("두산", "000150", "시황", "주가 상승. HD건설기계와 두산...", False),
+    ("두산", "000150", "시황", "주가 상승. 대우건설·두산에너…", False),
+    ("LG", "003550", "시황", "LG가 올랐다. 삼성전기, LG에...", True),  # 앞쪽 일치는 그대로 센다
+    ("두산", "000150", "두산 주가 강세", "지주사 테마... 상승", True),
+])
+def test_name_cut_off_at_truncated_end_is_not_a_match(name, ticker, title, content, relevant):
+    assert is_relevant_news(name, ticker, "stock", title, content, [name]) is relevant
+
