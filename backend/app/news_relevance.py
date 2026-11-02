@@ -77,7 +77,7 @@ _EXCLUDED_PHRASES = {
     "DL": ("mg/dL", "LDL", "HDL"),
     "GS": ("GS Caltex", "GS E&C"),
     "LS": ("LS MnM",),
-    "LG": ("LG Chem", "LG CNS"),
+    "LG": ("LG Chem",),
 }
 
 
@@ -119,6 +119,7 @@ def _mentions_word(text: str, forms: list[str], strict: bool) -> bool:
 def longer_names(company_name: str, listed_names=()) -> list[str]:
     """이 이름을 포함한 다른 종목의 이름·별칭("LG" -> "LG에너지솔루션", "LG엔솔"). 긴 것부터."""
     others = {n for n in listed_names if n != company_name and company_name in n}
+    others |= {a for a, n in COMPANY_ALIASES.items() if n != company_name and company_name in a}
     return sorted(others, key=len, reverse=True)
 
 

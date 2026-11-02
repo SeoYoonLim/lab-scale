@@ -7,6 +7,7 @@ import pytest
 
 from app import collectors
 from app.collectors import news_search_query
+from app.news_relevance import longer_names
 from app.models import Company
 from app.news_relevance import is_relevant_news, name_forms, needs_context
 
@@ -222,4 +223,14 @@ def test_lg_cns_is_not_lg():
 ])
 def test_name_cut_off_at_truncated_end_is_not_a_match(name, ticker, title, content, relevant):
     assert is_relevant_news(name, ticker, "stock", title, content, [name]) is relevant
+
+
+# ---------- 다른 회사의 별칭 일부인 이름 (2026-11-02) ----------
+
+
+def test_longer_names_include_other_companies_aliases_and_keep_the_holding_company():
+    assert "한화에어로" in longer_names("한화", ["한화", "한화에어로스페이스"])
+    assert is_relevant_news("한화", "000880", "stock", "한화에어로 어닝쇼크", "목표가 하향", ["한화", "한화에어로스페이스"]) is False
+    assert is_relevant_news("한화", "000880", "stock", "한화 시총 34% 늘었는데", "한화에어로 지분 가치 반영", ["한화", "한화에어로스페이스"]) is True
+    assert is_relevant_news("LG", "003550", "stock", "LG엔솔 수주", "계약", ["LG", "LG에너지솔루션"]) is False
 
