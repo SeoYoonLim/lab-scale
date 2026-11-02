@@ -609,3 +609,24 @@ class TestFinalProbeResidue:
     def test_extreme_with_price_from_result_is_kept(self):
         text = "TIGER 200의 이 기간 종가 최고는 113,360원입니다."
         assert check_etf_answer(text, {"TIGER 200": self.TIGER200}) == (text, [])
+
+
+# ---------- 가드가 답변을 바꿔도 레버리지 설명은 남는다 (etf_05, 2026-11-02) ----------
+
+
+def test_guard_replacement_keeps_leverage_notice(monkeypatch):
+    from app import agent
+
+    agent._reset_llm_state()
+    price = {"found": True, "company_name": "KODEX 레버리지", "summary": "KODEX 레버리지의 종가는 100원입니다.", "prices": []}
+    records = [{"tool_name": "stock_tool", "arguments": {"ticker": "KODEX 레버리지"}, "result": price}]
+
+    def replaced(answer, recs, question):
+        agent._meta()["answer_guard"] = {"replaced": True}
+        return "코드 요약"
+
+    monkeypatch.setattr(agent, "_guard", replaced)
+    monkeypatch.setattr(agent, "_company_names", lambda: ["KODEX 레버리지"])
+    out = agent._guard_etf_aware("틀린 답", records, "사도 돼?", [("KODEX 레버리지", "etf")])
+    assert "복리" in out and "100원" in out and "틀린 답" not in out
+    assert agent._guard_etf_aware("틀린 답", records, "사도 돼?", None) == "코드 요약"

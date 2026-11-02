@@ -1707,6 +1707,14 @@ def _guard(answer: str, records: list[dict], question: str) -> str:
     return guarded or FALLBACK_ANSWER
 
 
+def _guard_etf_aware(answer: str, records: list[dict], question: str, etf_subjects) -> str:
+    """_guard와 같다. 다만 ETF 답변을 코드 요약으로 바꾸면 레버리지·인버스 설명이 사라지므로(etf_05, 2026-11-02) 코드가 쓴 ETF 답변으로 대신한다."""
+    guarded = _guard(answer, records, question)
+    if etf_subjects and (_meta()["answer_guard"] or {}).get("replaced"):
+        return _finish_etf_answer("", records, etf_subjects) or guarded
+    return guarded
+
+
 UNRESOLVED_COMPANY_ANSWER = "해당 종목을 찾지 못했습니다. 종목명 또는 종목코드를 정확히 입력해주세요."
 
 
@@ -1947,7 +1955,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
         answer = remove_empty_sections(answer)
         if etf_mode:
             answer = _finish_etf_answer(answer, records, subjects)
-        answer = _with_freshness(_guard(answer, records, question), question, records)
+        answer = _with_freshness(_guard_etf_aware(answer, records, question, subjects if etf_mode else None), question, records)
     response = {
         "answer": answer,
         "used_tools": [r["tool_name"] for r in records],
