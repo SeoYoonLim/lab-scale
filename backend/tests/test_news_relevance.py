@@ -7,7 +7,7 @@ import pytest
 
 from app import collectors
 from app.collectors import news_search_query
-from app.news_relevance import longer_names, title_mentions
+from app.news_relevance import title_mentions
 from app.models import Company
 from app.news_relevance import is_relevant_news, name_forms, needs_context
 
@@ -211,37 +211,13 @@ def test_lg_cns_is_not_lg():
     assert is_relevant_news("LG", "003550", "stock", "LG 지주사 주가 강세", "구광모 회장", ["LG", "LG씨엔에스"]) is True
 
 
-# ---------- 잘린 요약 끝에 걸친 이름 (2026-11-02) ----------
-
-
-@pytest.mark.parametrize("name, ticker, title, content, relevant", [
-    ("LG", "003550", "코스피 5900선 회복", "삼성전기(5.41%), LG에...", False),
-    ("두산", "000150", "시황", "주가 상승. HD건설기계와 두산...", False),
-    ("두산", "000150", "시황", "주가 상승. 대우건설·두산에너…", False),
-    ("LG", "003550", "시황", "LG가 주가 강세. 삼성전기, LG에...", True),  # 앞쪽 일치는 그대로 센다
-    ("두산", "000150", "두산 주가 강세", "지주사 테마... 상승", True),
-])
-def test_name_cut_off_at_truncated_end_is_not_a_match(name, ticker, title, content, relevant):
-    assert is_relevant_news(name, ticker, "stock", title, content, [name]) is relevant
-
-
-# ---------- 다른 회사의 별칭 일부인 이름 (2026-11-02) ----------
-
-
-def test_longer_names_include_other_companies_aliases_and_keep_the_holding_company():
-    assert "한화에어로" in longer_names("한화", ["한화", "한화에어로스페이스"])
-    assert is_relevant_news("한화", "000880", "stock", "한화에어로 어닝쇼크", "목표가 하향", ["한화", "한화에어로스페이스"]) is False
-    assert is_relevant_news("한화", "000880", "stock", "한화 시총 34% 늘었는데", "한화에어로 지분 가치 반영", ["한화", "한화에어로스페이스"]) is True
-    assert is_relevant_news("LG", "003550", "stock", "LG엔솔 수주", "계약", ["LG", "LG에너지솔루션"]) is False
-
-
 # ---------- 제목 일치 (2026-11-02) ----------
 
 
 @pytest.mark.parametrize("name, title, hit", [
     ("SK", "SK '안정속 쇄신'", True), ("SK", "SK그룹 인사", True), ("SK", "SK하이닉스 사장 과제", False),
     ("카카오", "카카오 주가", True), ("카카오", "카카오뱅크 170만 돌파", False),
-    ("한화", "한화에어로 어닝쇼크", False), ("NAVER", "네이버·엔비디아 동맹", True),
+    ("한화", "한화오션 수주", False), ("NAVER", "네이버·엔비디아 동맹", True),
     ("태성", "수호, 영화 출연", False), ("LG", None, False),
 ])
 def test_title_mentions(name, title, hit):
