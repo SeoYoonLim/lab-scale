@@ -57,6 +57,8 @@ def fake_prices(monkeypatch):
     monkeypatch.setattr(agent, "last_row_before",
                         lambda db, cid, d: next((r for r in reversed(of(cid)) if r.price_date < d), None))
     monkeypatch.setattr(agent, "datetime", type("D", (datetime,), {"now": classmethod(lambda cls, tz=None: NOW)}))
+    real_parse = agent.parse_period
+    monkeypatch.setattr(agent, "parse_period", lambda q: real_parse(q, now=NOW))  # 실제 시계를 읽지 않게 고정한다
     # 범위 밖·걸침은 이 파일에서 period_scope 문장만 본다(DB 조회는 _period_scope_parts 안에 있어 통합 테스트가 확인)
     monkeypatch.setattr(agent, "_period_scope_parts", lambda company, requested: ("범위 밖 문장", {"company_name": company.name, "found": True}))
 
@@ -229,7 +231,7 @@ class TestHistoryAnswers:
     def test_parser_period_days_is_recorded(self, fake_prices):
         # 평가의 live_period와 분석이 읽는 값이다
         _, records = agent._answer_period_history("기아 작년 주가 흐름 알려줘", [co()])
-        assert records[0]["arguments"]["period_days"] == parse_period("기아 작년 주가 흐름 알려줘").period_days
+        assert records[0]["arguments"]["period_days"] == parse_period("기아 작년 주가 흐름 알려줘", now=NOW).period_days
         assert records[0]["result"]["period_end_date"] == "2025-12-31"
 
     def test_last_year_same_month(self, fake_prices):

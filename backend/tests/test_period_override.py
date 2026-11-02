@@ -9,6 +9,8 @@
 변경을 2,292개 입력으로, market_tool 키워드 게이트를 44개 비시장 질문으로 검증한 것과 같은 방식이다."""
 
 import copy
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -42,7 +44,9 @@ class TestApplyPeriodOverride:
         assert overridden == {0: 1}
         assert calls[0]["function"]["arguments"]["period_days"] == 5  # 지난주 = 평일 5일
 
-    def test_recognized_period_overrides_market_tool_period_days(self):
+    def test_recognized_period_overrides_market_tool_period_days(self, monkeypatch):
+        real_parse = agent.parse_period
+        monkeypatch.setattr(agent, "parse_period", lambda q: real_parse(q, now=datetime(2026, 10, 31, 12, 0, tzinfo=ZoneInfo("Asia/Seoul"))))
         calls = [market_call(period_days=5)]
         overridden = agent._apply_period_override(calls, "삼성전자 지난달 코스피 대비 어때?")
         assert overridden == {0: 5}
