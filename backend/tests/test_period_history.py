@@ -430,6 +430,8 @@ class TestApplyPastWindow:
 
     def test_short_past_window_in_llm_flow_reads_that_window(self, monkeypatch):
         monkeypatch.setattr(agent, "datetime", type("D", (datetime,), {"now": classmethod(lambda cls, tz=None: NOW)}))
+        real_parse = agent.parse_period
+        monkeypatch.setattr(agent, "parse_period", lambda q: real_parse(q, now=NOW))  # 실제 시계를 읽지 않게 고정한다
         calls = self._call()
         agent._apply_past_window(calls, "기아 지난주 주가 흐름 알려줘")
         assert calls[0]["function"]["arguments"]["start_date"] == "2026-10-19"

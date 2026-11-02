@@ -22,10 +22,8 @@ class TestNewsSearchQuery:
     def test_collision_list_is_the_14_measured_companies(self):
         assert set(NAME_COLLISION_COMPANIES) == EXPECTED_COLLISIONS
 
-    @pytest.mark.parametrize("name", sorted(EXPECTED_COLLISIONS))
+    @pytest.mark.parametrize("name", sorted(EXPECTED_COLLISIONS - set(NEWS_QUERY_NAMES)))
     def test_collision_companies_are_anchored(self, name):
-        if name in NEWS_QUERY_NAMES:
-            pytest.skip("실제 응답으로 고른 검색어가 먼저다")
         assert news_search_query(name) == f"{name} {NAME_COLLISION_ANCHOR}"
 
     def test_tuned_queries_only_cover_the_four_measured_names(self):

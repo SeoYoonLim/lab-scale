@@ -380,6 +380,7 @@ FastAPI  ──  POST /api/research ─▶ 에이전트(app/agent.py)
 
 - **백엔드:** FastAPI, SQLAlchemy 2, Alembic. 질문/답변/tool 호출 이력은 매 요청마다 DB에 저장되고 `GET /api/research`로 다시 볼 수 있습니다.
 - **모델 설정(2026-11-01):** 채팅 모델은 `OLLAMA_CHAT_MODEL`(기본 `llama3.1:8b`, 되돌리려면 이 값을 지운다), `OLLAMA_KEEP_ALIVE`(기본 `30m`, 빈 값이면 서버 기본값), `OLLAMA_THINK`(생각 모드가 있는 모델만, `false` 권장), `OLLAMA_WARMUP`(`0`이면 시작 시 미리 적재하지 않음). 백엔드 시작 시 채팅 모델과 `bge-m3`를 백그라운드에서 한 번씩 호출한다(실패 무시, 테스트·CI에서는 돌지 않음). 후보 비교는 `backend/evals/reports/model_comparison_20261101.md`: qwen3:8b, qwen2.5:7b-instruct 모두 조건을 못 채워 기본 모델을 유지했다.
+- **근거 우선 설명형 답변(2026-11-02):** `EXPLAIN_EVIDENCE_FIRST=1`이면 설명형·원인형 질문을 코드가 조회하고 모델은 번호 붙은 근거만 바꿔 말한다. 사전 조건 미달로 기본은 끔이다(`backend/evals/reports/evidence_recollect_20261102.md`).
 - **모델:** 답변·tool 선택은 `llama3.1:8b`, 임베딩은 `bge-m3`(1024차원, HNSW 인덱스). 모두 로컬 Ollama에서 돌아갑니다.
 - **데이터 소스:** 주가와 시장 지수(코스피 KS11, 코스닥 KQ11)는 FinanceDataReader, 뉴스는 네이버 검색 API, 공시는 DART OpenAPI(목록 + 원문).
 - **프론트엔드:** React + Vite(+ react-query, zod)로 서윤님이 `feature/frontend` 브랜치에서 진행 중입니다. 백엔드 응답 형식은 `backend/API.md`가 기준입니다.
@@ -494,6 +495,8 @@ python -m scripts.refresh_data                            # 전 단계
 python -m scripts.refresh_data --only prices,index,fx     # 일부 단계만 (prices,index,fx,news,embed,content)
 python -m scripts.refresh_data --skip news,embed,content  # 일부 단계 제외
 python -m scripts.refresh_data --days 30 --timeout-min 30 # 조회 기간 직접 지정, 단계별 제한 시간(기본 30분)
+python -m scripts.refresh_data --only news,embed --news-only --news-state backups/news_state.json  # 공시 없이 뉴스만, 끊기면 같은 명령으로 이어서
+# 네이버가 401·403·429를 돌려주면 그 자리에서 멈춘다(news 단계 failed). SK·GS·NAVER·LG 검색어는 app/collectors.py의 NEWS_QUERY_NAMES에 있다.
 # --days를 생략하면(2026-10-28부터) 마지막 시세 날짜와 최근 30일 안의 빈 평일 중 이른 날부터 오늘 + 3일(최소 10, 상한 60).
 # 예전 기본값(10일 고정)은 갱신을 2주 쉬면 공백이 남았다(10-15, 10-16). 휴장일 달력이 없어 공휴일도 빈 평일로 보여 기간이 한 달쯤 될 수 있다.
 ```
@@ -530,7 +533,7 @@ python -m scripts.backfill_history --tickers 005930,069500 --years 5 --end 2026-
 `backend/`에서 실행합니다. 세 단계로 나뉩니다(마커: `integration`, `slow`).
 
 ```bash
-pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-11-02 두 날짜 수익률 후 4356개, 약 2분. 왕복 마이그레이션·수집 데이터 대조는 환경에 따라 skip). slow는 기본 제외
+pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-11-02 뉴스 재수집 후 4438개, 약 2분. 왕복 마이그레이션·수집 데이터 대조는 환경에 따라 skip). slow는 기본 제외
 pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 3859개)
 pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(497개). DB가 꺼져 있으면 자동 skip
 pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)를 부르는 테스트(61개, 느리고 비결정적)
