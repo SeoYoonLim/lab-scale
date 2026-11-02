@@ -14,6 +14,7 @@ data_refresh_log에 한 행씩 기록한다. GET /api/status의 last_refresh가 
   python -m scripts.refresh_data --only prices,index,fx     # 일부 단계만
   python -m scripts.refresh_data --skip news,embed,content  # 일부 단계 제외
   python -m scripts.refresh_data --days 30                  # 주가/지수/환율 조회 기간(달력 일), 기본 10
+  python -m scripts.refresh_data --only news --news-only --news-state backups/news_state.json  # 뉴스만, 끊기면 이어서
 """
 
 import argparse
@@ -308,7 +309,7 @@ def resolve_days(days: int | None, today: date) -> tuple[int, str]:
     return n, f"자동(마지막 시세 {last}, 최근 {GAP_LOOKBACK_DAYS}일 안의 빈 평일 포함, 상한 {DAYS_CAP}일)"
 
 
-def build_steps(days: int, timeout_min: float) -> list[Step]:
+def build_steps(days: int, timeout_min: float, news_only: bool = False, news_state: str | None = None) -> list[Step]:
     from app.data_status import _kst_date
 
     def prices():
@@ -340,8 +341,9 @@ def build_steps(days: int, timeout_min: float) -> list[Step]:
         from scripts import collect_universe
 
         warnings = []
+        extra = (["--news-only"] if news_only else []) + (["--state", news_state] if news_state else [])
         for universe in ("universe_top300.json", "universe_etf50.json"):
-            out = _call_script(collect_universe.main, ["--universe", universe], timeout_min)
+            out = _call_script(collect_universe.main, ["--universe", universe, *extra], timeout_min)
             if w := check_failure_ratio(out):
                 warnings.append(f"{universe}: {w}")
         return "; ".join(warnings) or None
@@ -424,6 +426,8 @@ def main(argv: list[str] | None = None) -> int:
                          f"(최소 {DAYS_MIN}, 상한 {DAYS_CAP})")
     ap.add_argument("--timeout-min", type=float, default=DEFAULT_TIMEOUT_MIN, help="단계별 제한 시간(분)")
     ap.add_argument("--dry-run", action="store_true", help="실제 호출 없이 계획만 출력")
+    ap.add_argument("--news-only", action="store_true", help="news 단계에서 공시를 수집하지 않는다")
+    ap.add_argument("--news-state", default=None, help="news 단계의 이어하기 파일(collect_universe --state)")
     args = ap.parse_args(argv)
 
     try:
@@ -450,7 +454,7 @@ def main(argv: list[str] | None = None) -> int:
     if is_market_hours(now):
         print(market_warning)
 
-    results = run_steps(build_steps(args.days, args.timeout_min), selected, recorder=write_log)
+    results = run_steps(build_steps(args.days, args.timeout_min, args.news_only, args.news_state), selected, recorder=write_log)
 
     print("\n===== 갱신 결과 =====")
     print(format_table(results))

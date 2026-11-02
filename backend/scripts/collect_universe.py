@@ -14,13 +14,20 @@ universe 파일은 커밋 대상이 아니므로 먼저 `python -m scripts.build
   python -m scripts.collect_universe --dry-run --limit 3         # DB에 쓰지 않고 확인
   python -m scripts.collect_universe --report report.json        # 전체 실행 + 결과 JSON 저장
   python -m scripts.collect_universe --universe universe_etf50.json   # ETF: 뉴스만 수집
+  python -m scripts.collect_universe --news-only --names SK,GS       # 공시 없이 지정 종목 뉴스만
+  python -m scripts.collect_universe --news-only --state backups/news_state.json   # 끊기면 같은 명령으로 이어서
+
+네이버가 401·403·429를 돌려주면(재시도 후에도) 다음 종목으로 넘어가지 않고 바로 멈춘다(종료 코드 3).
 """
 
 import argparse
 import json
+import re
+import sys
 import time
 from pathlib import Path
 
+from app import collectors
 from app.collectors import (
     CollectResult,
     _safe_error,
@@ -32,6 +39,25 @@ from app.db.session import SessionLocal
 from sqlalchemy import text
 
 UNIVERSE_DIR = Path(__file__).resolve().parent
+
+BLOCKED_EXIT_CODE = 3
+_BLOCKED_STATUS_RE = re.compile(r"\b(?:401|403|429)\b")
+
+
+def is_blocked_error(error: str | None) -> bool:
+    """다음 종목을 계속 요청해도 소용없는 응답(인증 실패·호출 제한)인지. 요청 오류 문구의 상태 코드로 본다."""
+    return bool(error and _BLOCKED_STATUS_RE.search(error))
+
+
+def _load_done(path: str | None) -> set[str]:
+    if not path or not Path(path).exists():
+        return set()
+    return set(json.loads(Path(path).read_text(encoding="utf-8"))["done"])
+
+
+def _save_done(path: str | None, done: set[str]) -> None:
+    if path:
+        Path(path).write_text(json.dumps({"done": sorted(done)}, ensure_ascii=False), encoding="utf-8")
 
 
 def _register(ticker: str, name: str, asset_type: str = "stock") -> str | None:
@@ -64,16 +90,26 @@ def main():
     ap.add_argument("--display", type=int, default=10, help="종목당 뉴스 건수")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--report", default=None, help="결과 JSON 저장 경로")
+    ap.add_argument("--news-only", action="store_true", help="공시는 수집하지 않는다")
+    ap.add_argument("--names", default=None, help="쉼표로 구분한 종목명만 수집")
+    ap.add_argument("--state", default=None, help="끝난 종목을 기록하는 파일. 다시 실행하면 그 종목은 건너뛴다")
     args = ap.parse_args()
 
     universe = json.loads((UNIVERSE_DIR / args.universe).read_text(encoding="utf-8"))["universe"]
     targets = universe[:: args.every]
+    if args.names:
+        wanted = {n.strip() for n in args.names.split(",")}
+        targets = [t for t in targets if t["name"] in wanted]
     if args.limit is not None:
         targets = targets[: args.limit]
+    done = _load_done(args.state)
+    targets = [t for t in targets if t["ticker"] not in done]
 
-    print(f"대상 {len(targets)}종목 (every={args.every}, delay={args.delay}s, dry_run={args.dry_run})")
+    print(f"대상 {len(targets)}종목 (every={args.every}, delay={args.delay}s, dry_run={args.dry_run}, 이미 끝난 종목 {len(done)}개)")
     started = time.time()
+    requests_before = collectors.naver_requests
     rows = []
+    blocked = None
 
     for i, t in enumerate(targets, 1):
         ticker, name = t["ticker"], t["name"]
@@ -94,7 +130,11 @@ def main():
             etf=asset_type == "etf",
         )
         time.sleep(args.delay)
-        if asset_type == "etf":
+        if is_blocked_error(news.error):
+            blocked = news.error
+            print(f"[{i}/{len(targets)}] {name}({ticker}) 수집 중단(FAIL): {blocked}")
+            break
+        if asset_type == "etf" or args.news_only:
             # ETF는 DART 공시 대상이 아니라서 건너뛴다(실패가 아니라 "해당 없음"이다).
             disc, disc_sec = CollectResult(ok=True), 0.0
         else:
@@ -111,10 +151,13 @@ def main():
             }
         row["sec"] = round(time.time() - t0, 2)
         rows.append(row)
+        if news.ok and disc.ok:
+            done.add(ticker)
+            _save_done(args.state, done)
         print(
             f"[{i}/{len(targets)}] {name}({ticker}) "
             f"뉴스 {'OK' if news.ok else 'FAIL'}+{news.saved} / "
-            f"{'공시 건너뜀(ETF)' if asset_type == 'etf' else '공시 ' + ('OK' if disc.ok else 'FAIL') + '+' + str(disc.saved)} "
+            f"{'공시 건너뜀' if asset_type == 'etf' or args.news_only else '공시 ' + ('OK' if disc.ok else 'FAIL') + '+' + str(disc.saved)} "
             f"({row['sec']}s)"
         )
 
@@ -166,6 +209,8 @@ def main():
         "news_saved": sum(r["news"]["saved"] for r in rows if r.get("news")),
         "disclosure_saved": sum(r["disclosure"]["saved"] for r in rows if r.get("disclosure")),
         "failures": len(failures),
+        "naver_requests": collectors.naver_requests - requests_before,
+        "blocked": blocked,
     }
     print("\n===== 요약 =====")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
@@ -182,6 +227,8 @@ def main():
             encoding="utf-8",
         )
         print(f"결과 저장: {args.report}")
+    if blocked:
+        sys.exit(BLOCKED_EXIT_CODE)
 
 
 if __name__ == "__main__":

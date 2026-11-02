@@ -75,7 +75,7 @@ _EXCLUDED_PHRASES = {
     "DL": ("mg/dL", "LDL", "HDL"),
     "GS": ("GS Caltex", "GS E&C"),
     "LS": ("LS MnM",),
-    "LG": ("LG Chem",),
+    "LG": ("LG Chem", "LG CNS"),
 }
 
 

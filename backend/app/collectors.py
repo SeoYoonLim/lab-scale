@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 import FinanceDataReader as fdr
+import requests
 from dotenv import load_dotenv
 from sqlalchemy import or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -68,16 +69,22 @@ NAME_COLLISION_COMPANIES = frozenset(
 )
 NAME_COLLISION_ANCHOR = "주가 실적"
 AMBIGUOUS_NAME_ANCHOR = "주가"
-NEWS_QUERY_NAMES = {"NAVER": "네이버"}
+# 실제 응답을 보고 고른 검색어(2026-11-02). 괄호는 받은 100건 중 is_relevant_news 통과 수, 그룹·계열사 기사가 얼마나 섞이는지는 읽어서 골랐다.
+NEWS_QUERY_NAMES = {
+    "NAVER": "네이버 실적",  # 76. 영문은 기자 이메일(@naver.com)이 걸리고, "네이버"만으로는 쇼핑·검색 언급이 많다
+    "SK": '"SK(주)"',  # 75. "SK 주가 실적"은 다른 SK 계열 기사뿐이었다
+    "GS": '"GS" 지주사 -GS건설 -GS리테일 -GS칼텍스',  # 96. "GS그룹"은 GS건설 기사가 대부분이었다
+    "LG": '"LG" 지주사 -LG전자 -LG화학 -LG에너지솔루션 -LG유플러스',  # "LG그룹"은 LG CNS 기사가 대부분이었다
+}
 
 
 def news_search_query(company_name: str) -> str:
-    """네이버 뉴스 검색어. 이름 충돌 종목이면 재무 키워드를 붙이고, 문맥이 필요한 모호한 이름이면 정확한 구문에 "주가"를 붙이고,
-    아니면 회사명 단독이다. NAVER는 영문으로 찾으면 기자 이메일(@naver.com)이 걸려 한글로 찾는다."""
-    if company_name in NAME_COLLISION_COMPANIES:
-        return f"{company_name} {NAME_COLLISION_ANCHOR}"
+    """네이버 뉴스 검색어. NEWS_QUERY_NAMES에 있으면 그 값, 이름 충돌 종목이면 재무 키워드를 붙이고, 문맥이 필요한 모호한 이름이면
+    정확한 구문에 "주가"를 붙이고, 아니면 회사명 단독이다."""
     if company_name in NEWS_QUERY_NAMES:
         return NEWS_QUERY_NAMES[company_name]
+    if company_name in NAME_COLLISION_COMPANIES:
+        return f"{company_name} {NAME_COLLISION_ANCHOR}"
     if needs_context(company_name):
         return f'"{company_name}" {AMBIGUOUS_NAME_ANCHOR}'
     return company_name
@@ -251,6 +258,16 @@ def _safe_error(e: Exception) -> str:
     return _API_KEY_RE.sub(r"\1***", f"{type(e).__name__}: {e}")
 
 
+naver_requests = 0  # 이 프로세스에서 네이버 뉴스 API에 보낸 요청 수(재시도 포함)
+
+
+class _CountingSession:
+    def get(self, *args, **kwargs):
+        global naver_requests
+        naver_requests += 1
+        return requests.get(*args, **kwargs)
+
+
 def fetch_naver_news(company_name: str, display: int = 10, sort: str = "date") -> list[dict]:
     client_id = os.environ["NAVER_CLIENT_ID"]
     client_secret = os.environ["NAVER_CLIENT_SECRET"]
@@ -262,6 +279,7 @@ def fetch_naver_news(company_name: str, display: int = 10, sort: str = "date") -
             "X-Naver-Client-Id": client_id,
             "X-Naver-Client-Secret": client_secret,
         },
+        session=_CountingSession(),
         label="Naver news",
     )
     return resp.json().get("items", [])
@@ -577,6 +595,16 @@ def _etf_news_candidates(etf_name: str, display: int) -> tuple[list[dict], int]:
     return related[: display * NEWS_OVERFETCH], len(merged) - len(related)
 
 
+def _prefer_relevant(items: list[dict], display: int, company: Company, listed_names: list[str]) -> list[dict]:
+    """그 종목 기사(is_relevant_news)를 먼저, 모자라면 나머지로 채워 display건을 남긴다. 각 묶음 안의 순서(최신순)는 그대로다.
+    앞에서부터 자르면 다른 회사 기사가 많은 이름(SK, LG)은 받아 온 관련 기사가 잘려 나간다(2026-11-02 실제 응답)."""
+    def relevant(it: dict) -> bool:
+        return is_relevant_news(company.name, company.ticker, company.asset_type, _clean_text(it["title"]),
+                                _clean_text(it["description"]), listed_names)
+
+    return sorted(items, key=lambda it: not relevant(it))[:display]
+
+
 # 네이버 뉴스 검색 API로 뉴스 수집 후 DB 저장 함수
 def fetch_and_save_news(
     company_name: str, display: int = 10, dry_run: bool = False, ticker: str | None = None, etf: bool = False
@@ -602,15 +630,9 @@ def fetch_and_save_news(
         print(f"오류 발생: {msg}")
         return CollectResult(ok=False, error=msg)
 
-    # 비금융 도메인 기사를 제외하고, 요청한 건수만큼만 남긴다.
-    items, skipped = [], 0
-    for it in candidates:
-        if len(items) >= display:
-            break
-        if _is_non_financial_item(it):
-            skipped += 1
-        else:
-            items.append(it)
+    # 비금융 도메인 기사를 제외한다. 요청한 건수로 자르는 일은 관련성을 본 뒤에 한다(아래 _prefer_relevant).
+    items = [it for it in candidates if not _is_non_financial_item(it)]
+    skipped = len(candidates) - len(items)
     if etf:
         print(f"ETF 이름이 나오지 않아 제외한 기사 {unrelated}건")
 
@@ -636,6 +658,7 @@ def fetch_and_save_news(
                 company = get_or_create_company(db, ticker=resolved, name=company_name)
 
         listed_names = [n for (n,) in db.query(Company.name)]
+        items = _prefer_relevant(items, display, company, listed_names)
         to_insert = []
         for item in items:
             url = item.get("link") or item.get("originallink")

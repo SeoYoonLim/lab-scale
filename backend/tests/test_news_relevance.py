@@ -135,10 +135,12 @@ def test_labeled_sample_has_only_the_known_misses():
 @pytest.mark.parametrize("name, query", [
     ("태성", '"태성" 주가'),
     ("동서", '"동서" 주가'),
-    ("GS", '"GS" 주가'),
+    ("GS", '"GS" 지주사 -GS건설 -GS리테일 -GS칼텍스'),
     ("DL", '"DL" 주가'),
-    ("NAVER", "네이버"),
-    ("SK", "SK 주가 실적"),   # 기존 이름 충돌 종목은 그대로
+    ("NAVER", "네이버 실적"),
+    ("SK", '"SK(주)"'),
+    ("LG", '"LG" 지주사 -LG전자 -LG화학 -LG에너지솔루션 -LG유플러스'),
+    ("한화", "한화 주가 실적"),   # 기존 이름 충돌 종목은 그대로
     ("삼성전자", "삼성전자"),
     ("카카오", "카카오"),
 ])
@@ -199,4 +201,10 @@ def test_new_news_is_marked_when_saved(monkeypatch):
     monkeypatch.setattr(collectors, "fetch_naver_news", fake_fetch)
     result = collectors.fetch_and_save_news("태성", display=2, dry_run=True)
     assert asked == ['"태성" 주가']
-    assert result.ok and [r.is_relevant for r in result.records] == [False, True]
+    assert result.ok and [r.is_relevant for r in result.records] == [True, False]  # 관련 기사를 먼저 남긴다
+
+
+def test_lg_cns_is_not_lg():
+    """LG CNS는 상장 이름(LG씨엔에스)과 표기가 달라 긴 이름 제거로 지워지지 않는다(2026-11-02 실제 응답)."""
+    assert is_relevant_news("LG", "003550", "stock", "LG CNS 인도네시아 데이터센터 완공", "AI 인프라 수주", ["LG", "LG씨엔에스"]) is False
+    assert is_relevant_news("LG", "003550", "stock", "LG 지주사 주가 강세", "구광모 회장", ["LG", "LG씨엔에스"]) is True

@@ -258,3 +258,21 @@ class TestDefaultDays:
         from scripts.refresh_data import resolve_days
 
         assert resolve_days(5, TODAY) == (5, "--days 지정")
+
+
+# ---------- 뉴스만 수집 (2026-11-02) ----------
+
+
+def test_news_step_passes_news_only_and_state(monkeypatch):
+    calls = []
+    monkeypatch.setattr(rd, "_call_script", lambda main, argv, timeout: calls.append(argv) or "")
+    step = next(s for s in rd.build_steps(10, 1, news_only=True, news_state="st.json") if s.key == "news")
+    step.run()
+    assert calls == [["--universe", u, "--news-only", "--state", "st.json"] for u in ("universe_top300.json", "universe_etf50.json")]
+
+
+def test_news_step_keeps_disclosures_by_default(monkeypatch):
+    calls = []
+    monkeypatch.setattr(rd, "_call_script", lambda main, argv, timeout: calls.append(argv) or "")
+    next(s for s in rd.build_steps(10, 1) if s.key == "news").run()
+    assert calls[0] == ["--universe", "universe_top300.json"]
