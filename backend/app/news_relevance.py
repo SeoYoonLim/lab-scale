@@ -123,6 +123,16 @@ def longer_names(company_name: str, listed_names=()) -> list[str]:
     return sorted(others, key=len, reverse=True)
 
 
+def title_mentions(company_name: str, title: str | None) -> bool:
+    """제목에 이 회사가 독립된 이름으로 있는지(정렬용, DB 없음). 뒤에 조사·문맥어 말고 다른 글자가 붙으면 다른 이름으로 본다("카카오뱅크", "SK하이닉스")."""
+    text = title or ""
+    for other in longer_names(company_name):
+        text = text.replace(other, " ")
+    for phrase in _EXCLUDED_PHRASES.get(company_name, ()):
+        text = text.replace(phrase, " ")
+    return _mentions_word(text, name_forms(company_name), True)
+
+
 def is_relevant_news(company_name: str, ticker: str | None, asset_type: str | None, title: str | None,
                      content: str | None, listed_names=()) -> bool:
     """이 기사가 그 종목 기사인지. listed_names(상장 종목 이름 전체)에서 이 이름을 포함한 더 긴 이름("SK하이닉스")은 먼저 지운다.

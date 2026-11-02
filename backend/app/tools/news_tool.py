@@ -2,10 +2,11 @@ from app.db.session import SessionLocal
 from app.etf import mentions_etf_name
 from app.korean import josa
 from app.models import Company, News
+from app.news_relevance import title_mentions
 from app.tools.company_resolver import not_found_response, resolve_company, to_int
 
 
-# ETF 뉴스는 이름이 직접 나오는 기사만 남기므로 limit의 몇 배를 읽어서 거른다.
+# ETF 뉴스는 이름이 직접 나오는 기사만 남기므로 limit의 몇 배를 읽어서 거른다. 주식은 이 범위 안에서 제목에 이름이 있는 기사를 먼저 보여 준다.
 ETF_NEWS_OVERFETCH = 4
 
 
@@ -25,8 +26,7 @@ def news_tool(company_name: str, limit: int = 5) -> dict:
             db.query(News)
             .filter(News.company_id == company.id, News.is_relevant.isnot(False))
             .order_by(News.published_at.desc())
-            # ETF는 이름이 나오지 않는 기사를 아래에서 걸러내므로 여유 있게 읽는다
-            .limit(limit * ETF_NEWS_OVERFETCH if is_etf else limit)
+            .limit(limit * ETF_NEWS_OVERFETCH)
             .all()
         )
 
@@ -47,6 +47,9 @@ def news_tool(company_name: str, limit: int = 5) -> dict:
                     "message": f"{josa(company.name, '이/가')} 직접 언급된 저장 뉴스가 없습니다.",
                     **corrected,
                 }
+
+        if not is_etf:
+            rows = sorted(rows, key=lambda r: not title_mentions(company.name, r.title))[:limit]
 
         if not rows:
             hidden = db.query(News.id).filter(News.company_id == company.id).first() is not None

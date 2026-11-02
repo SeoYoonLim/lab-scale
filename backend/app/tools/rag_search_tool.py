@@ -9,6 +9,7 @@ from app.db.session import SessionLocal
 from app.embeddings import EMBEDDING_MODEL
 from app.llm_settings import embed_options
 from app.models import Company, Disclosure, News
+from app.news_relevance import title_mentions
 from app.tools.company_resolver import not_found_response, resolve_company, to_int
 
 
@@ -128,6 +129,9 @@ def rag_search_tool(query: str, company_name: str | None = None, limit: int = 5)
 
         # news/disclosure를 각각 top-k로 뽑은 뒤 합쳤으니, 최종 유사도 기준으로 다시 정렬해서 자른다.
         results.sort(key=lambda r: r["score"], reverse=True)
+        if company is not None and company.asset_type != "etf":
+            # 뉴스 도구와 같은 기준: 제목에 이름이 없는 뉴스는 뒤로 보낸다(공시는 그 회사 문서다)
+            results.sort(key=lambda r: r["type"] == "news" and not title_mentions(company.name, r["title"]))
         results = results[:limit]
 
         response_company = company.name if company is not None else None

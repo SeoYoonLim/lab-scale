@@ -27,6 +27,7 @@ from app.data_status import is_stale
 from app.disclaimer import DISCLAIMER
 from app.etf import leverage_kind
 from app.models.virtual_account import INITIAL_BALANCE
+from app.news_relevance import title_mentions
 
 KST = ZoneInfo("Asia/Seoul")
 
@@ -201,11 +202,13 @@ def _title_key(title: str) -> str:
     return re.sub(r"[\W_]+", "", title or "").casefold()
 
 
-def select_news(rows: list[NewsRow], limit: int, now: datetime) -> list[dict]:
-    """최근 7일(now 기준) 뉴스를 최신순으로 limit건. 같은 기사(제목이 같거나 URL이 같음)는 가장 최신 하나만 남긴다."""
+def select_news(rows: list[NewsRow], limit: int, now: datetime, company_name: str | None = None) -> list[dict]:
+    """최근 7일(now 기준) 뉴스를 최신순으로 limit건. company_name을 주면 제목에 그 이름이 있는 기사를 먼저 고른다. 같은 기사(제목이 같거나 URL이 같음)는 가장 최신 하나만 남긴다."""
     cutoff = _aware(now) - timedelta(days=RECENT_DAYS)
     recent = [r for r in rows if r.published_at is not None and _aware(r.published_at) >= cutoff]
     recent.sort(key=lambda r: _aware(r.published_at), reverse=True)
+    if company_name:
+        recent.sort(key=lambda r: not title_mentions(company_name, r.title))
     seen: set[str] = set()
     out: list[dict] = []
     for r in recent:
@@ -407,7 +410,7 @@ def _item(inst: Instrument, scope: str, inputs: BriefingInputs, news_limit: int,
           weight_pct: float | None) -> tuple[dict, dict]:
     """(응답 항목, price_stats). 종목 하나의 데이터가 비어 있어도 이 종목 항목만 비고 다른 종목에는 영향이 없다."""
     st = price_stats(inputs.bars.get(inst.ticker, []))
-    news = select_news(inputs.news.get(inst.ticker, []), news_limit, now)
+    news = select_news(inputs.news.get(inst.ticker, []), news_limit, now, None if inst.asset_type == "etf" else inst.name)
     disc_count, disc_items = select_disclosures(inputs.disclosures.get(inst.ticker, []), now)
     kind = leverage_kind(inst.name) if inst.asset_type == "etf" else None
     item = {
