@@ -241,3 +241,8 @@ def test_switch_decides_whether_answer_uses_evidence_path(monkeypatch, value, re
     with pytest.raises(_Stop):
         agent._answer("한미반도체 왜 떨어졌어?", "m")
     assert seen[0] == ("evidence" if reaches_evidence else "build")
+
+
+def test_default_is_off_until_preconditions_are_met():
+    """2026-11-02 사전 조건 (a)(e) 미달로 기본은 끔이다. 다시 켜려면 새 평가셋으로 조건을 재검증한다."""
+    assert E.SWITCH_DEFAULT is False

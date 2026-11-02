@@ -22,7 +22,7 @@ AUTO_CITE_OVERLAP = 0.75
 AUTO_CITE_MIN_WORDS = 4
 SNIPPET_CHARS = 220
 
-SWITCH_DEFAULT = True  # EXPLAIN_EVIDENCE_FIRST가 없을 때
+SWITCH_DEFAULT = False  # EXPLAIN_EVIDENCE_FIRST가 없을 때. 2026-11-02 사전 조건 재검증 미달로 끔(evals/reports/evidence_recollect_20261102.md)
 
 
 def enabled() -> bool:
