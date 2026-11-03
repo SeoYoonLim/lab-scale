@@ -10,16 +10,19 @@ DATASET = Path(__file__).resolve().parents[1] / "evals" / "dataset.jsonl"
 CATEGORY_MODE = {"entity": "offline", "period": "offline", "routing_gate": "offline",
                  "tool_selection": "live", "grounding": "live", "refusal": "live", "etf_safety": "live",
                  "freshness": "live", "stability": "live", "briefing": "live", "attachment": "live",
-                 "period_history": "live", "narrative": "live", "news_relevance": "live", "safety": "live"}
+                 "period_history": "live", "narrative": "live", "news_relevance": "live", "safety": "live",
+                 "forecast": "live", "forecast_followup": "live", "glossary": "live"}
 CATEGORY_SIZE = {"entity": 35, "period": 14, "routing_gate": 10, "tool_selection": 26, "grounding": 35,
-                 "refusal": 20, "etf_safety": 20, "freshness": 4, "stability": 12, "briefing": 6, "attachment": 8,
-                 "period_history": 68, "narrative": 100, "news_relevance": 12, "safety": 10}
-# batch 10·11·13은 전부 holdout, batch 12는 전부 dev다. 카테고리 비율 계산에서 뺀다.
-ALL_HOLDOUT_BATCHES = (10, 11, 13)
-ALL_DEV_BATCH = 12
+                 "refusal": 21, "etf_safety": 20, "freshness": 4, "stability": 12, "briefing": 6, "attachment": 8,
+                 "period_history": 70, "narrative": 100, "news_relevance": 12, "safety": 14,
+                 "forecast": 16, "forecast_followup": 11, "glossary": 8}
+# batch 10·11·13·14는 전부 holdout, batch 12·15는 전부 dev다. 카테고리 비율 계산에서 뺀다.
+ALL_HOLDOUT_BATCHES = (10, 11, 13, 14)
+ALL_DEV_BATCHES = (12, 15)
 EXPECT_KEYS = {"companies", "must_not_companies", "tools_all", "tools_forbidden", "period_days", "must_refuse",
                "must_contain", "must_not_contain", "gates", "ref_date", "start", "end", "must_partial",
-               "must_state_data_date", "must_answer", "must_briefing", "check_attachment", "etf_holdings", "number_scored"}
+               "must_state_data_date", "must_answer", "must_briefing", "check_attachment", "etf_holdings", "number_scored",
+               "must_forecast", "must_followup", "period"}
 TOOLS = {"stock_tool", "news_tool", "disclosure_tool", "rag_search_tool", "market_tool", "fx_tool",
          "discovery_tool", "event_reaction_tool", "*"}
 
@@ -33,10 +36,12 @@ def rows():
 def test_required_fields(rows):
     for r in rows:
         assert {"id", "split", "category", "mode", "question", "expect"} <= r.keys(), r.get("id")
+        assert set(r) <= {"id", "split", "category", "mode", "batch", "question", "expect", "turns"}, r["id"]
+        assert all(isinstance(t, str) and t.strip() for t in r.get("turns", [])), r["id"]
         assert r["split"] in ("dev", "holdout")
         assert r["mode"] in ("offline", "live")
         assert r["question"].strip()
-        assert r.get("batch", 1) in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13)
+        assert r.get("batch", 1) in range(1, 16)
         assert isinstance(r["expect"], dict) and r["expect"], r["id"]
         assert set(r["expect"]) <= EXPECT_KEYS, r["id"]
 
@@ -50,13 +55,14 @@ def test_category_mode_and_size(rows):
     assert Counter(r["category"] for r in rows) == CATEGORY_SIZE
     for r in rows:
         assert r["mode"] == CATEGORY_MODE[r["category"]], r["id"]
-    assert Counter(r["mode"] for r in rows) == {"offline": 59, "live": 321}
-    assert Counter(r.get("batch", 1) for r in rows) == {1: 80, 2: 30, 3: 24, 4: 24, 5: 6, 6: 22, 7: 20, 8: 40, 9: 12, 10: 40, 11: 40, 12: 12, 13: 30}
+    assert Counter(r["mode"] for r in rows) == {"offline": 59, "live": 363}
+    assert Counter(r.get("batch", 1) for r in rows) == {1: 80, 2: 30, 3: 24, 4: 24, 5: 6, 6: 22, 7: 20, 8: 40, 9: 12, 10: 40, 11: 40,
+                                                        12: 12, 13: 30, 14: 30, 15: 12}
 
 
 def test_split_is_60_40_per_category(rows):
     for cat in CATEGORY_SIZE:
-        items = [r for r in rows if r["category"] == cat and r.get("batch") not in (*ALL_HOLDOUT_BATCHES, ALL_DEV_BATCH)]
+        items = [r for r in rows if r["category"] == cat and r.get("batch") not in (*ALL_HOLDOUT_BATCHES, *ALL_DEV_BATCHES)]
         if items:
             assert sum(r["split"] == "holdout" for r in items) == round(len(items) * 0.4), cat
 
@@ -64,16 +70,22 @@ def test_split_is_60_40_per_category(rows):
 @pytest.mark.parametrize("number", ALL_HOLDOUT_BATCHES)
 def test_all_holdout_batch_has_new_questions(rows, number):
     batch = [r for r in rows if r.get("batch") == number]
-    size = 30 if number == 13 else 40
+    size = 30 if number in (13, 14) else 40
     assert len(batch) == size and all(r["split"] == "holdout" for r in batch)
-    assert sum(r["category"] == "narrative" for r in batch) >= 12
+    if number == 14:  # 전망 10, 2~3턴 후속 8, 용어 회귀 6, 기타 회귀 6
+        counts = Counter(r["category"] for r in batch)
+        assert (counts["forecast"], counts["forecast_followup"], counts["glossary"]) == (10, 8, 6)
+        assert all(1 <= len(r["turns"]) <= 2 for r in batch if r["category"] == "forecast_followup")
+    else:
+        assert sum(r["category"] == "narrative" for r in batch) >= 12
     others = {r["question"] for r in rows if r.get("batch") != number}
     assert not {r["question"] for r in batch} & others
     assert len({r["question"] for r in batch}) == size
 
 
-def test_batch_12_is_dev_only(rows):
-    batch = [r for r in rows if r.get("batch") == ALL_DEV_BATCH]
+@pytest.mark.parametrize("number", ALL_DEV_BATCHES)
+def test_dev_only_batches(rows, number):
+    batch = [r for r in rows if r.get("batch") == number]
     assert 10 <= len(batch) <= 15 and all(r["split"] == "dev" for r in batch)
 
 

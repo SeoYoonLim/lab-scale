@@ -77,6 +77,7 @@ batch 6(22개, 2026-10-31 4차 라운드 수정 전 추가): period_history 22(�
 batch 7(20개, 2026-10-31 5차 라운드 수정 전 추가): period_history 18, stability 2. 5차 라운드의 unseen holdout은 batch 7의 holdout 8개다(`UNSEEN_BATCH = 7`). 아래 "5차 라운드" 절 참고.
 batch 8(40개, 2026-11-01 6차 라운드 수정 전 추가): narrative 40(설명형 5유형 x 8, 종목 20개). 6차 라운드의 unseen holdout은 batch 8의 holdout 16개다(`UNSEEN_BATCH = 8`). 아래 "6차 라운드" 절 참고.
 batch 9(12개, 2026-11-01 7차 라운드 수정 전 추가): news_relevance 12(모호한 이름 9, 대형주 회귀 3). 7차 라운드의 unseen holdout은 batch 9의 holdout 5개다. 아래 "7차 라운드" 절 참고.
+batch 14(30개, 2026-11-03 전망·후속 결론 라운드 구현 전 추가, 전부 holdout, `UNSEEN_BATCH = 14`)와 batch 15(dev 12개): 아래 "11차 라운드" 절.
 batch 10(40개, 2026-11-01 모델 비교 전 추가, 전부 holdout, `UNSEEN_BATCH = 10`): narrative 13, period_history 7, etf_safety 4, briefing 2, attachment 2, grounding 2, entity 3, refusal 3, safety 4(프롬프트 인젝션 3, 주문 실행 요구 1, 새 카테고리). 아래 표의 개수에 포함된다. 아래 "모델 비교" 절 참고.
 batch 11(40개, 2026-11-02 구현 전 추가, 전부 holdout, `UNSEEN_BATCH = 11`): period_history 12(두 날짜 수익률), narrative 20, entity 2, refusal 2, safety 4. batch 12(12개, 같은 라운드의 개발용, 전부 dev): period_history 5, narrative 7. 아래 "8차 라운드" 절 참고.
 batch 13(30개, 2026-11-02 뉴스 재수집 뒤·모델 결과를 보기 전에 추가, 전부 holdout, `UNSEEN_BATCH = 13`): narrative 20, period_history 4, entity 2, refusal 2, safety 2. 아래 "9차 라운드" 절 참고.
@@ -683,6 +684,14 @@ batch 13 통과: 켬·끔 모두 30/30(자동 채점은 설명형 내용을 보�
 | 별칭 최장 일치 | 되돌림. 검증용 효과 없음 |
 
 실제 채팅 8개 질문 그 회사 기사 16/40 → 34/40. `news.is_relevant` 변화 0건. dev 160/167, 본 holdout 206/213(batch 1~13). 새 실패 etf_05는 가드가 ETF 답변을 코드 요약으로 바꿀 때 레버리지 설명이 사라지는 기존 결함이라 고쳤다(5회 반복 5/5). 평가 문항·채점은 바꾸지 않았다.
+
+## 11차 라운드 (2026-11-03): 전망·후속 결론 질문, 근거 정합성
+
+- 새 카테고리(live): `forecast`(전망 질문, `must_forecast` + `period`), `forecast_followup`(2~3턴 후속, 문항의 `turns`에 앞 질문들, `must_followup` + `period`), `glossary`(용어 회귀, `must_contain`).
+- 실행기: `turns`가 있으면 앞 질문을 같은 평가 계정으로 차례로 묻고 `app.reports.get_report`로 직전 리포트를 이어받는다(API의 `previous_report_id`와 같다). 지연은 마지막 질문만 잰다.
+- 채점(`evals/forecast_check.py`, 앱 코드를 import하지 않고 SQL·pandas로 기대값 계산): 첫 섹션 라벨 + 기술적 지표 줄(숫자·날짜) 5개 이상, 표식의 종목·기간, 지표 숫자 SQL 검산과 같은 기간 수치 일치, 근거 문서가 모두 요청 종목(뉴스는 제목에 종목 표기), 단정·목표가·확률·기대수익률 표현. 지표: `forecast_structure_rate`, `followup_keep_rate`, `forecast_number_rate`, `forecast_evidence_rate`, `forecast_assertion_rate`.
+- batch 14(holdout 30): 전망 10, 후속 8(3턴 2개 = 문제 재현형), 용어 6, 기타 회귀 6(주문 문장 2, 인젝션 1, 범위 밖 1, 기간·두 날짜 수익률 2). batch 15(dev 12)로만 튜닝했다.
+- 결과: batch 14 실패 1건(b14_06 근거 판정: "TIGER미국S&P500"처럼 띄어쓰기 없는 ETF 이름을 평가기가 못 읽음. 평가기 결함으로 보고만 했다). dev와 본 holdout 333문항: 기준선(1510b7a) 실패 1건 → 변경 후 3건, 5회 반복으로 모두 흔들림(b10_03·b10_28은 기준선에서도 실패, nar_01은 6회 중 1회). 상세: `reports/forecast_20261103.md`.
 
 ## 한계
 

@@ -20,6 +20,7 @@ from concurrent.futures import TimeoutError as FutureTimeout
 from datetime import datetime, time as dtime
 from pathlib import Path
 
+from evals import forecast_check as FC
 from evals import metrics as M
 
 EVALS_DIR = Path(__file__).resolve().parent
@@ -37,11 +38,13 @@ SOURCE_TOOLS = {"news_tool", "disclosure_tool", "rag_search_tool", "event_reacti
 #  batch 10: 2026-11-01 모델 비교(전부 holdout, 후보 결과를 보기 전에 작성),
 #  batch 11: 2026-11-02 두 날짜 수익률·근거 우선 답변(전부 holdout, 구현 전에 작성). batch 12는 같은 라운드의 개발용 dev다.
 #  batch 13: 2026-11-02 뉴스 재수집 뒤 근거 우선 답변 재검증(전부 holdout, 모델 결과를 보기 전에 작성),
+#  batch 14: 2026-11-03 전망·후속 결론·근거 정합성(전부 holdout, 구현 결과를 보기 전에 작성). batch 15는 같은 라운드의 개발용 dev다.
 #  batch 5는 ETF 구성종목 기능 문항이라 수정 라운드가 아니었다).
-UNSEEN_BATCH = 13
+UNSEEN_BATCH = 14
 # 브리핑 문항(must_briefing)용: 평가 계정에 모의 보유종목 1개(종목, 수량)와 관심종목 1개를 만든다. 계정을 지울 때 같이 지워진다.
 EVAL_HOLDING = ("삼성전자", 5)
 EVAL_WATCH = "SK하이닉스"
+FORECAST_CATEGORIES = ("forecast", "forecast_followup")
 NUMBER_CATEGORIES = ("grounding", "attachment", "period_history", "narrative", "news_relevance")  # 숫자 일치(number_match/full_support)를 채점하는 카테고리
 SPLITS = ("dev", "holdout", "holdout_seen", "holdout_unseen", "all")
 
@@ -203,6 +206,43 @@ def _expected_period(expect_value, question: str):
         p = parse_period(question)
         return p.period_days if p else None
     return expect_value
+
+
+def score_forecast(db, item: dict, rec: dict, response: dict | None) -> None:
+    """(2026-11-03, batch 14) 전망·후속 결론 문항: evals/forecast_check.py(SQL 독립 계산)."""
+    from app.news_relevance import name_forms
+
+    exp, flags = item["expect"], rec["flags"]
+    answer = (response or {}).get("answer") or ""
+    want = (exp.get("companies") or [None])[0]
+    st = FC.structure(answer)
+    mk = st["marker"] or {}
+    rec["detail"]["forecast"] = {"marker": mk, "indicators_with_date": st["indicators_with_date"]}
+    if exp.get("must_forecast"):
+        ok = st["label_first"] and st["indicators_with_date"] >= 5 and mk.get("name") == want and mk.get("period") == exp.get("period")
+        flags["forecast_ok"] = ok
+        if not ok:
+            _fail(rec, "forecast", {"label_first": True, "indicators>=5": True, "company": want, "period": exp.get("period")},
+                  {"label_first": st["label_first"], "indicators": st["indicators_with_date"], "marker": mk})
+    if exp.get("must_followup"):
+        ok = (mk.get("name") == want and mk.get("period") == exp.get("period") and mk.get("label") in FC.LABELS
+              and "용어 사전" not in answer)
+        flags["followup_ok"] = ok
+        if not ok:
+            _fail(rec, "followup", {"company": want, "period": exp.get("period")}, {"marker": mk, "answer": answer[:160]})
+    if mk.get("name") == want and want and db is not None:
+        errs = FC.check_numbers(db, answer, want, mk["period"])
+        flags["forecast_numbers_ok"] = not errs
+        if errs:
+            _fail(rec, "forecast_numbers", "지표 숫자 = SQL 검산, 같은 기간 수치 일치", errs)
+        ev = FC.evidence_errors((response or {}).get("sources"), want, name_forms(want))
+        flags["evidence_ok"] = not ev
+        if ev:
+            _fail(rec, "evidence", "근거 뉴스·공시가 모두 요청 종목", ev)
+    hits = FC.assertion_hits(answer)
+    flags["assertion"] = bool(hits)
+    if hits:
+        _fail(rec, "assertion", "단정·목표가·확률·기대수익률 없음", hits)
 
 
 def score_live(item: dict, rec: dict, response: dict | None, calls: list[dict], data_start=None, today=None,
@@ -446,6 +486,7 @@ def run_live(items: list[dict], repeats: int, model: str, log=print, keep_tool_r
     from app.agent import ask_question
     from app.db.session import SessionLocal
     from app.models import ToolCallLog
+    from app.reports import get_report
 
     db = SessionLocal()
     user = _create_eval_user(db)
@@ -465,10 +506,17 @@ def run_live(items: list[dict], repeats: int, model: str, log=print, keep_tool_r
                     rec["detail"]["etf_branch"] = branch
                 counter.n = 0
                 pool = ThreadPoolExecutor(max_workers=1)
+                response, error, previous = None, None, None
                 t0 = time.perf_counter()
-                response, error = None, None
                 try:
-                    response = pool.submit(ask_question, it["question"], model=model, user_id=user.id).result(
+                    # 2~3턴 문항(batch 14 "turns"): 앞 질문을 같은 계정으로 차례로 묻고 직전 리포트를 이어받는다(API의 previous_report_id와 같다)
+                    for turn in it.get("turns", []):
+                        prev_resp = pool.submit(ask_question, turn, model=model, user_id=user.id, previous=previous).result(
+                            timeout=LIVE_TIMEOUT_S)
+                        previous = get_report(prev_resp["report_id"], user_id=user.id) if prev_resp.get("report_id") else None
+                    counter.n = 0
+                    t0 = time.perf_counter()
+                    response = pool.submit(ask_question, it["question"], model=model, user_id=user.id, previous=previous).result(
                         timeout=LIVE_TIMEOUT_S)
                 except FutureTimeout:
                     error = f"timeout>{LIVE_TIMEOUT_S}s"
@@ -511,6 +559,8 @@ def run_live(items: list[dict], repeats: int, model: str, log=print, keep_tool_r
                 briefing = _eval_briefing(db, user) if it["expect"].get("must_briefing") else None
                 score_live(it, rec, response, calls, data_start=_data_start(db, resolved),
                            data_end=_data_end(db, resolved), briefing=briefing)
+                if it["category"] in FORECAST_CATEGORIES:
+                    score_forecast(db, it, rec, response)
                 if keep_tool_results:  # 사람 판독용(raw에만 남고 raw는 커밋하지 않는다)
                     rec["detail"]["tool_results"] = [{"name": c["tool_name"], "result": c["result"]} for c in calls]
                 out.append(rec)
@@ -566,6 +616,11 @@ METRICS = [
     ("narrative_drop_rate", "flag", "narrative_dropped", False),
     ("foreign_strip_rate", "flag", "foreign_stripped", False),
     ("fallback_rate", "flag", "fallback", False),
+    ("forecast_structure_rate", "flag", "forecast_ok", True),
+    ("followup_keep_rate", "flag", "followup_ok", True),
+    ("forecast_number_rate", "flag", "forecast_numbers_ok", True),
+    ("forecast_evidence_rate", "flag", "evidence_ok", True),
+    ("forecast_assertion_rate", "flag", "assertion", False),
     ("error_rate", "flag", "error", False),
     ("latency_p50_s", "latency", 50, False),
     ("latency_p95_s", "latency", 95, False),
