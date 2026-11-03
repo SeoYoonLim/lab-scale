@@ -9,6 +9,7 @@ from app.models.market_index import MarketIndex
 from app.models.news import News
 from app.models.oauth_identity import OAuthIdentity
 from app.models.portfolio_diagnosis import PortfolioDiagnosis
+from app.models.quarterly_earnings import QuarterlyEarnings
 from app.models.research_report import ResearchReport
 from app.models.stock_price import StockPrice
 from app.models.tool_call_log import ToolCallLog
@@ -27,6 +28,7 @@ __all__ = [
     "EtfHolding",
     "MarketIndex",
     "ExchangeRate",
+    "QuarterlyEarnings",
     "DataRefreshLog",
     "ResearchReport",
     "PortfolioDiagnosis",

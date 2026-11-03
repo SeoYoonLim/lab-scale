@@ -15,6 +15,11 @@ data_refresh_log에 한 행씩 기록한다. GET /api/status의 last_refresh가 
   python -m scripts.refresh_data --skip news,embed,content  # 일부 단계 제외
   python -m scripts.refresh_data --days 30                  # 주가/지수/환율 조회 기간(달력 일), 기본 10
   python -m scripts.refresh_data --only news --news-only --news-state backups/news_state.json  # 뉴스만, 끊기면 이어서
+  python -m scripts.refresh_data --only fx --earnings        # 실적(DART 주요 계정)만 함께(기본 단계에는 없다)
+
+실적(--earnings, 2026-11-03): 기본 단계가 아니다. 분기마다 한 번이면 충분하고 종목당 DART 요청 12회(약 3,600회)라 따로 켠다.
+app.earnings.collect를 마지막에 실행하고 요약(요청·저장·없음·오류 수)을 출력한다. data_refresh_log에는 기록하지 않는다
+(GET /api/status의 last_refresh 단계 구성이 그대로이도록).
 """
 
 import argparse
@@ -428,6 +433,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="실제 호출 없이 계획만 출력")
     ap.add_argument("--news-only", action="store_true", help="news 단계에서 공시를 수집하지 않는다")
     ap.add_argument("--news-state", default=None, help="news 단계의 이어하기 파일(collect_universe --state)")
+    ap.add_argument("--earnings", action="store_true", help="마지막에 분기 실적(DART 주요 계정)을 수집한다(기본 꺼짐)")
+    ap.add_argument("--earnings-limit", type=int, default=None, help="실적 수집 종목 수 제한(시험용)")
     args = ap.parse_args(argv)
 
     try:
@@ -447,6 +454,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     if args.dry_run:
         print_plan(selected, args.days, args.timeout_min)
+        if args.earnings:
+            print("  +. earnings 실행            app.earnings.collect (DART fnlttSinglAcnt, 종목당 최대 12회, 요청 간격 0.15초)")
         if is_market_hours(now):
             print(market_warning)
         return 0
@@ -461,7 +470,28 @@ def main(argv: list[str] | None = None) -> int:
     for r in results:
         if r.status == "failed":
             print(f"[실패] {r.step}: {r.error_type} {r.error_message}")
-    return exit_code(results)
+    code = exit_code(results)
+    if args.earnings:
+        code = max(code, run_earnings(args.earnings_limit))
+    return code
+
+
+def run_earnings(limit: int | None) -> int:
+    """분기 실적 수집(app.earnings.collect). 실패해도 다른 단계 결과는 그대로다. 오류가 있으면 1."""
+    from app import earnings
+    from app.db.session import SessionLocal
+
+    started = time.perf_counter()
+    db = SessionLocal()
+    try:
+        stats = earnings.collect(db, limit=limit, log=lambda m: print(mask_secrets(m), flush=True))
+    except Exception as e:  # noqa: BLE001 - 요약에 사유만 남긴다
+        print(f"[실패] earnings: {type(e).__name__} {mask_secrets(str(e))}")
+        return 1
+    finally:
+        db.close()
+    print(f"\n===== 실적 수집 =====\n{stats} ({time.perf_counter() - started:.0f}s)")
+    return 1 if stats["errors"] or stats["stopped"] else 0
 
 
 if __name__ == "__main__":
