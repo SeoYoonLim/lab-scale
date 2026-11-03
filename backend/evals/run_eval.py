@@ -39,8 +39,9 @@ SOURCE_TOOLS = {"news_tool", "disclosure_tool", "rag_search_tool", "event_reacti
 #  batch 11: 2026-11-02 두 날짜 수익률·근거 우선 답변(전부 holdout, 구현 전에 작성). batch 12는 같은 라운드의 개발용 dev다.
 #  batch 13: 2026-11-02 뉴스 재수집 뒤 근거 우선 답변 재검증(전부 holdout, 모델 결과를 보기 전에 작성),
 #  batch 14: 2026-11-03 전망·후속 결론·근거 정합성(전부 holdout, 구현 결과를 보기 전에 작성). batch 15는 같은 라운드의 개발용 dev다.
+#  batch 16: 2026-11-03 신호 묶음·과거 검증·간접 뉴스·주문 문장·실적(전부 holdout, 구현 전에 작성). batch 17은 그 dev다.
 #  batch 5는 ETF 구성종목 기능 문항이라 수정 라운드가 아니었다).
-UNSEEN_BATCH = 14
+UNSEEN_BATCH = 16
 # 브리핑 문항(must_briefing)용: 평가 계정에 모의 보유종목 1개(종목, 수량)와 관심종목 1개를 만든다. 계정을 지울 때 같이 지워진다.
 EVAL_HOLDING = ("삼성전자", 5)
 EVAL_WATCH = "SK하이닉스"
@@ -239,6 +240,26 @@ def score_forecast(db, item: dict, rec: dict, response: dict | None) -> None:
         flags["evidence_ok"] = not ev
         if ev:
             _fail(rec, "evidence", "근거 뉴스·공시가 모두 요청 종목", ev)
+    if exp.get("must_forecast") or exp.get("must_followup"):
+        errs = FC.check_groups(answer)
+        flags["groups_ok"] = not errs
+        if errs:
+            _fail(rec, "groups", "묶음당 1표 판정과 개별 지표 표시", errs)
+    if exp.get("must_backtest_line"):
+        errs = FC.check_backtest_line(answer, exp.get("period"))
+        flags["backtest_line_ok"] = not errs
+        if errs:
+            _fail(rec, "backtest_line", "과거 검증 줄 = outlook_backtest.json", errs)
+    if exp.get("must_indirect"):
+        errs = FC.check_indirect(answer, exp["must_indirect"], want, name_forms(want))
+        flags["indirect_ok"] = not errs
+        if errs:
+            _fail(rec, "indirect", "간접 뉴스 섹션 분리, 직접 섹션 무관 기사 0", errs)
+    if exp.get("must_earnings") and db is not None:
+        errs = FC.check_earnings(db, answer, want)
+        flags["earnings_ok"] = not errs
+        if errs:
+            _fail(rec, "earnings", "실적 숫자 = SQL 검산", errs)
     hits = FC.assertion_hits(answer)
     flags["assertion"] = bool(hits)
     if hits:
@@ -621,6 +642,10 @@ METRICS = [
     ("forecast_number_rate", "flag", "forecast_numbers_ok", True),
     ("forecast_evidence_rate", "flag", "evidence_ok", True),
     ("forecast_assertion_rate", "flag", "assertion", False),
+    ("forecast_group_rate", "flag", "groups_ok", True),
+    ("backtest_line_rate", "flag", "backtest_line_ok", True),
+    ("indirect_section_rate", "flag", "indirect_ok", True),
+    ("earnings_number_rate", "flag", "earnings_ok", True),
     ("error_rate", "flag", "error", False),
     ("latency_p50_s", "latency", 50, False),
     ("latency_p95_s", "latency", 95, False),

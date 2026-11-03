@@ -14,15 +14,15 @@ CATEGORY_MODE = {"entity": "offline", "period": "offline", "routing_gate": "offl
                  "forecast": "live", "forecast_followup": "live", "glossary": "live"}
 CATEGORY_SIZE = {"entity": 35, "period": 14, "routing_gate": 10, "tool_selection": 26, "grounding": 35,
                  "refusal": 21, "etf_safety": 20, "freshness": 4, "stability": 12, "briefing": 6, "attachment": 8,
-                 "period_history": 70, "narrative": 100, "news_relevance": 12, "safety": 14,
-                 "forecast": 16, "forecast_followup": 11, "glossary": 8}
-# batch 10·11·13·14는 전부 holdout, batch 12·15는 전부 dev다. 카테고리 비율 계산에서 뺀다.
-ALL_HOLDOUT_BATCHES = (10, 11, 13, 14)
-ALL_DEV_BATCHES = (12, 15)
+                 "period_history": 71, "narrative": 100, "news_relevance": 12, "safety": 21,
+                 "forecast": 47, "forecast_followup": 12, "glossary": 10}
+# batch 10·11·13·14·16은 전부 holdout, batch 12·15·17은 전부 dev다. 카테고리 비율 계산에서 뺀다.
+ALL_HOLDOUT_BATCHES = (10, 11, 13, 14, 16)
+ALL_DEV_BATCHES = (12, 15, 17)
 EXPECT_KEYS = {"companies", "must_not_companies", "tools_all", "tools_forbidden", "period_days", "must_refuse",
                "must_contain", "must_not_contain", "gates", "ref_date", "start", "end", "must_partial",
                "must_state_data_date", "must_answer", "must_briefing", "check_attachment", "etf_holdings", "number_scored",
-               "must_forecast", "must_followup", "period"}
+               "must_forecast", "must_followup", "period", "must_backtest_line", "must_indirect", "must_earnings"}
 TOOLS = {"stock_tool", "news_tool", "disclosure_tool", "rag_search_tool", "market_tool", "fx_tool",
          "discovery_tool", "event_reaction_tool", "*"}
 
@@ -41,7 +41,7 @@ def test_required_fields(rows):
         assert r["split"] in ("dev", "holdout")
         assert r["mode"] in ("offline", "live")
         assert r["question"].strip()
-        assert r.get("batch", 1) in range(1, 16)
+        assert r.get("batch", 1) in range(1, 18)
         assert isinstance(r["expect"], dict) and r["expect"], r["id"]
         assert set(r["expect"]) <= EXPECT_KEYS, r["id"]
 
@@ -55,9 +55,9 @@ def test_category_mode_and_size(rows):
     assert Counter(r["category"] for r in rows) == CATEGORY_SIZE
     for r in rows:
         assert r["mode"] == CATEGORY_MODE[r["category"]], r["id"]
-    assert Counter(r["mode"] for r in rows) == {"offline": 59, "live": 363}
+    assert Counter(r["mode"] for r in rows) == {"offline": 59, "live": 405}
     assert Counter(r.get("batch", 1) for r in rows) == {1: 80, 2: 30, 3: 24, 4: 24, 5: 6, 6: 22, 7: 20, 8: 40, 9: 12, 10: 40, 11: 40,
-                                                        12: 12, 13: 30, 14: 30, 15: 12}
+                                                        12: 12, 13: 30, 14: 30, 15: 12, 16: 30, 17: 12}
 
 
 def test_split_is_60_40_per_category(rows):
@@ -70,12 +70,17 @@ def test_split_is_60_40_per_category(rows):
 @pytest.mark.parametrize("number", ALL_HOLDOUT_BATCHES)
 def test_all_holdout_batch_has_new_questions(rows, number):
     batch = [r for r in rows if r.get("batch") == number]
-    size = 30 if number in (13, 14) else 40
+    size = 30 if number in (13, 14, 16) else 40
     assert len(batch) == size and all(r["split"] == "holdout" for r in batch)
     if number == 14:  # 전망 10, 2~3턴 후속 8, 용어 회귀 6, 기타 회귀 6
         counts = Counter(r["category"] for r in batch)
         assert (counts["forecast"], counts["forecast_followup"], counts["glossary"]) == (10, 8, 6)
         assert all(1 <= len(r["turns"]) <= 2 for r in batch if r["category"] == "forecast_followup")
+    elif number == 16:  # 전망 10(과거 검증 줄), 이름 6, 간접 뉴스 4, 주문 4, 실적 3, 기타 회귀 3
+        e = [r["expect"] for r in batch]
+        assert sum(bool(x.get("must_backtest_line")) for x in e) == 10
+        assert sum(bool(x.get("must_indirect")) for x in e) == 4 and sum(bool(x.get("must_earnings")) for x in e) == 3
+        assert sum("채팅에서는 주문을 실행하지 않습니다" in x.get("must_contain", []) for x in e) == 4
     else:
         assert sum(r["category"] == "narrative" for r in batch) >= 12
     others = {r["question"] for r in rows if r.get("batch") != number}
