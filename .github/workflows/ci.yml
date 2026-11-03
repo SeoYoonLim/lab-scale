@@ -169,7 +169,9 @@ jobs:
       CI_FAIL_ON_SKIP: "1"
       # needs_collected_data 마커로 제외하는 통합 테스트 수의 상한. 마커를 더 붙여 테스트를 슬그머니 빼지 못하게 한다.
       # 늘려야 하면 이유와 함께 이 값과 README의 숫자를 같이 고친다.
-      MAX_EXCLUDED: "65"
+      # 2026-11-03 65 -> 71: 전망·후속 결론 경로 통합 테스트 6개(tests/test_outlook_devdb.py 5, test_evals_forecast_check.py 1)는
+      # 수집 시세·뉴스로 지표를 SQL 대조하고 근거 기사 종목을 확인해야 해서 시드만 있는 CI DB에서는 돌 수 없다.
+      MAX_EXCLUDED: "71"
     defaults:
       run:
         working-directory: backend
