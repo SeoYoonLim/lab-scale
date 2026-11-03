@@ -259,6 +259,7 @@ def test_news_tool_keeps_only_title_matches_within_the_window(monkeypatch):
 
     company = NS(id=1, name="카카오", asset_type="stock")
     monkeypatch.setattr(NT, "SessionLocal", lambda: Db())
+    monkeypatch.setattr(NT, "_add_indirect", lambda db, company, out, urls: None)
     monkeypatch.setattr(NT, "resolve_company", lambda db, name: NS(company=company, corrected_from=None))
     out = NT.news_tool("카카오", limit=3)
     assert [n["title"] for n in out["news"]] == ["카카오 실적", "카카오 주가"]

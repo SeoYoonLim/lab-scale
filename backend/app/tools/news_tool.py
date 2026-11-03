@@ -52,6 +52,7 @@ def news_tool(company_name: str, limit: int = 5) -> dict:
             }
             if is_etf:
                 out["asset_type"] = "etf"
+            _add_indirect(db, company, out, [])
             return out
 
         news_items = [
@@ -76,6 +77,22 @@ def news_tool(company_name: str, limit: int = 5) -> dict:
         }
         if is_etf:
             out["asset_type"] = "etf"
+        _add_indirect(db, company, out, [n["url"] for n in news_items])
         return out
     finally:
         db.close()
+
+
+INDIRECT_DAYS = 30
+
+
+def _add_indirect(db, company, out: dict, exclude_urls: list) -> None:
+    """간접 관련 뉴스(업종·기초지수, app.related_news)를 따로 붙인다. found·news(직접 관련)와 sources에는 넣지 않는다(2026-11-03)."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.related_news import indirect_news
+
+    section, topic, items = indirect_news(db, company, datetime.now(timezone.utc) - timedelta(days=INDIRECT_DAYS), exclude_urls)
+    if section is not None and items:
+        out["indirect_news"] = [{k: n[k] for k in ("title", "source", "published_at")} for n in items]
+        out["indirect_note"] = f"indirect_news는 {company.name} 기사가 아니라 {topic} 관련 기사다(최근 {INDIRECT_DAYS}일, 제목 기준)."
