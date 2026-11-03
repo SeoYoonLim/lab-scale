@@ -101,6 +101,24 @@ def _one_jamo_apart(a: str, b: str) -> bool:
     return ja is not None and jb is not None and sum(p != q for p, q in zip(ja, jb)) == 1
 
 
+def _one_insert_apart(a: str, b: str) -> bool:
+    """b가 a에 한 글자를 더 넣은 문자열이면 True('현대로비스' -> '현대글로비스')."""
+    return len(b) == len(a) + 1 and any(b[:i] + b[i + 1:] == a for i in range(len(b)))
+
+
+def _one_char_neighbors(variants: list[str], keys: dict) -> set[str]:
+    """입력(variants)에서 한 글자를 더하거나 빼면 되는 종목명 키들. 2026-11-03 감사: 한 글자 빠진 입력 2,108개 중 27개가
+    다른 종목으로 자동 선택됐다('현대로비스' -> 현대모비스, '현대아' -> 현대차). 이런 이웃이 선택 후보와 다르면 고르지 않고 되묻는다."""
+    return {m for v in variants for m in keys if len(v) >= 2 and (_one_insert_apart(v, m) or _one_insert_apart(m, v))}
+
+
+def _ambiguous(s: str, names: list[str]) -> Resolution:
+    return Resolution(
+        message=f"'{s}'와(과) 비슷한 종목이 여러 개라 특정할 수 없습니다. 정확한 종목명을 지정해주세요.",
+        candidates=sorted(dict.fromkeys(names))[:MAX_CANDIDATES],
+    )
+
+
 def _suggest_message(s: str, key: str, keys: dict) -> Resolution:
     """엄격 모드에서 정확히 못 찾았을 때의 응답. 유사한 종목명(최대 MAX_CANDIDATES개)을 보정 없이 안내만 한다.
 
@@ -191,13 +209,11 @@ def resolve_company(db, raw, allow_fuzzy: bool = True) -> Resolution:
     # 3e) 자모 한 글자 오타 ('셀트리언' -> '셀트리온'): 한글 3글자 이상, 글자 수가 같고, 한 글자의 초성·중성·종성 중 하나만 다른
     #     종목이 정확히 하나면 채택한다(그런 종목이 둘 이상이면 1등과 2등의 차이가 없으니 후보 안내).
     one_off = {m for v in variants for m in keys if _one_jamo_apart(v, m)}
+    neighbors = _one_char_neighbors(variants, keys)
+    if one_off and len(one_off | neighbors) > 1:
+        return _ambiguous(s, [keys[m][0].name for m in one_off | neighbors])
     if len(one_off) == 1:
         return Resolution(company=keys[one_off.pop()][0], corrected_from=str(raw))
-    if len(one_off) > 1:
-        return Resolution(
-            message=f"'{s}'와(과) 비슷한 종목이 여러 개라 특정할 수 없습니다. 정확한 종목명을 지정해주세요.",
-            candidates=sorted(keys[m][0].name for m in one_off)[:MAX_CANDIDATES],
-        )
 
     # 4) 유사 종목명 보정
     matches = difflib.get_close_matches(key, list(keys), n=MAX_CANDIDATES, cutoff=FUZZY_CUTOFF)
@@ -215,6 +231,8 @@ def resolve_company(db, raw, allow_fuzzy: bool = True) -> Resolution:
                     message=f"'{s}'와(과) 비슷한 종목이 여러 개라 특정할 수 없습니다. 정확한 종목명을 지정해주세요.",
                     candidates=names,
                 )
+        if neighbors - {matches[0]}:
+            return _ambiguous(s, [keys[m][0].name for m in {matches[0]} | neighbors])
         return Resolution(company=keys[matches[0]][0], corrected_from=str(raw))
 
     return Resolution(message=f"'{s}' 종목을 찾지 못했습니다. company 테이블에 등록된 종목명 또는 종목코드를 지정해주세요.")
