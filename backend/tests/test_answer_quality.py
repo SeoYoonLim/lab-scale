@@ -459,7 +459,7 @@ class FakeLLM:
 
         monkeypatch.setattr(agent, "_first_call", fake_first_call)
         monkeypatch.setattr(agent, "_run_tool", fake_run_tool)
-        monkeypatch.setattr(agent, "_repair_company_args", lambda calls, q, prev=None: {})
+        monkeypatch.setattr(agent, "_repair_company_args", lambda calls, q, prev=None, prev_company=None: {})
         monkeypatch.setattr(agent.ollama, "chat", fake_chat)
 
 

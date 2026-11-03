@@ -193,7 +193,7 @@ def fake_agent(monkeypatch):
     monkeypatch.setattr(agent, "_first_call", first_call)
     monkeypatch.setattr(agent, "_run_tool", run_tool)
     monkeypatch.setattr(agent.ollama, "chat", chat)
-    monkeypatch.setattr(agent, "_repair_company_args", lambda calls, q, prev=None: {})
+    monkeypatch.setattr(agent, "_repair_company_args", lambda calls, q, prev=None, prev_company=None: {})
     monkeypatch.setattr(agent, "_market_comparison_available", lambda c: False)
     monkeypatch.setattr(agent, "_question_subjects", lambda q, calls: state["subjects"])
     monkeypatch.setattr(

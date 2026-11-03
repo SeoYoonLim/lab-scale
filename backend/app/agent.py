@@ -52,7 +52,7 @@ from app.answer_guard import (
     strip_narrative_mismatch,
     strip_untrusted_urls,
 )
-from app import evidence_answer
+from app import evidence_answer, outlook
 from app.etf_holdings import constituents_chat_answer, requested_top_n
 from app.llm_settings import call_options, chat_model
 from app.etf_holdings_db import chat_views
@@ -690,7 +690,8 @@ def _expand_multi_company_calls(calls: list[dict], question: str, named: list | 
         db.close()
 
 
-def _repair_company_args(calls: list[dict], question: str, previous_question: str | None = None) -> dict[int, str]:
+def _repair_company_args(calls: list[dict], question: str, previous_question: str | None = None,
+                         previous_company: str | None = None) -> dict[int, str]:
     """모델이 만든 종목 인자가 DB 종목으로 해석되지 않으면, 질문 원문에서 회사명을 찾아 대신 넣는다.
 
     모델이 질문 속 회사명을 JSON 인자로 옮기다 엉뚱한 문자열로 깨뜨리는 경우를 위한 fallback이다.
@@ -700,6 +701,8 @@ def _repair_company_args(calls: list[dict], question: str, previous_question: st
     또 그런 후속 질문에서 직전 질문에 회사가 정확히 하나면, 모델이 채운 회사가 그 종목이 아닐 때 직전 종목으로 바꾼다:
     모델은 회사명이 없는 질문에 "삼성전자" 같은 유효한 이름을 기본값처럼 채우는데(직전 종목이 카카오/현대차/네이버일 때
     후속 뉴스 조회의 60~80%가 다른 회사로 갔다), 해석이 되는 이름이라 위 보정이 손대지 못하기 때문이다.
+    직전 질문에도 회사명이 없으면(직전이 "그래서 결론이 뭐야?" 같은 후속 질문) 직전 리포트의 종목(previous_company)을 쓴다. 이렇게
+    직전 리포트의 종목으로 이어받은 경우에만 종목 없이 부른 rag_search_tool에도 그 종목을 넣는다(2026-11-03: 종목 없는 의미 검색이 다른 회사 기사를 근거로 붙였다).
     calls를 직접 수정하고, {호출 인덱스: 모델이 만든 원래 인자}를 돌려준다."""
     targets = []
     for i, call in enumerate(calls):
@@ -718,10 +721,12 @@ def _repair_company_args(calls: list[dict], question: str, previous_question: st
         resolved_names: dict[str, set[str]] = {}
         resolved = []
         failed = []
+        rag_unfiltered = []
         for i, fn_name, key, args in targets:
             raw = args.get(key)
-            # 종목 필터 없이 검색하려는 rag 호출(인자 없음/null)은 손대지 않는다
+            # 종목 필터 없이 검색하려는 rag 호출(인자 없음/null)은 후속 대상이 정해질 때만 채운다(아래)
             if fn_name == "rag_search_tool" and not normalize_name(raw):
+                rag_unfiltered.append((i, key, args, raw))
                 continue
             res = resolve_company(db, raw)
             if res.company is not None:
@@ -729,7 +734,7 @@ def _repair_company_args(calls: list[dict], question: str, previous_question: st
                 resolved.append((i, key, args, raw, res.company))
             else:
                 failed.append((i, fn_name, key, args, raw))
-        if not failed and not previous_question:
+        if not failed and not previous_question and not previous_company:
             return {}
 
         candidates = extract_from_text(db, question)
@@ -738,6 +743,11 @@ def _repair_company_args(calls: list[dict], question: str, previous_question: st
             candidates = extract_from_text(db, previous_question)
             if len(candidates) == 1:
                 follow_up_subject = candidates[0]
+        chained = False
+        if not candidates and previous_company:
+            candidates = db.query(Company).filter(Company.name == previous_company).all()
+            if len(candidates) == 1:
+                follow_up_subject, chained = candidates[0], True
         repaired: dict[int, str] = {}
         for fn_name in {f[1] for f in failed}:
             fails = [f for f in failed if f[1] == fn_name]
@@ -752,6 +762,9 @@ def _repair_company_args(calls: list[dict], question: str, previous_question: st
                 if company.id != follow_up_subject.id:
                     args[key] = follow_up_subject.name
                     repaired[i] = "" if raw is None else str(raw)
+            for i, key, args, raw in (rag_unfiltered if chained else []):
+                args[key] = follow_up_subject.name
+                repaired[i] = "" if raw is None else str(raw)
         return repaired
     finally:
         db.close()
@@ -1254,6 +1267,88 @@ def _answer_concept(question: str, companies: list | None):
         return None
     text = concept_answer(question)
     return _code_answer(text) if text else None
+
+
+def _forecast_subject(question: str, previous: dict | None):
+    """전망·후속 결론 경로의 (종목, 기간 표식, 모드). 이 경로가 아니면 None, 종목을 되물어야 하면 (None, None, "ask").
+
+    모드: "forecast"(전체 분석) 또는 followup_kind(verdict/probability/risk). 종목은 질문에서 정확히 1개, 없으면 직전 리포트의
+    종목(previous["company_name"], 저장 시 도구 결과의 종목이 정확히 1개일 때만 채워진다)을 이어받는다. 여러 개면 기존 흐름이다."""
+    forecast = outlook.is_forecast_question(question)
+    verdict = outlook.is_followup_verdict_question(question)
+    if not (forecast or verdict):
+        return None
+    companies = _question_companies(question)
+    if companies is None or len(companies) > 1:
+        return None
+    marker = outlook.marker_of(previous.get("answer")) if previous else None
+    prev_name = (previous or {}).get("company_name") or (marker or {}).get("name")
+    if companies:
+        company = companies[0]
+        if verdict and not forecast and marker and company.name == prev_name:
+            return company, marker, outlook.followup_kind(question)
+        return (company, marker if marker and company.name == prev_name else None, "forecast") if forecast else None
+    if prev_name:
+        db = SessionLocal()
+        try:
+            company = db.query(Company).filter(Company.name == prev_name).first()
+        finally:
+            db.close()
+        if company is not None:
+            if verdict and marker:
+                return company, marker, outlook.followup_kind(question)
+            if forecast:
+                return company, marker, "forecast"
+            return None
+    return (None, None, "ask") if outlook.asks_subject(question) else None
+
+
+def _answer_forecast(question: str, previous: dict | None):
+    """전망·방향·매수 가부 질문과 후속 결론 질문(app/outlook.py). LLM 없이 코드가 계산하고 문장도 코드가 만든다."""
+    found = _forecast_subject(question, previous)
+    if found is None:
+        return None
+    company, marker, mode = found
+    if mode == "ask":
+        return _code_answer(outlook.ASK_SUBJECT_ANSWER)
+    label = outlook.period_in(question) or (marker or {}).get("period") or outlook.DEFAULT_PERIOD
+    period = outlook.PERIODS[label]
+    now = datetime.now(KST)
+    called_at = datetime.now(timezone.utc)
+    started = time.perf_counter()
+    db = SessionLocal()
+    try:
+        res = outlook.analyze(db, company, period, now)
+        if res is None:
+            return _code_answer(outlook.no_data_answer(company))
+        news, disclosures = outlook.evidence(db, company, period, now) if mode == "forecast" else ([], [])
+        fx = outlook.fx_summary(db, period, res["indicators"]["base_date"]) if mode == "forecast" else None
+    finally:
+        db.close()
+    elapsed = round((time.perf_counter() - started) * 1000)
+    args = {"ticker": company.name, "period": period.label}
+    result = {"company_name": company.name, "ticker": company.ticker, "found": True, "called_via": f"forecast_{mode}",
+              "period": period.label, "label": res["label"], "indicators": res["indicators"], "signals": res["signals"],
+              "data": res["data"]}
+    records = [{"tool_name": "stock_tool", "arguments": args, "result": result, "called_at": called_at, "elapsed_ms": elapsed}]
+    rel = res["indicators"].get("relative")
+    if rel:
+        records.append({"tool_name": "market_tool", "arguments": args, "called_at": called_at, "elapsed_ms": 0,
+                        "result": {"company_name": company.name, "found": True, "called_via": f"forecast_{mode}", **rel}})
+    if mode == "forecast":
+        if news or company.asset_type != "etf":
+            records.append({"tool_name": "news_tool", "arguments": {"company_name": company.name, "since_days": period.news_days},
+                            "called_at": called_at, "elapsed_ms": 0,
+                            "result": {"company_name": company.name, "found": bool(news), "news": news, "called_via": "forecast"}})
+        if company.asset_type != "etf":
+            records.append({"tool_name": "disclosure_tool", "arguments": {"company_name": company.name, "since_days": period.news_days},
+                            "called_at": called_at, "elapsed_ms": 0,
+                            "result": {"company_name": company.name, "found": bool(disclosures), "disclosures": disclosures,
+                                       "called_via": "forecast"}})
+        answer = outlook.forecast_answer(company, period, res, news, disclosures, fx, now)
+    else:
+        answer = outlook.followup_answer(company, period, res, mode, now)
+    return _code_answer(answer, records)
 
 
 def _answer_etf_constituents(question: str, companies: list | None):
@@ -1826,6 +1921,10 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     briefing = _answer_briefing(question, getattr(_STATE, "user_id", None))
     if briefing is not None:
         return briefing
+    # 전망·후속 결론(app/outlook.py)은 사건 반응·용어 사전·기간 질문보다 먼저다: "그래서 결론이 뭐야?"를 용어 사전이 가로챘다(2026-11-03).
+    forecast = _answer_forecast(question, previous)
+    if forecast is not None:
+        return forecast
     # 사건 이후 주가 반응 질문(게이트 + 종목 하나)만 별도 경로로 간다. 그 밖의 질문은 아래 기존 경로 그대로다.
     event_company = _event_subject(question, previous)
     if event_company is not None:
@@ -1881,7 +1980,8 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     #    결과를 다시 넘겨줌. 질문이 이름으로 요청한 tool이 빠졌으면 덧붙이고(보정된 종목 인자를 쓰도록 보정 뒤에),
     #    기간은 질문에서 인식한 값 > 흐름 질문의 기본 기간 > LLM 추론값 순으로 정한다.
     _expand_multi_company_calls(tool_calls, question, companies)
-    repaired = _repair_company_args(tool_calls, question, previous["question"] if previous else None)
+    repaired = _repair_company_args(tool_calls, question, previous["question"] if previous else None,
+                                    (previous or {}).get("company_name"))
     added = set(_add_requested_tools(tool_calls, question)) | set(etf_added)
     subjects = _question_subjects(question, tool_calls)
     etf_mode = any(t == "etf" for _, t in subjects)

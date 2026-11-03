@@ -116,10 +116,17 @@ GLOSSARY: dict[str, tuple[tuple[str, ...], str]] = {
 _DEFINITION_RE = re.compile(
     r"뭐야|뭐예요|뭐에요|뭔가요|뭐지|뭐임|뭔데|뭐냐|무엇|뭘까|뭔지|무슨\s*뜻|무슨\s*의미|뜻이|뜻은|뜻을|의미가|의미는|의미를|개념|정의"
     r"|설명해|란\s*\??\s*$|이란"  # "알려줘"는 넣지 않는다: "코스피 알려줘"는 현재 지수를 묻는 질문이다
+    r"|뜻\s*(?:좀\s*)?(?:알려|설명|가르쳐)"  # 2026-11-03: "공매도 뜻 알려줘"가 사전 경로로 가지 않았다
 )
 # 정의가 아니라 판단·조회를 묻는 표현(이런 질문은 기존 흐름): "PER이 높으면 좋아?", "PER 몇 배면 싸?"
 _NOT_DEFINITION_RE = re.compile(
     r"얼마|몇|높|낮|좋|나쁘|싸|비싸|순위|추천|비교|어때|오늘|요즘|최근|지금|현재|전망|종목|(?<![가-힣])주가(?!수익|순자산)|시세|왜|이유|어떤\s*게|차이"
+)
+# 후속·판단 표현이 있으면 용어를 묻는 질문이 아니다(2026-11-03: "그래서 결론이 뭐야? 올라? 내려가?"가 "'그래서 결론'은 사전에 없는
+# 용어"로 답됐다). 정의 경로와 "사전에 없음" 안내를 모두 건너뛰고 전망·후속 결론 경로(app/outlook.py)나 기존 흐름으로 간다.
+_JUDGMENT_RE = re.compile(
+    r"그래서|그럼|그러면|그니까|그러니까|근데|결론|요약|정리|한마디|올라|내려|오르|내리|떨어|상승|하락|사도|살까|사야|팔아|팔까|"
+    r"전망|어때|어떻게\s*해|어떡해|생각|판단|니가|네가|너는|넌"
 )
 _ASCII = re.compile(r"[A-Za-z0-9]")
 
@@ -203,7 +210,7 @@ def concept_answer(question: str) -> str | None:
             return comparison_answer(terms[:3])
         if len(terms) == 1 and _INTERPRET_RE.search(q):
             return term_answer(terms[0], interpretation=True)
-    if not _DEFINITION_RE.search(q) or _NOT_DEFINITION_RE.search(q):
+    if not _DEFINITION_RE.search(q) or _NOT_DEFINITION_RE.search(q) or _JUDGMENT_RE.search(q):
         return None
     term = find_term(q)
     if term is not None:
