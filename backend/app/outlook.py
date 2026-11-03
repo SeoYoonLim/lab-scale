@@ -17,10 +17,12 @@ LLM이 종목을 지어내거나 종목 없이 의미 검색을 해 다른 회�
 미만이거나, 마지막 시세가 기대 거래일보다 MAX_LAG_BUSINESS_DAYS 영업일을 넘게 늦거나, 계산 구간에 지수에는 있는 거래일이 빠졌으면 판단 유보.
 """
 
+import json
 import math
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 from app.backtest import sma, sma_target
 from app.briefing import KST, drop_open_session, session_is_open
@@ -55,8 +57,23 @@ VOLUME_SURGE = 1.5
 VOLATILITY_DAYS = 20
 RETURN_FLAT_PCT = 1.0  # 분석 기간 수익률이 ±이 값 안이면 중립
 RELATIVE_PP = 2.0
-SUMMARY_MARGIN = 2
-MIN_SIGNAL_INDICATORS = 5
+SUMMARY_MARGIN = 2  # 묶음 적용 전(judge_by_indicators) 기준
+MIN_SIGNAL_INDICATORS = 5  # 묶음 적용 전(judge_by_indicators) 기준
+# 지표 종류 -> 묶음. 학습 구간(신호일과 수익률 구간 끝이 2025-12-31 이하) 신호(-1/0/+1)의 피어슨 상관 절댓값을 세 기간에 걸쳐 평균하고,
+# 평균 연결 군집을 |r| 0.5에서 끊어 정했다(scripts/backtest_outlook.py --analyze, API.md "신호 묶음"). 단일 연결은 지표가 사슬처럼 이어져
+# 거래량을 뺀 전부가 한 묶음이 됐다. RSI는 추세와 음의 상관(과열 = 하락 쪽)이라 따로다.
+SIGNAL_GROUPS: dict[str, str] = {
+    "close_vs_ma_short": "단기 흐름", "period_return": "단기 흐름", "relative": "단기 흐름",
+    "close_vs_ma_long": "중기 추세", "ma_alignment": "중기 추세",
+    "cross": "이동평균 교차", "rsi": "RSI", "macd": "MACD", "volume": "거래량",
+}
+GROUP_LABELS: dict[str, str] = {
+    "단기 흐름": "단기 흐름(단기 이동평균 위치·기간 수익률·지수 대비)",
+    "중기 추세": "중기 추세(장기 이동평균 위치·이동평균 배열)",
+    "이동평균 교차": "이동평균 교차", "RSI": "RSI(14)", "MACD": "MACD(12,26,9)", "거래량": "거래량",
+}
+GROUP_MARGIN = 2  # 묶음 표 차이. 학습 구간에서 1과 2 모두 예측력이 없어(상승 우위의 이후 상승 비율이 전체보다 낮음) 기존 값 2를 유지했다
+MIN_GROUPS = 3
 MAX_LAG_BUSINESS_DAYS = 5  # 마지막 시세가 이보다 많이 늦으면 판단 유보(1~5영업일은 경고만)
 PRICE_ROWS = 260  # 120일선·MACD·변동성 계산과 장중 행 여유
 NEWS_LIMIT = 3
@@ -71,8 +88,8 @@ NOT_A_FORECAST = "현재 신호의 종합이며 미래 가격을 예측하는 �
 NO_PROBABILITY = "검증된 상승·하락 확률이나 기대수익률은 계산하지 않습니다. 대신 현재 신호의 개수로 답합니다."
 ASK_SUBJECT_ANSWER = ("질문에서 종목을 찾지 못했습니다. 어떤 종목에 대한 질문인지 종목명 또는 종목코드로 알려주세요. "
                       "예: \"SK하이닉스 일주일 안에 오를까?\"")
-JUDGE_RULE = (f"상승·하락 신호 개수 차이가 {SUMMARY_MARGIN}개 이상이면 많은 쪽의 우위, 그보다 작으면 중립. 계산한 신호 지표가 "
-              f"{MIN_SIGNAL_INDICATORS}개 미만이거나 마지막 시세가 {MAX_LAG_BUSINESS_DAYS}영업일을 넘게 늦거나 거래일이 빠졌으면 판단 유보")
+JUDGE_RULE = (f"성격이 겹치는 지표를 묶어 묶음당 1표로 세고, 상승·하락 표 차이가 {GROUP_MARGIN}표 이상이면 많은 쪽의 우위, 그보다 작으면 중립. "
+              f"계산한 묶음이 {MIN_GROUPS}개 미만이거나 마지막 시세가 {MAX_LAG_BUSINESS_DAYS}영업일을 넘게 늦거나 거래일이 빠졌으면 판단 유보")
 
 # ---------- 질문 판별 ----------
 
@@ -107,6 +124,22 @@ _PERIOD_PATTERNS = (
 )
 # 이 경로가 만든 답변의 첫 항목: "- 이름(종목코드), 분석 기간 1주일(5거래일): 라벨". 후속 질문이 기간(과 종목)을 이어받는 표식이다.
 _MARKER_RE = re.compile(r"^- (?P<name>.+?)\((?P<ticker>[0-9A-Z]{6})\), 분석 기간 (?P<period>1주일|1개월|3개월)\(", re.MULTILINE)
+
+
+# 채팅에서 주문을 실행해 달라는 요청(2026-11-03). 채팅에는 주문 경로가 없다(주문은 POST /api/portfolio/orders, 엄격 매칭).
+# _ORDER_RE(전망에서 빼는 넓은 규칙)보다 좁다: "주문 방법", "체결강도가 뭐야" 같은 질문은 여기 걸리지 않는다.
+_ORDER_COMMAND_RE = re.compile(
+    r"사\s*줘|사주세요|사\s*줄래|매수\s*해\s*줘|매수해주세요|매도\s*해\s*줘|매도해주세요|팔아\s*줘|팔아주세요|"
+    r"(?:매수|매도)\s*주문\s*(?:넣어|해|좀|부탁)|주문\s*(?:넣어|해\s*줘)|(?:매수|매도)\s*실행|시장가로|지정가로|"
+    r"\d+\s*주\s*(?:만\s*)?(?:사|매수|팔|매도)(?!\s*(?:도|면|려면|는|기|ㄹ))"
+)
+ORDER_GUIDE_ANSWER = ("채팅에서는 주문을 실행하지 않습니다. 모의투자 화면에서 종목과 수량을 확인한 뒤 주문할 수 있어요.")
+
+
+def is_order_command(question: str) -> bool:
+    """주문 실행을 요청하는 문장인가. 전망 질문("사도 될까?")은 아니다."""
+    q = question or ""
+    return bool(_ORDER_COMMAND_RE.search(q)) and not is_forecast_question(q.replace("사줘", "").replace("팔아줘", ""))
 
 
 def is_order_request(question: str) -> bool:
@@ -266,8 +299,10 @@ def classify_signals(ind: dict, period: Period) -> list[dict]:
     out = []
     close = ind["close"]
 
-    def add(key, side, name, rule, value):
-        out.append({"key": key, "side": side, "name": name, "rule": rule, "value": value})
+    def add(key, side, name, rule, value, kind=None):
+        kind = kind or key
+        out.append({"key": key, "kind": kind, "group": SIGNAL_GROUPS[kind], "side": side, "name": name, "rule": rule,
+                    "value": value})
 
     short, long = period.ma
     for n in (short, long):
@@ -276,7 +311,8 @@ def classify_signals(ind: dict, period: Period) -> list[dict]:
             side = UP if close > ma["value"] else DOWN if close < ma["value"] else NEUTRAL
             name = {UP: f"종가가 {n}일 이동평균 위", DOWN: f"종가가 {n}일 이동평균 아래", NEUTRAL: f"종가가 {n}일 이동평균과 같음"}[side]
             add(f"close_vs_ma{n}", side, name, f"종가 > {n}일 이동평균이면 상승 쪽, < 이면 하락 쪽",
-                f"종가 {_won(close)}, {n}일 이동평균 {_won(round(ma['value']))}")
+                f"종가 {_won(close)}, {n}일 이동평균 {_won(round(ma['value']))}",
+                kind="close_vs_ma_short" if n == short else "close_vs_ma_long")
     if ind.get("ma_short_above_long") is not None:
         above = ind["ma_short_above_long"]
         add("ma_alignment", UP if above else DOWN, f"{short}일선이 {long}일선 {'위' if above else '아래'}",
@@ -321,7 +357,35 @@ def classify_signals(ind: dict, period: Period) -> list[dict]:
     return out
 
 
-def judge(signals: list[dict], data: dict) -> str:
+def group_votes(signals: list[dict], groups: dict[str, str] | None = None) -> dict[str, str]:
+    """묶음별 1표: 묶음 안 상승 쪽이 많으면 up, 하락 쪽이 많으면 down, 같으면 neutral. 계산한 지표가 없는 묶음은 빠진다.
+    groups(지표 종류 -> 묶음)를 주면 그 묶음으로 센다(백테스트의 묶음 비교용). 기본은 SIGNAL_GROUPS."""
+    groups = groups or SIGNAL_GROUPS
+    tally: dict[str, int] = {}
+    for s in signals:
+        g = groups[s["kind"]]
+        tally[g] = tally.get(g, 0) + (1 if s["side"] == UP else -1 if s["side"] == DOWN else 0)
+    return {g: UP if v > 0 else DOWN if v < 0 else NEUTRAL for g, v in tally.items()}
+
+
+def judge(signals: list[dict], data: dict, groups: dict[str, str] | None = None, margin: int | None = None) -> str:
+    """묶음당 1표로 판정한다(2026-11-03). 상승·하락 표 차이가 GROUP_MARGIN 이상이면 우위, 미만이면 중립.
+    계산한 묶음이 MIN_GROUPS 미만이거나 데이터 점검이 유보(data["hold"])면 판단 유보."""
+    votes = group_votes(signals, groups)
+    margin = GROUP_MARGIN if margin is None else margin
+    n_up = sum(v == UP for v in votes.values())
+    n_down = sum(v == DOWN for v in votes.values())
+    if len(votes) < MIN_GROUPS or data["hold"]:
+        return LABEL_HOLD
+    if n_up - n_down >= margin:
+        return LABEL_UP
+    if n_down - n_up >= margin:
+        return LABEL_DOWN
+    return LABEL_NEUTRAL
+
+
+def judge_by_indicators(signals: list[dict], data: dict) -> str:
+    """2026-11-03 이전 판정(지표마다 1표, 차이 2 이상, 지표 5개 미만이면 유보). 묶음 적용 전후 비교용으로만 남긴다."""
     n_up = sum(s["side"] == UP for s in signals)
     n_down = sum(s["side"] == DOWN for s in signals)
     if len(signals) < MIN_SIGNAL_INDICATORS or data["hold"]:
@@ -368,13 +432,62 @@ def _marker_line(company, period: Period, label: str) -> str:
 
 
 def _side_lines(signals: list[dict], side: str) -> list[str]:
-    rows = [f"- {s['name']}: {s['value']} (규칙: {s['rule']})" for s in signals if s["side"] == side]
+    rows = [f"- [{s['group']}] {s['name']}: {s['value']} (규칙: {s['rule']})" for s in signals if s["side"] == side]
     return rows or ["- 없음"]
+
+
+_SIDE_WORD = {UP: "상승 쪽", DOWN: "하락 쪽", NEUTRAL: "중립"}
+
+
+def group_lines(signals: list[dict]) -> list[str]:
+    """묶음당 1표 판정 근거: 표 집계 한 줄 + 묶음마다 "묶음: 표 ← 지표(쪽), ..." 한 줄. 개별 지표는 모두 그대로 보인다."""
+    votes = group_votes(signals)
+    n = {side: sum(v == side for v in votes.values()) for side in (UP, DOWN, NEUTRAL)}
+    lines = [f"- 묶음 판정(묶음당 1표): 상승 쪽 {n[UP]}표, 하락 쪽 {n[DOWN]}표, 중립 {n[NEUTRAL]}표 (계산한 묶음 {len(votes)}개)"]
+    for g in dict.fromkeys(SIGNAL_GROUPS.values()):
+        if g not in votes:
+            continue
+        members = ", ".join(f"{s['name']}({_SIDE_WORD[s['side']]})" for s in signals if s["group"] == g)
+        lines.append(f"  - {GROUP_LABELS[g]}: {_SIDE_WORD[votes[g]]} 1표 ← {members}")
+    return lines
 
 
 def _count_line(signals: list[dict]) -> str:
     n = {side: sum(s["side"] == side for s in signals) for side in (UP, DOWN, NEUTRAL)}
-    return f"- 상승 쪽 신호 {n[UP]}개, 하락 쪽 신호 {n[DOWN]}개, 중립 {n[NEUTRAL]}개 (계산한 신호 지표 {len(signals)}개)"
+    return (f"- 개별 지표: 상승 쪽 {n[UP]}개, 하락 쪽 {n[DOWN]}개, 중립 {n[NEUTRAL]}개 "
+            f"(계산한 지표 {len(signals)}개. 판정에는 위 묶음 표만 씁니다)")
+
+
+_BACKTEST: dict = {}
+BACKTEST_PATH = Path(__file__).resolve().parent / "data" / "outlook_backtest.json"
+
+
+def backtest_summary() -> dict | None:
+    """scripts/backtest_outlook.py --final이 만든 요약(app/data/outlook_backtest.json). 없으면 None."""
+    if "data" not in _BACKTEST:
+        try:
+            _BACKTEST["data"] = json.loads(BACKTEST_PATH.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            _BACKTEST["data"] = None
+    return _BACKTEST["data"]
+
+
+def backtest_line(period: Period, label: str) -> str:
+    """같은 라벨의 과거 검증 결과 한 줄(검증 구간). 과거 빈도이며 확률·예측이 아니라고 밝힌다."""
+    if label == LABEL_HOLD:
+        return "- 과거 검증: 판단 유보는 과거 검증 대상이 아닙니다."
+    bt = backtest_summary()
+    v = ((bt or {}).get("periods", {}).get(period.label, {}).get("valid") or {})
+    r = (v.get("labels") or {}).get(label)
+    if not r or not r.get("n"):
+        return "- 과거 검증: 결과 파일이 없어 표시하지 않습니다."
+    lo, hi = r["diff_ci95"]
+    line = (f"- 과거 검증(검증 구간 신호일 {v['first_date']}~{v['last_date']}, {v['horizon']}거래일 뒤): 같은 라벨({label})일 때 "
+            f"상승 비율 {r['up_rate'] * 100:.1f}%(같은 기간 전체 {r['base_rate'] * 100:.1f}%, 표본 {r['n']:,}, "
+            f"차이 {r['diff'] * 100:+.1f}%p, 95% 구간 {lo * 100:+.1f}~{hi * 100:+.1f}%p). 과거에 관측된 빈도이며 확률이나 예측이 아닙니다.")
+    if not r.get("significant"):
+        line += " 과거 검증에서 이 신호 조합은 전체 평균과 뚜렷한 차이가 없었습니다."
+    return line
 
 
 def indicator_lines(ind: dict, period: Period) -> list[str]:
@@ -423,8 +536,47 @@ def market_lines(company, ind: dict, fx: dict | None) -> list[str]:
                      (f", {fx['from_date']} 대비 {_signed(fx['pct'])}" if fx.get("pct") is not None else ""))
     else:
         lines.append("- 원/달러 환율: 데이터 없음")
-    lines.append("- 업종·실적 데이터: 데이터 없음(이 서비스 DB에 업종 분류·실적 수치가 없습니다)")
     return lines
+
+
+def indirect_lines(section: str | None, topic: str | None, items: list[dict], period: Period) -> list[str]:
+    """간접 관련 뉴스(업종·기초지수). 이 종목 기사가 아니며 신호 판정에 쓰지 않는다고 밝힌다."""
+    if section is None:
+        return []
+    lines = [f"- 아래는 이 종목 기사가 아니라 {topic} 관련 기사입니다(제목 기준, 최근 {period.news_days}일). 신호 판정에는 쓰지 않습니다."]
+    for n in items:
+        src = f"({n['source']}) " if n.get("source") else ""
+        lines.append(f"- 뉴스 {(n.get('published_at') or '')[:10]} {src}\"{n['title']}\"라는 제목의 기사가 있었습니다.")
+    if not items:
+        lines.append(f"- 최근 {period.news_days}일 안에 {topic} 관련 기사를 찾지 못했습니다.")
+    return lines
+
+
+def earnings_lines(rows: list[dict] | None) -> list[str]:
+    """실적(참고, 신호 판정에 쓰지 않음). rows는 app.earnings.recent_for_answer 결과. None이면 섹션 생략."""
+    if rows is None:
+        return []
+    if not rows:
+        return ["- 실적 데이터 없음(수집된 DART 주요 계정이 없습니다)."]
+    lines = ["- 신호 판정에는 쓰지 않는 참고 정보입니다. 분기보고서는 그 분기(3개월) 금액, 사업보고서는 연간 금액이고, "
+             "전년 동기는 같은 보고서에 적힌 전기 금액입니다."]
+    for r in rows:
+        parts = []
+        for key, name in (("revenue", "매출액"), ("operating_income", "영업이익"), ("net_income", "당기순이익")):
+            cur, prev = r.get(key), r.get(f"{key}_prev")
+            if cur is None:
+                continue
+            yoy = f", 전년 동기 대비 {(cur / prev - 1) * 100:+.1f}%" if prev is not None and prev > 0 and cur >= 0 else ""
+            parts.append(f"{name} {_eok(cur)}{yoy}")
+        basis = "연결" if r["fs_div"] == "CFS" else "별도"
+        lines.append(f"- {r['period_label']}({basis}): " + "; ".join(parts) +
+                     f" (접수일 {r['disclosed_date']}, DART 접수번호 {r['rcept_no']})")
+    return lines
+
+
+def _eok(v: float) -> str:
+    """원 단위 금액을 억 원 단위로(소수 없이)."""
+    return f"{v / 1e8:,.0f}억 원"
 
 
 def evidence_lines(news: list[dict], disclosures: list[dict], is_etf: bool, period: Period) -> list[str]:
@@ -465,7 +617,8 @@ def source_lines(ind: dict, data: dict, period: Period, now: datetime) -> list[s
     lines.append("- 수익률 계산식: (기준일 종가 ÷ N거래일 전 종가 - 1) × 100. 최고·최저 종가 대비도 같은 식이며 수익률이 아닙니다.")
     lines.append(f"- 지표 계산에 쓴 가격 범위: {ind['first_date']}~{ind['base_date']} 종가 {ind['n_rows']}거래일")
     lines.append(f"- 근거 뉴스·공시 범위: 최근 {period.news_days}일 발행·접수분")
-    lines.append("- 출처: 시세 stock_price(종가), 지수 market_index, 환율 exchange_rate, 뉴스 news(발행일), 공시 disclosure(DART 접수일)")
+    lines.append("- 출처: 시세 stock_price(종가), 지수 market_index, 환율 exchange_rate, 뉴스 news(발행일), 공시 disclosure(DART 접수일), "
+                 "실적 quarterly_earnings(DART 주요 계정), 과거 검증 app/data/outlook_backtest.json")
     return lines
 
 
@@ -474,18 +627,25 @@ def _join(sections: list[tuple[str, list[str]]]) -> str:
 
 
 def forecast_answer(company, period: Period, res: dict, news: list[dict], disclosures: list[dict], fx: dict | None,
-                    now: datetime) -> str:
+                    now: datetime, indirect: tuple | None = None, earnings: list[dict] | None = None) -> str:
+    """indirect = (섹션 이름, 업종/기초지수, 기사들) 또는 None, earnings = 실적 행 목록(None이면 섹션 생략)."""
     ind, sig, label, data = res["indicators"], res["signals"], res["label"], res["data"]
     is_etf = getattr(company, "asset_type", None) == "etf"
     head = [_marker_line(company, period, label), f"- {NOT_A_FORECAST}"]
     head += [f"- 데이터 경고: {w}" for w in data["warnings"]]
+    section, topic, items = indirect or (None, None, [])
+    direct = evidence_lines(news, disclosures, is_etf, period)
+    if is_etf and not news and section is not None:
+        direct = ["- 제목에 이 ETF 이름이 있는 기사를 찾지 못했습니다(간접 관련 기사는 아래 섹션에 따로 있습니다)."]
     sections = [
         ("최종 신호 판단", head),
-        ("판단 근거 요약", [_count_line(sig), f"- 판정 규칙: {JUDGE_RULE}"]),
+        ("판단 근거 요약", [*group_lines(sig), _count_line(sig), backtest_line(period, label), f"- 판정 규칙: {JUDGE_RULE}"]),
         ("상승 쪽 신호", _side_lines(sig, UP)),
         ("하락 쪽 신호", _side_lines(sig, DOWN)),
         ("기술적 지표", indicator_lines(ind, period)),
-        ("뉴스·공시", evidence_lines(news, disclosures, is_etf, period)),
+        ("뉴스·공시(직접 관련)", direct),
+        (section or "", indirect_lines(section, topic, items, period)),
+        ("실적(참고)", earnings_lines(earnings)),
         ("시장 상황", market_lines(company, ind, fx)),
         ("확인할 가격대", price_level_lines(ind, period)),
         ("불확실성과 한계", limit_lines(company)),
@@ -500,7 +660,8 @@ def followup_answer(company, period: Period, res: dict, kind: str, now: datetime
     head += [f"- 데이터 경고: {w}" for w in data["warnings"]]
     ups = ", ".join(s["name"] for s in sig if s["side"] == UP) or "없음"
     downs = ", ".join(s["name"] for s in sig if s["side"] == DOWN) or "없음"
-    summary = [_count_line(sig), f"- 상승 쪽: {ups}", f"- 하락 쪽: {downs}", f"- 판정 규칙: {JUDGE_RULE}"]
+    summary = [*group_lines(sig), _count_line(sig), f"- 상승 쪽: {ups}", f"- 하락 쪽: {downs}", backtest_line(period, label),
+               f"- 판정 규칙: {JUDGE_RULE}"]
     if kind == "probability":
         summary.insert(0, f"- {NO_PROBABILITY}")
     sections = [("최종 신호 판단", head), ("판단 근거 요약", summary)]

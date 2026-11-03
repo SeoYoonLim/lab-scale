@@ -140,12 +140,38 @@ def _signals(n_up, n_down, n_neutral=0):
 
 
 @pytest.mark.parametrize("up,down,neutral,label", [(5, 2, 1, "상승 우위"), (1, 4, 3, "하락 우위"), (3, 2, 3, "중립"), (2, 2, 0, "판단 유보")])
-def test_judge(up, down, neutral, label):
-    assert outlook.judge(_signals(up, down, neutral), {"hold": False}) == label
+def test_judge_by_indicators_before_groups(up, down, neutral, label):
+    """묶음 적용 전 판정(지표마다 1표). 비교용으로 남긴 함수."""
+    assert outlook.judge_by_indicators(_signals(up, down, neutral), {"hold": False}) == label
 
 
-def test_judge_holds_when_data_check_says_so():
-    assert outlook.judge(_signals(6, 0), {"hold": True}) == "판단 유보"
+def _sig(kind, side):
+    return {"kind": kind, "group": outlook.SIGNAL_GROUPS[kind], "side": side, "name": kind}
+
+
+def test_correlated_indicators_count_as_one_vote():
+    """같은 묶음(단기 흐름)의 지표 세 개가 모두 상승 쪽이어도 1표다. 묶음 적용 전에는 3표였다."""
+    sig = [_sig("close_vs_ma_short", "up"), _sig("period_return", "up"), _sig("relative", "up"),
+           _sig("close_vs_ma_long", "neutral"), _sig("rsi", "neutral"), _sig("macd", "neutral"), _sig("volume", "neutral")]
+    assert outlook.group_votes(sig)["단기 흐름"] == "up"
+    assert outlook.judge(sig, {"hold": False}) == "중립"
+    assert outlook.judge_by_indicators(sig, {"hold": False}) == "상승 우위"
+
+
+def test_group_vote_majority_and_tie():
+    sig = [_sig("close_vs_ma_long", "up"), _sig("ma_alignment", "down"), _sig("close_vs_ma_short", "down"),
+           _sig("period_return", "down"), _sig("relative", "up"), _sig("macd", "down"), _sig("rsi", "neutral")]
+    votes = outlook.group_votes(sig)
+    assert votes == {"중기 추세": "neutral", "단기 흐름": "down", "MACD": "down", "RSI": "neutral"}
+    assert outlook.judge(sig, {"hold": False}) == "하락 우위"
+
+
+def test_judge_holds_with_few_groups_or_bad_data():
+    two_groups = [_sig("close_vs_ma_short", "up"), _sig("macd", "up")]
+    assert outlook.judge(two_groups, {"hold": False}) == "판단 유보"
+    many = [_sig(k, "up") for k in outlook.SIGNAL_GROUPS]
+    assert outlook.judge(many, {"hold": False}) == "상승 우위"
+    assert outlook.judge(many, {"hold": True}) == "판단 유보"
 
 
 NOW = datetime(2026, 11, 3, 18, 0, tzinfo=KST)  # 화요일 장 마감 뒤
@@ -237,16 +263,17 @@ def test_forecast_answer_sections_and_marker():
     res = _result()
     text = outlook.forecast_answer(COMPANY, outlook.PERIODS["1주일"], res, [], [], None, NOW)
     titles = [line[3:] for line in text.splitlines() if line.startswith("## ")]
-    assert titles == ["최종 신호 판단", "판단 근거 요약", "상승 쪽 신호", "하락 쪽 신호", "기술적 지표", "뉴스·공시", "시장 상황",
-                      "확인할 가격대", "불확실성과 한계", "데이터 기준일·출처"]
+    assert titles == ["최종 신호 판단", "판단 근거 요약", "상승 쪽 신호", "하락 쪽 신호", "기술적 지표", "뉴스·공시(직접 관련)",
+                      "시장 상황", "확인할 가격대", "불확실성과 한계", "데이터 기준일·출처"]
     assert outlook.marker_of(text) == {"name": "SK하이닉스", "ticker": "000660", "period": "1주일"}
     assert "관련 뉴스를 찾지 못했습니다" in text and "원/달러 환율: 데이터 없음" in text
+    assert "묶음 판정(묶음당 1표)" in text and "과거 검증" in text
     assert "기준일(최신 거래일)" in text and "수익률 계산식" in text
     # 영어 문장 단어("fluctuate" 같은)가 섞이지 않는다: 영문은 지표·출처 식별자와 면책 문구의 "AI"뿐이다
     import re
 
     allowed = {"SK", "RSI", "MACD", "DART", "DB", "AI", "N", "Asia", "Seoul", "stock", "price", "market", "index", "exchange",
-               "rate", "news", "disclosure"}
+               "rate", "news", "disclosure", "quarterly", "earnings", "app", "data", "outlook", "backtest", "json"}
     assert set(re.findall(r"[A-Za-z]+", text)) <= allowed
 
 
@@ -314,6 +341,8 @@ def wired(monkeypatch):
     monkeypatch.setattr(outlook, "analyze", analyze)
     monkeypatch.setattr(outlook, "evidence", lambda db, c, p, now: ([], []))
     monkeypatch.setattr(outlook, "fx_summary", lambda db, p, d: None)
+    monkeypatch.setattr(agent.related_news, "indirect_news", lambda db, c, since, exclude_urls=(): (None, None, []))
+    monkeypatch.setattr(agent.earnings, "recent_for_answer", lambda db, c: None)
     monkeypatch.setattr(agent, "_answer_briefing", lambda q, u: None)
     return seen
 

@@ -60,12 +60,14 @@ def test_forecast_numbers_match_sql(dev_db, no_llm):
 @pytest.mark.integration
 @pytest.mark.needs_collected_data
 def test_forecast_evidence_is_only_the_requested_company(dev_db, no_llm):
+    from app.news_relevance import title_mentions
+
     r = agent.ask_question("SK하이닉스 일주일 안에 오를지 내릴지 분석해줘", save_report=False)
     assert r["used_tools"][0] == "stock_tool"
     for s in r["sources"]:
         assert s["company_names"] == ["SK하이닉스"]
         if s["type"] == "news":
-            assert "SK하이닉스" in s["title"] and "삼성전자" not in s["title"].replace("SK하이닉스", "")
+            assert title_mentions("SK하이닉스", s["title"])  # 별칭(하이닉스·하닉) 포함, 2026-11-03
 
 
 @pytest.mark.integration

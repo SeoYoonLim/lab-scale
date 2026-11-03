@@ -52,7 +52,7 @@ from app.answer_guard import (
     strip_narrative_mismatch,
     strip_untrusted_urls,
 )
-from app import evidence_answer, outlook
+from app import earnings, evidence_answer, outlook, related_news
 from app.etf_holdings import constituents_chat_answer, requested_top_n
 from app.llm_settings import call_options, chat_model
 from app.etf_holdings_db import chat_views
@@ -1269,6 +1269,29 @@ def _answer_concept(question: str, companies: list | None):
     return _code_answer(text) if text else None
 
 
+def _answer_order_command(question: str):
+    """주문 실행 요청 문장("삼성전자 10주 사줘")은 LLM에 보내지 않고 고정 안내로 답한다. 채팅은 주문을 실행하지 않는다.
+    질문에서 종목이 정확히 하나면(질문 추출은 정확 이름·별칭만) 단순 시세와 같은 방식으로 현재가 한 줄을 붙인다."""
+    if not outlook.is_order_command(question):
+        return None
+    companies = _question_companies(question) or []
+    records = []
+    answer = outlook.ORDER_GUIDE_ANSWER
+    if len(companies) == 1:
+        called_at = datetime.now(timezone.utc)
+        started = time.perf_counter()
+        args = {"ticker": companies[0].name, "period_days": 1}
+        result = code_answers.latest_of(_run_tool("stock_tool", {**args, "period_days": 2}), datetime.now(KST))
+        quote = quote_answer(result)
+        if quote is not None:
+            if isinstance(result, dict):
+                result.setdefault("called_via", "order_command")
+            answer += "\n\n참고 시세: " + quote
+            records.append({"tool_name": "stock_tool", "arguments": args, "result": result, "called_at": called_at,
+                            "elapsed_ms": round((time.perf_counter() - started) * 1000)})
+    return _code_answer(answer, records)
+
+
 def _forecast_subject(question: str, previous: dict | None):
     """전망·후속 결론 경로의 (종목, 기간 표식, 모드). 이 경로가 아니면 None, 종목을 되물어야 하면 (None, None, "ask").
 
@@ -1323,6 +1346,12 @@ def _answer_forecast(question: str, previous: dict | None):
             return _code_answer(outlook.no_data_answer(company))
         news, disclosures = outlook.evidence(db, company, period, now) if mode == "forecast" else ([], [])
         fx = outlook.fx_summary(db, period, res["indicators"]["base_date"]) if mode == "forecast" else None
+        indirect, earnings_rows = None, None
+        if mode == "forecast":
+            # 간접 관련 뉴스(업종·기초지수)는 직접 관련 섹션과 따로 보이고 신호 판정에 쓰지 않는다. 실적도 참고 정보다(2026-11-03).
+            indirect = related_news.indirect_news(db, company, now - timedelta(days=period.news_days),
+                                                  exclude_urls=[n.get("url") for n in news])
+            earnings_rows = earnings.recent_for_answer(db, company)
     finally:
         db.close()
     elapsed = round((time.perf_counter() - started) * 1000)
@@ -1345,7 +1374,7 @@ def _answer_forecast(question: str, previous: dict | None):
                             "called_at": called_at, "elapsed_ms": 0,
                             "result": {"company_name": company.name, "found": bool(disclosures), "disclosures": disclosures,
                                        "called_via": "forecast"}})
-        answer = outlook.forecast_answer(company, period, res, news, disclosures, fx, now)
+        answer = outlook.forecast_answer(company, period, res, news, disclosures, fx, now, indirect, earnings_rows)
     else:
         answer = outlook.followup_answer(company, period, res, mode, now)
     return _code_answer(answer, records)
@@ -1918,6 +1947,10 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     previous={"question", "answer", ...}가 있으면 후속 질문으로 보고 그 질문/답변을 few-shot 뒤, 이번 질문 앞에
     대화 기록으로 넣는다. 없으면 메시지 구성이 이전과 완전히 같다.
     tool 실행 기록: {"tool_name", "arguments", "result", "called_at", "elapsed_ms"} (실행 순서대로)."""
+    # 주문 실행 요청은 가장 먼저 고정 안내로 답한다(채팅은 주문하지 않는다, 2026-11-03).
+    order = _answer_order_command(question)
+    if order is not None:
+        return order
     briefing = _answer_briefing(question, getattr(_STATE, "user_id", None))
     if briefing is not None:
         return briefing
