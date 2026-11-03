@@ -171,7 +171,9 @@ jobs:
       # 늘려야 하면 이유와 함께 이 값과 README의 숫자를 같이 고친다.
       # 2026-11-03 65 -> 71: 전망·후속 결론 경로 통합 테스트 6개(tests/test_outlook_devdb.py 5, test_evals_forecast_check.py 1)는
       # 수집 시세·뉴스로 지표를 SQL 대조하고 근거 기사 종목을 확인해야 해서 시드만 있는 CI DB에서는 돌 수 없다.
-      MAX_EXCLUDED: "71"
+      # 2026-11-03 71 -> 76: 전망 2차 통합 테스트 5개(tests/test_outlook_round22_devdb.py: 업종 ETF 구성종목 업종 매핑, 업종·기초지수
+      # 간접 뉴스 분리 2, 실적 SQL 대조, 주문·전망 경로 구분)는 수집된 ETF 구성종목·뉴스·실적·시세가 있어야 해서 시드만 있는 CI DB에서는 돌 수 없다.
+      MAX_EXCLUDED: "76"
     defaults:
       run:
         working-directory: backend

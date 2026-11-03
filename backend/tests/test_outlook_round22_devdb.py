@@ -33,6 +33,7 @@ def test_new_aliases_never_pick_another_company_in_strict_mode(dev_db):
 
 
 @pytest.mark.integration
+@pytest.mark.needs_collected_data
 def test_sector_map_comes_from_sector_etf_holdings(dev_db):
     m = related_news.sector_map(dev_db)
     from app.models import Company
