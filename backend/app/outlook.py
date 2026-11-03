@@ -136,9 +136,18 @@ _ORDER_COMMAND_RE = re.compile(
 ORDER_GUIDE_ANSWER = ("채팅에서는 주문을 실행하지 않습니다. 모의투자 화면에서 종목과 수량을 확인한 뒤 주문할 수 있어요.")
 
 
+# 주문 방법을 묻는 질문(dev17_08: LLM이 "주문이 접수/체결되면" 같은 절차를 지어냈다). 같은 고정 안내로 답한다.
+_ORDER_HOWTO_RE = re.compile(
+    r"주문(?:은|을|하는\s*건|하려면)?\s*(?:어떻게|방법)|어떻게\s*주문|(?:매수|매도)(?:는|하는\s*건|하려면)?\s*(?:어떻게|방법)|"
+    r"어떻게\s*(?:사|팔)(?:나요|나|야|지|요)"
+)
+
+
 def is_order_command(question: str) -> bool:
-    """주문 실행을 요청하는 문장인가. 전망 질문("사도 될까?")은 아니다."""
+    """주문 실행을 요청하는 문장이거나 주문 방법을 묻는 문장인가. 전망 질문("사도 될까?")은 아니다."""
     q = question or ""
+    if _ORDER_HOWTO_RE.search(q) and not is_forecast_question(q):
+        return True
     return bool(_ORDER_COMMAND_RE.search(q)) and not is_forecast_question(q.replace("사줘", "").replace("팔아줘", ""))
 
 

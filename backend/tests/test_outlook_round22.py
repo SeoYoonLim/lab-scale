@@ -117,10 +117,15 @@ def test_order_commands(q):
     assert outlook.is_order_command(q)
 
 
-@pytest.mark.parametrize("q", ["삼성전자 사도 될까?", "삼성전자 10주 사면 얼마야?", "주문 방법 알려줘", "모의투자 주문은 어떻게 해?",
-                               "체결강도가 뭐야", "삼성전자 주가 알려줘", "에코프로 지금 사도 될까?"])
+@pytest.mark.parametrize("q", ["삼성전자 사도 될까?", "삼성전자 10주 사면 얼마야?", "체결강도가 뭐야", "삼성전자 주가 알려줘",
+                               "에코프로 지금 사도 될까?", "주문 취소 수수료가 뭐야?"])
 def test_not_order_commands(q):
     assert not outlook.is_order_command(q)
+
+
+@pytest.mark.parametrize("q", ["주문 방법 알려줘", "모의투자 주문은 어떻게 해?", "매수는 어떻게 하나요?", "주식 어떻게 사요?"])
+def test_order_howto_questions_get_the_same_guide(q):
+    assert outlook.is_order_command(q)
 
 
 def test_order_path_answers_without_llm_and_never_executes(monkeypatch):
