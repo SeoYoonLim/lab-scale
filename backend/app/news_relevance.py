@@ -10,6 +10,7 @@ is_relevant_news가 False면 그 기사는 채팅·RAG·브리핑·사건 반응
 """
 
 import re
+import unicodedata
 
 from app.company_aliases import COMPANY_ALIASES
 from app.etf import mentions_etf_name
@@ -96,11 +97,23 @@ def name_forms(name: str) -> list[str]:
     return [name, *(a for a, n in COMPANY_ALIASES.items() if n == name), *_EXTRA_FORMS.get(name, ())]
 
 
+def _form_pattern(form: str) -> str:
+    """표기의 정규식. 영문·숫자와 한글이 바뀌는 자리에는 공백을 허용한다("SK 하이닉스", "LG 에너지솔루션"). 2026-11-03."""
+    out = []
+    for i, ch in enumerate(form):
+        if i and ch != " " and form[i - 1] != " " and bool(_HANGUL_RE.match(ch)) != bool(_HANGUL_RE.match(form[i - 1])):
+            out.append(r"\s*")
+        out.append(r"\s*" if ch == " " else re.escape(ch))
+    return "".join(out)
+
+
 def _mentions_word(text: str, forms: list[str], strict: bool) -> bool:
     """표기가 독립된 단어로 나오는지. 앞에 글자가 붙으면("이태성", "제주SK", "@naver.com") 다른 말이다.
-    뒤는 영문 표기에 영문이 이어지면("KT&G", "SKT") 다른 말이고, strict면 한글도 조사·문맥어일 때만 인정한다."""
+    뒤는 영문 표기에 영문이 이어지면("KT&G", "SKT") 다른 말이고, strict면 한글도 조사·문맥어일 때만 인정한다.
+    전각/반각(NFKC)·대소문자를 무시하고, 영문과 한글 사이 공백 유무는 같게 본다(2026-11-03)."""
+    text = unicodedata.normalize("NFKC", text or "")
     for form in forms:
-        for m in re.finditer(re.escape(form), text, re.IGNORECASE):
+        for m in re.finditer(_form_pattern(unicodedata.normalize("NFKC", form)), text, re.IGNORECASE):
             prev = text[m.start() - 1] if m.start() else " "
             rest = text[m.end():]
             nxt = rest[0] if rest else " "

@@ -7,6 +7,7 @@ ETF 답변에서 LLM이 쓸 수 있는 수치는 주가 조회(stock_tool) 결�
 """
 
 import re
+import unicodedata
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from app.company_aliases import ETF_BRANDS, ETF_BRANDS_NO_HANGUL_AFTER, ETF_FORMER_BRANDS
@@ -171,7 +172,8 @@ def _squash(s: str) -> str:
 
 
 def _norm(s: str) -> str:
-    return re.sub(r"\s+", " ", s or "").strip().casefold()
+    # NFKC: 전각 영문·숫자("ＴＩＧＥＲ")를 반각으로(2026-11-03)
+    return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", s or "")).strip().casefold()
 
 
 # 이름 바로 뒤에 붙어도 같은 이름으로 보는 한글(조사 첫 글자). "KODEX 200은", "KODEX 레버리지가", "코덱스200에서"
