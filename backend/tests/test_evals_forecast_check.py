@@ -57,3 +57,12 @@ def test_check_numbers_catches_a_tampered_return(dev_db):
 
     tampered = re.sub(r"(5거래일 수익률: )([+-]\d+\.\d{2})%", lambda m: f"{m.group(1)}{float(m.group(2)) + 1:+.2f}%", answer, count=1)
     assert any("5거래일 수익률" in e for e in FC.check_numbers(dev_db, tampered, "삼성전자", "1주일"))
+
+
+def test_evidence_check_ignores_spacing_case_and_width():
+    """2026-11-03 승인: 띄어쓰기 없는 ETF 이름("TIGER미국S&P500")·전각 문자를 무관으로 세지 않는다. 다른 회사 기사는 그대로 잡는다."""
+    ok = [{"type": "news", "title": "ETF 순위…TIGER미국S&P500 1위 탈환", "company_names": ["TIGER 미국S&P500"]},
+          {"type": "news", "title": "ｔｉｇｅｒ 미국s&p500 순자산 증가", "company_names": ["TIGER 미국S&P500"]}]
+    assert FC.evidence_errors(ok, "TIGER 미국S&P500", ["TIGER 미국S&P500"]) == []
+    bad = [{"type": "news", "title": "TIGER 미국나스닥100 신고가", "company_names": ["TIGER 미국S&P500"]}]
+    assert len(FC.evidence_errors(bad, "TIGER 미국S&P500", ["TIGER 미국S&P500"])) == 1

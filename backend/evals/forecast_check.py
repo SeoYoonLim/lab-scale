@@ -135,12 +135,19 @@ def check_numbers(db, answer: str, company_name: str, period: str) -> list[str]:
     return errs
 
 
+def _fold(text: str | None) -> str:
+    """비교용 정규화: 전각/반각(NFKC), 공백 제거, 대소문자 무시. (2026-11-03 승인: "TIGER미국S&P500" 같은 띄어쓰기 차이를 무관으로 셌다)"""
+    import unicodedata
+
+    return re.sub(r"\s+", "", unicodedata.normalize("NFKC", text or "")).casefold()
+
+
 def evidence_errors(sources: list[dict], company_name: str, forms: list[str]) -> list[str]:
     """(g): 근거 문서 중 요청 종목과 무관한 항목. 문서의 종목이 요청 종목 하나가 아니거나, 뉴스 제목에 그 종목 표기가 없으면 무관으로 센다."""
     errs = []
     for s in sources or []:
         if s.get("company_names") != [company_name]:
             errs.append(f"종목 {s.get('company_names')}: {s.get('title')}")
-        elif s.get("type") == "news" and not any(f.casefold() in (s.get("title") or "").casefold() for f in forms):
+        elif s.get("type") == "news" and not any(_fold(f) in _fold(s.get("title")) for f in forms):
             errs.append(f"제목에 종목 없음: {s.get('title')}")
     return errs
