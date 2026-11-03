@@ -1,13 +1,12 @@
 from app.db.session import SessionLocal
-from app.etf import mentions_etf_name
 from app.korean import josa
 from app.models import Company, News
-from app.news_relevance import title_mentions
+from app.news_relevance import evidence_news
 from app.tools.company_resolver import not_found_response, resolve_company, to_int
 
 
-# ETF 뉴스는 이름이 직접 나오는 기사만 남기므로 limit의 몇 배를 읽어서 거른다. 주식은 이 범위 안에서 제목에 이름이 있는 기사를 먼저 보여 준다.
-ETF_NEWS_OVERFETCH = 4
+# 제목에 이름이 직접 나오는 기사만 남기므로 limit의 몇 배를 읽어서 거른다(2026-11-03 4 -> 8: SK하이닉스는 최근 20건 중 제목 일치가 0건이었다).
+ETF_NEWS_OVERFETCH = 8
 
 
 def news_tool(company_name: str, limit: int = 5) -> dict:
@@ -30,37 +29,30 @@ def news_tool(company_name: str, limit: int = 5) -> dict:
             .all()
         )
 
-        excluded = 0
-        if is_etf:
-            # ETF 이름으로 검색한 기사에는 ETF 시장 전반이나 같은 계열의 다른 상품 기사가 섞여 있다. 제목·본문에 이 ETF의
-            # 이름이 직접 나오는 기사만 근거로 쓴다(더 긴 다른 ETF 이름의 일부로만 나오는 경우는 제외: "KODEX 200TR").
-            others = [n for (n,) in db.query(Company.name).filter(Company.asset_type == "etf", Company.id != company.id)]
-            related = [r for r in rows if mentions_etf_name(f"{r.title} {r.content or ''}", company.name, others)]
-            excluded = len(rows) - len(related)
-            rows = related[:limit]
-            if not rows:
-                return {
-                    "company_name": company.name,
-                    "limit": limit,
-                    "found": False,
-                    "asset_type": "etf",
-                    "message": f"{josa(company.name, '이/가')} 직접 언급된 저장 뉴스가 없습니다.",
-                    **corrected,
-                }
-
-        if not is_etf:
-            rows = sorted(rows, key=lambda r: not title_mentions(company.name, r.title))[:limit]
+        # 근거 후처리(app.news_relevance.evidence_news, 전망 경로·RAG와 같은 함수): 제목에 이 종목 이름이 있는 기사만, 비슷한 제목은 하나만.
+        # ETF는 더 긴 다른 ETF 이름의 일부로만 나오는 경우를 뺀다("KODEX 200TR"). 2026-11-03 전에는 주식은 제목 일치를 앞에 두고
+        # 나머지도 보여 줬고, ETF는 본문 언급도 인정했다.
+        others = ([n for (n,) in db.query(Company.name).filter(Company.asset_type == "etf", Company.id != company.id)]
+                  if is_etf else [])
+        candidates = [{"row": r, "title": r.title} for r in rows]
+        kept = evidence_news(company.name, company.asset_type, candidates, other_etf_names=others)
+        excluded = len(rows) - len(kept)
+        rows = [k["row"] for k in kept][:limit]
 
         if not rows:
             hidden = db.query(News.id).filter(News.company_id == company.id).first() is not None
-            return {
+            out = {
                 "company_name": company.name,
                 "limit": limit,
                 "found": False,
-                "message": f"'{company.name}' 관련 뉴스를 찾지 못했습니다." if hidden
+                "message": f"{josa(company.name, '이/가')} 제목에 나오는 관련 뉴스를 찾지 못했습니다." if hidden
                 else f"'{company.name}'는 등록된 종목이지만 아직 수집된 뉴스가 없습니다.",
+                "excluded_unrelated": excluded,
                 **corrected,
             }
+            if is_etf:
+                out["asset_type"] = "etf"
+            return out
 
         news_items = [
             {
@@ -79,10 +71,11 @@ def news_tool(company_name: str, limit: int = 5) -> dict:
             "limit": limit,
             "found": True,
             "news": news_items,
+            "excluded_unrelated": excluded,
             **corrected,
         }
         if is_etf:
-            out.update(asset_type="etf", excluded_unrelated=excluded)
+            out["asset_type"] = "etf"
         return out
     finally:
         db.close()

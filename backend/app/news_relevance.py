@@ -144,3 +144,49 @@ def is_relevant_news(company_name: str, ticker: str | None, asset_type: str | No
         sector = _SECTOR_WORDS.get(company_name)
         return bool(sector.search(text)) if sector else bool(_GROUP_CONTEXT_RE.search(text))
     return True
+
+
+# ---------- 근거 뉴스 후처리(2026-11-03) ----------
+# 채팅에서 근거로 보여 주는 뉴스는 (1) 제목에 요청 종목 이름(별칭·뉴스 표기 포함, ETF는 그 ETF 이름)이 있고 (2) since 이후 발행이며
+# (3) 정규화한 제목이 거의 같은 기사(여러 언론사의 같은 기사)는 하나만 남긴다. 전망 경로(app/outlook.py)·news_tool·rag_search_tool이
+# 같은 함수를 쓴다. 배경: SK하이닉스 후속 질문에 삼성전자·삼성전기 기사가 근거로 붙었다(종목 없이 검색된 결과).
+DUPLICATE_TITLE_RATIO = 0.9
+_TITLE_NORM_RE = re.compile(r"[^0-9A-Za-z가-힣]")
+
+
+def normalized_title(title: str | None) -> str:
+    return _TITLE_NORM_RE.sub("", title or "").casefold()
+
+
+def is_duplicate_title(a: str | None, b: str | None) -> bool:
+    import difflib
+
+    x, y = normalized_title(a), normalized_title(b)
+    return bool(x) and bool(y) and (x == y or difflib.SequenceMatcher(None, x, y).ratio() >= DUPLICATE_TITLE_RATIO)
+
+
+def title_names_subject(company_name: str, asset_type: str | None, title: str | None, other_etf_names=()) -> bool:
+    """제목이 그 종목을 가리키는지. 주식은 title_mentions, ETF는 제목에 그 ETF 이름이 있을 때(더 긴 다른 ETF 이름의 일부는 제외)."""
+    if asset_type == "etf":
+        return mentions_etf_name(title or "", company_name, [n for n in other_etf_names if company_name in n and n != company_name])
+    return title_mentions(company_name, title)
+
+
+def evidence_news(company_name: str, asset_type: str | None, items: list[dict], since=None, other_etf_names=(),
+                  date_key: str = "published_at") -> list[dict]:
+    """근거 뉴스 후처리(입력 순서 유지). items는 {"title", date_key: ISO 문자열 또는 None, ...}. since(aware datetime)가 있으면
+    발행일이 없거나 그보다 이전인 기사는 뺀다."""
+    from datetime import datetime
+
+    kept: list[dict] = []
+    for it in items:
+        if not title_names_subject(company_name, asset_type, it.get("title"), other_etf_names):
+            continue
+        if since is not None:
+            raw = it.get(date_key)
+            if not raw or datetime.fromisoformat(str(raw)) < since:
+                continue
+        if any(is_duplicate_title(it.get("title"), k.get("title")) for k in kept):
+            continue
+        kept.append(it)
+    return kept

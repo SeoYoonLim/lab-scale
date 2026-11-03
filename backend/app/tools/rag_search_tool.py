@@ -9,7 +9,7 @@ from app.db.session import SessionLocal
 from app.embeddings import EMBEDDING_MODEL
 from app.llm_settings import embed_options
 from app.models import Company, Disclosure, News
-from app.news_relevance import title_mentions
+from app.news_relevance import evidence_news
 from app.tools.company_resolver import not_found_response, resolve_company, to_int
 
 
@@ -129,9 +129,15 @@ def rag_search_tool(query: str, company_name: str | None = None, limit: int = 5)
 
         # news/disclosure를 각각 top-k로 뽑은 뒤 합쳤으니, 최종 유사도 기준으로 다시 정렬해서 자른다.
         results.sort(key=lambda r: r["score"], reverse=True)
-        if company is not None and company.asset_type != "etf":
-            # 뉴스 도구와 같은 기준: 제목에 이름이 없는 뉴스는 뒤로 보낸다(공시는 그 회사 문서다)
-            results.sort(key=lambda r: r["type"] == "news" and not title_mentions(company.name, r["title"]))
+        if company is not None:
+            # 뉴스 도구와 같은 근거 후처리(app.news_relevance.evidence_news): 제목에 이 종목 이름이 없는 뉴스와 같은 기사의 중복은 뺀다.
+            # 공시는 그 회사(company_id)의 문서라 그대로 둔다. 2026-11-03 전에는 제목 불일치 뉴스를 뒤로 보내기만 했다.
+            others = ([n for (n,) in db.query(Company.name).filter(Company.asset_type == "etf", Company.id != company.id)]
+                      if company.asset_type == "etf" else [])
+            news = evidence_news(company.name, company.asset_type, [r for r in results if r["type"] == "news"],
+                                 other_etf_names=others)
+            kept = {id(r) for r in news}
+            results = [r for r in results if r["type"] != "news" or id(r) in kept]
         results = results[:limit]
 
         response_company = company.name if company is not None else None

@@ -61,18 +61,30 @@ class TestToolsOnEtf:
     @pytest.mark.needs_collected_data
     def test_news_tool_returns_only_articles_naming_the_etf(self, dev_db):
         names = [n for (n,) in dev_db.execute(text("SELECT name FROM company WHERE asset_type = 'etf'"))]
+        # 2026-11-03부터 제목에 그 ETF 이름이 있는 기사만 남긴다(본문 언급은 근거가 아니다). 그런 기사가 없으면 found False다
+        # (TIGER 미국나스닥100은 저장 기사 제목에 이름이 없어 찾지 못함).
+        found = 0
         for name in ("KODEX 200", "KODEX 레버리지", "TIGER 미국나스닥100", "RISE 200"):
             r = news_tool(name, 5)
-            assert r["found"] and r["asset_type"] == "etf" and "excluded_unrelated" in r
-            for n in r["news"]:
-                assert mentions_etf_name(f"{n['title']} {n['content']}", name, [x for x in names if x != name]), (name, n["title"])
+            assert r["asset_type"] == "etf" and "excluded_unrelated" in r
+            found += r["found"]
+            for n in r.get("news", []):
+                assert mentions_etf_name(n["title"], name, [x for x in names if x != name]), (name, n["title"])
+        assert found >= 3
 
     @pytest.mark.needs_collected_data
-    def test_stock_news_tool_returns_the_same_rows_as_before(self, dev_db):
+    def test_stock_news_tool_returns_title_matches_only(self, dev_db):
         cid = dev_db.execute(text("SELECT id FROM company WHERE ticker = '005930'")).scalar()
-        recent = dev_db.query(News.url, News.title).filter(News.company_id == cid, News.is_relevant.isnot(False)).order_by(News.published_at.desc()).limit(20).all()
-        # 주식은 최근 20건 안에서 제목에 이름이 있는 기사를 먼저 보여 준다(2026-11-02)
-        expected = [r.url for r in sorted(recent, key=lambda r: not title_mentions("삼성전자", r.title))[:5]]
+        recent = dev_db.query(News.url, News.title).filter(News.company_id == cid, News.is_relevant.isnot(False)).order_by(News.published_at.desc()).limit(40).all()
+        # 2026-11-03부터 최근 40건(limit의 8배) 중 제목에 이름이 있는 기사만, 비슷한 제목은 하나만 보여 준다
+        from app.news_relevance import is_duplicate_title
+
+        expected, kept = [], []
+        for r in recent:
+            if title_mentions("삼성전자", r.title) and not any(is_duplicate_title(r.title, k) for k in kept):
+                kept.append(r.title)
+                expected.append(r.url)
+        expected = expected[:5]
         assert [n["url"] for n in news_tool("삼성전자", 5)["news"]] == expected
 
     @pytest.mark.needs_collected_data

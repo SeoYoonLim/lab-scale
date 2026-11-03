@@ -224,7 +224,8 @@ def test_title_mentions(name, title, hit):
     assert title_mentions(name, title) is hit
 
 
-def test_news_tool_shows_title_matches_first_within_the_window(monkeypatch):
+def test_news_tool_keeps_only_title_matches_within_the_window(monkeypatch):
+    # 2026-11-03부터 제목에 종목 이름이 없는 기사는 근거에서 뺀다(app.news_relevance.evidence_news). 전에는 뒤로 보내기만 했다.
     from types import SimpleNamespace as NS
 
     from app.tools import news_tool as NT
@@ -260,6 +261,7 @@ def test_news_tool_shows_title_matches_first_within_the_window(monkeypatch):
     monkeypatch.setattr(NT, "SessionLocal", lambda: Db())
     monkeypatch.setattr(NT, "resolve_company", lambda db, name: NS(company=company, corrected_from=None))
     out = NT.news_tool("카카오", limit=3)
-    assert [n["title"] for n in out["news"]] == ["카카오 실적", "카카오 주가", "시황 기사"]
+    assert [n["title"] for n in out["news"]] == ["카카오 실적", "카카오 주가"]
+    assert out["excluded_unrelated"] == 3
     assert limits == [3 * NT.ETF_NEWS_OVERFETCH]
 
