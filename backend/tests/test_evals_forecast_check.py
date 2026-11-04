@@ -66,3 +66,68 @@ def test_evidence_check_ignores_spacing_case_and_width():
     assert FC.evidence_errors(ok, "TIGER 미국S&P500", ["TIGER 미국S&P500"]) == []
     bad = [{"type": "news", "title": "TIGER 미국나스닥100 신고가", "company_names": ["TIGER 미국S&P500"]}]
     assert len(FC.evidence_errors(bad, "TIGER 미국S&P500", ["TIGER 미국S&P500"])) == 1
+
+
+# ---------- batch 18(2026-11-04, 23차) 채점기 ----------
+
+ANSWER23 = """SK하이닉스(000660) · 향후 5거래일
+
+현재는 단기 반등 시도, 추세 전환은 미확인 (기준일 2026-11-03 종가)
+
+## 종합 판단
+단기 신호는 상승 쪽이 많지만(묶음 표 상승 2, 하락 0), 급락 뒤의 반등이라 추세 전환은 확인되지 않았습니다. 과거 검증에서 이 신호 조합(상승 우위)은 방향을 잘 맞히지 못했습니다(상승 비율 51.8% vs 전체 49.9%).
+
+## 신호 판정 상세
+- SK하이닉스(000660), 분석 기간 1주일(5거래일): 상승 우위
+- 묶음 판정(묶음당 1표): 상승 쪽 2표, 하락 쪽 0표, 중립 1표 (계산한 묶음 3개)
+  - 단기 흐름(지표): 상승 쪽 1표 ← 5거래일 수익률 +2.91%(상승 쪽), 지수보다 강한 흐름(상승 쪽)
+  - 중기 추세(지표): 중립 1표 ← 종가가 20일 이동평균 아래(하락 쪽), 5일선이 20일선 위(상승 쪽), 2026-11-02 골든크로스(상승 쪽, '5일선이 20일선 위'와 같은 사실이라 세지 않음)
+  - MACD(12,26,9): 상승 쪽 1표 ← MACD가 시그널 위(상승 쪽)
+"""
+
+
+def test_layout_accepts_conclusion_first_and_rejects_old_order():
+    assert FC.check_layout(ANSWER23, "SK하이닉스", "1주일") == []
+    assert FC.check_layout(ANSWER23, "SK하이닉스", "1개월")  # 기간이 다르면 실패
+    old = "## 최종 신호 판단\n- SK하이닉스(000660), 분석 기간 1주일(5거래일): 상승 우위\n"
+    assert FC.check_layout(old, "SK하이닉스", "1주일")
+    labeled = ANSWER23.replace("현재는 단기 반등 시도", "상승 우위 · 현재는 단기 반등 시도")
+    assert "제목·상태 줄에 우위 라벨" in " ".join(FC.check_layout(labeled, "SK하이닉스", "1주일"))
+
+
+def test_double_vote_check_catches_cross_counted_twice():
+    assert FC.check_double_vote(ANSWER23) == []
+    twice = ANSWER23.replace("(상승 쪽, '5일선이 20일선 위'와 같은 사실이라 세지 않음)", "(상승 쪽)").replace("중기 추세(지표): 중립", "중기 추세(지표): 상승 쪽")
+    errs = FC.check_double_vote(twice)
+    assert any("따로 셈" in e for e in errs)
+    separate = ANSWER23.replace(", 2026-11-02 골든크로스(상승 쪽, '5일선이 20일선 위'와 같은 사실이라 세지 않음)", "") + \
+        "  - 이동평균 교차: 상승 쪽 1표 ← 2026-11-02 골든크로스(상승 쪽)\n"
+    assert any("다른 묶음" in e for e in FC.check_double_vote(separate))
+
+
+def test_short_followup_check():
+    ok = ("SK하이닉스(000660) · 향후 5거래일 · 현재는 단기 반등 시도, 추세 전환은 미확인 (기준일 2026-11-03 종가)\n\n"
+          "지금 데이터로는 1주일 뒤 방향을 믿을 만하게 판단할 수 없습니다.\n\n- 가장 큰 상승 근거: a\n- 가장 큰 하락 위험: b\n"
+          "- 확인할 가격대: c\n\n자세한 근거는 바로 위 분석에 있습니다.")
+    assert FC.check_short_followup(ok, "SK하이닉스", "1주일", "verdict") == []
+    assert FC.check_short_followup(ok + "\n- 판정 규칙: ...", "SK하이닉스", "1주일", "verdict")  # 7줄, 규칙
+    assert FC.check_short_followup(ok, "삼성전자", "1주일", "verdict")  # 종목이 바뀜
+    assert FC.check_short_followup(ok.replace("지금 데이터로는", "판정 결과는"), "SK하이닉스", "1주일", "verdict")
+    assert FC.title_of(ok) == {"name": "SK하이닉스", "ticker": "000660", "period": "1주일"}
+
+
+@pytest.mark.integration
+@pytest.mark.needs_collected_data
+def test_numbers23_and_regime_catch_tampering(dev_db):
+    import re
+
+    from app import agent
+
+    answer = agent.ask_question("SK하이닉스 일주일 안에 오를지 내릴지 분석해줘", save_report=False)["answer"]
+    assert FC.check_numbers23(dev_db, answer, "SK하이닉스") == [] and FC.check_regime(dev_db, answer, "SK하이닉스") == []
+    tampered = re.sub(r"60일선\(([\d,]+)원\)", lambda m: f"60일선({int(m.group(1).replace(',', '')) + 5000:,}원)", answer, count=1)
+    assert any("60일선" in e for e in FC.check_numbers23(dev_db, tampered, "SK하이닉스"))
+    wrong = re.sub(r"52주 기준 최근 250거래일", "52주 기준 최근 240거래일", answer, count=1)
+    assert any("조회 기간" in e for e in FC.check_numbers23(dev_db, wrong, "SK하이닉스"))
+    flipped = re.sub(r"현재는 [^(]+ \(", "현재는 상승 추세 지속 (", answer, count=1)
+    assert FC.check_regime(dev_db, flipped, "SK하이닉스")

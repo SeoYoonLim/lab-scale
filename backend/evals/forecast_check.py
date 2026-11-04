@@ -249,17 +249,20 @@ def check_earnings(db, answer: str, company_name: str) -> list[str]:
     lines = _section(answer, "실적(참고)")
     if not lines:
         return ["실적 섹션 없음"]
-    rows = [l for l in lines if re.match(r"- \d{4}년 (?:1분기|2분기|3분기|연간)\(", l)]
+    rows = [l for l in lines if re.match(r"- \d{4}년 (?:1분기|2분기|3분기|4분기|연간)\(", l)]
     if not rows:
         return ["실적 줄 없음: " + " ".join(lines)[:80]]
     code = {"1분기": "11013", "2분기": "11012", "3분기": "11014", "연간": "11011"}
     errs = []
     for line in rows:
-        m = re.match(r"- (\d{4})년 (1분기|2분기|3분기|연간)\((연결|별도)\): (.+) \(접수일 (\S+), DART 접수번호 (\d+)\)", line)
+        m = re.match(r"- (\d{4})년 (1분기|2분기|3분기|4분기|연간)\((연결|별도)(?:, 연간 - 3분기 누적)?\): (.+) \(접수일 (\S+), DART 접수번호 (\d+)\)", line)
         if not m:
             errs.append(f"실적 줄 형식: {line[:60]}")
             continue
         year, q, basis, body, d, rcept = m.groups()
+        if q == "4분기":  # 2026-11-03 지시 A: 4분기 = 사업보고서 연간 - 같은 해 3분기 누적(SQL로 따로 계산)
+            errs += _check_q4(db, company_name, int(year), basis, body, d, rcept)
+            continue
         r = db.execute(text(
             "select e.fs_div, e.revenue, e.operating_income, e.net_income, e.revenue_prev, e.operating_income_prev, e.net_income_prev, "
             "e.rcept_no, e.disclosed_date from quarterly_earnings e join company c on c.id = e.company_id "
@@ -281,4 +284,251 @@ def check_earnings(db, answer: str, company_name: str) -> list[str]:
             want_yoy = f"{(float(cur) / float(prev) - 1) * 100:+.1f}" if prev is not None and float(prev) > 0 and float(cur) >= 0 else None
             if mm.group(2) != want_yoy:
                 errs.append(f"{year} {q} {name} 증감률 {mm.group(2)} != {want_yoy}")
+    return errs
+
+
+def _check_q4(db, company_name: str, year: int, basis: str, body: str, d: str, rcept: str) -> list[str]:
+    """4분기 = 연간(11011) - 3분기 누적(11014의 *_cum). 전년 동기는 전년도 같은 계산."""
+    def q4(y):
+        r = db.execute(text(
+            "select a.fs_div, a.revenue - q.revenue_cum, a.operating_income - q.operating_income_cum, a.net_income - q.net_income_cum, "
+            "a.rcept_no, a.disclosed_date from quarterly_earnings a join quarterly_earnings q on q.company_id = a.company_id "
+            "and q.bsns_year = a.bsns_year and q.reprt_code = '11014' and q.fs_div = a.fs_div join company c on c.id = a.company_id "
+            "where c.name = :n and a.bsns_year = :y and a.reprt_code = '11011'"), {"n": company_name, "y": y}).first()
+        return r
+    cur, prev = q4(year), q4(year - 1)
+    if cur is None:
+        return [f"{year} 4분기: DB에서 계산 불가"]
+    errs = []
+    if (basis == "연결") != (cur[0] == "CFS") or rcept != cur[4] or d != cur[5].isoformat():
+        errs.append(f"{year} 4분기 기준·접수번호·접수일 불일치")
+    for i, name in ((1, "매출액"), (2, "영업이익"), (3, "당기순이익")):
+        mm = re.search(rf"{name} (-?[\d,]+)억 원(?:, 전년 동기 대비 ([+-][\d.]+)%)?", body)
+        if cur[i] is None:
+            continue
+        if not mm or mm.group(1) != f"{float(cur[i]) / 1e8:,.0f}":
+            errs.append(f"{year} 4분기 {name} {mm.group(1) if mm else None} != {float(cur[i]) / 1e8:,.0f}")
+            continue
+        p = prev[i] if prev is not None and prev[0] == cur[0] else None
+        want = f"{(float(cur[i]) / float(p) - 1) * 100:+.1f}" if p is not None and float(p) > 0 and float(cur[i]) >= 0 else None
+        if mm.group(2) != want:
+            errs.append(f"{year} 4분기 {name} 증감률 {mm.group(2)} != {want}")
+    return errs
+
+
+# ---------- batch 18(2026-11-04, 23차): 결론 먼저 구조, 국면(독립 SQL), 같은 사실 1표, 짧은 후속 답, 숫자·조회 기간 ----------
+# 국면 규칙은 API.md "국면 규칙"을 그대로 옮겼다(app/outlook.py를 import하지 않는다).
+
+REGIMES = ("단기 반등 시도, 추세 전환은 미확인", "상승 추세 지속", "상승 추세 중 조정", "하락 추세 지속", "횡보, 방향 불분명",
+           "판단 유보(데이터 부족)")
+_TITLE = re.compile(r"^(?P<name>.+?)\((?P<ticker>[0-9A-Z]{6})\) · 향후 (?P<days>\d+)거래일")
+_STATE = re.compile(r"현재는 (?P<regime>.+?) \(기준일 (?P<date>\d{4}-\d{2}-\d{2}) 종가\)")
+_SENTENCE_END = re.compile(r"(?:다|요)(?:\([^)]*\))?\.(?=\s|$)")  # "...못했습니다(상승 비율 51.8% vs 전체 49.9%)."도 한 문장
+
+
+def regime_expected(db, company_name: str, base_date: str, hold: bool = False) -> str:
+    """API.md "국면 규칙"을 SQL 종가로 다시 계산한다."""
+    closes = [c for _, c, _ in _rows(db, company_name, base_date, 61)]
+    if hold or len(closes) < 61:
+        return REGIMES[5]
+    close = closes[-1]
+    r = {n: (close / closes[-1 - n] - 1) * 100 for n in (5, 20, 60)}
+    ma = {n: sum(closes[-n:]) / n for n in (5, 20, 60)}
+    low20 = (close / min(closes[-21:]) - 1) * 100
+    big_drop = r[20] <= -10 or r[60] <= -15
+    rebound = r[5] > 0 or ma[5] > ma[20] or low20 >= 5
+    if big_drop and rebound and (close < ma[20] or close < ma[60]):
+        return REGIMES[0]
+    if close < ma[20] < ma[60] and (r[20] <= -5 or r[60] <= -10):
+        return REGIMES[3]
+    if r[60] >= 10 and close > ma[60] and ma[20] > ma[60] and (close < ma[20] or r[5] <= -3):
+        return REGIMES[2]
+    if close > ma[20] > ma[60] and (r[20] >= 5 or r[60] >= 10):
+        return REGIMES[1]
+    return REGIMES[4]
+
+
+def title_of(answer: str) -> dict | None:
+    m = _TITLE.search(answer or "")
+    if not m:
+        return None
+    period = next((p for p, s in SPEC.items() if str(s["days"]) == m.group("days")), None)
+    return {"name": m.group("name"), "ticker": m.group("ticker"), "period": period}
+
+
+def check_layout(answer: str, company_name: str, period: str) -> list[str]:
+    """(a) 제목 줄 -> 상태 줄 -> 첫 섹션 "종합 판단"(2~3문장). 제목·상태 줄에 우위 라벨을 단독으로 내세우지 않는다."""
+    lines = (answer or "").splitlines()
+    errs = []
+    t = title_of(lines[0] if lines else "")
+    if not t or t["name"] != company_name or t["period"] != period:
+        errs.append(f"제목 줄 {lines[0][:40] if lines else None!r}")
+    intro = []
+    for line in lines[1:]:
+        if line.startswith("## "):
+            break
+        if line.strip():
+            intro.append(line)
+    if not intro or not _STATE.match(intro[0]) or _STATE.match(intro[0]).group("regime") not in REGIMES:
+        errs.append(f"상태 줄 {intro[0][:40] if intro else None!r}")
+    if any(w in " ".join([lines[0] if lines else ""] + intro[:1]) for w in ("상승 우위", "하락 우위")):
+        errs.append("제목·상태 줄에 우위 라벨")
+    sec = sections(answer)
+    first = next(iter(sec), None)
+    if first != "종합 판단":
+        errs.append(f"첫 섹션 {first}")
+    else:
+        para = next((x for x in sec[first] if not x.startswith(("-", " "))), "")
+        n = len(_SENTENCE_END.findall(para))
+        if not 2 <= n <= 3:
+            errs.append(f"종합 판단 {n}문장")
+    return errs
+
+
+def check_regime(db, answer: str, company_name: str) -> list[str]:
+    """(c) 상태 줄의 국면 = 독립 SQL 계산."""
+    m = _STATE.search(answer or "")
+    if not m:
+        return ["상태 줄 없음"]
+    hold = (marker(answer) or {}).get("label") == "판단 유보"
+    want = regime_expected(db, company_name, m.group("date"), hold)
+    return [] if m.group("regime") == want else [f"국면 {m.group('regime')} != {want}"]
+
+
+_GROUP_LINE23 = re.compile(r"^  - (?P<group>[^:]+): (?P<vote>상승 쪽|하락 쪽|중립) 1표 ← (?P<members>.+)$", re.MULTILINE)
+_MEMBER23 = re.compile(r"(?P<name>[^,(]+?)\((?P<side>상승 쪽|하락 쪽|중립)(?P<note>, '[^']+'와 같은 사실이라 세지 않음)?\)(?:, |$)")
+_CROSS = re.compile(r"골든크로스|데드크로스")
+_ALIGN = re.compile(r"\d+일선이 \d+일선 (?:위|아래)")
+
+
+def check_double_vote(answer: str) -> list[str]:
+    """(b) 교차와 이동평균 배열(같은 사실)이 2표가 되지 않는다: 같은 묶음에 있고, 배열이 있으면 교차는 세지 않는다.
+    그 규칙으로 묶음 표·집계·라벨·종합 판단의 표 수를 다시 계산해 대조한다."""
+    errs, votes = [], []
+    groups = list(_GROUP_LINE23.finditer(answer or ""))
+    if not groups:
+        return ["묶음 줄 없음"]
+    cross_groups, align_groups = set(), set()
+    for g in groups:
+        members = list(_MEMBER23.finditer(g.group("members")))
+        names = [m.group("name").strip() for m in members]
+        if any(_CROSS.search(n) for n in names):
+            cross_groups.add(g.group("group"))
+        if any(_ALIGN.search(n) for n in names):
+            align_groups.add(g.group("group"))
+        has_align = any(_ALIGN.search(n) for n in names)
+        total = 0
+        for m in members:
+            if _CROSS.search(m.group("name")) and has_align:
+                if not m.group("note"):
+                    errs.append(f"{g.group('group')}: 교차를 배열과 따로 셈")
+                continue
+            total += _SIDE[m.group("side")]
+        want = 1 if total > 0 else -1 if total < 0 else 0
+        if _SIDE[g.group("vote")] != want:
+            errs.append(f"{g.group('group')}: 표 {g.group('vote')} != 재계산 {want}")
+        votes.append(want)
+    if cross_groups and align_groups and cross_groups != align_groups:
+        errs.append(f"교차 {sorted(cross_groups)}와 배열 {sorted(align_groups)}가 다른 묶음(2표)")
+    m = _VOTE_LINE.search(answer or "")
+    if not m:
+        return errs + ["묶음 집계 줄 없음"]
+    up, down = votes.count(1), votes.count(-1)
+    if (int(m.group(1)), int(m.group(2))) != (up, down):
+        errs.append(f"집계 {(m.group(1), m.group(2))} != {(up, down)}")
+    t = re.search(r"묶음 표 상승 (\d+), 하락 (\d+)", answer or "")
+    if t and (int(t.group(1)), int(t.group(2))) != (up, down):
+        errs.append(f"종합 판단 표 수 {t.groups()} != {(up, down)}")
+    return errs
+
+
+def check_short_followup(answer: str, company_name: str, period: str, kind: str) -> list[str]:
+    """(d) 6줄 이하(빈 줄 제외), 규칙 설명 0, 섹션 없음, 직전 종목·기간 유지(첫 줄 제목), 종류별 첫 내용."""
+    lines = [x for x in (answer or "").splitlines() if x.strip()]
+    errs = []
+    if len(lines) > 6:
+        errs.append(f"{len(lines)}줄")
+    if re.search(r"규칙", answer or ""):
+        errs.append("규칙 설명")
+    if "## " in (answer or ""):
+        errs.append("섹션 제목")
+    t = title_of(lines[0] if lines else "")
+    if not t or t["name"] != company_name or t["period"] != period:
+        errs.append(f"종목·기간 {t}")
+    second = lines[1] if len(lines) > 1 else ""
+    if kind == "verdict" and not second.startswith(("지금 데이터로는", "과거 검증에서 이 신호 상태", "데이터가 부족해")):
+        errs.append(f"첫 문장이 질문에 바로 답하지 않음: {second[:30]}")
+    if kind == "risk":
+        level = next((x for x in lines if x.startswith("- 확인할 가격대: ")), "")
+        if not any(x.startswith("- 하락 위험: ") for x in lines) or not all(w in level for w in ("20일선", "분석 기간 최저 종가", "52주 최저 종가")):
+            errs.append("하락 위험·가격대")
+    if kind == "probability" and (second != "검증된 상승·하락 확률은 없습니다." or "과거 빈도" not in (answer or "")):
+        errs.append("확률 없음 안내·과거 빈도")
+    return errs
+
+
+def _closes_between(db, company_name: str, start: str, end: str) -> list[tuple]:
+    rows = db.execute(text(
+        "select s.price_date, s.close_price from stock_price s join company c on c.id = s.company_id "
+        "where c.name = :n and s.price_date between :a and :b order by s.price_date"), {"n": company_name, "a": start, "b": end}).fetchall()
+    return [(r[0], float(r[1])) for r in rows]
+
+
+def check_numbers23(db, answer: str, company_name: str) -> list[str]:
+    """(e) 숫자 SQL 검산(모든 N거래일 수익률, N일선·N일 이동평균, 하루 등락, 거래량 배수, 최고·최저 종가와 조회 기간)과
+    최고·최저 값마다 조회 기간 표시."""
+    m = _STATE.search(answer or "") or re.search(r"기준일\(최신 거래일\): (?P<date>\d{4}-\d{2}-\d{2})", answer or "")
+    if not m:
+        return ["기준일 없음"]
+    base = m.group("date")
+    rows = _rows(db, company_name, base)
+    closes = [c for _, c, _ in rows]
+    errs = []
+    for n, v in set(re.findall(r"(\d+)거래일 수익률:? ([+-]\d+\.\d{2})%", answer)):
+        n = int(n)
+        if len(closes) > n and abs(float(v) - round((closes[-1] / closes[-1 - n] - 1) * 100, 2)) > 0.011:
+            errs.append(f"{n}거래일 수익률 {v}")
+    for n, v in set(re.findall(r"(\d+)일선\(?\s?([\d,]+)원", answer) + re.findall(r"(\d+)일 이동평균: ([\d,]+)원", answer)):
+        n = int(n)
+        if len(closes) >= n and abs(_num(v) - round(sum(closes[-n:]) / n)) > 1:
+            errs.append(f"{n}일선 {v}")
+    for v in set(re.findall(r"하루 (?:등락률: )?([+-]\d+\.\d{2})%", answer)):
+        if abs(float(v) - round((closes[-1] / closes[-2] - 1) * 100, 2)) > 0.011:
+            errs.append(f"하루 등락 {v}")
+    vols = [v for _, _, v in rows[-21:-1]]
+    if all(v is not None for v in vols) and rows[-1][2]:
+        ratio = round(rows[-1][2] / (sum(vols) / 20), 2)
+        for v in set(re.findall(r"평균의 (\d+\.\d{2})배", answer)):
+            if abs(float(v) - ratio) > 0.011:
+                errs.append(f"거래량 배수 {v} != {ratio}")
+    rng = re.compile(r"- (?:52주 )?(최고|최저) 종가 대비: ([+-]\d+\.\d{2})% \(조회 기간 (\S+?)~(\S+?), (?:분석 기간|52주) 기준 최근 (\d+)거래일, "
+                     r"(?:최고|최저) 종가 ([\d,]+)원, (\S+?)\)")
+    for kind, pct, a, b, n, v, d in rng.findall(answer):
+        win = _closes_between(db, company_name, a, b)
+        if len(win) != int(n) + 1 or b != base:
+            errs.append(f"{kind} 조회 기간 {a}~{b} 거래일 {len(win) - 1} != {n}")
+            continue
+        pick = (max if kind == "최고" else min)(c for _, c in win)
+        days = [dd.isoformat() for dd, c in win if c == pick]
+        if abs(_num(v) - pick) > 0.5 or d not in days or abs(float(pct) - round((closes[-1] / pick - 1) * 100, 2)) > 0.011:
+            errs.append(f"{kind} 종가 {v}({d}) {pct}% != {pick}({days})")
+    def last_window(n):
+        return [(d, c) for d, c, _ in rows[-(n + 1):]]
+
+    checks = [(kind, v, d, last_window(int(n))) for _, kind, v, d, n in
+              re.findall(r"(분석 기간|52주) (최고|최저) 종가 ([\d,]+)원\((\S+?), 최근 (\d+)거래일 기준\)", answer)]
+    for n, a, b, v, d, v2, d2 in re.findall(r"분석 기간\(최근 (\d+)거래일, (\S+?)~(\S+?)\) 최저 종가 ([\d,]+)원\((\S+?)\)[^\n]*?"
+                                            r"같은 기간 최고 종가 ([\d,]+)원\((\S+?)\)", answer):
+        win = _closes_between(db, company_name, a, b)
+        if len(win) != int(n) + 1:
+            errs.append(f"확인할 사항 조회 기간 {a}~{b} 거래일 {len(win) - 1} != {n}")
+        checks += [("최저", v, d, win), ("최고", v2, d2, win)]
+    for kind, v, d, win in checks:
+        pick = (max if kind == "최고" else min)(c for _, c in win)
+        days = [dd.isoformat() for dd, c in win if c == pick]
+        if abs(_num(v) - pick) > 0.5 or d not in days:
+            errs.append(f"{kind} 종가 {v}({d}) != {pick}({days})")
+    for line in (answer or "").splitlines():
+        if re.search(r"(최고|최저) 종가 [\d,]+원", line) and not re.search(r"\d{4}-\d{2}-\d{2}~\d{4}-\d{2}-\d{2}|최근 \d+거래일 기준", line):
+            errs.append(f"조회 기간 없는 최고·최저 값: {line[:50]}")
     return errs
