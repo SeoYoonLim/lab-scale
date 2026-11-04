@@ -216,7 +216,7 @@ def test_answer_order_title_state_summary_then_details():
     rows = _rows()
     text = outlook.forecast_answer(COMPANY, W1, _result(rows), [], [], None, _now_for(rows))
     lines = text.splitlines()
-    assert lines[0] == "SK하이닉스(000660) · 향후 5거래일"
+    assert lines[0].startswith("SK하이닉스(000660) · 향후 5거래일 · 방향: ")  # 25차: 제목 줄에 방향
     assert lines[2].startswith("현재는 ") and any(r in lines[2] for r in outlook.REGIMES)
     titles = [line[3:] for line in lines if line.startswith("## ")]
     assert titles[:5] == ["종합 판단", "상승을 뒷받침하는 근거", "하락 위험 근거", "앞으로 확인할 사항", "과거 검증"]
@@ -234,7 +234,7 @@ def test_answer_order_title_state_summary_then_details():
 def test_title_line_follows_the_period(period, days):
     rows = _rows()
     text = outlook.forecast_answer(COMPANY, outlook.PERIODS[period], _result(rows, period), [], [], None, _now_for(rows))
-    assert text.splitlines()[0] == f"SK하이닉스(000660) · 향후 {days}거래일"
+    assert text.splitlines()[0].startswith(f"SK하이닉스(000660) · 향후 {days}거래일 · 방향: ")
     assert outlook.marker_of(text)["period"] == period
 
 
@@ -343,14 +343,15 @@ def _nonblank(text):
 def test_verdict_followup_answers_directly_in_six_lines(backtest):
     text = outlook.followup_answer(COMPANY, W1, _skhynix_like(), "verdict", NOW)
     lines = _nonblank(text)
-    assert len(lines) <= 6
-    assert lines[0] == "SK하이닉스(000660) · 향후 5거래일 · 현재는 단기 반등 시도, 추세 전환은 미확인 (기준일 2026-11-03 종가)"
-    # 24차(2026-11-04): 판단 회피 대신 현재 판단을 먼저 쓰고, 예측력은 그다음 줄에 표본·95% 구간과 함께 밝힌다
-    assert lines[1].startswith("현재 판단: 중립(굳이 고르면 상승 쪽). 단기 신호는 상승 쪽이 많지만(5개 묶음 중 상승 2·하락 0·중립 3)")
-    assert lines[2].startswith("- 예측력: 과거 검증에서 이 신호 상태(상승 우위)의 1주일 뒤 상승 비율은 51.8%")
-    assert "95% 구간 -1.4~+5.3%p" in lines[2] and lines[2].endswith("방향 예측력은 확인되지 않았습니다.")
-    assert lines[3].startswith("- 가장 큰 상승 근거: ") and lines[4].startswith("- 가장 큰 하락 위험: 20거래일 수익률 -23.24%")
-    assert lines[5] == "- 확인할 가격대: 5일선 1,461,800원·20일선 1,421,300원·60일선 1,604,583원 회복 여부"
+    assert len(lines) <= 5
+    # 25차(2026-11-04): 제목 줄에 방향과 신뢰도, 국면은 "현재는 …"로 따로. 둘째 줄 첫 문장이 방향이다(국면이 방향을 덮어쓰지 않는다).
+    assert lines[0] == ("SK하이닉스(000660) · 향후 5거래일 · 방향: 상승 쪽(신뢰도 낮음) · 현재는 단기 반등 시도, 추세 전환은 미확인 "
+                        "(기준일 2026-11-03 종가)")
+    assert lines[1] == ("상승 쪽입니다. 다만 신호가 약하고(5개 묶음 중 상승 2·하락 0·중립 3), 추세는 아직 하락 후 반등 시도(추세 전환 미확인) "
+                        "단계이며, 과거 검증에서 이런 신호의 방향 예측력이 확인되지 않아 신뢰도는 낮습니다.")
+    assert lines[2].startswith("- 근거: ") and "위험: 20거래일 수익률 -23.24%" in lines[2]
+    assert lines[3].startswith("- 과거 검증: 과거 검증에서 이 신호 상태(상승 우위)의 1주일 뒤 상승 비율은 51.8%")
+    assert "95% 구간 -1.4~+5.3%p" in lines[3] and lines[3].endswith("방향 예측력은 확인되지 않았습니다.")
     assert "규칙" not in text and "## " not in text and DISCLAIMER not in text
     assert outlook.marker_of(text) == {"name": "SK하이닉스", "ticker": "000660", "period": "1주일"}
 
@@ -369,9 +370,9 @@ def test_risk_followup_shows_risks_and_price_levels_only(backtest):
 def test_probability_followup_states_no_verified_probability(backtest):
     text = outlook.followup_answer(COMPANY, W1, _skhynix_like(), "probability", NOW)
     lines = _nonblank(text)
-    assert len(lines) <= 6 and lines[1].endswith("검증된 상승·하락 확률은 없어 가능성을 숫자로 말하지 않습니다.")
-    assert lines[1].startswith("현재 판단: 중립(굳이 고르면 상승 쪽)")
-    assert "과거 빈도: 검증 구간(2026-01-02~2026-10-27)" in text and "51.8%" in text and "확률이나 예측이 아닙니다" in text
+    assert len(lines) <= 6 and lines[2] == "- 검증된 상승·하락 확률은 없어 가능성을 숫자로 말하지 않습니다."
+    assert lines[1].startswith("상승 쪽입니다. 다만 ")  # 25차: 확률 질문에도 방향을 먼저
+    assert "과거 빈도: 검증 구간(2026-01-02~2026-10-27)" in text and "51.8%" in text and "미래 확률이 아닙니다" in text
     assert assertion_hits(text) == [] and forbidden_hits(text) == []
 
 

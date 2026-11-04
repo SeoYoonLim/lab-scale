@@ -1052,7 +1052,9 @@ def check_direction25(db, answer: str, company_name: str, period: str, kind: str
         want_regime = regime_expected(db, company_name, st.group("date"))
         if st.group("regime") not in (want_regime, REGIMES[5]):
             errs.append(f"국면 {st.group('regime')} != {want_regime}")
-    first_line = lines[0] if kind == "oneline" else next((x for x in lines[1:] if not x.startswith(("- ", "현재는 ", "데이터 경고"))), "")
+    # 상태 줄("현재는 … (기준일 … 종가)")만 건너뛴다. 2026-11-04 dev23_05에서 발견: "현재는 상승과 하락 중 …"(중립 문장)까지 건너뛰던 결함
+    first_line = lines[0] if kind == "oneline" else next(
+        (x for x in lines[1:] if not (x.startswith(("- ", "데이터 경고")) or _STATE.match(x))), "")
     if kind == "oneline":
         first_line = first_line[m.end():].lstrip(" ·")
     starts = _DIR_FIRST[want][1 if kind == "pick" else 0]

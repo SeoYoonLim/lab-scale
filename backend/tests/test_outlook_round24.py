@@ -23,16 +23,6 @@ URL = "https://dart.fss.or.kr/dsaf001/main.do?rcptNo=20261028800036"
 
 # ---------- 현재 판단·강도·예측력 ----------
 
-def test_current_judgment_rule():
-    assert outlook.current_judgment("상승 우위", outlook.REGIME_UP) == ("상승", None)
-    assert outlook.current_judgment("하락 우위", outlook.REGIME_DOWN) == ("하락", None)
-    assert outlook.current_judgment("상승 우위", outlook.REGIME_REBOUND) == ("중립", "상승")
-    assert outlook.current_judgment("상승 우위", outlook.REGIME_FLAT) == ("중립", "상승")
-    assert outlook.current_judgment("중립", outlook.REGIME_DOWN) == ("중립", "하락")
-    assert outlook.current_judgment("중립", outlook.REGIME_PULLBACK) == ("중립", "상승")
-    assert outlook.current_judgment("중립", outlook.REGIME_REBOUND) == ("중립", None)
-    assert outlook.current_judgment("판단 유보", outlook.REGIME_UP) == ("판단 유보", None)
-
 
 def test_two_up_groups_out_of_five_is_a_weak_lead():
     t = outlook.vote_tally(_skhynix_like()["signals"])
@@ -48,18 +38,6 @@ def test_power_sentence_states_sample_interval_and_no_predictive_power(backtest)
     assert "표본 22,176, 차이 +1.9%p, 95% 구간 -1.4~+5.3%p" in s and s.endswith("방향 예측력은 확인되지 않았습니다.")
     assert "예측력을 말할 수 없습니다" in outlook.power_sentence(W1, "판단 유보")
 
-
-def test_forecast_intro_judgment_line_and_answer_time(backtest):
-    res = _skhynix_like()
-    line = outlook.judgment_line(res, outlook.REGIME_REBOUND, W1)
-    assert line == ("현재 판단: 중립(굳이 고르면 상승 쪽) · 5개 묶음 중 상승 2·하락 0·중립 3(약한 상승 우위) · "
-                    "과거 검증에서 방향 예측력은 확인되지 않았습니다(표본 22,176, 차이 +1.9%p, 95% 구간 -1.4~+5.3%p)")
-    ind = dict(res["indicators"], first_date="2025-10-24", n_rows=251)
-    src = outlook.source_lines(ind, {"expected_date": "2026-11-04", "warnings": [], "status": "미수집"}, W1, NOW)
-    assert src[0] == "- 답변 생성: 2026-11-04 18:00 KST(시장 데이터 기준일 2026-11-03 종가와 다릅니다)"
-    assert src[1].endswith("기대 거래일: 2026-11-04, 시세 상태: 미수집")
-    detail = outlook.rule_lines(COMPANY, W1, {**res, "signals": [dict(x, value="-", rule="-") for x in res["signals"]]})
-    assert "- 신호 강도: 5개 묶음 중 상승 2·하락 0·중립 3(약한 상승 우위). 기술적 신호의 우위이며, 미래 주가 예측력은 과거 검증으로 따로 본다." in detail
 
 
 # ---------- 후속 답 종류 ----------
@@ -95,61 +73,29 @@ def _lines(text):
     return [x for x in text.splitlines() if x.strip()]
 
 
-def test_verdict_and_pick_answer_the_question_first(backtest):
-    res = _skhynix_like()
-    for kind in ("verdict", "pick", "compare", "buy"):
-        text = outlook.followup_answer(COMPANY, W1, res, kind, NOW)
-        lines = _lines(text)
-        assert len(lines) <= 6 and "## " not in text and "규칙" not in text and assertion_hits(text) == []
-        assert not lines[1].startswith("지금 데이터로는")
-    pick = _lines(outlook.followup_answer(COMPANY, W1, res, "pick", NOW))[1]
-    assert pick.startswith("굳이 하나를 고르면 상승 쪽입니다(현재 판단: 중립). 단기 신호는 상승 쪽이 많지만")
-    cmp_ = _lines(outlook.followup_answer(COMPANY, W1, res, "compare", NOW))[1]
-    assert cmp_ == ("현재 판단: 중립(굳이 고르면 상승 쪽). 묶음 표로는 상승 근거가 더 많습니다(5개 묶음 중 상승 2·하락 0·중립 3), "
-                    "국면은 '단기 반등 시도, 추세 전환은 미확인'입니다.")
-    buy = _lines(outlook.followup_answer(COMPANY, W1, res, "buy", NOW))[1]
-    assert "매수·매도 여부는 권하지 않습니다" in buy and "방향 예측력은 확인되지 않았습니다" in buy
 
-
-def test_pick_without_any_lean_says_there_is_no_basis(backtest):
-    res = _skhynix_like()
-    next(s for s in res["signals"] if s["kind"] == "macd")["side"] = "down"  # 상승 1(단기 흐름) : 하락 1(MACD) -> 중립, 국면 반등
-    res["label"] = outlook.judge(res["signals"], res["data"])
-    assert res["label"] == "중립"
-    text = outlook.followup_answer(COMPANY, W1, res, "pick", NOW)
-    assert _lines(text)[1].startswith("굳이 하나를 고를 근거가 부족합니다(현재 판단: 중립).")
-
-
-def test_checker_accepts_the_followup_formats(backtest, monkeypatch):
-    """24차 평가기(독립 구현)가 이 형식의 후속 답을 통과시키는지(국면은 같은 값으로 고정)."""
-    from evals import forecast_check as FC
-    monkeypatch.setattr(FC, "regime_expected", lambda db, name, base, hold=False: outlook.REGIME_REBOUND)
-    monkeypatch.setattr(FC, "_backtest_row24", lambda period, label: {"n": 22176, "diff_ci95": [-0.014, 0.053], "significant": False})
-    res = _skhynix_like()
-    for kind in ("verdict", "pick", "compare", "buy", "probability", "risk"):
-        text = outlook.followup_answer(COMPANY, W1, res, kind, NOW)
-        assert check_judgment24(None, text, "SK하이닉스", "1주일", kind) == [], kind
 
 
 def test_data_followup_separates_answer_time_and_market_date(backtest):
     res = _skhynix_like()
     res["data"] = {"hold": False, "expected_date": "2026-11-04", "status": "미수집",
                    "status_detail": "장 마감 뒤 시세 수집 기록 없음, 마지막 시세 수집 2026-11-03 19:45",
-                   "warnings": ["마지막 시세일(2026-11-03)이 기대 거래일(2026-11-04)보다 1영업일 늦습니다."]}
+                   "freshness": "1영업일 이전 시세(미수집)", "lag_business_days": 1,
+                   "warnings": ["마지막 시세(2026-11-03)가 기대 거래일(2026-11-04)보다 1영업일 이전 데이터입니다."]}
     lines = _lines(outlook.followup_answer(COMPANY, W1, res, "data", NOW))
     assert lines[1] == "이 답변은 2026-11-04 18:00 KST에 만들었고, 시세 기준일은 2026-11-03 종가입니다."
     assert lines[2].startswith("- 지금 상태: 기대 거래일 2026-11-04 시세가 없습니다(미수집: 장 마감 뒤 시세 수집 기록 없음, 마지막 시세 수집 2026-11-03 19:45).")
     assert "최신 거래일 전망이 아닙니다" in lines[2] and lines[3].startswith("- 답하는 방식: ")
-    assert lines[4].startswith("- 현재 판단: 중립(굳이 고르면 상승 쪽) — 5개 묶음 중 상승 2·하락 0·중립 3")
-    assert "데이터 경고" not in lines[0]
+    assert lines[4].startswith("- 방향: 상승 쪽입니다. 다만 신호가 약하고(5개 묶음 중 상승 2·하락 0·중립 3)")
+    assert "데이터 경고" not in lines[0] and "시세:" not in lines[0]
 
 
 def test_data_check_warning_names_the_reason():
     st = {"status": "수집 실패", "detail": "2026-11-04 19:40 시세 수집 실패 기록"}
     d = outlook.data_check(date(2026, 11, 3), NOW, [], st)
-    assert d["warnings"][0] == ("마지막 시세일(2026-11-03)이 기대 거래일(2026-11-04)보다 1영업일 늦습니다(수집 실패: 2026-11-04 19:40 "
+    assert d["warnings"][0] == ("마지막 시세(2026-11-03)가 기대 거래일(2026-11-04)보다 1영업일 이전 데이터입니다(수집 실패: 2026-11-04 19:40 "
                                 "시세 수집 실패 기록). 이 분석은 2026-11-03 종가 기준이며 최신 거래일 전망이 아닙니다.")
-    assert d["status"] == "수집 실패" and not d["hold"]
+    assert d["status"] == "수집 실패" and not d["hold"] and d["freshness"] == "1영업일 이전 시세(수집 실패)"
 
 
 # ---------- 잠정실적 ----------
@@ -222,7 +168,7 @@ def test_earnings_followup_shows_latest_quarter_source_and_reaction(backtest):
              "reaction": {"before_date": "2026-10-27", "before_close": 1_374_000.0, "base_date": "2026-11-03", "base_close": 1_414_000.0}}
     lines = _lines(outlook.followup_answer(COMPANY, W1, _skhynix_like(), "earnings", NOW, extra))
     assert len(lines) <= 6
-    assert lines[1].startswith("현재 판단: 중립(굳이 고르면 상승 쪽). 실적은 신호 판정 표에 넣지 않아")
+    assert lines[1].startswith("상승 쪽입니다. 다만 ") and "실적은 신호 판정 표에 넣지 않아" in lines[1]
     assert lines[2].startswith("- 최신 실적: 2026년 3분기(연결, 잠정): 매출액 1,046,155억 원")
     assert lines[3].startswith("- 직전 실적: 2026년 2분기(연결, 확정)")
     assert lines[4].startswith("- 발표 뒤 주가: 발표일(2026-10-28) 직전 거래일 2026-10-27 종가 1,374,000원 → 기준일 2026-11-03 종가 "

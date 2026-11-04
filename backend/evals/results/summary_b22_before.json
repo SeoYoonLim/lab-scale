@@ -1,0 +1,625 @@
+{
+  "git_commit": "c6cc2cc6e8b4d55e04ed566146c163136a64f033",
+  "git_dirty": false,
+  "date": "2026-11-04T18:31:28",
+  "model": "llama3.1:8b",
+  "think": null,
+  "keep_alive": "30m",
+  "args": {
+    "mode": "live",
+    "split": "all",
+    "repeats": 1,
+    "only": null,
+    "ids": null,
+    "batch": "22",
+    "exclude_batch": null,
+    "model": null,
+    "keep_tool_results": false,
+    "limit": null,
+    "out": "evals/results/summary_b22_before.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 0,
+    "live": 20,
+    "records": 20
+  },
+  "live": {
+    "ran": true,
+    "repeats": 1,
+    "eval_user": "captest_c45f1a8276fe",
+    "deleted_reports": 38,
+    "etf_data_available": {},
+    "elapsed_s": 38.4
+  },
+  "etf_data_available": {},
+  "etf_branches": {},
+  "elapsed_s": 43.6,
+  "metrics": {
+    "live_company_accuracy": {
+      "dev": null,
+      "holdout": 0.9474,
+      "holdout_seen": null,
+      "holdout_unseen": 0.9474,
+      "all": 0.9474,
+      "n": {
+        "dev": 0,
+        "holdout": 19,
+        "holdout_seen": 0,
+        "holdout_unseen": 19,
+        "all": 19
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 19,
+        "holdout_seen": 0,
+        "holdout_unseen": 19,
+        "all": 19
+      }
+    },
+    "source_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 9,
+        "holdout_seen": 0,
+        "holdout_unseen": 9,
+        "all": 9
+      }
+    },
+    "must_contain_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 1,
+        "holdout_seen": 0,
+        "holdout_unseen": 1,
+        "all": 1
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "code_answer_rate": {
+      "dev": null,
+      "holdout": 0.8,
+      "holdout_seen": null,
+      "holdout_unseen": 0.8,
+      "all": 0.8,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "loop_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "guard_replacement_rate": {
+      "dev": null,
+      "holdout": 0.25,
+      "holdout_seen": null,
+      "holdout_unseen": 0.25,
+      "all": 0.25,
+      "n": {
+        "dev": 0,
+        "holdout": 4,
+        "holdout_seen": 0,
+        "holdout_unseen": 4,
+        "all": 4
+      }
+    },
+    "narrative_drop_rate": {
+      "dev": null,
+      "holdout": 0.3333,
+      "holdout_seen": null,
+      "holdout_unseen": 0.3333,
+      "all": 0.3333,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 0,
+        "holdout_unseen": 3,
+        "all": 3
+      }
+    },
+    "foreign_strip_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 4,
+        "holdout_seen": 0,
+        "holdout_unseen": 4,
+        "all": 4
+      }
+    },
+    "fallback_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "forecast_number_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 6,
+        "holdout_seen": 0,
+        "holdout_unseen": 6,
+        "all": 6
+      }
+    },
+    "forecast_evidence_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 6,
+        "holdout_seen": 0,
+        "holdout_unseen": 6,
+        "all": 6
+      }
+    },
+    "forecast_assertion_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "earnings_number_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 0,
+        "holdout_unseen": 3,
+        "all": 3
+      }
+    },
+    "conclusion_first_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 0,
+        "holdout_unseen": 3,
+        "all": 3
+      }
+    },
+    "regime_match_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 0,
+        "holdout_unseen": 3,
+        "all": 3
+      }
+    },
+    "no_double_vote_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 0,
+        "holdout_unseen": 3,
+        "all": 3
+      }
+    },
+    "number_window_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 0,
+        "holdout_unseen": 3,
+        "all": 3
+      }
+    },
+    "direction_first_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 19,
+        "holdout_seen": 0,
+        "holdout_unseen": 19,
+        "all": 19
+      }
+    },
+    "direction_stable_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 19,
+        "holdout_seen": 0,
+        "holdout_unseen": 19,
+        "all": 19
+      }
+    },
+    "error_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "latency_p50_s": {
+      "dev": null,
+      "holdout": 0.035,
+      "holdout_seen": null,
+      "holdout_unseen": 0.035,
+      "all": 0.035,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "latency_p95_s": {
+      "dev": null,
+      "holdout": 6.6515,
+      "holdout_seen": null,
+      "holdout_unseen": 6.6515,
+      "all": 6.6515,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "b22_14",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "왜 그렇게 판단했어?",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "KT&G"
+        ],
+        "must_not": null
+      },
+      "actual": []
+    },
+    {
+      "id": "b22_01",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "하이닉스가 일주일 안에 오를 거 같아 내릴 거 같아?",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b22_02",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "그래서 니 판단은 뭐냐고 오르냐 내리냐고?",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b22_03",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "굳이 하나만 고르면?",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b22_04",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "상승할까 하락할까?",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b22_05",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "지금 사면 일주일 뒤 오를까?",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b22_06",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "왜 상승 쪽이라고 판단했어?",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b22_07",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "한 줄로만 답해.",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목(종목·기간) '## 뉴스·공시 근거'",
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b22_08",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "현재 방향은 중립이야 상승이야?",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b22_09",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "하락 추세인데 단기 반등할 가능성은?",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b22_10",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "상승 추세인데 다음 주 조정받을까?",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목(종목·기간) '## 주가 동향'",
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b22_11",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "삼성전자 일주일 안에 오를까 내릴까?",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b22_12",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "현재 방향은 중립이야 하락이야?",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b22_13",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "둘 중 하나만 선택해 봐.",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b22_14",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "왜 그렇게 판단했어?",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목(종목·기간) '질문에서 KT&G 관련된 뉴스나 공시를 찾아 결과가 없다는 것을 확인했습'",
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b22_15",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "한 줄로 요약해줘",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b22_16",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "일주일 안에 오를 것 같아?",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b22_17",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "지금 방향은 상승이야 하락이야?",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b22_18",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "최신 실적까지 반영하면 판단이 바뀌어?",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b22_20",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "기아 다음 주 오를 것 같아 내릴 것 같아?",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목 줄에 '방향: …' 없음"
+      ]
+    }
+  ]
+}

@@ -56,7 +56,7 @@ def test_conclusion_first_answer_and_numbers_match_sql(dev_db, no_llm):
     r = agent.ask_question("SK하이닉스 일주일 안에 오를지 내릴지 분석해줘", save_report=False)
     a = r["answer"]
     lines = a.splitlines()
-    assert lines[0] == "SK하이닉스(000660) · 향후 5거래일" and lines[2].startswith("현재는 ")
+    assert lines[0].startswith("SK하이닉스(000660) · 향후 5거래일 · 방향: ") and lines[2].startswith("현재는 ")  # 25차: 제목에 방향
     assert next(x for x in lines if x.startswith("## ")) == "## 종합 판단"
     assert FC.check_numbers(dev_db, a, "SK하이닉스", "1주일") == []
     assert FC.check_groups(a) == [] and FC.check_backtest_line(a, "1주일") == []
@@ -66,10 +66,13 @@ def test_conclusion_first_answer_and_numbers_match_sql(dev_db, no_llm):
             assert re.search(r"\d{4}-\d{2}-\d{2}~\d{4}-\d{2}-\d{2}|최근 \d+거래일 기준", line), line
 
 
+# 25차(2026-11-04): 후속 답은 종류와 관계없이 둘째 줄 첫 문장이 방향(상승 쪽입니다/하락 쪽입니다/우세하지 않습니다/보류)이다
+FIRST25 = ("상승 쪽입니다", "하락 쪽입니다", "현재는 상승과 하락 중", "데이터가 부족해")
+
+
 @pytest.mark.needs_collected_data
-# 24차(2026-11-04): 후속 답은 종류와 관계없이 둘째 줄이 "현재 판단: …"이다(판단 회피 문장으로 시작하지 않는다)
-@pytest.mark.parametrize("q,first", [("그래서 니 판단은 뭐냐고 오르냐고 내리냐고", "현재 판단: "),
-                                     ("하락 위험은 어떤데", "현재 판단: "), ("확률은 얼마야", "현재 판단: ")])
+@pytest.mark.parametrize("q,first", [("그래서 니 판단은 뭐냐고 오르냐고 내리냐고", FIRST25),
+                                     ("하락 위험은 어떤데", FIRST25), ("확률은 얼마야", FIRST25)])
 def test_short_followups_keep_company_and_period(dev_db, no_llm, q, first):
     r1 = agent.ask_question("하이닉스가 일주일안에 오를거 같아 내릴거 같아?", save_report=False)
     prev = {"report_id": None, "question": "x", "answer": r1["answer"], "company_name": "SK하이닉스"}

@@ -178,7 +178,9 @@ jobs:
       # 수집 시세·뉴스·실적이 있어야 해서 시드만 있는 CI DB에서는 돌 수 없다.
       # 2026-11-04 83 -> 92: 전망 4차 통합 테스트 9개(tests/test_outlook_round24_devdb.py: SK하이닉스 3분기 잠정실적·출처, 후속 결론 5종의
       # 현재 판단, 실적·데이터 후속 답, 시세 상태 분류, 전 종목 잠정치 규칙)는 수집 시세·공시 원문·실적이 있어야 해서 시드만 있는 CI DB에서는 돌 수 없다.
-      MAX_EXCLUDED: "92"
+      # 2026-11-04 92 -> 94: 전망 5차 통합 테스트 2개(tests/test_outlook_round25_devdb.py: SK하이닉스 2026-11-03 방향이 국면과 분리돼
+      # 상승 쪽인지, 같은 대화 후속 답 4종의 방향 유지)는 수집 시세가 있어야 해서 시드만 있는 CI DB에서는 돌 수 없다.
+      MAX_EXCLUDED: "94"
     defaults:
       run:
         working-directory: backend

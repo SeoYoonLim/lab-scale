@@ -44,12 +44,12 @@ def test_skhynix_latest_quarter_is_the_q3_preliminary_and_q2_is_final(dev_db):
 @pytest.mark.parametrize("q,kind", [("결론이 뭐야 올라 내려?", "verdict"), ("하나 고르라면?", "pick"),
                                     ("상승 쪽이랑 하락 쪽 중 뭐가 더 세?", "compare"), ("그럼 사도 된다는 거야?", "buy"),
                                     ("오를 가능성이 더 커?", "probability")])
-def test_followups_state_the_judgment_first(dev_db, no_llm, q, kind):
+def test_followups_state_the_direction_first(dev_db, no_llm, q, kind):
     r1 = agent.ask_question("삼성전자 다음 주 전망 분석해줘", save_report=False)
     prev = {"report_id": None, "question": "x", "answer": r1["answer"], "company_name": "삼성전자"}
-    assert FC.check_judgment24(dev_db, r1["answer"], "삼성전자", "1주일", "standalone") == []
+    assert FC.check_direction25(dev_db, r1["answer"], "삼성전자", "1주일", "standalone") == []  # 25차 형식
     r2 = agent.ask_question(q, save_report=False, previous=prev)
-    assert FC.check_judgment24(dev_db, r2["answer"], "삼성전자", "1주일", kind) == []
+    assert FC.check_direction25(dev_db, r2["answer"], "삼성전자", "1주일", kind) == []
 
 
 @pytest.mark.needs_collected_data
@@ -57,7 +57,7 @@ def test_earnings_and_data_followups(dev_db, no_llm):
     r1 = agent.ask_question("삼성전자 다음 주 전망 분석해줘", save_report=False)
     prev = {"report_id": None, "question": "x", "answer": r1["answer"], "company_name": "삼성전자"}
     e = agent.ask_question("실적 반영해도 판단이 같아?", save_report=False, previous=prev)["answer"]
-    assert FC.check_judgment24(dev_db, e, "삼성전자", "1주일", "earnings") == []
+    assert FC.check_direction25(dev_db, e, "삼성전자", "1주일", "earnings") == []
     assert FC.check_earnings24(dev_db, e, "삼성전자") == []
     d = agent.ask_question("시세가 최신이 아니면 어떻게 돼?", save_report=False, previous=prev)["answer"]
     assert FC.check_data24(dev_db, d, "삼성전자") == []

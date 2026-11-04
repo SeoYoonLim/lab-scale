@@ -179,7 +179,7 @@ NOW = datetime(2026, 11, 3, 18, 0, tzinfo=KST)  # 화요일 장 마감 뒤
 
 def test_data_check_warns_for_one_to_five_business_days():
     data = outlook.data_check(date(2026, 10, 30), NOW, [])
-    assert data["lag_business_days"] == 2 and not data["hold"] and "2영업일 늦습니다" in data["warnings"][0]
+    assert data["lag_business_days"] == 2 and not data["hold"] and "2영업일 지연된 데이터입니다" in data["warnings"][0]
 
 
 def test_data_check_holds_when_more_than_five_business_days_late():
@@ -350,7 +350,7 @@ def wired(monkeypatch):
 
 def test_forecast_path_answers_without_llm(wired):
     resp, records = agent._answer("SK하이닉스 한 달 안에 오를까?", "m")
-    assert resp["answer"].startswith("SK하이닉스(000660) · 향후 20거래일\n")
+    assert resp["answer"].startswith("SK하이닉스(000660) · 향후 20거래일 · 방향: ")
     assert resp["used_tools"][0] == "stock_tool" and records[0]["result"]["period"] == "1개월"
     assert wired == [("SK하이닉스", "1개월")]
 

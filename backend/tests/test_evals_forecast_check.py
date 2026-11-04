@@ -221,3 +221,11 @@ def test_stable25_catches_a_flipped_direction():
     assert FC.check_stable25(flipped, [OK25], "1주일") == ["앞 턴 방향 상승 쪽 -> 이번 중립"]
     other = OK25.replace("향후 5거래일", "향후 20거래일")
     assert FC.check_stable25(flipped, [other], "1주일") == []  # 기간이 다르면 비교하지 않는다
+
+
+def test_direction25_neutral_sentence_starting_with_hyeonjae_is_not_skipped(monkeypatch):
+    """dev23_05: 중립 문장도 "현재는 …"으로 시작한다. 상태 줄만 건너뛰어야 한다."""
+    monkeypatch.setattr(FC, "regime_expected", lambda db, name, base, hold=False: "단기 반등 시도, 추세 전환은 미확인")
+    neutral = ("SK텔레콤(017670) · 향후 5거래일 · 방향: 중립 · 현재는 단기 반등 시도, 추세 전환은 미확인 (기준일 2026-11-03 종가)\n\n"
+               "현재는 상승과 하락 중 어느 쪽도 뚜렷하게 우세하지 않습니다(5개 묶음 중 상승 1·하락 1·중립 3).")
+    assert FC.check_direction25(None, neutral, "SK텔레콤", "1주일", "verdict") == []

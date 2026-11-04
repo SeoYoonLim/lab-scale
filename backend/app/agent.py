@@ -1336,7 +1336,9 @@ def _forecast_subject(question: str, previous: dict | None):
         finally:
             db.close()
         if company is not None:
-            if verdict and marker:
+            # 25차: 직전 분석과 같은 기간을 다시 묻는 방향 질문("상승할까 하락할까?", "지금 사면 일주일 뒤 오를까?")도 전체 분석을
+            # 다시 찍지 않고 짧은 후속 답이다. 기간이 다르면(예: "한 달 뒤는?") 그 기간의 전체 분석이다.
+            if marker and (verdict or outlook.period_in(question) in (None, marker.get("period"))):
                 return company, marker, outlook.followup_kind(question)
             if forecast:
                 return company, marker, "forecast"
