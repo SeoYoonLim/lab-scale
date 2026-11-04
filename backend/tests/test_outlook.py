@@ -273,7 +273,7 @@ def test_forecast_answer_sections_and_marker():
     # 영어 문장 단어("fluctuate" 같은)가 섞이지 않는다: 영문은 지표·출처 식별자와 면책 문구의 "AI"뿐이다
     import re
 
-    allowed = {"SK", "RSI", "MACD", "DART", "DB", "AI", "N", "Asia", "Seoul", "stock", "price", "market", "index", "exchange",
+    allowed = {"KST", "SK", "RSI", "MACD", "DART", "DB", "AI", "N", "Asia", "Seoul", "stock", "price", "market", "index", "exchange",
                "rate", "news", "disclosure", "quarterly", "earnings", "app", "data", "outlook", "backtest", "json"}
     assert set(re.findall(r"[A-Za-z]+", text)) <= allowed
 
@@ -304,7 +304,7 @@ def test_risk_followup_shows_risks_and_support_levels():
 
 def test_probability_followup_says_no_verified_probability():
     text = outlook.followup_answer(COMPANY, outlook.PERIODS["1주일"], _result(), "probability", NOW)
-    assert "검증된 상승·하락 확률은 없습니다." in text
+    assert "검증된 상승·하락 확률은 없어 가능성을 숫자로 말하지 않습니다." in text
 
 
 # ---------- agent 연결(LLM 미사용, 직전 종목·기간 유지) ----------

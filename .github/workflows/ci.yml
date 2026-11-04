@@ -176,7 +176,9 @@ jobs:
       # 2026-11-04 76 -> 83: 전망 3차 통합 테스트 7개(tests/test_outlook_round23_devdb.py 6: SK하이닉스 2026-11-03 국면, 결론 먼저 답변의
       # 숫자 SQL 대조, 짧은 후속 답 3종의 종목·기간 유지, 실적 분기·4분기 SQL 대조 / test_evals_forecast_check.py 1: 23차 채점기 변조 검출)는
       # 수집 시세·뉴스·실적이 있어야 해서 시드만 있는 CI DB에서는 돌 수 없다.
-      MAX_EXCLUDED: "83"
+      # 2026-11-04 83 -> 92: 전망 4차 통합 테스트 9개(tests/test_outlook_round24_devdb.py: SK하이닉스 3분기 잠정실적·출처, 후속 결론 5종의
+      # 현재 판단, 실적·데이터 후속 답, 시세 상태 분류, 전 종목 잠정치 규칙)는 수집 시세·공시 원문·실적이 있어야 해서 시드만 있는 CI DB에서는 돌 수 없다.
+      MAX_EXCLUDED: "92"
     defaults:
       run:
         working-directory: backend

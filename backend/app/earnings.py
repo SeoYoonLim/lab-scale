@@ -7,6 +7,8 @@
 - 저장: 보고서마다 한 행(upsert). 연결(CFS)이 있으면 연결, 없으면 별도(OFS). 매출액·영업이익·당기순이익의 당기 금액(분기보고서는 그
   분기 3개월, 사업보고서는 연간)과 전기 금액(같은 보고서의 전년 동기).
 - 답변: 신호 판정에는 쓰지 않는다(참고 정보). recent_for_answer가 최근 분기 ANSWER_ROWS개를 돌려준다. 4분기는 연간 - 3분기 누적.
+- 잠정실적(2026-11-04): 정기보고서가 아직 없는 분기는 거래소 잠정실적 공정공시(app/preliminary.py, disclosure.content)를 쓴다.
+  답변에 출처(확정 = 정기보고서, 잠정 = 공정공시)와 접수일·발표일을 함께 쓰고, 같은 분기의 정기보고서가 수집되면 확정치로 바뀐다.
 - 2026-11-03 점검: SK하이닉스 2026년 2분기 순이익(93.9조)이 매출(79.3조)보다 큰 것은 DART 원본 값 그대로였다(세전이익 122.7조).
   누적(thstrm_add_amount)을 같이 저장해 "1~n분기 합 = 누적"과 이상치를 anomalies로 점검한다(scripts/check_earnings.py).
 """
@@ -161,6 +163,7 @@ def quarterly_series(rows: list) -> dict[tuple[int, int], dict]:
             r = reps.get(code)
             if r is not None:
                 out[(year, q)] = {"fs_div": r.fs_div, "rcept_no": r.rcept_no, "disclosed_date": r.disclosed_date, "derived": False,
+                                  "source": "final", "reprt_code": code,
                                   **{k: _f(getattr(r, k)) for k in ACCOUNTS},
                                   **{f"{k}_prev": _f(getattr(r, f"{k}_prev")) for k in ACCOUNTS}}
         annual = reps.get("11011")
@@ -170,7 +173,8 @@ def quarterly_series(rows: list) -> dict[tuple[int, int], dict]:
         quarters = [reps.get(c) for c in ("11013", "11012", "11014")]
         if any(x is not None and x.fs_div != annual.fs_div for x in quarters):
             continue
-        q4 = {"fs_div": annual.fs_div, "rcept_no": annual.rcept_no, "disclosed_date": annual.disclosed_date, "derived": True}
+        q4 = {"fs_div": annual.fs_div, "rcept_no": annual.rcept_no, "disclosed_date": annual.disclosed_date, "derived": True,
+              "source": "final", "reprt_code": "11011"}
         for k in ACCOUNTS:
             total = _f(getattr(annual, k))
             cum = _f(getattr(q3, f"{k}_cum")) if q3 is not None else None
@@ -190,12 +194,14 @@ def quarterly_series(rows: list) -> dict[tuple[int, int], dict]:
 
 def recent_for_answer(db, company, n: int = ANSWER_ROWS) -> list[dict] | None:
     """최근 분기 n개(4분기는 연간 - 1~3분기 누적). ETF거나 테이블이 없으면 None(섹션 생략). 주식인데 행이 없으면 [].
-    가장 최근 분기의 매출액이나 영업이익을 인식하지 못했으면(금융사 등 계정 이름이 다른 경우) None으로 섹션을 생략한다
-    (틀린 값을 보이느니 생략한다)."""
+    정기보고서가 없는 분기는 잠정실적 공정공시(app/preliminary.py)로 채운다(source "preliminary"). 같은 분기에 정기보고서가 있으면
+    잠정치는 쓰지 않는다. 가장 최근 분기의 매출액이나 영업이익을 인식하지 못했으면(금융사 등 계정 이름이 다른 경우) None으로
+    섹션을 생략한다(틀린 값을 보이느니 생략한다). 정정공시가 뒤따른 잠정치는 수치 없이 정정 사실만 보인다(corrected)."""
     if getattr(company, "asset_type", None) != "stock":
         return None
     from sqlalchemy.exc import ProgrammingError
 
+    from app import preliminary
     from app.models import QuarterlyEarnings
 
     try:
@@ -204,11 +210,24 @@ def recent_for_answer(db, company, n: int = ANSWER_ROWS) -> list[dict] | None:
         db.rollback()
         return None
     series = quarterly_series(rows)
+    # 잠정치는 정기보고서와 같은 기준(연결·별도)만 쓴다. 정기보고서가 없으면 연결 잠정치만.
+    latest_final = max(series) if series else None
+    basis = "별도" if latest_final and series[latest_final]["fs_div"] == "OFS" else "연결"
+    cums = {(r.bsns_year, QUARTER_OF[r.reprt_code]): r.revenue_cum for r in rows if r.reprt_code in QUARTER_OF}
+    for key, p in preliminary.for_company(db, company, basis).items():
+        if key in series:
+            continue  # 같은 분기 정기보고서(확정치)가 있으면 잠정치를 쓰지 않는다
+        if key[1] > 1 and not preliminary.cumulative_ok(p, cums.get((key[0], key[1] - 1))):
+            continue  # 분기·누적이 서로 맞지 않는 잠정치(기준이 다른 공시 등)는 쓰지 않는다
+        if p["corrected"] is None and (p["revenue"] is None or p["operating_income"] is None
+                                       or revenue_suspect(p["revenue"], p["operating_income"])):
+            continue  # 표를 다 읽지 못한 잠정치는 건너뛰고 정기보고서 분기를 쓴다
+        series[key] = {**p, "source": "preliminary", "derived": False}
     if not series:
         return []
     keys = sorted(series, reverse=True)[:n]
-    if any(series[k].get("revenue") is None or series[k].get("operating_income") is None
-           or revenue_suspect(series[k]["revenue"], series[k]["operating_income"]) for k in keys):
+    if any(series[k].get("source") == "final" and (series[k].get("revenue") is None or series[k].get("operating_income") is None
+           or revenue_suspect(series[k]["revenue"], series[k]["operating_income"])) for k in keys):
         return None
     out = []
     for year, q in keys:

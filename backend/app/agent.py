@@ -1295,8 +1295,27 @@ def _answer_order_command(question: str):
 def _forecast_subject(question: str, previous: dict | None):
     """전망·후속 결론 경로의 (종목, 기간 표식, 모드). 이 경로가 아니면 None, 종목을 되물어야 하면 (None, None, "ask").
 
-    모드: "forecast"(전체 분석) 또는 followup_kind(verdict/probability/risk). 종목은 질문에서 정확히 1개, 없으면 직전 리포트의
-    종목(previous["company_name"], 저장 시 도구 결과의 종목이 정확히 1개일 때만 채워진다)을 이어받는다. 여러 개면 기존 흐름이다."""
+    모드: "forecast"(전체 분석) 또는 followup_kind(verdict/pick/compare/probability/buy/risk), 또는 직전 분석에 이어 실적 반영·시세
+    기준일을 묻는 "earnings"/"data"(2026-11-04). 종목은 질문에서 정확히 1개, 없으면 직전 리포트의 종목(previous["company_name"],
+    저장 시 도구 결과의 종목이 정확히 1개일 때만 채워진다)을 이어받는다. 여러 개면 기존 흐름이다."""
+    special = outlook.special_followup_kind(question)
+    marker = outlook.marker_of(previous.get("answer")) if previous else None
+    if special and marker:
+        # "최신 실적까지 반영해서 다시 판단해줘", "최신 주가 데이터가 없으면?": 직전 분석(표식)이 있을 때만 이 경로다
+        companies = _question_companies(question)
+        if companies is None or len(companies) > 1:
+            return None
+        prev_name = (previous or {}).get("company_name") or marker.get("name")
+        if companies and companies[0].name != prev_name:
+            return None
+        if companies:
+            return companies[0], marker, special
+        db = SessionLocal()
+        try:
+            company = db.query(Company).filter(Company.name == prev_name).first()
+        finally:
+            db.close()
+        return (company, marker, special) if company is not None else None
     forecast = outlook.is_forecast_question(question)
     verdict = outlook.is_followup_verdict_question(question)
     if not (forecast or verdict):
@@ -1304,7 +1323,6 @@ def _forecast_subject(question: str, previous: dict | None):
     companies = _question_companies(question)
     if companies is None or len(companies) > 1:
         return None
-    marker = outlook.marker_of(previous.get("answer")) if previous else None
     prev_name = (previous or {}).get("company_name") or (marker or {}).get("name")
     if companies:
         company = companies[0]
@@ -1346,7 +1364,19 @@ def _answer_forecast(question: str, previous: dict | None):
             return _code_answer(outlook.no_data_answer(company))
         news, disclosures = outlook.evidence(db, company, period, now) if mode == "forecast" else ([], [])
         fx = outlook.fx_summary(db, period, res["indicators"]["base_date"]) if mode == "forecast" else None
-        indirect, earnings_rows = None, None
+        indirect, earnings_rows, extra = None, None, {}
+        if mode == "earnings":
+            # 실적 후속 답: 최근 분기(잠정 포함)와, 최신 실적 발표(접수)일 직전 거래일 종가 -> 기준일 종가
+            rows_e = earnings.recent_for_answer(db, company, n=8)
+            extra = {"earnings": rows_e, "quarter": outlook.quarter_in(question, now)}
+            if rows_e:
+                before = (db.query(StockPrice.price_date, StockPrice.close_price)
+                          .filter(StockPrice.company_id == company.id,
+                                  StockPrice.price_date < date.fromisoformat(rows_e[0]["disclosed_date"]))
+                          .order_by(StockPrice.price_date.desc()).first())
+                if before is not None:
+                    extra["reaction"] = {"before_date": before[0].isoformat(), "before_close": float(before[1]),
+                                         "base_date": res["indicators"]["base_date"], "base_close": res["indicators"]["close"]}
         if mode == "forecast":
             # 간접 관련 뉴스(업종·기초지수)는 직접 관련 섹션과 따로 보이고 신호 판정에 쓰지 않는다. 실적도 참고 정보다(2026-11-03).
             indirect = related_news.indirect_news(db, company, now - timedelta(days=period.news_days),
@@ -1376,7 +1406,7 @@ def _answer_forecast(question: str, previous: dict | None):
                                        "called_via": "forecast"}})
         answer = outlook.forecast_answer(company, period, res, news, disclosures, fx, now, indirect, earnings_rows)
     else:
-        answer = outlook.followup_answer(company, period, res, mode, now)
+        answer = outlook.followup_answer(company, period, res, mode, now, extra)
     return _code_answer(answer, records)
 
 

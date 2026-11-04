@@ -710,12 +710,14 @@ def parse_prelim24(title: str, content: str) -> dict | None:
     y1, m1, d1, y2, m2, _ = map(int, p.groups())
     if d1 != 1 or m1 not in (1, 4, 7, 10) or y1 != y2 or m2 != m1 + 2:
         return None
+    # 기준: 제목·표 머리 -> 공시가 자기를 설명하는 문장("별도재무제표기준 영업(잠정)실적") -> 표 머리 "별도실적내용"
+    self_basis = re.search(r"(연결|별도)\s*(?:재무제표)?\s*기준(?:의|으로)?\s*(?:영업\s*)?\(?\s*잠정\s*\)?\s*(?:영업\s*)?실적", content)
     if "연결" in title or "연결실적내용" in content:
         basis = "연결"
-    elif "별도실적내용" in content or re.search(r"별도\s*기준", content):
+    elif self_basis:
+        basis = self_basis.group(1)
+    elif "별도실적내용" in content:
         basis = "별도"
-    elif re.search(r"연결\s*기준|연결재무제표\s*기준", content):
-        basis = "연결"
     else:
         basis = "기준 미표기"
     out = {"year": y1, "quarter": (m1 - 1) // 3 + 1, "basis": basis}
@@ -727,7 +729,12 @@ def parse_prelim24(title: str, content: str) -> dict | None:
             continue
         cur, prev, cum = (_tok(x) for x in m.groups())
         out[key] = tuple(v * mult if v is not None else None for v in (cur, prev, cum))
+    out["unit"] = mult
     return out
+
+
+def _unit_of24(p: dict) -> float:
+    return p.get("unit", 1.0)
 
 
 def prelims24(db, company_name: str) -> list[dict]:
@@ -781,13 +788,34 @@ def _final_quarters(db, company_name: str) -> dict[tuple[int, int], dict]:
     return out
 
 
+def eligible_prelims24(db, company_name: str) -> dict[tuple[int, int], dict]:
+    """답변에 쓸 수 있는 잠정치(API.md 전망 4차): 같은 분기 정기보고서 없음, 정기보고서와 같은 기준(최근 정기보고서가 연결이면 연결,
+    정기보고서가 없으면 연결), 2~4분기는 직전 분기 정기보고서 매출 누적 + 당해 = 잠정 누계(0.5% 또는 공시 단위 2개 허용).
+    같은 분기·같은 기준 여러 건이면 나중 것."""
+    finals = _final_quarters(db, company_name)
+    basis = "별도" if finals and finals[max(finals)]["fs"] == "OFS" else "연결"
+    cums = dict(((r[0], {"11013": 1, "11012": 2, "11014": 3}[r[1]]), r[2]) for r in db.execute(text(
+        "select e.bsns_year, e.reprt_code, e.revenue_cum from quarterly_earnings e join company c on c.id = e.company_id "
+        "where c.name = :n and e.reprt_code in ('11013', '11012', '11014')"), {"n": company_name}).fetchall())
+    out = {}
+    for p in prelims24(db, company_name):
+        if p.get("correction") or p["basis"] != basis or (p["year"], p["quarter"]) in finals:
+            continue
+        out[(p["year"], p["quarter"])] = p
+    for (y, q), p in list(out.items()):
+        prev_cum, cur, cum = cums.get((y, q - 1)), p["revenue"][0], p["revenue"][2]
+        if q > 1 and prev_cum is not None and cur is not None and cum is not None:
+            unit = _unit_of24(p)
+            if abs(float(prev_cum) + cur - cum) > max(abs(cum) * 0.005, 2 * unit):
+                del out[(y, q)]
+    return out
+
+
 def latest_quarter24(db, company_name: str) -> tuple[tuple[int, int] | None, str | None, dict | None]:
     """가장 최근 분기와 출처("확정" 정기보고서 / "잠정" 공정공시). 같은 분기에 정기보고서가 있으면 잠정치는 쓰지 않는다."""
     finals = _final_quarters(db, company_name)
-    pre = {}
-    for p in prelims24(db, company_name):
-        if not p.get("correction"):
-            pre[(p["year"], p["quarter"])] = p  # 같은 분기 여러 건이면 나중 것
+    pre = {k: v for k, v in eligible_prelims24(db, company_name).items()
+           if v["revenue"][0] is not None and v["operating_income"][0] is not None}
     keys = set(finals) | set(pre)
     if not keys:
         return None, None, None
@@ -836,10 +864,9 @@ def check_earnings_line24(db, line: str, company_name: str) -> list[str]:
         if _REPORT_NAME[f["code"]] not in line:
             errs.append(f"{tag} 보고서 이름({_REPORT_NAME[f['code']]}) 없음")
         return errs + _check_values24(line, f["vals"], f["prev"], tag)
-    cands = [p for p in prelims24(db, company_name) if not p.get("correction") and (p["year"], p["quarter"]) == (y, q)]
-    if not cands:
-        return [f"{tag}: 잠정실적 공시 없음"]
-    p = cands[-1]
+    p = eligible_prelims24(db, company_name).get((y, q))
+    if p is None:
+        return [f"{tag}: 쓸 수 있는 잠정실적 공시 없음(기준·누적 조건)"]
     if _final_quarters(db, company_name).get((y, q)) is not None:
         return [f"{tag}: 정기보고서가 있는데 잠정치를 씀"]
     errs = []

@@ -101,6 +101,9 @@ def test_operating_income_above_revenue_means_the_revenue_account_was_misread():
         def all(self):
             return rows
 
+        def order_by(self, *a):  # 잠정실적 공시 조회(app/preliminary.py): 없음
+            return NS(all=lambda: [])
+
     assert earnings.recent_for_answer(Db(), NS(id=1, asset_type="stock")) is None  # 틀린 값 대신 섹션 생략
     rows[:] = [_er(2026, "11013", None, None, 5, cum=(None, None, 5))]  # 금융사처럼 매출 계정을 못 찾은 경우
     assert earnings.recent_for_answer(Db(), NS(id=1, asset_type="stock")) is None
@@ -112,7 +115,7 @@ def test_earnings_lines_explain_net_income_above_revenue():
              "rcept_no": "20260814003509", "disclosed_date": "2026-08-14"}]
     assert "DART 공시 값 그대로" in outlook.earnings_lines(rows)[-1]
     rows[0]["derived"] = True
-    assert "(연결, 연간 - 3분기 누적)" in outlook.earnings_lines(rows)[1]
+    assert "(연결, 확정, 연간 - 3분기 누적)" in outlook.earnings_lines(rows)[1]
 
 
 # ---------- 국면 규칙 ----------
@@ -267,7 +270,7 @@ def test_summary_does_not_claim_dominance_when_regime_disagrees(backtest):
     text = outlook.summary_lines(res, regime, W1)[0]
     assert res["label"] == "상승 우위" and "우세" not in text
     assert "20거래일 -23.24% 급락 뒤의 반등" in text and "5일선·20일선·60일선 아래" in text and "추세 전환은 확인되지 않았습니다" in text
-    assert "1주일 뒤 방향을 전체 평균보다 잘 맞히지 못했습니다(상승 비율 51.8% vs 전체 49.9%)" in text
+    assert "1주일 뒤 방향을 전체 평균보다 잘 맞히지 못했습니다(상승 비율 51.8% vs 전체 49.9%, 표본 22,176, 차이 +1.9%p, 95% 구간 -1.4~+5.3%p)" in text
     assert len(re.findall(r"다\.", text)) <= 3
 
 
@@ -276,7 +279,7 @@ def test_summary_says_dominant_only_when_signals_and_regime_agree(backtest):
     res["indicators"]["regime_inputs"].update(r20=8.0, r60=20.0, ma20=1_300_000.0, ma60=1_200_000.0, ma5=1_400_000.0)
     regime = outlook.classify_regime(res["indicators"], res["label"])
     assert regime == outlook.REGIME_UP
-    assert outlook.signal_sentence(res, regime, W1).startswith("현재 신호는 상승 쪽이 우세합니다(묶음 표 상승 2, 하락 0).")
+    assert outlook.signal_sentence(res, regime, W1).startswith("현재 신호는 상승 쪽이 우세합니다(5개 묶음 중 상승 2·하락 0·중립 3).")
 
 
 def test_evidence_items_merge_the_same_fact(backtest):
@@ -301,7 +304,7 @@ def test_fact_lines_use_news_disclosures_and_earnings_without_voting():
     assert '  - 2026-10-27 "연결재무제표기준영업(잠정)실적(공정공시)" 공시가 있었습니다.' in lines
     assert any("HBM4 수율 초과 달성" in x and x.endswith("라는 기사가 있었습니다.") for x in lines)
     assert not any("3.59%" in x for x in lines)
-    assert "  - 실적: 2026년 2분기(연결) 영업이익 605,426억 원, 전년 동기 대비 +557.2%." in lines
+    assert "  - 실적: 2026년 2분기(연결, 확정) 영업이익 605,426억 원, 전년 동기 대비 +557.2%." in lines
 
 
 def test_high_and_low_lines_name_their_window():
@@ -342,11 +345,12 @@ def test_verdict_followup_answers_directly_in_six_lines(backtest):
     lines = _nonblank(text)
     assert len(lines) <= 6
     assert lines[0] == "SK하이닉스(000660) · 향후 5거래일 · 현재는 단기 반등 시도, 추세 전환은 미확인 (기준일 2026-11-03 종가)"
-    assert lines[1].startswith("지금 데이터로는 1주일 뒤 방향을 믿을 만하게 판단할 수 없습니다. 과거 검증에서 이런 신호 조합(상승 우위)은 "
-                               "방향을 전체 평균보다 잘 맞히지 못했습니다")
-    assert lines[2].startswith("- 가장 큰 상승 근거: ") and lines[3].startswith("- 가장 큰 하락 위험: 20거래일 수익률 -23.24%")
-    assert lines[4] == "- 확인할 가격대: 5일선 1,461,800원·20일선 1,421,300원·60일선 1,604,583원 회복 여부"
-    assert lines[5] == outlook.FOLLOWUP_POINTER
+    # 24차(2026-11-04): 판단 회피 대신 현재 판단을 먼저 쓰고, 예측력은 그다음 줄에 표본·95% 구간과 함께 밝힌다
+    assert lines[1].startswith("현재 판단: 중립(굳이 고르면 상승 쪽). 단기 신호는 상승 쪽이 많지만(5개 묶음 중 상승 2·하락 0·중립 3)")
+    assert lines[2].startswith("- 예측력: 과거 검증에서 이 신호 상태(상승 우위)의 1주일 뒤 상승 비율은 51.8%")
+    assert "95% 구간 -1.4~+5.3%p" in lines[2] and lines[2].endswith("방향 예측력은 확인되지 않았습니다.")
+    assert lines[3].startswith("- 가장 큰 상승 근거: ") and lines[4].startswith("- 가장 큰 하락 위험: 20거래일 수익률 -23.24%")
+    assert lines[5] == "- 확인할 가격대: 5일선 1,461,800원·20일선 1,421,300원·60일선 1,604,583원 회복 여부"
     assert "규칙" not in text and "## " not in text and DISCLAIMER not in text
     assert outlook.marker_of(text) == {"name": "SK하이닉스", "ticker": "000660", "period": "1주일"}
 
@@ -365,7 +369,8 @@ def test_risk_followup_shows_risks_and_price_levels_only(backtest):
 def test_probability_followup_states_no_verified_probability(backtest):
     text = outlook.followup_answer(COMPANY, W1, _skhynix_like(), "probability", NOW)
     lines = _nonblank(text)
-    assert len(lines) <= 6 and lines[1] == "검증된 상승·하락 확률은 없습니다."
+    assert len(lines) <= 6 and lines[1].endswith("검증된 상승·하락 확률은 없어 가능성을 숫자로 말하지 않습니다.")
+    assert lines[1].startswith("현재 판단: 중립(굳이 고르면 상승 쪽)")
     assert "과거 빈도: 검증 구간(2026-01-02~2026-10-27)" in text and "51.8%" in text and "확률이나 예측이 아닙니다" in text
     assert assertion_hits(text) == [] and forbidden_hits(text) == []
 
@@ -373,7 +378,7 @@ def test_probability_followup_states_no_verified_probability(backtest):
 def test_followups_without_backtest_say_so(monkeypatch):
     monkeypatch.setattr(outlook, "backtest_summary", lambda: None)
     verdict = outlook.followup_answer(COMPANY, W1, _skhynix_like(), "verdict", NOW)
-    assert "과거 검증 결과도 아직 없습니다" in verdict
+    assert "과거 검증 결과가 아직 없어 예측력을 말할 수 없습니다" in verdict
     prob = outlook.followup_answer(COMPANY, W1, _skhynix_like(), "probability", NOW)
     assert "과거 검증 결과가 없습니다" in prob
 

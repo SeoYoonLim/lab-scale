@@ -1,0 +1,688 @@
+{
+  "git_commit": "3378c5c5687cccc8680390edee30f8f2cc578190",
+  "git_dirty": false,
+  "date": "2026-11-04T16:46:23",
+  "model": "llama3.1:8b",
+  "think": null,
+  "keep_alive": "30m",
+  "args": {
+    "mode": "live",
+    "split": "all",
+    "repeats": 1,
+    "only": null,
+    "ids": null,
+    "batch": "20",
+    "exclude_batch": null,
+    "model": null,
+    "keep_tool_results": false,
+    "limit": null,
+    "out": "evals/results/summary_b20_before.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 0,
+    "live": 20,
+    "records": 20
+  },
+  "live": {
+    "ran": true,
+    "repeats": 1,
+    "eval_user": "captest_21c955763d84",
+    "deleted_reports": 36,
+    "etf_data_available": {},
+    "elapsed_s": 74.5
+  },
+  "etf_data_available": {},
+  "etf_branches": {},
+  "elapsed_s": 79.7,
+  "metrics": {
+    "live_company_accuracy": {
+      "dev": null,
+      "holdout": 0.9444,
+      "holdout_seen": null,
+      "holdout_unseen": 0.9444,
+      "all": 0.9444,
+      "n": {
+        "dev": 0,
+        "holdout": 18,
+        "holdout_seen": 0,
+        "holdout_unseen": 18,
+        "all": 18
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 18,
+        "holdout_seen": 0,
+        "holdout_unseen": 18,
+        "all": 18
+      }
+    },
+    "source_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 11,
+        "holdout_seen": 0,
+        "holdout_unseen": 11,
+        "all": 11
+      }
+    },
+    "must_contain_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 0,
+        "holdout_unseen": 3,
+        "all": 3
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "code_answer_rate": {
+      "dev": null,
+      "holdout": 0.6,
+      "holdout_seen": null,
+      "holdout_unseen": 0.6,
+      "all": 0.6,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "loop_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "guard_replacement_rate": {
+      "dev": null,
+      "holdout": 0.375,
+      "holdout_seen": null,
+      "holdout_unseen": 0.375,
+      "all": 0.375,
+      "n": {
+        "dev": 0,
+        "holdout": 8,
+        "holdout_seen": 0,
+        "holdout_unseen": 8,
+        "all": 8
+      }
+    },
+    "narrative_drop_rate": {
+      "dev": null,
+      "holdout": 0.2,
+      "holdout_seen": null,
+      "holdout_unseen": 0.2,
+      "all": 0.2,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "foreign_strip_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 8,
+        "holdout_seen": 0,
+        "holdout_unseen": 8,
+        "all": 8
+      }
+    },
+    "fallback_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "forecast_number_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "forecast_evidence_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "forecast_assertion_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 19,
+        "holdout_seen": 0,
+        "holdout_unseen": 19,
+        "all": 19
+      }
+    },
+    "backtest_line_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "earnings_number_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 4,
+        "holdout_seen": 0,
+        "holdout_unseen": 4,
+        "all": 4
+      }
+    },
+    "conclusion_first_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "regime_match_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "no_double_vote_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "number_window_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "judgment_first_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 17,
+        "holdout_seen": 0,
+        "holdout_unseen": 17,
+        "all": 17
+      }
+    },
+    "latest_earnings_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 0,
+        "holdout_unseen": 3,
+        "all": 3
+      }
+    },
+    "data_status_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 1,
+        "holdout_seen": 0,
+        "holdout_unseen": 1,
+        "all": 1
+      }
+    },
+    "error_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "latency_p50_s": {
+      "dev": null,
+      "holdout": 0.07,
+      "holdout_seen": null,
+      "holdout_unseen": 0.07,
+      "all": 0.07,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "latency_p95_s": {
+      "dev": null,
+      "holdout": 11.465,
+      "holdout_seen": null,
+      "holdout_unseen": 11.465,
+      "all": 11.465,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "b20_13",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "그래서 살 만하다는 거야?",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "POSCO홀딩스"
+        ],
+        "must_not": null
+      },
+      "actual": []
+    },
+    {
+      "id": "b20_01",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "하이닉스가 일주일 안에 오를까?",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "'N개 묶음 중 상승 a·하락 b·중립 c' 없음"
+      ]
+    },
+    {
+      "id": "b20_02",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "기아 한 달 뒤 주가 전망 분석해줘",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "'N개 묶음 중 상승 a·하락 b·중립 c' 없음"
+      ]
+    },
+    {
+      "id": "b20_03",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "셀트리온 3개월 전망 어때?",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "'N개 묶음 중 상승 a·하락 b·중립 c' 없음"
+      ]
+    },
+    {
+      "id": "b20_04",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "KODEX 200 다음 주 방향은?",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "'N개 묶음 중 상승 a·하락 b·중립 c' 없음"
+      ]
+    },
+    {
+      "id": "b20_05",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "그래서 니 판단은 뭐냐고 오르냐 내리냐고?",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "'N개 묶음 중 상승 a·하락 b·중립 c' 없음"
+      ]
+    },
+    {
+      "id": "b20_06",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "굳이 하나만 고르면?",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "제목(종목·기간) '## 뉴스·공시 근거'",
+        "상태(국면·기준일) 없음",
+        "'N개 묶음 중 상승 a·하락 b·중립 c' 없음"
+      ]
+    },
+    {
+      "id": "b20_07",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "상승 근거와 하락 위험 중 어느 쪽이 더 강해?",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "'N개 묶음 중 상승 a·하락 b·중립 c' 없음"
+      ]
+    },
+    {
+      "id": "b20_08",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "최신 실적까지 반영해서 다시 판단해줘.",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "제목(종목·기간) 'SK하이닉스는 1일 전 주가가 1,414,000원으로 4.46% 하락했습'",
+        "상태(국면·기준일) 없음",
+        "'N개 묶음 중 상승 a·하락 b·중립 c' 없음"
+      ]
+    },
+    {
+      "id": "b20_08",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "최신 실적까지 반영해서 다시 판단해줘.",
+      "check": "earnings24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "'- 최신 실적: ' 줄 없음"
+      ]
+    },
+    {
+      "id": "b20_09",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "3분기 실적이 전망에 어떤 영향을 주는가?",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "제목(종목·기간) 'SK하이닉스의 3분기 실적이 전망에 어떤 영향을 주는가?'",
+        "상태(국면·기준일) 없음",
+        "'N개 묶음 중 상승 a·하락 b·중립 c' 없음"
+      ]
+    },
+    {
+      "id": "b20_09",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "3분기 실적이 전망에 어떤 영향을 주는가?",
+      "check": "earnings24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "'- 최신 실적: ' 줄 없음"
+      ]
+    },
+    {
+      "id": "b20_10",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "최신 주가 데이터가 없으면 어떻게 답하는가?",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "제목(종목·기간) '## 주가 동향'",
+        "상태(국면·기준일) 없음",
+        "'N개 묶음 중 상승 a·하락 b·중립 c' 없음"
+      ]
+    },
+    {
+      "id": "b20_10",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "최신 주가 데이터가 없으면 어떻게 답하는가?",
+      "check": "data24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "생성 시각·시세 기준일 문장 없음"
+      ]
+    },
+    {
+      "id": "b20_11",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "상승이야 하락이야?",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "'N개 묶음 중 상승 a·하락 b·중립 c' 없음"
+      ]
+    },
+    {
+      "id": "b20_12",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "하나만 골라봐.",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "제목(종목·기간) \"HMM(011200)에는 최근 '신규시설투자등'에 대한 공시가 있었습니다\"",
+        "상태(국면·기준일) 없음",
+        "'N개 묶음 중 상승 a·하락 b·중립 c' 없음"
+      ]
+    },
+    {
+      "id": "b20_13",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "그래서 살 만하다는 거야?",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "제목(종목·기간) '## 뉴스·공시 근거'",
+        "상태(국면·기준일) 없음",
+        "'N개 묶음 중 상승 a·하락 b·중립 c' 없음"
+      ]
+    },
+    {
+      "id": "b20_14",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "지금은 상승 가능성이 더 커, 하락 가능성이 더 커?",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "'N개 묶음 중 상승 a·하락 b·중립 c' 없음"
+      ]
+    },
+    {
+      "id": "b20_15",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "3분기 실적은 전망에 어떤 영향을 줘?",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "제목(종목·기간) '## 뉴스·공시 근거'",
+        "상태(국면·기준일) 없음",
+        "'N개 묶음 중 상승 a·하락 b·중립 c' 없음"
+      ]
+    },
+    {
+      "id": "b20_15",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "3분기 실적은 전망에 어떤 영향을 줘?",
+      "check": "earnings24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "'- 최신 실적: ' 줄 없음"
+      ]
+    },
+    {
+      "id": "b20_16",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "그래서 오르냐 내리냐?",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "'N개 묶음 중 상승 a·하락 b·중립 c' 없음"
+      ]
+    },
+    {
+      "id": "b20_20",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "두산에너빌리티 다음 주 오를까 내릴까?",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "'N개 묶음 중 상승 a·하락 b·중립 c' 없음"
+      ]
+    }
+  ]
+}

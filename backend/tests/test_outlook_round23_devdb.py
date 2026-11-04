@@ -67,8 +67,9 @@ def test_conclusion_first_answer_and_numbers_match_sql(dev_db, no_llm):
 
 
 @pytest.mark.needs_collected_data
-@pytest.mark.parametrize("q,first", [("그래서 니 판단은 뭐냐고 오르냐고 내리냐고", "지금 데이터로는 1주일 뒤 방향을"),
-                                     ("하락 위험은 어떤데", "- 하락 위험: "), ("확률은 얼마야", "검증된 상승·하락 확률은 없습니다.")])
+# 24차(2026-11-04): 후속 답은 종류와 관계없이 둘째 줄이 "현재 판단: …"이다(판단 회피 문장으로 시작하지 않는다)
+@pytest.mark.parametrize("q,first", [("그래서 니 판단은 뭐냐고 오르냐고 내리냐고", "현재 판단: "),
+                                     ("하락 위험은 어떤데", "현재 판단: "), ("확률은 얼마야", "현재 판단: ")])
 def test_short_followups_keep_company_and_period(dev_db, no_llm, q, first):
     r1 = agent.ask_question("하이닉스가 일주일안에 오를거 같아 내릴거 같아?", save_report=False)
     prev = {"report_id": None, "question": "x", "answer": r1["answer"], "company_name": "SK하이닉스"}

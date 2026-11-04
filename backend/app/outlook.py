@@ -25,7 +25,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from app.backtest import sma, sma_target
-from app.briefing import KST, drop_open_session, session_is_open
+from app.briefing import KST, MARKET_CLOSE, drop_open_session, session_is_open
 from app.data_status import business_days_behind, last_business_day
 from app.disclaimer import DISCLAIMER
 from app.etf import leverage_kind, leverage_notice
@@ -86,6 +86,9 @@ REGIME_DOWN = "하락 추세 지속"
 REGIME_FLAT = "횡보, 방향 불분명"
 REGIME_HOLD = "판단 유보(데이터 부족)"
 REGIMES = (REGIME_REBOUND, REGIME_UP, REGIME_PULLBACK, REGIME_DOWN, REGIME_FLAT, REGIME_HOLD)
+# 현재 판단(2026-11-04, 24차): 묶음 판정(기술적 신호의 우위)과 국면(추세)이 같은 방향일 때만 상승·하락이라고 말한다
+JUDGE_UP, JUDGE_DOWN, JUDGE_NEUTRAL, JUDGE_HOLD = "상승", "하락", "중립", "판단 유보"
+_TREND_LEAN = {REGIME_UP: JUDGE_UP, REGIME_PULLBACK: JUDGE_UP, REGIME_DOWN: JUDGE_DOWN}
 REGIME_DROP20_PCT = -10.0  # 20거래일 수익률이 이 이하면 큰 하락 뒤
 REGIME_DROP60_PCT = -15.0  # 또는 60거래일 수익률이 이 이하면 큰 하락 뒤
 REGIME_TREND20_PCT = 5.0  # 20거래일 수익률 ±이 값 이상이면 추세
@@ -113,6 +116,10 @@ ASK_SUBJECT_ANSWER = ("질문에서 종목을 찾지 못했습니다. 어떤 종
 JUDGE_RULE = (f"성격이 겹치는 지표를 묶어 묶음당 1표로 세고, 상승·하락 표 차이가 {GROUP_MARGIN}표 이상이면 많은 쪽의 우위, 그보다 작으면 중립. "
               f"계산한 묶음이 {MIN_GROUPS}개 미만이거나 마지막 시세가 {MAX_LAG_BUSINESS_DAYS}영업일을 넘게 늦거나 거래일이 빠졌으면 판단 유보")
 
+JUDGMENT_RULE = (f"묶음 판정과 국면이 같은 방향('상승 우위' + '{REGIME_UP}', '하락 우위' + '{REGIME_DOWN}')일 때만 상승·하락, "
+                 "판정이나 국면이 판단 유보면 판단 유보, 그 밖은 중립. 중립일 때 '굳이 고르면'은 묶음 판정 쪽, 판정도 중립이면 추세 쪽"
+                 f"('{REGIME_UP}'·'{REGIME_PULLBACK}' = 상승, '{REGIME_DOWN}' = 하락), 둘 다 없으면 고르지 않는다. "
+                 "우세한 쪽 묶음이 계산한 묶음의 절반 미만이면 '약한' 우위라고 쓴다")
 REGIME_RULE = (f"20거래일 수익률 {REGIME_DROP20_PCT:.0f}% 이하 또는 60거래일 {REGIME_DROP60_PCT:.0f}% 이하의 큰 하락 뒤 반등 신호(5거래일 수익률 > 0, "
                f"5일선 > 20일선, 최근 20거래일 최저 종가 대비 +{REGIME_REBOUND_FROM_LOW_PCT:.0f}% 이상 중 하나)가 있고 종가가 20일선이나 60일선 아래면 "
                f"'{REGIME_REBOUND}'. 종가 < 20일선 < 60일선이고 20거래일 -{REGIME_TREND20_PCT:.0f}% 이하 또는 60거래일 -{REGIME_TREND60_PCT:.0f}% "
@@ -137,10 +144,20 @@ _FORECAST_RE = re.compile(
 _VERDICT_RE = re.compile(
     r"결론|한마디로|요약|정리하면|정리해|올라|내려|오른다는|내린다는|오를\s*거|내릴\s*거|상승이야|하락이야|상승이냐|하락이냐|"
     r"생각에|생각은|판단으로|판단은|어떻게\s*해야|어떻게\s*하라|어떡해|사\s*\?*\s*말아|살까\s*말까|어느\s*쪽|"
-    r"가능성|확률|위험|리스크|오르냐|내리냐|오르니|내리니|올라가냐|내려가냐|떨어지냐|떨어지니"
+    r"가능성|확률|위험|리스크|오르냐|내리냐|오르니|내리니|올라가냐|내려가냐|떨어지냐|떨어지니|"
+    # 2026-11-04(24차): "굳이 하나만 고르면", "어느 쪽이 더 강해", "살 만하다는 거야"도 후속 결론이다
+    r"하나만|하나를|골라|고르면|고르라면|고르자면|찍어|둘\s*중|뭐가\s*더|더\s*(?:강해|세|센|커|크|큰|높아|높)|살\s*만|사도\s*된|사라는"
 )
 _RISK_RE = re.compile(r"위험|리스크|손실|낙폭")
 _PROBABILITY_RE = re.compile(r"가능성|확률|몇\s*(?:%|퍼센트|프로)")
+_PICK_RE = re.compile(r"하나만|하나를|골라|고르면|고르라면|고르자면|찍어|둘\s*중")
+_COMPARE_RE = re.compile(r"어느\s*쪽이\s*더|뭐가\s*더|더\s*(?:강해|세|센|커|크|큰)")
+_BUY_RE = re.compile(r"살\s*만|사도\s*(?:돼|되|된|될|괜찮)|사라는|사야\s*(?:돼|되|하나|할까)|매수해도|팔아야|매도해도|팔라는")
+# 직전 분석에 이어 실적·시세 데이터를 묻는 후속 질문(2026-11-04). "실적"은 _OTHER_INTENT_RE라 따로 본다.
+_EARNINGS_FOLLOWUP_RE = re.compile(r"실적.{0,20}(?:반영|영향|판단|달라|바뀌|전망)|(?:반영|영향).{0,10}실적")
+_DATA_FOLLOWUP_RE = re.compile(
+    r"(?:주가|시세|가격|데이터).{0,12}(?:없으면|없을\s*때|없는\s*경우|늦으면|늦은|오래|최신|반영된|기준일)|기준일이\s*언제|언제\s*(?:기준|데이터)")
+_QUARTER_RE = re.compile(r"(?:(20\d{2})\s*년\s*)?([1-4])\s*분기")
 # 주문 요청은 이 경로가 아니다. "1주일", "2주 뒤"는 기간이다.
 _ORDER_RE = re.compile(
     r"사\s*줘|사주세요|사\s*줄래|매수\s*해\s*줘|매도\s*해\s*줘|팔아\s*줘|팔아주세요|주문|체결|실행\s*해|넣어\s*줘|담아\s*줘|"
@@ -151,7 +168,8 @@ _OTHER_INTENT_RE = re.compile(r"왜|이유|원인|실적|매출|영업이익|리
 # 직전 종목 없이 결론·방향만 묻는 질문이라도 시장·지수·환율·내 포트폴리오를 묻는 말이면 기존 흐름이다
 _MARKET_WORD_RE = re.compile(r"코스피|코스닥|시장|지수|환율|금리|달러|증시|포트폴리오|보유|종목|업종|섹터|테마|추천")
 _PERIOD_PATTERNS = (
-    ("3개월", re.compile(r"3\s*개월|석\s*달|세\s*달|분기|90\s*일")),
+    # "2분기", "3분기"(실적 분기)는 기간이 아니다(2026-11-04 dev21_05: "2분기 실적은 전망에 어떤 영향이야?"가 3개월로 바뀌었다)
+    ("3개월", re.compile(r"3\s*개월|석\s*달|세\s*달|(?<![1-4])(?<![1-4] )분기|90\s*일")),
     ("1개월", re.compile(r"1\s*개월|한\s*달|다음\s*달|이번\s*달|한달|30\s*일|4\s*주")),
     ("1주일", re.compile(r"일주일|1\s*주일|한\s*주|다음\s*주|이번\s*주|1\s*주|7\s*일|며칠")),
 )
@@ -205,12 +223,44 @@ def is_followup_verdict_question(question: str) -> bool:
 
 
 def followup_kind(question: str) -> str:
+    """후속 결론 질문의 종류. 확률 -> 상승·하락 비교 -> 고르기 -> 매수 가부 -> 위험 -> 판단(나머지) 순서로 본다."""
     q = question or ""
     if _PROBABILITY_RE.search(q):
         return "probability"
+    if _COMPARE_RE.search(q):
+        return "compare"
+    if _PICK_RE.search(q):
+        return "pick"
+    if _BUY_RE.search(q):
+        return "buy"
     if _RISK_RE.search(q):
         return "risk"
     return "verdict"
+
+
+def special_followup_kind(question: str) -> str | None:
+    """직전 분석(표식 있는 답변)에 이어 실적 반영("earnings") 또는 시세 데이터 기준("data")을 묻는가. 아니면 None."""
+    q = question or ""
+    if is_order_request(q):
+        return None
+    if _DATA_FOLLOWUP_RE.search(q):
+        return "data"
+    if _EARNINGS_FOLLOWUP_RE.search(q):
+        return "earnings"
+    return None
+
+
+def quarter_in(question: str, now: datetime) -> tuple[int, int] | None:
+    """질문의 "3분기", "2025년 4분기" -> (연도, 분기). 연도가 없으면 지금 기준으로 이미 끝난 가장 최근 그 분기
+    (11월에 "3분기"는 올해, "4분기"는 아직 끝나지 않았으니 지난해)."""
+    m = _QUARTER_RE.search(question or "")
+    if not m:
+        return None
+    q = int(m.group(2))
+    if m.group(1):
+        return int(m.group(1)), q
+    today = now.astimezone(KST).date()
+    return (today.year if q < (today.month - 1) // 3 + 1 else today.year - 1), q
 
 
 def asks_subject(question: str) -> bool:
@@ -501,6 +551,115 @@ def judge_by_indicators(signals: list[dict], data: dict) -> str:
     return LABEL_NEUTRAL
 
 
+def vote_tally(signals: list[dict]) -> dict:
+    """묶음 표 집계: up/down/neutral/total(계산한 묶음 수)."""
+    votes = group_votes(signals)
+    up, down = sum(v == UP for v in votes.values()), sum(v == DOWN for v in votes.values())
+    return {"up": up, "down": down, "neutral": len(votes) - up - down, "total": len(votes)}
+
+
+def tally_text(t: dict) -> str:
+    return f"{t['total']}개 묶음 중 상승 {t['up']}·하락 {t['down']}·중립 {t['neutral']}"
+
+
+def strength_label(label: str, t: dict) -> str:
+    """우세한 쪽 묶음이 계산한 묶음의 절반 미만이면 "약한 상승 우위"처럼 쓴다(2개만 상승이고 나머지가 중립인 경우)."""
+    lead = t["up"] if label == LABEL_UP else t["down"] if label == LABEL_DOWN else None
+    return f"약한 {label}" if lead is not None and t["total"] and lead * 2 < t["total"] else label
+
+
+def current_judgment(label: str, regime: str) -> tuple[str, str | None]:
+    """(현재 판단, 굳이 고르면 쪽). JUDGMENT_RULE."""
+    if label == LABEL_HOLD or regime == REGIME_HOLD:
+        return JUDGE_HOLD, None
+    if label == LABEL_UP and regime == REGIME_UP:
+        return JUDGE_UP, None
+    if label == LABEL_DOWN and regime == REGIME_DOWN:
+        return JUDGE_DOWN, None
+    lean = {LABEL_UP: JUDGE_UP, LABEL_DOWN: JUDGE_DOWN}.get(label) or _TREND_LEAN.get(regime)
+    return JUDGE_NEUTRAL, lean
+
+
+def judgment_text(judgment: str, lean: str | None) -> str:
+    return f"현재 판단: {judgment}" + (f"(굳이 고르면 {lean} 쪽)" if lean else "")
+
+
+def _power_stats(r: dict) -> str:
+    lo, hi = r["diff_ci95"]
+    return f"표본 {r['n']:,}, 차이 {r['diff'] * 100:+.1f}%p, 95% 구간 {lo * 100:+.1f}~{hi * 100:+.1f}%p"
+
+
+def power_sentence(period: Period, label: str) -> str:
+    """예측력(과거 검증): 표본 수·차이·95% 구간과 유의성. 유의하지 않으면 방향 예측력이 확인되지 않았다고 쓴다."""
+    if label == LABEL_HOLD:
+        return "판단 유보는 과거 검증 대상이 아니라 예측력을 말할 수 없습니다."
+    r = _backtest_row(period, label)
+    if r is None:
+        return "과거 검증 결과가 아직 없어 예측력을 말할 수 없습니다."
+    head = (f"과거 검증에서 이 신호 상태({label})의 {period.label} 뒤 상승 비율은 {r['up_rate'] * 100:.1f}%, "
+            f"같은 기간 전체는 {r['base_rate'] * 100:.1f}%였습니다({_power_stats(r)}).")
+    if r.get("significant"):
+        return head + " 차이가 통계적으로 유의했지만 과거 빈도일 뿐 확률이나 예측이 아닙니다."
+    return head + " 차이가 통계적으로 유의하지 않아 방향 예측력은 확인되지 않았습니다."
+
+
+def power_short(period: Period, label: str) -> str:
+    if label == LABEL_HOLD:
+        return "판단 유보라 과거 검증 대상이 아닙니다"
+    r = _backtest_row(period, label)
+    if r is None:
+        return "과거 검증 결과가 아직 없습니다"
+    if r.get("significant"):
+        return f"과거 검증에서 유의한 차이가 있었지만 확률이나 예측은 아닙니다({_power_stats(r)})"
+    return f"과거 검증에서 방향 예측력은 확인되지 않았습니다({_power_stats(r)})"
+
+
+def judgment_line(res: dict, regime: str, period: Period) -> str:
+    """단독 전망 머리말의 현재 판단 줄: 판단 · 묶음 비중(강도) · 예측력."""
+    t = vote_tally(res["signals"])
+    j, lean = current_judgment(res["label"], regime)
+    return f"{judgment_text(j, lean)} · {tally_text(t)}({strength_label(res['label'], t)}) · {power_short(period, res['label'])}"
+
+
+# ---------- 시세 기준일 점검 ----------
+
+PRICE_STATUS_LATEST, PRICE_STATUS_NOT_COLLECTED, PRICE_STATUS_FAILED = "최신", "미수집", "수집 실패"
+PRICE_STATUS_HOLIDAY, PRICE_STATUS_STOCK_ONLY = "휴장일 추정", "종목만 누락"
+
+
+def price_status(db, base_date: date, now: datetime) -> dict:
+    """기대 거래일 시세가 없을 때 이유를 나눈다(KRX 휴장일 달력이 없어 수집 기록으로 추정한다).
+    종목만 누락: 지수(KS11)에는 기준일 뒤 날짜가 있다(거래정지이거나 이 종목만 수집 안 됨).
+    수집 실패: 기대 거래일 장 마감 뒤 시세 수집(prices) 마지막 기록이 실패. 휴장일 추정: 장 마감 뒤 수집이 성공했는데 시장 전체에
+    그날 시세가 없다. 미수집: 장 마감 뒤 시세 수집 기록이 없다."""
+    from sqlalchemy import func
+
+    from app.models import DataRefreshLog, MarketIndex
+
+    expected = expected_trading_day(now)
+    out = {"expected_date": expected.isoformat(), "status": PRICE_STATUS_LATEST, "detail": ""}
+    if base_date >= expected:
+        return out
+    idx = db.query(func.max(MarketIndex.price_date)).filter(MarketIndex.index_code == "KS11").scalar()
+    if idx is not None and idx > base_date:
+        out.update(status=PRICE_STATUS_STOCK_ONLY,
+                   detail=f"지수에는 {idx.isoformat()} 시세가 있음, 거래정지이거나 이 종목만 수집되지 않았을 수 있음")
+        return out
+    close_at = datetime.combine(expected, MARKET_CLOSE, tzinfo=KST)
+    runs = (db.query(DataRefreshLog).filter(DataRefreshLog.step == "prices", DataRefreshLog.status.in_(("success", "failed")))
+            .order_by(DataRefreshLog.id.desc()).limit(20).all())
+    after = [r for r in runs if r.started_at is not None and r.started_at >= close_at]
+    if after and after[0].status == "failed":
+        out.update(status=PRICE_STATUS_FAILED, detail=f"{after[0].started_at.astimezone(KST):%Y-%m-%d %H:%M} 시세 수집 실패 기록")
+    elif after:
+        out.update(status=PRICE_STATUS_HOLIDAY,
+                   detail=f"{after[0].started_at.astimezone(KST):%Y-%m-%d %H:%M} 수집에서 시장 전체에 그날 시세 없음")
+    else:
+        last = f"마지막 시세 수집 {runs[0].started_at.astimezone(KST):%Y-%m-%d %H:%M}" if runs else "시세 수집 기록 없음"
+        out.update(status=PRICE_STATUS_NOT_COLLECTED, detail=f"장 마감 뒤 시세 수집 기록 없음, {last}")
+    return out
+
+
 def expected_trading_day(now: datetime) -> date:
     """지금(KST) 기준으로 종가가 있어야 할 가장 최근 평일. 장중(평일 15:30 전)이면 직전 평일."""
     today = now.astimezone(KST).date()
@@ -510,22 +669,24 @@ def expected_trading_day(now: datetime) -> date:
     return d
 
 
-def data_check(base_date: date, now: datetime, missing_days: list[date]) -> dict:
-    """데이터 점검: 늦은 영업일 수, 경고 문장, 판단 유보 여부."""
+def data_check(base_date: date, now: datetime, missing_days: list[date], status: dict | None = None) -> dict:
+    """데이터 점검: 늦은 영업일 수, 경고 문장, 판단 유보 여부. status(price_status)가 있으면 늦은 이유를 경고에 붙인다."""
     expected = expected_trading_day(now)
     lag = business_days_behind(base_date, expected)
     warnings = []
+    why = f"({status['status']}: {status['detail']})" if status and status["status"] != PRICE_STATUS_LATEST else ""
     if 1 <= lag <= MAX_LAG_BUSINESS_DAYS:
-        warnings.append(f"마지막 시세일({base_date.isoformat()})이 기대 거래일({expected.isoformat()})보다 {lag}영업일 늦습니다. "
-                        "그 뒤의 가격 움직임은 반영되지 않았습니다.")
+        warnings.append(f"마지막 시세일({base_date.isoformat()})이 기대 거래일({expected.isoformat()})보다 {lag}영업일 늦습니다{why}. "
+                        f"이 분석은 {base_date.isoformat()} 종가 기준이며 최신 거래일 전망이 아닙니다.")
     elif lag > MAX_LAG_BUSINESS_DAYS:
-        warnings.append(f"마지막 시세일({base_date.isoformat()})이 기대 거래일({expected.isoformat()})보다 {lag}영업일 늦어 "
+        warnings.append(f"마지막 시세일({base_date.isoformat()})이 기대 거래일({expected.isoformat()})보다 {lag}영업일 늦어{why} "
                         "데이터가 부족합니다. 판단을 유보합니다.")
     if missing_days:
         shown = ", ".join(d.isoformat() for d in missing_days[:3]) + (" 등" if len(missing_days) > 3 else "")
         warnings.append(f"계산 구간에 지수에는 있는 거래일 {len(missing_days)}일의 시세가 없습니다({shown}). 판단을 유보합니다.")
     return {"expected_date": expected.isoformat(), "lag_business_days": lag, "missing_days": len(missing_days),
-            "warnings": warnings, "hold": lag > MAX_LAG_BUSINESS_DAYS or bool(missing_days)}
+            "warnings": warnings, "hold": lag > MAX_LAG_BUSINESS_DAYS or bool(missing_days),
+            "status": (status or {}).get("status"), "status_detail": (status or {}).get("detail")}
 
 
 # ---------- 답변 문장 ----------
@@ -690,25 +851,42 @@ def earnings_lines(rows: list[dict] | None) -> list[str]:
         return []
     if not rows:
         return ["- 실적 데이터 없음(수집된 DART 주요 계정이 없습니다)."]
-    lines = ["- 신호 판정에는 쓰지 않는 참고 정보입니다. 분기(3개월) 금액이며 4분기는 연간 금액에서 3분기 누적을 뺀 값입니다. "
+    lines = ["- 신호 판정에는 쓰지 않는 참고 정보입니다. 분기(3개월) 금액이며, 확정은 정기보고서(4분기는 연간 금액에서 3분기 누적을 뺀 값), "
+             "잠정은 거래소 잠정실적 공정공시(감사 전 잠정치)입니다. 같은 분기의 정기보고서가 나오면 확정치로 바꿉니다. "
              "전년 동기는 같은 기준(분기 3개월, 같은 연결·별도)의 금액입니다."]
-    for r in rows:
-        parts = []
-        for key, name in (("revenue", "매출액"), ("operating_income", "영업이익"), ("net_income", "당기순이익")):
-            cur, prev = r.get(key), r.get(f"{key}_prev")
-            if cur is None:
-                continue
-            yoy = f", 전년 동기 대비 {(cur / prev - 1) * 100:+.1f}%" if prev is not None and prev > 0 and cur >= 0 else ""
-            parts.append(f"{name} {_eok(cur)}{yoy}")
-        basis = ("연결" if r["fs_div"] == "CFS" else "별도") + (", 연간 - 3분기 누적" if r.get("derived") else "")
-        lines.append(f"- {r['period_label']}({basis}): " + "; ".join(parts) +
-                     f" (접수일 {r['disclosed_date']}, DART 접수번호 {r['rcept_no']})")
+    lines += [f"- {earnings_row_text(r)}" for r in rows]
     if any(r.get("revenue") and r.get("net_income") is not None and r["revenue"] > 0 and abs(r["net_income"]) > r["revenue"]
            for r in rows):
         # 2026-11-04 점검: 1분기 + 2분기 = 반기 누적으로 확인했다(누적값이 섞인 것이 아니다). 영업외 손익이 큰 분기다.
         lines.append("- 당기순이익이 매출액보다 큰 분기는 DART 공시 값 그대로입니다(분기 합이 누적과 맞는 것을 확인했습니다). "
                      "당기순이익에는 영업외 손익이 포함됩니다.")
     return lines
+
+
+REPORT_NAMES = {"11013": "1분기보고서", "11012": "반기보고서", "11014": "3분기보고서", "11011": "사업보고서"}
+
+
+def earnings_row_text(r: dict) -> str:
+    """실적 한 분기: "2026년 3분기(연결, 잠정): 매출액 …억 원, 전년 동기 대비 …%; … (출처, 접수·발표일, 접수번호)"."""
+    pre = r.get("source") == "preliminary"
+    basis = r.get("basis") if pre else ("연결" if r["fs_div"] == "CFS" else "별도")
+    head = f"{r['period_label']}({basis}, {'잠정' if pre else '확정'}{', 연간 - 3분기 누적' if r.get('derived') else ''})"
+    if pre:
+        src = f"잠정실적 공정공시, 발표일 {r['disclosed_date']}, DART 접수번호 {r['rcept_no']}, 감사 전 잠정치"
+        if r.get("corrected"):
+            c = r["corrected"]
+            return (f"{head}: 정정공시({c['date'].isoformat()}, DART 접수번호 {c['rcept_no']})가 있어 원 공시 수치를 싣지 않았습니다 "
+                    f"({src})")
+    else:
+        src = f"{REPORT_NAMES.get(r.get('reprt_code'), '정기보고서')}, 접수일 {r['disclosed_date']}, DART 접수번호 {r['rcept_no']}"
+    parts = []
+    for key, name in (("revenue", "매출액"), ("operating_income", "영업이익"), ("net_income", "당기순이익")):
+        cur, prev = r.get(key), r.get(f"{key}_prev")
+        if cur is None:
+            continue
+        yoy = f", 전년 동기 대비 {(cur / prev - 1) * 100:+.1f}%" if prev is not None and prev > 0 and cur >= 0 else ""
+        parts.append(f"{name} {_eok(cur)}{yoy}")
+    return f"{head}: " + "; ".join(parts) + f" ({src})"
 
 
 def _eok(v: float) -> str:
@@ -774,10 +952,9 @@ def _below_clause(ind: dict, period: Period) -> str | None:
 def signal_sentence(res: dict, regime: str, period: Period) -> str:
     """종합 판단의 신호·국면 문장(1~2문장). 묶음 판정이 한쪽으로 뚜렷하고 국면과 맞을 때만 "우세합니다"라고 쓴다."""
     ind, label = res["indicators"], res["label"]
-    votes = group_votes(res["signals"])
-    tally = f"묶음 표 상승 {sum(v == UP for v in votes.values())}, 하락 {sum(v == DOWN for v in votes.values())}"
+    tally = tally_text(vote_tally(res["signals"]))
     if label == LABEL_HOLD:
-        return "데이터가 부족해 신호 판정을 유보합니다(아래 데이터 경고 참고)."
+        return f"데이터가 부족해 신호 판정을 유보합니다({tally}, 데이터 경고 참고)."
     if regime == REGIME_HOLD:
         side = {LABEL_UP: "상승 쪽이 많지만", LABEL_DOWN: "하락 쪽이 많지만", LABEL_NEUTRAL: "어느 쪽으로도 뚜렷하지 않고"}[label]
         return f"현재 신호는 {side}({tally}), 국면을 판단할 시세(60거래일)가 부족합니다."
@@ -828,7 +1005,7 @@ def backtest_sentence(period: Period, label: str) -> str | None:
     r = _backtest_row(period, label)
     if r is None:
         return "과거 검증 결과가 아직 없어 이 신호 상태가 과거에 방향을 맞혔는지는 말할 수 없습니다."
-    rates = f"상승 비율 {r['up_rate'] * 100:.1f}% vs 전체 {r['base_rate'] * 100:.1f}%"
+    rates = f"상승 비율 {r['up_rate'] * 100:.1f}% vs 전체 {r['base_rate'] * 100:.1f}%, {_power_stats(r)}"
     if r.get("significant"):
         return (f"과거 검증에서 이 신호 상태({label})의 {period.label} 뒤 {rates}로 차이가 있었지만, "
                 "과거 빈도일 뿐 확률이나 예측이 아닙니다.")
@@ -952,13 +1129,15 @@ def fact_lines(news: list[dict], disclosures: list[dict], earnings: list[dict] |
         subs.append(f"  - {(d.get('disclosed_at') or '')[:10]} \"{d['title']}\" 공시가 있었습니다.")
     for n in key_news(news):
         subs.append(f"  - {(n.get('published_at') or '')[:10]} \"{n['title']}\"라는 기사가 있었습니다.")
-    if earnings:
+    if earnings and not earnings[0].get("corrected"):
         r = earnings[0]
         cur, prev = r.get("operating_income"), r.get("operating_income_prev")
         if cur is not None:
             yoy = f", 전년 동기 대비 {(cur / prev - 1) * 100:+.1f}%" if prev is not None and prev > 0 and cur >= 0 else ""
-            basis = "연결" if r["fs_div"] == "CFS" else "별도"
-            subs.append(f"  - 실적: {r['period_label']}({basis}) 영업이익 {_eok(cur)}{yoy}.")
+            pre = r.get("source") == "preliminary"
+            basis = r.get("basis") if pre else ("연결" if r["fs_div"] == "CFS" else "별도")
+            when = f", {r['disclosed_date']} 잠정실적 발표" if pre else ""
+            subs.append(f"  - 실적: {r['period_label']}({basis}, {'잠정' if pre else '확정'}{when}) 영업이익 {_eok(cur)}{yoy}.")
     return ["- 신호 판정에 넣지 않은 최근 사실:", *subs] if subs else []
 
 
@@ -973,15 +1152,16 @@ def limit_lines(company) -> list[str]:
 
 
 def source_lines(ind: dict, data: dict, period: Period, now: datetime) -> list[str]:
-    lines = [f"- 기준일(최신 거래일): {ind['base_date']}, 오늘(Asia/Seoul): {now.astimezone(KST).date().isoformat()}, "
-             f"기대 거래일: {data['expected_date']}"]
+    lines = [f"- 답변 생성: {now.astimezone(KST):%Y-%m-%d %H:%M} KST(시장 데이터 기준일 {ind['base_date']} 종가와 다릅니다)",
+             f"- 기준일(최신 거래일): {ind['base_date']}, 오늘(Asia/Seoul): {now.astimezone(KST).date().isoformat()}, "
+             f"기대 거래일: {data['expected_date']}" + (f", 시세 상태: {data['status']}" if data.get("status") else "")]
     lines += [f"- 경고: {w}" for w in data["warnings"]]
     lines.append("- 수익률 계산식: (기준일 종가 ÷ N거래일 전 종가 - 1) × 100. 최고·최저 종가 대비도 같은 식이며 수익률이 아닙니다.")
     lines.append(f"- 지표 계산에 쓴 가격 범위(이동평균·MACD·RSI 등): {ind['first_date']}~{ind['base_date']} 종가 {ind['n_rows']}거래일. "
                  "최고·최저 종가는 각 줄에 적은 조회 기간만 봅니다.")
     lines.append(f"- 근거 뉴스·공시 범위: 최근 {period.news_days}일 발행·접수분")
     lines.append("- 출처: 시세 stock_price(종가), 지수 market_index, 환율 exchange_rate, 뉴스 news(발행일), 공시 disclosure(DART 접수일), "
-                 "실적 quarterly_earnings(DART 주요 계정), 과거 검증 app/data/outlook_backtest.json")
+                 "실적 quarterly_earnings(DART 주요 계정)·잠정실적 공정공시(disclosure), 과거 검증 app/data/outlook_backtest.json")
     return lines
 
 
@@ -992,7 +1172,10 @@ def rule_lines(company, period: Period, res: dict) -> list[str]:
              "- 위 라벨은 묶음 표를 센 결과이며, 방향을 예측하는 값이 아닙니다(과거 검증 참고).",
              *group_lines(sig), _count_line(sig)]
     lines += [f"- [{s['group']}] {s['name']}: {_SIDE_WORD[s['side']]} ({s['value']}; 규칙: {s['rule']})" for s in sig]
+    t = vote_tally(sig)
+    lines.append(f"- 신호 강도: {tally_text(t)}({strength_label(label, t)}). 기술적 신호의 우위이며, 미래 주가 예측력은 과거 검증으로 따로 본다.")
     lines.append(f"- 판정 규칙: {JUDGE_RULE}")
+    lines.append(f"- 현재 판단 규칙: {JUDGMENT_RULE}")
     lines.append(f"- 국면 규칙: {REGIME_RULE}")
     return lines
 
@@ -1011,6 +1194,7 @@ def forecast_answer(company, period: Period, res: dict, news: list[dict], disclo
     is_etf = getattr(company, "asset_type", None) == "etf"
     intro = [title_line(company, period), "", state_line(regime, ind)]
     intro += [f"데이터 경고: {w}" for w in data["warnings"]]
+    intro.append(judgment_line(res, regime, period))
     up, down = evidence_items(ind, res["signals"], period)
     section, topic, items = indirect or (None, None, [])
     direct = evidence_lines(news, disclosures, is_etf, period)
@@ -1037,21 +1221,9 @@ def forecast_answer(company, period: Period, res: dict, news: list[dict], disclo
 
 
 FOLLOWUP_POINTER = "자세한 근거는 바로 위 분석에 있습니다."
-
-
-def _direct_answer(period: Period, label: str) -> str:
-    """"오르냐 내리냐"에 대한 첫 문장(질문에 바로 답한다)."""
-    if label == LABEL_HOLD:
-        return "데이터가 부족해 지금은 판단을 유보합니다."
-    r = _backtest_row(period, label)
-    if r is None:
-        return f"지금 데이터로는 {period.label} 뒤 방향을 믿을 만하게 판단할 수 없습니다. 과거 검증 결과도 아직 없습니다."
-    rates = f"상승 비율 {r['up_rate'] * 100:.1f}% vs 전체 {r['base_rate'] * 100:.1f}%"
-    if r.get("significant"):
-        return (f"과거 검증에서 이 신호 상태({label})의 {period.label} 뒤 {rates}로 차이가 있었지만, 과거 빈도일 뿐이라 "
-                "방향을 단정할 수는 없습니다.")
-    return (f"지금 데이터로는 {period.label} 뒤 방향을 믿을 만하게 판단할 수 없습니다. 과거 검증에서 이런 신호 조합({label})은 "
-            f"방향을 전체 평균보다 잘 맞히지 못했습니다({rates}).")
+DATA_POLICY = ("시세가 1~5영업일 늦으면 기준일과 늦은 이유(미수집·수집 실패·휴장일 추정·종목만 누락)를 밝히고 최신 전망이라고 하지 않습니다. "
+               f"{MAX_LAG_BUSINESS_DAYS}영업일을 넘게 늦거나 계산 구간에 빠진 거래일이 있으면 판단을 유보합니다. "
+               "KRX 휴장일 달력이 없어 휴장일은 수집 기록으로 추정합니다.")
 
 
 def _level_line(ind: dict, period: Period) -> str:
@@ -1067,16 +1239,83 @@ def _level_line(ind: dict, period: Period) -> str:
     return f"분석 기간 최저 종가 {_won(rg['low'])}({rg['low_date']})"
 
 
-def followup_answer(company, period: Period, res: dict, kind: str, now: datetime) -> str:
-    """후속 질문은 보고서를 다시 찍지 않고 6줄 이하로 바로 답한다(2026-11-04). 규칙 설명·근거 목록·기준일 섹션은 없다.
-    첫 줄의 제목(이름(종목코드) · 향후 N거래일)이 다음 후속 질문의 종목·기간 표식이다."""
+def _pick_sentence(judgment: str, lean: str | None, reason: str) -> str:
+    side = judgment if judgment in (JUDGE_UP, JUDGE_DOWN) else lean
+    if side:
+        return f"굳이 하나를 고르면 {side} 쪽입니다(현재 판단: {judgment}). {reason}"
+    return f"굳이 하나를 고를 근거가 부족합니다(현재 판단: {judgment}). {reason}"
+
+
+def _compare_clause(t: dict) -> str:
+    if t["up"] > t["down"]:
+        return "묶음 표로는 상승 근거가 더 많습니다"
+    if t["down"] > t["up"]:
+        return "묶음 표로는 하락 위험이 더 많습니다"
+    return "묶음 표로는 상승·하락이 비슷합니다"
+
+
+def _price_status_line(data: dict, base: str) -> str:
+    if data.get("status") in (None, PRICE_STATUS_LATEST):
+        return f"- 지금 상태: 기대 거래일 {data['expected_date']} 시세까지 반영돼 있습니다(최신)."
+    return (f"- 지금 상태: 기대 거래일 {data['expected_date']} 시세가 없습니다({data['status']}: {data['status_detail']}). "
+            f"그래서 이 판단은 {base} 종가 기준이며 최신 거래일 전망이 아닙니다.")
+
+
+def _reaction_line(r: dict, reaction: dict | None) -> str | None:
+    """실적 발표(접수)일 직전 거래일 종가 -> 기준일 종가. reaction = {"before_date", "before_close", "base_date", "base_close"}."""
+    if not reaction:
+        return None
+    pct = (reaction["base_close"] / reaction["before_close"] - 1) * 100
+    return (f"- 발표 뒤 주가: 발표일({r['disclosed_date']}) 직전 거래일 {reaction['before_date']} 종가 {_won(reaction['before_close'])} → "
+            f"기준일 {reaction['base_date']} 종가 {_won(reaction['base_close'])}({pct:+.2f}%). 시장·업종 움직임이 섞인 값이며, "
+            "실적이 이후 주가 방향을 예측하는지는 검증하지 않았습니다.")
+
+
+def followup_answer(company, period: Period, res: dict, kind: str, now: datetime, extra: dict | None = None) -> str:
+    """후속 답(2026-11-04 24차): 결론(현재 판단)을 둘째 줄 맨 앞에 두고 6줄 이하. 규칙 설명·섹션은 없다(이전 분석을 다시 찍지 않는다).
+    첫 줄의 제목(이름(종목코드) · 향후 N거래일)이 다음 후속 질문의 종목·기간 표식이다.
+    kind: verdict/pick/compare/probability/buy/risk/earnings/data. extra: earnings(실적 행)·quarter(물은 분기)·reaction(발표 뒤 주가)."""
+    extra = extra or {}
     ind, label, data = res["indicators"], res["label"], res["data"]
     regime = classify_regime(ind, label)
-    head = f"{title_line(company, period)} · {state_line(regime, ind)}"
+    t = vote_tally(res["signals"])
+    j, lean = current_judgment(label, regime)
+    jt = judgment_text(j, lean)
+    base = ind["base_date"]
+    warn = f" 데이터 경고: {data['warnings'][0]}" if data["warnings"] and kind != "data" else ""
+    head = f"{title_line(company, period)} · {state_line(regime, ind)}{warn}"
     up, down = evidence_items(ind, res["signals"], period)
-    warn = f" 데이터 경고: {data['warnings'][0]}" if data["warnings"] else ""
+    reason = signal_sentence(res, regime, period)
+    evidence = [f"- 가장 큰 상승 근거: {up[0] if up else '지금 계산한 지표에서는 없습니다'}",
+                f"- 가장 큰 하락 위험: {down[0] if down else '지금 계산한 지표에서는 없습니다'}",
+                f"- 확인할 가격대: {_level_line(ind, period)}"]
+    power = f"- 예측력: {power_sentence(period, label)}"
+    if kind == "data":
+        lines = [f"이 답변은 {now.astimezone(KST):%Y-%m-%d %H:%M} KST에 만들었고, 시세 기준일은 {base} 종가입니다.",
+                 _price_status_line(data, base), f"- 답하는 방식: {DATA_POLICY}",
+                 f"- {jt} — {tally_text(t)}, 국면 '{regime}'({base} 종가 기준)."]
+        return _blocks([[head], lines[:1], lines[1:]])
+    if kind == "earnings":
+        rows = extra.get("earnings")
+        first = (f"{jt}. 실적은 신호 판정 표에 넣지 않아 최신 실적을 반영해도 현재 판단은 그대로입니다"
+                 f"({tally_text(t)}, 국면 '{regime}').")
+        if not rows:
+            why = "ETF는 실적을 다루지 않습니다" if getattr(company, "asset_type", None) == "etf" else "매출액·영업이익 계정을 확인하지 못했습니다"
+            return _blocks([[head], [first], [f"- 실적 정보를 보여 주지 않습니다({why}).", power]])
+        body = [f"- 최신 실적: {earnings_row_text(rows[0])}"]
+        quarter = extra.get("quarter")
+        asked = next((r for r in rows if (r["bsns_year"], r["quarter"]) == quarter), None) if quarter else None
+        if quarter and asked is None:
+            body.append(f"- {quarter[0]}년 {quarter[1]}분기 실적: 아직 공시(잠정·확정)가 없습니다.")
+        elif asked is not None and asked is not rows[0]:
+            body.append(f"- 물은 분기 실적: {earnings_row_text(asked)}")
+        elif len(rows) > 1:
+            body.append(f"- 직전 실적: {earnings_row_text(rows[1])}")
+        react = _reaction_line(rows[0], extra.get("reaction"))
+        body += ([react] if react else []) + [power]
+        return _blocks([[head], [first], body])
     if kind == "risk":
-        lines = [head + warn]
+        lines = [f"{jt} — {tally_text(t)}, 국면 '{regime}'."]
         lines += [f"- 하락 위험: {x}" for x in down[:3]] or ["- 하락 위험: 지금 계산한 지표에서는 하락 쪽 근거가 보이지 않습니다."]
         rg, r52 = ind["range"], ind.get("range52")
         levels = []
@@ -1087,25 +1326,29 @@ def followup_answer(company, period: Period, res: dict, kind: str, now: datetime
         if r52:
             levels.append(f"52주 최저 종가 {_won(r52['low'])}({r52['low_date']}, 최근 {r52['days'] - 1}거래일 기준)")
         lines.append("- 확인할 가격대: " + ", ".join(levels))
-        return _blocks([lines[:1], lines[1:], [FOLLOWUP_POINTER]])
+        return _blocks([[head], lines[:1], lines[1:]])
     if kind == "probability":
         r = _backtest_row(period, label) if label != LABEL_HOLD else None
-        lines = [head + warn, "검증된 상승·하락 확률은 없습니다."]
+        first = f"{jt} — {tally_text(t)}, 국면 '{regime}'. 검증된 상승·하락 확률은 없어 가능성을 숫자로 말하지 않습니다."
         if r is not None:
             v = backtest_summary()["periods"][period.label]["valid"]
             note = "차이가 있었지만 확률이나 예측이 아닙니다." if r.get("significant") else "전체와 뚜렷한 차이가 없었고, 확률이나 예측이 아닙니다."
-            lines.append(f"- 과거 빈도: 검증 구간({v['first_date']}~{v['last_date']})에서 지금과 같은 신호 상태({label})였던 날의 "
-                         f"{v['horizon']}거래일 뒤 상승 비율은 {r['up_rate'] * 100:.1f}%, 같은 기간 전체는 {r['base_rate'] * 100:.1f}%였습니다"
-                         f"(표본 {r['n']:,}). {note}")
+            freq = (f"- 과거 빈도: 검증 구간({v['first_date']}~{v['last_date']})에서 지금과 같은 신호 상태({label})였던 날의 "
+                    f"{v['horizon']}거래일 뒤 상승 비율은 {r['up_rate'] * 100:.1f}%, 같은 기간 전체는 {r['base_rate'] * 100:.1f}%였습니다"
+                    f"({_power_stats(r)}). {note}")
         else:
-            lines.append("- 과거 빈도: 이 신호 상태의 과거 검증 결과가 없습니다.")
-        lines.append(f"- 현재 상태: {signal_sentence(res, regime, period)}")
-        return _blocks([lines[:1], lines[1:2], lines[2:], [FOLLOWUP_POINTER]])
-    lines = [head + warn, f"{_direct_answer(period, label)} {signal_sentence(res, regime, period)}"]
-    lines.append(f"- 가장 큰 상승 근거: {up[0] if up else '지금 계산한 지표에서는 없습니다'}")
-    lines.append(f"- 가장 큰 하락 위험: {down[0] if down else '지금 계산한 지표에서는 없습니다'}")
-    lines.append(f"- 확인할 가격대: {_level_line(ind, period)}")
-    return _blocks([lines[:1], lines[1:2], lines[2:], [FOLLOWUP_POINTER]])
+            freq = "- 과거 빈도: 이 신호 상태의 과거 검증 결과가 없습니다."
+        return _blocks([[head], [first], [freq, f"- 현재 상태: {reason}", evidence[2]]])
+    if kind == "pick":
+        first = _pick_sentence(j, lean, reason)
+    elif kind == "compare":
+        first = f"{jt}. {_compare_clause(t)}({tally_text(t)}), 국면은 '{regime}'입니다."
+    elif kind == "buy":
+        first = (f"{jt}. 매수·매도 여부는 권하지 않습니다. 이 판단은 현재 신호 상태({tally_text(t)}, 국면 '{regime}')일 뿐이며, "
+                 f"{power_short(period, label)}.")
+    else:
+        first = f"{jt}. {reason}"
+    return _blocks([[head], [first], [power, *evidence]])
 
 
 def _blocks(blocks: list[list[str]]) -> str:
@@ -1153,7 +1396,7 @@ def analyze(db, company, period: Period, now: datetime | None = None) -> dict | 
         last = db.query(func.max(MarketIndex.price_date)).filter(MarketIndex.index_code == code).scalar()
         ind["relative_missing"] = {"index_name": MARKET_INDEXES[code], "index_last": last.isoformat() if last else None}
     signals = classify_signals(ind, period)
-    data = data_check(rows[-1][0], now, missing)
+    data = data_check(rows[-1][0], now, missing, price_status(db, rows[-1][0], now))
     return {"indicators": ind, "signals": signals, "label": judge(signals, data), "data": data}
 
 

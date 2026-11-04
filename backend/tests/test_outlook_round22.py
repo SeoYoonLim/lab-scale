@@ -196,7 +196,7 @@ def test_earnings_lines_yoy_and_loss_handling():
              "net_income_prev": -1e9, "period_label": "2026년 2분기", "fs_div": "CFS", "rcept_no": "20260814000001",
              "disclosed_date": "2026-08-14"}]
     line = outlook.earnings_lines(rows)[1]
-    assert line.startswith("- 2026년 2분기(연결): 매출액 12,000억 원, 전년 동기 대비 +20.0%")
+    assert line.startswith("- 2026년 2분기(연결, 확정): 매출액 12,000억 원, 전년 동기 대비 +20.0%")
     assert "영업이익 -30억 원;" in line  # 적자는 증감률을 쓰지 않는다
     assert "당기순이익 20억 원 (" in line  # 전년 적자 대비 증감률도 쓰지 않는다
     assert outlook.earnings_lines(None) == [] and "실적 데이터 없음" in outlook.earnings_lines([])[0]
