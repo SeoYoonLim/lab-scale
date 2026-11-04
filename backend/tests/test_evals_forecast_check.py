@@ -131,3 +131,56 @@ def test_numbers23_and_regime_catch_tampering(dev_db):
     assert any("조회 기간" in e for e in FC.check_numbers23(dev_db, wrong, "SK하이닉스"))
     flipped = re.sub(r"현재는 [^(]+ \(", "현재는 상승 추세 지속 (", answer, count=1)
     assert FC.check_regime(dev_db, flipped, "SK하이닉스")
+
+
+# ---------- 24차(batch 20): 현재 판단 규칙·잠정실적 독립 파서 ----------
+
+PRELIM = ("실적기간 당기실적 2026-07-01 ~ 2026-09-30 전기실적 2026-04-01 ~ 2026-06-30 전년동기실적 2025-07-01 ~ 2025-09-30 "
+          "※ 동 정보는 잠정치로서 향후 확정치와는 다를 수 있음. 1. 연결실적내용 단위 : 백만원, % 구분 당기실적 전기실적 전기대비 "
+          "전년동기실적 전년동기대비 매출액 당해실적 104,615,483 79,318,746 31.9 - 24,448,929 327.9 - 누계실적 236,510,516 - - - "
+          "64,320,022 267.7 - 영업이익 당해실적 83,333,818 60,542,608 37.6 - 11,383,390 632.1 - 누계실적 181,486,709 - - - "
+          "28,036,745 547.3 - 당기순이익 당해실적 39,775,593 93,922,593 -57.7 - 12,597,538 215.7 - 누계실적 174,044,095 - - - "
+          "27,701,949 528.3 - 지배기업 소유주지분 순이익 당해실적 39,534,392 93,820,236 -57.9 - 12,595,195 213.9 - 누계실적 1 - - - 1 1 -")
+
+
+def test_judgment_rule_needs_label_and_regime_to_agree():
+    assert FC.judgment_rule("상승 우위", "상승 추세 지속") == ("상승", None)
+    assert FC.judgment_rule("하락 우위", "하락 추세 지속") == ("하락", None)
+    assert FC.judgment_rule("상승 우위", "단기 반등 시도, 추세 전환은 미확인") == ("중립", "상승")
+    assert FC.judgment_rule("중립", "하락 추세 지속") == ("중립", "하락")
+    assert FC.judgment_rule("중립", "상승 추세 중 조정") == ("중립", "상승")
+    assert FC.judgment_rule("중립", "횡보, 방향 불분명") == ("중립", None)
+    assert FC.judgment_rule("판단 유보", "상승 추세 지속") == ("판단 유보", None)
+    assert FC.judgment_rule("상승 우위", "판단 유보(데이터 부족)") == ("판단 유보", None)
+
+
+def test_label_and_strength_from_tally():
+    assert FC.label_from_tally(2, 0, 5) == "상승 우위" and FC.strength_word("상승 우위", 2, 0, 5) == "약한 "
+    assert FC.label_from_tally(3, 0, 5) == "상승 우위" and FC.strength_word("상승 우위", 3, 0, 5) == ""
+    assert FC.label_from_tally(1, 2, 5) == "중립" and FC.strength_word("중립", 1, 2, 5) == ""
+    assert FC.label_from_tally(2, 0, 2) == "판단 유보"
+
+
+def test_prelim_parser_reads_quarter_not_cumulative():
+    p = FC.parse_prelim24("연결재무제표기준영업(잠정)실적(공정공시)", PRELIM)
+    assert (p["year"], p["quarter"], p["basis"]) == (2026, 3, "연결")
+    assert p["revenue"] == (104_615_483e6, 24_448_929e6, 236_510_516e6)
+    assert p["net_income"][0] == 39_775_593e6  # "지배기업 소유주지분 순이익"이 아니라 당기순이익
+    assert FC.parse_prelim24("연결재무제표기준영업(잠정)실적(공정공시)(자회사의 주요경영사항)", PRELIM) is None
+    assert FC.parse_prelim24("[기재정정]연결재무제표기준영업(잠정)실적(공정공시)", PRELIM) is None
+    monthly = PRELIM.replace("2026-07-01 ~ 2026-09-30", "2026-09-01 ~ 2026-09-30")
+    assert FC.parse_prelim24("영업(잠정)실적(공정공시)", monthly) is None
+
+
+def test_judgment24_catches_evasive_and_fake_probability(monkeypatch):
+    monkeypatch.setattr(FC, "regime_expected", lambda db, name, base, hold=False: "단기 반등 시도, 추세 전환은 미확인")
+    head = "SK하이닉스(000660) · 향후 5거래일 · 현재는 단기 반등 시도, 추세 전환은 미확인 (기준일 2026-11-03 종가)"
+    ok = (f"{head}\n\n현재 판단: 중립(굳이 고르면 상승 쪽). 5개 묶음 중 상승 2·하락 0·중립 3으로 단기 신호는 상승 쪽이 조금 많습니다.\n\n"
+          "- 예측력: 표본 22,176, 95% 구간 -1.4~+5.3%p로 예측력은 확인되지 않았습니다.")
+    assert [e for e in FC.check_judgment24(None, ok, "SK하이닉스", "1주일", "verdict") if "표본" not in e and "구간" not in e] == []
+    evasive = f"{head}\n\n지금 데이터로는 1주일 뒤 방향을 믿을 만하게 판단할 수 없습니다. 5개 묶음 중 상승 2·하락 0·중립 3."
+    assert any("회피" in e or "현재 판단" in e for e in FC.check_judgment24(None, evasive, "SK하이닉스", "1주일", "verdict"))
+    wrong = ok.replace("현재 판단: 중립(굳이 고르면 상승 쪽)", "현재 판단: 상승")
+    assert any("규칙" in e for e in FC.check_judgment24(None, wrong, "SK하이닉스", "1주일", "verdict"))
+    fake = ok + "\n- 상승 확률은 60%입니다."
+    assert any("확률 지어냄" in e for e in FC.check_judgment24(None, fake, "SK하이닉스", "1주일", "verdict"))

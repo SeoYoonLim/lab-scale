@@ -255,6 +255,9 @@ def check_earnings(db, answer: str, company_name: str) -> list[str]:
     code = {"1분기": "11013", "2분기": "11012", "3분기": "11014", "연간": "11011"}
     errs = []
     for line in rows:
+        if re.search(r"\((?:연결|별도|기준 미표기), (?:잠정|확정)", line):  # 24차 형식(출처 표시, 잠정실적 포함)
+            errs += check_earnings_line24(db, line, company_name)
+            continue
         m = re.match(r"- (\d{4})년 (1분기|2분기|3분기|4분기|연간)\((연결|별도)(?:, 연간 - 3분기 누적)?\): (.+) \(접수일 (\S+), DART 접수번호 (\d+)\)", line)
         if not m:
             errs.append(f"실적 줄 형식: {line[:60]}")
@@ -531,4 +534,418 @@ def check_numbers23(db, answer: str, company_name: str) -> list[str]:
     for line in (answer or "").splitlines():
         if re.search(r"(최고|최저) 종가 [\d,]+원", line) and not re.search(r"\d{4}-\d{2}-\d{2}~\d{4}-\d{2}-\d{2}|최근 \d+거래일 기준", line):
             errs.append(f"조회 기간 없는 최고·최저 값: {line[:50]}")
+    return errs
+
+
+# ---------- batch 20(2026-11-04, 24차): 현재 판단(결론 먼저), 신호 강도, 예측력, 잠정실적, 시세 지연 구분 ----------
+# 규칙은 API.md "전망 4차" 절을 그대로 옮겼다(app/outlook.py·app/preliminary.py를 import하지 않는다).
+
+_JUDGMENTS = ("상승", "하락", "중립", "판단 유보")
+_TALLY24 = re.compile(r"(\d+)개 묶음 중 상승 (\d+)·하락 (\d+)·중립 (\d+)")
+_JUDGE24 = re.compile(r"현재 판단: (상승|하락|중립|판단 유보)(?:\(굳이 고르면 (상승|하락) 쪽\))?")
+_PICK24 = re.compile(r"^굳이 하나를 (?:고르면 (상승|하락) 쪽입니다|고를 근거가 부족합니다)\(현재 판단: (상승|하락|중립|판단 유보)\)")
+_FAKE_PROB = re.compile(r"(?:상승|하락|오를|내릴)\s*(?:확률|가능성)(?:은|이|는)?\s*(?:약\s*)?\d+(?:\.\d+)?\s*%|\d+(?:\.\d+)?\s*%\s*(?:의\s*)?(?:확률|가능성)")
+_BUY_PUSH = re.compile(r"매수하세요|사세요|살 만합니다|매수를 (?:추천|권)합니다|매수 추천|지금이 매수 기회|팔아야 합니다|매도하세요")
+_STATUS24 = ("최신", "미수집", "수집 실패", "휴장일 추정", "종목만 누락")
+_MARKET_CLOSE_MIN = 15 * 60 + 30
+TREND_OF = {"상승 추세 지속": 1, "상승 추세 중 조정": 1, "하락 추세 지속": -1}
+
+
+def label_from_tally(up: int, down: int, total: int) -> str:
+    """API.md "신호 묶음": 계산한 묶음 3개 미만이면 판단 유보, 표 차이 2 이상이면 많은 쪽 우위, 아니면 중립(데이터 유보는 따로)."""
+    if total < MIN_GROUPS:
+        return "판단 유보"
+    return "상승 우위" if up - down >= GROUP_MARGIN else "하락 우위" if down - up >= GROUP_MARGIN else "중립"
+
+
+def judgment_rule(label: str, regime: str) -> tuple[str, str | None]:
+    """현재 판단과 기울기. 묶음 판정과 국면이 같은 방향(상승 우위 + 상승 추세 지속, 하락 우위 + 하락 추세 지속)일 때만 상승·하락,
+    판정·국면 중 하나라도 유보면 판단 유보, 그 밖은 중립. 중립의 기울기는 묶음 판정 방향, 판정이 중립이면 추세 방향(상승 추세 지속·
+    상승 추세 중 조정 = 상승, 하락 추세 지속 = 하락), 둘 다 없으면 없음."""
+    if label == "판단 유보" or regime == REGIMES[5]:
+        return "판단 유보", None
+    if label == "상승 우위" and regime == "상승 추세 지속":
+        return "상승", None
+    if label == "하락 우위" and regime == "하락 추세 지속":
+        return "하락", None
+    lean = {"상승 우위": "상승", "하락 우위": "하락"}.get(label)
+    if lean is None and TREND_OF.get(regime):
+        lean = "상승" if TREND_OF[regime] > 0 else "하락"
+    return "중립", lean
+
+
+def strength_word(label: str, up: int, down: int, total: int) -> str:
+    """우세한 쪽 묶음 수가 계산한 묶음의 절반 미만이면 "약한 " 접두어."""
+    lead = up if label == "상승 우위" else down if label == "하락 우위" else None
+    return "약한 " if lead is not None and total and lead * 2 < total else ""
+
+
+def _backtest_row24(period: str, label: str) -> dict | None:
+    data = json.loads(BACKTEST_JSON.read_text(encoding="utf-8"))["periods"][period]["valid"]
+    r = (data.get("labels") or {}).get(label)
+    return r if r and r.get("n") else None
+
+
+def _check_power(answer: str, period: str, label: str) -> list[str]:
+    """예측력: 그 라벨의 검증 구간 표본 수·95% 구간을 쓰고, 유의하지 않으면 예측력이 확인되지 않았다고 밝힌다."""
+    if label == "판단 유보":
+        return []
+    r = _backtest_row24(period, label)
+    if r is None:
+        return [] if "과거 검증 결과가 아직 없" in answer else ["과거 검증 없음 안내 없음"]
+    errs = []
+    if f"표본 {r['n']:,}" not in answer:
+        errs.append(f"표본 {r['n']:,} 없음")
+    ci = f"95% 구간 {r['diff_ci95'][0] * 100:+.1f}~{r['diff_ci95'][1] * 100:+.1f}%p"
+    if ci not in answer:
+        errs.append(f"{ci} 없음")
+    if not r.get("significant") and "예측력은 확인되지 않았습니다" not in answer:
+        errs.append("유의하지 않은데 '예측력은 확인되지 않았습니다' 없음")
+    return errs
+
+
+def _head_regime(db, answer: str, company_name: str) -> tuple[str | None, list[str]]:
+    m = _STATE.search(answer or "")
+    if not m:
+        return None, ["상태(국면·기준일) 없음"]
+    want = regime_expected(db, company_name, m.group("date"))
+    if m.group("regime") != want and not (m.group("regime") == REGIMES[5]):
+        return m.group("regime"), [f"국면 {m.group('regime')} != {want}"]
+    return m.group("regime"), []
+
+
+def check_judgment24(db, answer: str, company_name: str, period: str, kind: str) -> list[str]:
+    """(24차) 현재 판단·기울기·묶음 비중·예측력. kind: standalone(단독 전망) 또는 후속 답 종류
+    (verdict/pick/compare/probability/buy/risk/earnings/data)."""
+    a = answer or ""
+    lines = [x for x in a.splitlines() if x.strip()]
+    errs = []
+    t = title_of(lines[0] if lines else "")
+    if not t or t["name"] != company_name or t["period"] != period:
+        errs.append(f"제목(종목·기간) {lines[0][:40] if lines else None!r}")
+    regime, e = _head_regime(db, a, company_name)
+    errs += e
+    tally = _TALLY24.search(a)
+    if not tally:
+        return errs + ["'N개 묶음 중 상승 a·하락 b·중립 c' 없음"]
+    total, up, down, neutral = map(int, tally.groups())
+    if up + down + neutral != total:
+        errs.append(f"묶음 비중 합 {up}+{down}+{neutral} != {total}")
+    label = label_from_tally(up, down, total)
+    if re.search(r"(?:데이터가 부족합니다|시세가 없습니다\([^)]*\))\. 판단을 유보합니다", a):  # 시세 지연(5영업일 초과)·거래일 누락이면 묶음 표와 관계없이 유보(API.md 데이터 점검)
+        label = "판단 유보"
+    want_j, want_lean = judgment_rule(label, regime or REGIMES[5])
+    if kind == "pick":
+        m = _PICK24.match(lines[1] if len(lines) > 1 else "")
+        if not m:
+            errs.append(f"둘째 줄이 '굳이 하나를 …(현재 판단: …)'이 아님: {(lines[1] if len(lines) > 1 else '')[:40]}")
+        else:
+            got_pick, got_j = m.group(1), m.group(2)
+            want_pick = want_j if want_j in ("상승", "하락") else want_lean
+            if got_j != want_j or got_pick != want_pick:
+                errs.append(f"고른 쪽·판단 ({got_pick}, {got_j}) != ({want_pick}, {want_j})")
+    else:
+        m = _JUDGE24.search(a)
+        if not m:
+            errs.append("'현재 판단: …' 없음")
+        else:
+            if (m.group(1), m.group(2)) != (want_j, want_lean):
+                errs.append(f"현재 판단 ({m.group(1)}, {m.group(2)}) != 규칙 ({want_j}, {want_lean})")
+            where = next((i for i, x in enumerate(lines) if m.group(0) in x), 99)
+            limit = 4 if kind == "data" else 1 if kind != "standalone" else None
+            if kind == "standalone":
+                first_sec = next((i for i, x in enumerate(lines) if x.startswith("## ")), 99)
+                if where > first_sec:
+                    errs.append("현재 판단이 첫 섹션 뒤에 있음")
+            elif where > limit:
+                errs.append(f"현재 판단이 {where + 1}째 줄(결론 먼저 아님)")
+    if kind != "standalone":
+        second = lines[1] if len(lines) > 1 else ""
+        if second.startswith("지금 데이터로는") or "판단할 수 없습니다" in second.split(".")[0]:
+            errs.append("첫 문장이 판단 회피")
+        if len(lines) > 6:
+            errs.append(f"{len(lines)}줄(6줄 이하)")
+        if "## " in a or "규칙" in a:
+            errs.append("후속 답에 섹션·규칙 설명")
+    else:
+        sw = strength_word(label, up, down, total)
+        if label in ("상승 우위", "하락 우위") and f"{total}개 묶음 중 상승 {up}·하락 {down}·중립 {neutral}({sw}{label})" not in a:
+            errs.append(f"묶음 비중 뒤 강도 '({sw}{label})' 없음")
+        if not re.search(r"답변 생성: \d{4}-\d{2}-\d{2} \d{2}:\d{2} KST", a):
+            errs.append("답변 생성 시각 없음")
+    if kind in ("standalone", "verdict", "pick", "compare", "buy", "earnings"):
+        errs += _check_power(a, period, label)
+    if kind == "probability" and "검증된 상승·하락 확률은 없" not in a:
+        errs.append("검증된 확률 없음 안내 없음")
+    if kind == "compare":
+        want_cmp = ("상승 근거가 더 많습니다" if up > down else "하락 위험이 더 많습니다" if down > up else "상승·하락이 비슷합니다")
+        if f"묶음 표로는 {want_cmp}" not in a:
+            errs.append(f"'묶음 표로는 {want_cmp}' 없음")
+    if kind == "buy" and "권하지 않습니다" not in a:
+        errs.append("매수·매도 권유 안 함 안내 없음")
+    errs += [f"확률 지어냄: {x}" for x in _FAKE_PROB.findall(a)]
+    errs += [f"매수·매도 권유: {x}" for x in _BUY_PUSH.findall(a)]
+    return errs
+
+
+# ---- 잠정실적(거래소 공정공시) 독립 파서: disclosure.content(DART 원문 앞 2,000자) ----
+
+_UNIT24 = {"조원": 1e12, "억원": 1e8, "백만원": 1e6, "천원": 1e3, "원": 1.0}
+_REPORT_NAME = {"11013": "1분기보고서", "11012": "반기보고서", "11014": "3분기보고서", "11011": "사업보고서"}
+
+
+def _tok(s: str) -> float | None:
+    s = s.replace(",", "")
+    return float(s) if re.fullmatch(r"-?\d+(?:\.\d+)?", s) else None
+
+
+def parse_prelim24(title: str, content: str) -> dict | None:
+    """분기(3개월) 잠정실적이면 {year, quarter, basis, unit, 계정: (당해, 전년 동기, 누계)}. 자회사 실적·정정·월별·판매 실적은 None."""
+    if "자회사" in title or title.startswith("[") or "잠정" not in title or "실적" not in title:
+        return None
+    p = re.search(r"당기실적 (\d{4})-(\d{2})-(\d{2}) ~ (\d{4})-(\d{2})-(\d{2})", content or "")
+    u = re.search(r"단위 : (조원|억원|백만원|천원|원)", content or "")
+    if not p or not u:
+        return None
+    y1, m1, d1, y2, m2, _ = map(int, p.groups())
+    if d1 != 1 or m1 not in (1, 4, 7, 10) or y1 != y2 or m2 != m1 + 2:
+        return None
+    if "연결" in title or "연결실적내용" in content:
+        basis = "연결"
+    elif "별도실적내용" in content or re.search(r"별도\s*기준", content):
+        basis = "별도"
+    elif re.search(r"연결\s*기준|연결재무제표\s*기준", content):
+        basis = "연결"
+    else:
+        basis = "기준 미표기"
+    out = {"year": y1, "quarter": (m1 - 1) // 3 + 1, "basis": basis}
+    mult = _UNIT24[u.group(1)]
+    for key, name in (("revenue", "매출액"), ("operating_income", "영업이익"), ("net_income", "당기순이익")):
+        m = re.search(rf"(?<!\S){name} 당해실적 (\S+) \S+ \S+ \S+ (\S+) \S+ \S+ 누계실적 (\S+)", content)
+        if not m:
+            out[key] = (None, None, None)
+            continue
+        cur, prev, cum = (_tok(x) for x in m.groups())
+        out[key] = tuple(v * mult if v is not None else None for v in (cur, prev, cum))
+    return out
+
+
+def prelims24(db, company_name: str) -> list[dict]:
+    rows = db.execute(text(
+        "select d.title, d.content, d.disclosed_at, d.source_url from disclosure d join company c on c.id = d.company_id "
+        "where c.name = :n and d.title like '%잠정%' order by d.disclosed_at"), {"n": company_name}).fetchall()
+    out = []
+    for title, content, at, url in rows:
+        p = parse_prelim24(title, content or "")
+        rcept = (re.search(r"rcptNo=(\d{14})", url or "") or [None, None])[1]
+        if p and rcept:
+            p.update(rcept=rcept, date=f"{rcept[:4]}-{rcept[4:6]}-{rcept[6:8]}", title=title)
+            out.append(p)
+        elif title.startswith("[") and "잠정" in title and rcept:
+            ref = re.search(r"정정관련 공시서류제출일 (\d{4})(?:년 |-)(\d{1,2})(?:월 |-)(\d{1,2})", content or "")
+            out.append({"correction": True, "rcept": rcept, "date": f"{rcept[:4]}-{rcept[4:6]}-{rcept[6:8]}",
+                        "ref": f"{ref.group(1)}-{int(ref.group(2)):02d}-{int(ref.group(3)):02d}" if ref else None})
+    return out
+
+
+def _final_quarters(db, company_name: str) -> dict[tuple[int, int], dict]:
+    """정기보고서 분기 값(1~3분기 = 당기, 4분기 = 연간 - 3분기 누적, 연결·별도 섞이면 없음)."""
+    rows = db.execute(text(
+        "select e.bsns_year, e.reprt_code, e.fs_div, e.revenue, e.operating_income, e.net_income, e.revenue_cum, e.operating_income_cum, "
+        "e.net_income_cum, e.revenue_prev, e.operating_income_prev, e.net_income_prev, e.rcept_no, e.disclosed_date "
+        "from quarterly_earnings e join company c on c.id = e.company_id where c.name = :n"), {"n": company_name}).fetchall()
+    by = {(r[0], r[1]): r for r in rows}
+    out = {}
+    q_of = {"11013": 1, "11012": 2, "11014": 3}
+    for (y, code), r in by.items():
+        if code in q_of:
+            out[(y, q_of[code])] = {"fs": r[2], "vals": [r[3], r[4], r[5]], "prev": [r[9], r[10], r[11]], "rcept": r[12],
+                                    "date": r[13].isoformat(), "code": code}
+    for (y, code), a in by.items():
+        if code != "11011":
+            continue
+        qs = [by.get((y, c)) for c in ("11013", "11012", "11014")]
+        if any(q is not None and q[2] != a[2] for q in qs):
+            continue
+        q3 = by.get((y, "11014"))
+        vals = []
+        for i in range(3):
+            cum = q3[6 + i] if q3 is not None else None
+            if cum is None and all(q is not None and q[3 + i] is not None for q in qs):
+                cum = sum(float(q[3 + i]) for q in qs)
+            vals.append(float(a[3 + i]) - float(cum) if a[3 + i] is not None and cum is not None else None)
+        out[(y, 4)] = {"fs": a[2], "vals": vals, "prev": [None, None, None], "rcept": a[12], "date": a[13].isoformat(), "code": "11011"}
+    for (y, q), v in out.items():
+        p = out.get((y - 1, q))
+        v["prev"] = [v["prev"][i] if v["prev"][i] is not None else (p["vals"][i] if p and p["fs"] == v["fs"] else None) for i in range(3)]
+    return out
+
+
+def latest_quarter24(db, company_name: str) -> tuple[tuple[int, int] | None, str | None, dict | None]:
+    """가장 최근 분기와 출처("확정" 정기보고서 / "잠정" 공정공시). 같은 분기에 정기보고서가 있으면 잠정치는 쓰지 않는다."""
+    finals = _final_quarters(db, company_name)
+    pre = {}
+    for p in prelims24(db, company_name):
+        if not p.get("correction"):
+            pre[(p["year"], p["quarter"])] = p  # 같은 분기 여러 건이면 나중 것
+    keys = set(finals) | set(pre)
+    if not keys:
+        return None, None, None
+    k = max(keys)
+    return (k, "확정", finals[k]) if k in finals else (k, "잠정", pre[k])
+
+
+def _eok24(v: float | None) -> str | None:
+    return None if v is None else f"{float(v) / 1e8:,.0f}"
+
+
+def _yoy24(cur, prev) -> str | None:
+    return f"{(float(cur) / float(prev) - 1) * 100:+.1f}" if cur is not None and prev is not None and float(prev) > 0 and float(cur) >= 0 else None
+
+
+def _check_values24(line: str, vals: list, prevs: list, tag: str) -> list[str]:
+    errs = []
+    for i, name in enumerate(("매출액", "영업이익", "당기순이익")):
+        if vals[i] is None:
+            continue
+        mm = re.search(rf"{name} (-?[\d,]+)억 원(?:, 전년 동기 대비 ([+-][\d.]+)%)?", line)
+        if not mm:
+            errs.append(f"{tag} {name} 없음")
+            continue
+        if mm.group(1) != _eok24(vals[i]):
+            errs.append(f"{tag} {name} {mm.group(1)} != {_eok24(vals[i])}")
+        if mm.group(2) != _yoy24(vals[i], prevs[i]):
+            errs.append(f"{tag} {name} 증감률 {mm.group(2)} != {_yoy24(vals[i], prevs[i])}")
+    return errs
+
+
+def check_earnings_line24(db, line: str, company_name: str) -> list[str]:
+    """실적 한 줄: "YYYY년 Q분기(연결|별도|기준 미표기, 잠정|확정[, 연간 - 3분기 누적]): …" 값·증감률·출처를 SQL과 독립 파서로 대조."""
+    m = re.search(r"(\d{4})년 ([1-4])분기\((연결|별도|기준 미표기), (잠정|확정)(?:, 연간 - 3분기 누적)?\)", line)
+    if not m:
+        return [f"실적 줄 형식: {line[:60]}"]
+    y, q, basis, kind = int(m.group(1)), int(m.group(2)), m.group(3), m.group(4)
+    tag = f"{y} {q}분기 {kind}"
+    if kind == "확정":
+        f = _final_quarters(db, company_name).get((y, q))
+        if f is None:
+            return [f"{tag}: DB 정기보고서 없음"]
+        errs = []
+        if (basis == "연결") != (f["fs"] == "CFS") or f"DART 접수번호 {f['rcept']}" not in line or f"접수일 {f['date']}" not in line:
+            errs.append(f"{tag} 기준·접수번호·접수일 불일치")
+        if _REPORT_NAME[f["code"]] not in line:
+            errs.append(f"{tag} 보고서 이름({_REPORT_NAME[f['code']]}) 없음")
+        return errs + _check_values24(line, f["vals"], f["prev"], tag)
+    cands = [p for p in prelims24(db, company_name) if not p.get("correction") and (p["year"], p["quarter"]) == (y, q)]
+    if not cands:
+        return [f"{tag}: 잠정실적 공시 없음"]
+    p = cands[-1]
+    if _final_quarters(db, company_name).get((y, q)) is not None:
+        return [f"{tag}: 정기보고서가 있는데 잠정치를 씀"]
+    errs = []
+    if basis != p["basis"] or f"DART 접수번호 {p['rcept']}" not in line or f"발표일 {p['date']}" not in line:
+        errs.append(f"{tag} 기준·접수번호·발표일 불일치(기대 {p['basis']}, {p['rcept']}, {p['date']})")
+    if "잠정실적 공정공시" not in line:
+        errs.append(f"{tag} 출처(잠정실적 공정공시) 없음")
+    corrected = [c for c in prelims24(db, company_name) if c.get("correction") and c.get("ref") == p["date"]]
+    if corrected:
+        return errs + ([] if "정정공시" in line else [f"{tag}: 정정공시({corrected[-1]['rcept']}) 안내 없음"])
+    vals = [p[k][0] for k in ("revenue", "operating_income", "net_income")]
+    prevs = [p[k][1] for k in ("revenue", "operating_income", "net_income")]
+    return errs + _check_values24(line, vals, prevs, tag)
+
+
+def check_earnings24(db, answer: str, company_name: str, quarter: str | None = None) -> list[str]:
+    """(24차 earnings 후속 답) 최신 실적(잠정 포함)·출처·발표 뒤 주가. quarter("2026-3")를 물었는데 없으면 없다고 밝혀야 한다."""
+    a = answer or ""
+    k, src, info = latest_quarter24(db, company_name)
+    if k is None:
+        return [] if "실적 데이터 없음" in a or "실적 정보를 보여 주지 않습니다" in a else ["실적 없음 안내 없음"]
+    line = next((x for x in a.splitlines() if x.startswith("- 최신 실적: ")), None)
+    if line is None:
+        return ["'- 최신 실적: ' 줄 없음"]
+    errs = []
+    if f"{k[0]}년 {k[1]}분기" not in line or f", {src}" not in line:
+        errs.append(f"최신 분기 {k[0]}년 {k[1]}분기({src})가 아님: {line[:40]}")
+    errs += check_earnings_line24(db, line, company_name)
+    if "신호 판정 표에 넣지 않" not in a:
+        errs.append("실적이 신호 판정에 들어가지 않는다는 안내 없음")
+    if quarter:
+        y, q = map(int, quarter.split("-"))
+        have = (y, q) in _final_quarters(db, company_name) or any(
+            not p.get("correction") and (p["year"], p["quarter"]) == (y, q) for p in prelims24(db, company_name))
+        if not have and f"{y}년 {q}분기 실적: 아직 공시(잠정·확정)가 없습니다" not in a:
+            errs.append(f"{y}년 {q}분기 없음 안내 없음")
+    mm = re.search(r"발표 뒤 주가: 발표일\((\S+)\) 직전 거래일 (\S+) 종가 ([\d,]+)원 → 기준일 (\S+) 종가 ([\d,]+)원\(([+-][\d.]+)%\)", a)
+    if not mm:
+        errs.append("발표 뒤 주가 줄 없음")
+    else:
+        d, before, c0, base, c1, pct = mm.groups()
+        want_d = info["date"]
+        rows = _rows(db, company_name, base, 260)
+        prior = [r for r in rows if r[0].isoformat() < want_d]
+        if d != want_d:
+            errs.append(f"발표일 {d} != {want_d}")
+        elif not prior or prior[-1][0].isoformat() != before or _num(c0) != prior[-1][1]:
+            errs.append(f"직전 거래일 종가 {before} {c0} != {prior[-1] if prior else None}")
+        elif rows[-1][0].isoformat() != base or _num(c1) != rows[-1][1] or pct != f"{(rows[-1][1] / prior[-1][1] - 1) * 100:+.2f}":
+            errs.append("기준일 종가·등락률 불일치")
+    return errs
+
+
+def _before_close24(gen: str) -> bool:
+    from datetime import datetime
+    t = datetime.strptime(gen, "%Y-%m-%d %H:%M")
+    return t.weekday() < 5 and t.hour * 60 + t.minute < _MARKET_CLOSE_MIN
+
+
+def _expected_day24(gen: str):
+    """종가가 있어야 할 가장 최근 평일. 평일 15:30 전이면 직전 평일(KRX 휴장일 달력은 없다)."""
+    from datetime import datetime, timedelta
+    d = datetime.strptime(gen, "%Y-%m-%d %H:%M").date()
+    if _before_close24(gen):
+        d -= timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d
+
+
+def status24(db, company_name: str, base: str, gen: str) -> tuple[str, str]:
+    """시세 상태(기대 거래일, 분류). 최신 / 종목만 누락(지수에는 그 뒤 날짜가 있음) / 수집 실패(기대 거래일 장 마감 뒤 prices 실패 기록) /
+    휴장일 추정(장 마감 뒤 prices 성공 기록이 있는데 시장 전체에 그날 시세 없음) / 미수집(장 마감 뒤 prices 실행 기록 없음)."""
+    exp = _expected_day24(gen)
+    if base >= exp.isoformat():
+        return exp.isoformat(), "최신"
+    idx = db.execute(text("select max(price_date) from market_index where index_code = 'KS11'")).scalar()
+    if idx is not None and idx.isoformat() > base:
+        return exp.isoformat(), "종목만 누락"
+    runs = db.execute(text(
+        "select status from data_refresh_log where step = 'prices' and status in ('success', 'failed') "
+        "and started_at >= (cast(:d as date) + time '15:30') at time zone 'Asia/Seoul' order by id desc"), {"d": exp.isoformat()}).fetchall()
+    if runs and runs[0][0] == "failed":
+        return exp.isoformat(), "수집 실패"
+    if runs:
+        return exp.isoformat(), "휴장일 추정"
+    return exp.isoformat(), "미수집"
+
+
+def check_data24(db, answer: str, company_name: str) -> list[str]:
+    """(24차 data 후속 답) 답변 생성 시각과 시세 기준일을 따로 쓰고, 지연 분류가 독립 계산과 같은지."""
+    a = answer or ""
+    m = re.search(r"이 답변은 (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) KST에 만들었고, 시세 기준일은 (\d{4}-\d{2}-\d{2}) 종가입니다", a)
+    if not m:
+        return ["생성 시각·시세 기준일 문장 없음"]
+    gen, base = m.groups()
+    errs = []
+    op = "<" if _before_close24(gen) else "<="  # 장중이면 그날 행(장중 값)은 기준일이 아니다
+    last = db.execute(text(
+        "select max(s.price_date) from stock_price s join company c on c.id = s.company_id where c.name = :n "
+        f"and s.price_date {op} cast(:day as date)"), {"n": company_name, "day": gen[:10]}).scalar()
+    if last is None or last.isoformat() != base:
+        errs.append(f"시세 기준일 {base} != {last}")
+    exp, status = status24(db, company_name, base, gen)
+    if f"({status}" not in a:
+        errs.append(f"지연 분류 ({status}) 없음")
+    if status != "최신" and f"기대 거래일 {exp}" not in a:
+        errs.append(f"기대 거래일 {exp} 없음")
     return errs

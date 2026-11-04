@@ -14,16 +14,16 @@ CATEGORY_MODE = {"entity": "offline", "period": "offline", "routing_gate": "offl
                  "forecast": "live", "forecast_followup": "live", "glossary": "live"}
 CATEGORY_SIZE = {"entity": 35, "period": 14, "routing_gate": 10, "tool_selection": 26, "grounding": 35,
                  "refusal": 21, "etf_safety": 20, "freshness": 4, "stability": 12, "briefing": 6, "attachment": 8,
-                 "period_history": 72, "narrative": 100, "news_relevance": 12, "safety": 22,
-                 "forecast": 62, "forecast_followup": 23, "glossary": 12}
-# batch 10·11·13·14·16·18은 전부 holdout, batch 12·15·17·19는 전부 dev다. 카테고리 비율 계산에서 뺀다.
-ALL_HOLDOUT_BATCHES = (10, 11, 13, 14, 16, 18)
-ALL_DEV_BATCHES = (12, 15, 17, 19)
+                 "period_history": 72, "narrative": 100, "news_relevance": 12, "safety": 23,
+                 "forecast": 68, "forecast_followup": 46, "glossary": 12}
+# batch 10·11·13·14·16·18·20은 전부 holdout, batch 12·15·17·19·21은 전부 dev다. 카테고리 비율 계산에서 뺀다.
+ALL_HOLDOUT_BATCHES = (10, 11, 13, 14, 16, 18, 20)
+ALL_DEV_BATCHES = (12, 15, 17, 19, 21)
 EXPECT_KEYS = {"companies", "must_not_companies", "tools_all", "tools_forbidden", "period_days", "must_refuse",
                "must_contain", "must_not_contain", "gates", "ref_date", "start", "end", "must_partial",
                "must_state_data_date", "must_answer", "must_briefing", "check_attachment", "etf_holdings", "number_scored",
                "must_forecast", "must_followup", "period", "must_backtest_line", "must_indirect", "must_earnings", "must_layout23",
-               "must_short"}
+               "must_short", "must_judgment24", "earnings_quarter"}
 TOOLS = {"stock_tool", "news_tool", "disclosure_tool", "rag_search_tool", "market_tool", "fx_tool",
          "discovery_tool", "event_reaction_tool", "*"}
 
@@ -42,7 +42,7 @@ def test_required_fields(rows):
         assert r["split"] in ("dev", "holdout")
         assert r["mode"] in ("offline", "live")
         assert r["question"].strip()
-        assert r.get("batch", 1) in range(1, 20)
+        assert r.get("batch", 1) in range(1, 22)
         assert isinstance(r["expect"], dict) and r["expect"], r["id"]
         assert set(r["expect"]) <= EXPECT_KEYS, r["id"]
 
@@ -56,9 +56,9 @@ def test_category_mode_and_size(rows):
     assert Counter(r["category"] for r in rows) == CATEGORY_SIZE
     for r in rows:
         assert r["mode"] == CATEGORY_MODE[r["category"]], r["id"]
-    assert Counter(r["mode"] for r in rows) == {"offline": 59, "live": 435}
+    assert Counter(r["mode"] for r in rows) == {"offline": 59, "live": 465}
     assert Counter(r.get("batch", 1) for r in rows) == {1: 80, 2: 30, 3: 24, 4: 24, 5: 6, 6: 22, 7: 20, 8: 40, 9: 12, 10: 40, 11: 40,
-                                                        12: 12, 13: 30, 14: 30, 15: 12, 16: 30, 17: 12, 18: 20, 19: 10}
+                                                        12: 12, 13: 30, 14: 30, 15: 12, 16: 30, 17: 12, 18: 20, 19: 10, 20: 20, 21: 10}
 
 
 def test_split_is_60_40_per_category(rows):
@@ -71,7 +71,7 @@ def test_split_is_60_40_per_category(rows):
 @pytest.mark.parametrize("number", ALL_HOLDOUT_BATCHES)
 def test_all_holdout_batch_has_new_questions(rows, number):
     batch = [r for r in rows if r.get("batch") == number]
-    size = 20 if number == 18 else 30 if number in (13, 14, 16) else 40
+    size = 20 if number in (18, 20) else 30 if number in (13, 14, 16) else 40
     assert len(batch) == size and all(r["split"] == "holdout" for r in batch)
     if number == 14:  # 전망 10, 2~3턴 후속 8, 용어 회귀 6, 기타 회귀 6
         counts = Counter(r["category"] for r in batch)
@@ -88,6 +88,13 @@ def test_all_holdout_batch_has_new_questions(rows, number):
         assert Counter(x.get("must_short") for x in e if x.get("must_short")) == {"verdict": 4, "risk": 2, "probability": 2}
         assert all(1 <= len(r["turns"]) <= 2 for r in batch if r["category"] == "forecast_followup")
         assert {x["period"] for x in e if x.get("must_layout23")} == {"1주일", "1개월", "3개월"}
+    elif number == 20:  # 단독 전망 5(현재 판단·강도), 후속 12(판단 3·고르기 2·비교·확률·매수·실적 3·데이터), 종목 되묻기·주문·뉴스 회귀 3
+        e = [r["expect"] for r in batch]
+        assert Counter(x.get("must_judgment24") for x in e if x.get("must_judgment24")) == {
+            "standalone": 5, "verdict": 3, "pick": 2, "compare": 1, "probability": 1, "buy": 1, "earnings": 3, "data": 1}
+        assert all(x.get("must_layout23") for x in e if x.get("must_judgment24") == "standalone")
+        assert all(1 <= len(r["turns"]) <= 2 for r in batch if r["category"] == "forecast_followup" and r.get("turns"))
+        assert sum(bool(x.get("earnings_quarter")) for x in e) == 2
     else:
         assert sum(r["category"] == "narrative" for r in batch) >= 12
     others = {r["question"] for r in rows if r.get("batch") != number}

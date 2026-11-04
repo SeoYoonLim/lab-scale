@@ -41,8 +41,9 @@ SOURCE_TOOLS = {"news_tool", "disclosure_tool", "rag_search_tool", "event_reacti
 #  batch 14: 2026-11-03 전망·후속 결론·근거 정합성(전부 holdout, 구현 결과를 보기 전에 작성). batch 15는 같은 라운드의 개발용 dev다.
 #  batch 16: 2026-11-03 신호 묶음·과거 검증·간접 뉴스·주문 문장·실적(전부 holdout, 구현 전에 작성). batch 17은 그 dev다.
 #  batch 18: 2026-11-04 결론 먼저 답변·국면·짧은 후속 답(전부 holdout, 측정 전에 문항·기준 고정). batch 19는 그 dev다.
+#  batch 20: 2026-11-04 현재 판단 먼저·신호 강도·잠정실적·시세 지연 구분(전부 holdout, 구현 전에 문항·기준 고정). batch 21은 그 dev다.
 #  batch 5는 ETF 구성종목 기능 문항이라 수정 라운드가 아니었다).
-UNSEEN_BATCH = 18
+UNSEEN_BATCH = 20
 # 브리핑 문항(must_briefing)용: 평가 계정에 모의 보유종목 1개(종목, 수량)와 관심종목 1개를 만든다. 계정을 지울 때 같이 지워진다.
 EVAL_HOLDING = ("삼성전자", 5)
 EVAL_WATCH = "SK하이닉스"
@@ -266,6 +267,7 @@ def score_forecast(db, item: dict, rec: dict, response: dict | None) -> None:
     if hits:
         _fail(rec, "assertion", "단정·목표가·확률·기대수익률 없음", hits)
     score_round23(db, item, rec, answer)
+    score_round24(db, item, rec, answer)
 
 
 def score_round23(db, item: dict, rec: dict, answer: str) -> None:
@@ -286,6 +288,27 @@ def score_round23(db, item: dict, rec: dict, answer: str) -> None:
         flags[f"{name}_ok"] = not errs
         if errs:
             _fail(rec, name, "23차 기준(evals/README.md 13차 라운드)", errs)
+
+
+def score_round24(db, item: dict, rec: dict, answer: str) -> None:
+    """(2026-11-04, batch 20) 현재 판단 먼저·기울기·묶음 비중과 강도·예측력(표본·95% 구간), 최신 실적(잠정 포함)·출처·발표 뒤 주가,
+    시세 지연 분류(forecast_check.py 24차 절). must_judgment24는 standalone 또는 후속 답 종류, earnings_quarter("2026-3")는 물은 분기."""
+    exp, flags = item["expect"], rec["flags"]
+    kind = exp.get("must_judgment24")
+    if not kind:
+        return
+    want = (exp.get("companies") or [None])[0]
+    checks = {}
+    if db is not None:
+        checks["judgment24"] = FC.check_judgment24(db, answer, want, exp["period"], kind)
+        if kind == "earnings":
+            checks["earnings24"] = FC.check_earnings24(db, answer, want, exp.get("earnings_quarter"))
+        if kind == "data":
+            checks["data24"] = FC.check_data24(db, answer, want)
+    for name, errs in checks.items():
+        flags[f"{name}_ok"] = not errs
+        if errs:
+            _fail(rec, name, "24차 기준(evals/README.md 14차 라운드)", errs)
 
 
 def score_live(item: dict, rec: dict, response: dict | None, calls: list[dict], data_start=None, today=None,
@@ -673,6 +696,9 @@ METRICS = [
     ("no_double_vote_rate", "flag", "double_vote_ok", True),
     ("short_followup_rate", "flag", "short_ok", True),
     ("number_window_rate", "flag", "numbers23_ok", True),
+    ("judgment_first_rate", "flag", "judgment24_ok", True),
+    ("latest_earnings_rate", "flag", "earnings24_ok", True),
+    ("data_status_rate", "flag", "data24_ok", True),
     ("error_rate", "flag", "error", False),
     ("latency_p50_s", "latency", 50, False),
     ("latency_p95_s", "latency", 95, False),
