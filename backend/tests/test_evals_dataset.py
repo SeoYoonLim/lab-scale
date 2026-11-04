@@ -25,7 +25,8 @@ EXPECT_KEYS = {"companies", "must_not_companies", "tools_all", "tools_forbidden"
                "must_forecast", "must_followup", "period", "must_backtest_line", "must_indirect", "must_earnings", "must_layout23",
                "must_short", "must_judgment24", "earnings_quarter", "must_direction25",
                "must_forecast_v5", "must_v24_content", "must_mode26", "must_layout26",
-               "must_evidence26", "must_dates26", "must_consistency26", "must_filing26", "must_signal26"}
+               "must_evidence26", "must_dates26", "must_consistency26", "must_filing26", "must_signal26",
+               "detail_followup26"}
 TOOLS = {"stock_tool", "news_tool", "disclosure_tool", "rag_search_tool", "market_tool", "fx_tool",
          "discovery_tool", "event_reaction_tool", "*"}
 
@@ -82,30 +83,32 @@ def test_all_holdout_batch_has_new_questions(rows, number):
     elif number == 16:  # 전망 10(과거 검증 줄), 이름 6, 간접 뉴스 4, 주문 4, 실적 3, 기타 회귀 3
         e = [r["expect"] for r in batch]
         assert sum(bool(x.get("must_backtest_line")) for x in e) == 10
-        assert sum(bool(x.get("must_indirect")) for x in e) == 4 and sum(bool(x.get("must_earnings")) for x in e) == 3
+        # 26차(승인 뒤 기준 조정): 간결 답이 된 문항의 상세 전용 검사는 detail_followup26(같은 대화의 상세 답)으로 옮겼다
+        moved = lambda x, k: x.get(k) or (x.get("detail_followup26") or {}).get(k)  # noqa: E731
+        assert sum(bool(moved(x, "must_indirect")) for x in e) == 4 and sum(bool(moved(x, "must_earnings")) for x in e) == 3
         assert sum("채팅에서는 주문을 실행하지 않습니다" in x.get("must_contain", []) for x in e) == 4
     elif number == 18:  # 단독 전망 8 + 다른 종목 혼입 회귀 1, 2~3턴 후속 8(판단 4·위험 2·확률 2), 용어·주문·기간 수익률 회귀 3
         e = [r["expect"] for r in batch]
-        assert sum(bool(x.get("must_layout23")) for x in e) == 9
+        assert sum(bool(x.get("must_layout26")) for x in e) == 9  # 26차: must_layout23 -> must_layout26
         # 2026-11-04(승인 뒤 기준 조정): 판단·확률 6개의 must_short(옛 첫 문장 문구)는 must_direction25로 바꿨다. 위험 2개는 그대로
         assert Counter(x.get("must_short") for x in e if x.get("must_short")) == {"risk": 2}
         assert Counter(x.get("must_direction25") for x in e if x.get("must_direction25")) == {"verdict": 4, "probability": 2}
         assert all(1 <= len(r["turns"]) <= 2 for r in batch if r["category"] == "forecast_followup")
-        assert {x["period"] for x in e if x.get("must_layout23")} == {"1주일", "1개월", "3개월"}
+        assert {x["period"] for x in e if x.get("must_layout26")} == {"1주일", "1개월", "3개월"}
     elif number == 20:  # 단독 전망 5(현재 판단·강도), 후속 12(판단 3·고르기 2·비교·확률·매수·실적 3·데이터), 종목 되묻기·주문·뉴스 회귀 3
         e = [r["expect"] for r in batch]
         # 2026-11-04(승인 뒤 기준 조정): must_judgment24(현재 판단 문구·24차 규칙)는 must_direction25와 내용 검사 must_v24_content로 바꿨다
         assert Counter(x.get("must_v24_content") for x in e if x.get("must_v24_content")) == {
             "standalone": 5, "verdict": 3, "pick": 2, "compare": 1, "probability": 1, "buy": 1, "earnings": 3, "data": 1}
         assert all(x.get("must_direction25") == x.get("must_v24_content") for x in e if x.get("must_v24_content"))
-        assert all(x.get("must_layout23") for x in e if x.get("must_v24_content") == "standalone")
+        assert all(x.get("must_layout26") for x in e if x.get("must_v24_content") == "standalone")
         assert all(1 <= len(r["turns"]) <= 2 for r in batch if r["category"] == "forecast_followup" and r.get("turns"))
         assert sum(bool(x.get("earnings_quarter")) for x in e) == 2
     elif number == 22:  # 지시의 질문 10개(SK하이닉스 대화) + 하락·상승 추세·중립·하락 우위 종목 후속 + 단독 3 + 실적·종목 되묻기 회귀
         e = [r["expect"] for r in batch]
         assert Counter(x.get("must_direction25") for x in e if x.get("must_direction25")) == {
             "standalone": 3, "verdict": 7, "pick": 2, "buy": 1, "why": 2, "oneline": 2, "probability": 1, "earnings": 1}
-        assert all(x.get("must_layout23") for x in e if x.get("must_direction25") == "standalone")
+        assert all(x.get("must_layout26") for x in e if x.get("must_direction25") == "standalone")
     elif number == 24:  # 간결 8·상세 6(후속 2 포함), 이유·신호 의미·데이터 기준일·공시 접수일·매수·방향 재확인 후속 6
         e = [r["expect"] for r in batch]
         assert Counter(x.get("must_mode26") for x in e if x.get("must_mode26")) == {"brief": 8, "detail": 6}

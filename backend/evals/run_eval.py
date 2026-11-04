@@ -700,6 +700,15 @@ def run_live(items: list[dict], repeats: int, model: str, log=print, keep_tool_r
                            data_end=_data_end(db, resolved), briefing=briefing)
                 if it["category"] in FORECAST_CATEGORIES:
                     score_forecast(db, it, rec, response)
+                    moved = it["expect"].get("detail_followup26")
+                    if moved and response and response.get("report_id"):
+                        # 26차(승인 뒤 기준 조정): 짧은 전망 질문은 간결 답이라, 상세 리포트에만 있는 내용 검사(지표 날짜·묶음 줄,
+                        # 실적 숫자, 간접 뉴스 정합성)는 같은 대화에서 "자세히 분석해줘"로 받은 상세 답에 원래 기준 그대로 돌린다
+                        prev = get_report(response["report_id"], user_id=user.id)
+                        dresp = ask_question("자세히 분석해줘", model=model, user_id=user.id, previous=prev)
+                        sub = {**it, "expect": {k: it["expect"][k] for k in ("companies", "period") if k in it["expect"]} | moved}
+                        score_forecast(db, sub, rec, dresp)
+                        rec["detail"]["detail_answer"] = (dresp or {}).get("answer")
                 if keep_tool_results:  # 사람 판독용(raw에만 남고 raw는 커밋하지 않는다)
                     rec["detail"]["tool_results"] = [{"name": c["tool_name"], "result": c["result"]} for c in calls]
                 out.append(rec)
