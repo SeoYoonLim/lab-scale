@@ -131,7 +131,12 @@ def labels_from_sides(sides: np.ndarray, groups: dict[str, str], margin: int, mi
         g = names.index(groups[k])
         col = sides[:, j]
         ok = col != MISSING
-        votes[:, g] += np.where(ok, col, 0)
+        counted = ok
+        other = outlook.SAME_FACT_AS.get(k)
+        if other in KINDS and groups[other] == groups[k]:
+            # app.outlook.counted_elsewhere: 같은 묶음에 같은 사실을 나타내는 지표가 있으면 묶음에는 보이되 표에는 넣지 않는다
+            counted = ok & (sides[:, KINDS.index(other)] == MISSING)
+        votes[:, g] += np.where(counted, col, 0)
         present[:, g] |= ok
     gv = np.sign(votes) * present
     n_up = (gv > 0).sum(1)

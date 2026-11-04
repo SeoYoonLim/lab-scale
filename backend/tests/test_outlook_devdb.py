@@ -106,7 +106,7 @@ def test_stale_prices_give_hold_with_real_data(dev_db):
     res = outlook.analyze(dev_db, company, period, late)
     assert res["label"] == "판단 유보" and res["data"]["hold"] and res["data"]["lag_business_days"] > outlook.MAX_LAG_BUSINESS_DAYS
     text = outlook.forecast_answer(company, period, res, [], [], None, late)
-    assert "판단 유보" in text.splitlines()[1] and "데이터가 부족합니다" in text
+    assert "판단 유보" in text.splitlines()[2] and "데이터가 부족합니다" in text  # 0: 제목 줄, 2: 상태 줄(2026-11-04)
     fresh = datetime.combine(last + timedelta(days=1), datetime.min.time(), KST).replace(hour=18)
     res = outlook.analyze(dev_db, company, period, fresh)
     assert not res["data"]["hold"] and res["label"] != "판단 유보"

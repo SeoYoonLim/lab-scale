@@ -9,7 +9,7 @@ import calendar as calendar_mod
 import math
 import secrets
 import statistics
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -154,6 +154,15 @@ class TestPerformanceDevDB:
         dev_db.rollback()
         order = client.post("/api/portfolio/orders", headers=user["headers"], json={"ticker": ticker_x, "side": "buy", "quantity": 1})
         assert order.status_code == 200, order.text
+        # 체결 시각을 마지막 종가일 다음 평일 10:00으로 고정한다(2026-11-04): 같은 날 장 마감 뒤 수집하면 오늘 종가가 이미 있어
+        # 실제 시각 그대로는 pending이 아니게 됐다. "마지막 종가 뒤 체결 = pending"을 시계와 무관하게 확인한다.
+        after = cal[-1] + timedelta(days=1)
+        while after.weekday() >= 5:
+            after += timedelta(days=1)
+        dev_db.execute(text("UPDATE trade SET executed_at = :t WHERE device_id = :k AND executed_at > :d"),
+                       {"t": datetime.combine(after, time(10, 0), tzinfo=KST), "k": owner,
+                        "d": datetime.combine(d_c, time(23, 0), tzinfo=KST)})
+        dev_db.commit()
 
         body = client.get("/api/portfolio/performance", headers=user["headers"]).json()
         data_date = cal[-1]

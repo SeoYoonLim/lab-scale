@@ -263,8 +263,9 @@ def test_forecast_answer_sections_and_marker():
     res = _result()
     text = outlook.forecast_answer(COMPANY, outlook.PERIODS["1주일"], res, [], [], None, NOW)
     titles = [line[3:] for line in text.splitlines() if line.startswith("## ")]
-    assert titles == ["최종 신호 판단", "판단 근거 요약", "상승 쪽 신호", "하락 쪽 신호", "기술적 지표", "뉴스·공시(직접 관련)",
-                      "시장 상황", "확인할 가격대", "불확실성과 한계", "데이터 기준일·출처"]
+    # 2026-11-04: 결론 먼저(제목 줄·상태 줄은 섹션 앞 문단), 판정 규칙은 "신호 판정 상세"에만(tests/test_outlook_round23.py)
+    assert titles == ["종합 판단", "상승을 뒷받침하는 근거", "하락 위험 근거", "앞으로 확인할 사항", "과거 검증", "기술적 지표",
+                      "뉴스·공시(직접 관련)", "시장 상황", "신호 판정 상세", "불확실성과 한계", "데이터 기준일·출처"]
     assert outlook.marker_of(text) == {"name": "SK하이닉스", "ticker": "000660", "period": "1주일"}
     assert "관련 뉴스를 찾지 못했습니다" in text and "원/달러 환율: 데이터 없음" in text
     assert "묶음 판정(묶음당 1표)" in text and "과거 검증" in text
@@ -293,17 +294,17 @@ def test_etf_without_news_omits_the_section_and_keeps_leverage_notice():
 
 def test_hold_answer_states_the_reason():
     text = outlook.forecast_answer(COMPANY, outlook.PERIODS["1주일"], _result(hold=True), [], [], None, NOW)
-    assert "판단 유보" in text.splitlines()[1] and "판단을 유보합니다" in text
+    assert "판단 유보" in text.splitlines()[2] and "판단을 유보합니다" in text and "데이터 경고:" in text
 
 
-def test_risk_followup_shows_volatility_and_drawdown():
+def test_risk_followup_shows_risks_and_support_levels():
     text = outlook.followup_answer(COMPANY, outlook.PERIODS["1주일"], _result(), "risk", NOW)
-    assert "## 위험 지표" in text and "변동성" in text and "최고 종가 대비" in text
+    assert "하락 위험:" in text and "분석 기간 최저 종가" in text and "52주 최저 종가" in text and "## " not in text
 
 
 def test_probability_followup_says_no_verified_probability():
     text = outlook.followup_answer(COMPANY, outlook.PERIODS["1주일"], _result(), "probability", NOW)
-    assert outlook.NO_PROBABILITY in text
+    assert "검증된 상승·하락 확률은 없습니다." in text
 
 
 # ---------- agent 연결(LLM 미사용, 직전 종목·기간 유지) ----------
@@ -349,7 +350,7 @@ def wired(monkeypatch):
 
 def test_forecast_path_answers_without_llm(wired):
     resp, records = agent._answer("SK하이닉스 한 달 안에 오를까?", "m")
-    assert resp["answer"].startswith("## 최종 신호 판단")
+    assert resp["answer"].startswith("SK하이닉스(000660) · 향후 20거래일\n")
     assert resp["used_tools"][0] == "stock_tool" and records[0]["result"]["period"] == "1개월"
     assert wired == [("SK하이닉스", "1개월")]
 
