@@ -24,6 +24,10 @@ class QuarterlyEarnings(Base):
     revenue_prev = Column(Numeric(20, 0))
     operating_income_prev = Column(Numeric(20, 0))
     net_income_prev = Column(Numeric(20, 0))
+    # 사업연도 누적(thstrm_add_amount). 분기·반기보고서만 있고 사업보고서는 NULL(연간 금액이 곧 누적). 2026-11-03 추가(c4d2e8f61a93).
+    revenue_cum = Column(Numeric(20, 0))
+    operating_income_cum = Column(Numeric(20, 0))
+    net_income_cum = Column(Numeric(20, 0))
     rcept_no = Column(String(14), nullable=False)
     disclosed_date = Column(Date, nullable=False)  # 접수번호 앞 8자리
     source = Column(String(30), nullable=False, server_default="dart_fnlttSinglAcnt")

@@ -6,7 +6,9 @@
   돌려주면 즉시 멈춘다. 재시도·타임아웃은 app.http_retry.
 - 저장: 보고서마다 한 행(upsert). 연결(CFS)이 있으면 연결, 없으면 별도(OFS). 매출액·영업이익·당기순이익의 당기 금액(분기보고서는 그
   분기 3개월, 사업보고서는 연간)과 전기 금액(같은 보고서의 전년 동기).
-- 답변: 신호 판정에는 쓰지 않는다(참고 정보). recent_for_answer가 최근 보고서 ANSWER_ROWS개를 돌려준다.
+- 답변: 신호 판정에는 쓰지 않는다(참고 정보). recent_for_answer가 최근 분기 ANSWER_ROWS개를 돌려준다. 4분기는 연간 - 3분기 누적.
+- 2026-11-03 점검: SK하이닉스 2026년 2분기 순이익(93.9조)이 매출(79.3조)보다 큰 것은 DART 원본 값 그대로였다(세전이익 122.7조).
+  누적(thstrm_add_amount)을 같이 저장해 "1~n분기 합 = 누적"과 이상치를 anomalies로 점검한다(scripts/check_earnings.py).
 """
 
 import os
@@ -47,18 +49,20 @@ def parse_accounts(items: list[dict]) -> dict | None:
             continue
 
         def pick(match):
+            """(당기 금액, 전기 금액, 당기 누적). 분기·반기보고서의 당기 금액은 그 분기 3개월, 누적은 thstrm_add_amount다."""
             for x in rows:
                 if match(x.get("account_nm") or ""):
-                    return _amount(x.get("thstrm_amount")), _amount(x.get("frmtrm_amount"))
-            return None, None
+                    return _amount(x.get("thstrm_amount")), _amount(x.get("frmtrm_amount")), _amount(x.get("thstrm_add_amount"))
+            return None, None, None
 
-        rev, rev_prev = pick(lambda n: n in REVENUE_NAMES)
-        op, op_prev = pick(lambda n: n.startswith(OPERATING_PREFIX))
-        net, net_prev = pick(lambda n: n.startswith(NET_PREFIX))
+        rev, rev_prev, rev_cum = pick(lambda n: n in REVENUE_NAMES)
+        op, op_prev, op_cum = pick(lambda n: n.startswith(OPERATING_PREFIX))
+        net, net_prev, net_cum = pick(lambda n: n.startswith(NET_PREFIX))
         if rev is None and op is None and net is None:
             continue
         return {"fs_div": fs, "revenue": rev, "operating_income": op, "net_income": net, "revenue_prev": rev_prev,
-                "operating_income_prev": op_prev, "net_income_prev": net_prev, "rcept_no": rows[0].get("rcept_no")}
+                "operating_income_prev": op_prev, "net_income_prev": net_prev, "revenue_cum": rev_cum,
+                "operating_income_cum": op_cum, "net_income_cum": net_cum, "rcept_no": rows[0].get("rcept_no")}
     return None
 
 
@@ -131,12 +135,63 @@ def collect(db, limit: int | None = None, log=print) -> dict:
     return stats
 
 
-def period_label(bsns_year: int, reprt_code: str) -> str:
-    return f"{bsns_year}년 {REPORT_CODES[reprt_code]}"
+ACCOUNTS = ("revenue", "operating_income", "net_income")
+QUARTER_OF = {"11013": 1, "11012": 2, "11014": 3}
+SUM_TOLERANCE = 0.005  # 분기 합과 누적의 상대 차이 허용(반올림)
+YOY_ANOMALY = 5.0  # 전년 동기 대비 ±500% 초과는 이상치 목록에 올린다
+
+
+def period_label(bsns_year: int, quarter: int) -> str:
+    return f"{bsns_year}년 {quarter}분기"
+
+
+def _f(v):
+    return float(v) if v is not None else None
+
+
+def quarterly_series(rows: list) -> dict[tuple[int, int], dict]:
+    """한 종목의 보고서 행들 -> {(사업연도, 분기): 분기(3개월) 값}. 1~3분기는 보고서의 당기 금액, 4분기는 사업보고서 연간 금액에서
+    같은 해 3분기 누적(없으면 1~3분기 합)을 뺀 값이다. 연결·별도가 섞이지 않게, 같은 해 보고서가 모두 같은 기준일 때만 4분기를 만든다."""
+    by_year: dict[int, dict[str, object]] = {}
+    for r in rows:
+        by_year.setdefault(r.bsns_year, {})[r.reprt_code] = r
+    out: dict[tuple[int, int], dict] = {}
+    for year, reps in by_year.items():
+        for code, q in QUARTER_OF.items():
+            r = reps.get(code)
+            if r is not None:
+                out[(year, q)] = {"fs_div": r.fs_div, "rcept_no": r.rcept_no, "disclosed_date": r.disclosed_date, "derived": False,
+                                  **{k: _f(getattr(r, k)) for k in ACCOUNTS},
+                                  **{f"{k}_prev": _f(getattr(r, f"{k}_prev")) for k in ACCOUNTS}}
+        annual = reps.get("11011")
+        if annual is None:
+            continue
+        q3 = reps.get("11014")
+        quarters = [reps.get(c) for c in ("11013", "11012", "11014")]
+        if any(x is not None and x.fs_div != annual.fs_div for x in quarters):
+            continue
+        q4 = {"fs_div": annual.fs_div, "rcept_no": annual.rcept_no, "disclosed_date": annual.disclosed_date, "derived": True}
+        for k in ACCOUNTS:
+            total = _f(getattr(annual, k))
+            cum = _f(getattr(q3, f"{k}_cum")) if q3 is not None else None
+            if cum is None and all(x is not None and getattr(x, k) is not None for x in quarters):
+                cum = sum(float(getattr(x, k)) for x in quarters)
+            q4[k] = total - cum if total is not None and cum is not None else None
+            q4[f"{k}_prev"] = None
+        out[(year, 4)] = q4
+    for (year, q), v in out.items():
+        # 1~3분기의 전년 동기는 보고서에 적힌 전기 금액(같은 기준, 재작성 반영)을 쓰고, 4분기만 전년 4분기 계산값을 쓴다
+        prev = out.get((year - 1, q))
+        for k in ACCOUNTS:
+            if v.get(f"{k}_prev") is None and prev is not None and prev["fs_div"] == v["fs_div"] and prev.get(k) is not None:
+                v[f"{k}_prev"] = prev[k]
+    return out
 
 
 def recent_for_answer(db, company, n: int = ANSWER_ROWS) -> list[dict] | None:
-    """최근 보고서 n개(사업연도·보고서 순서 내림차순). ETF거나 테이블이 없으면 None(섹션 생략), 주식인데 행이 없으면 []."""
+    """최근 분기 n개(4분기는 연간 - 1~3분기 누적). ETF거나 테이블이 없으면 None(섹션 생략). 주식인데 행이 없으면 [].
+    가장 최근 분기의 매출액이나 영업이익을 인식하지 못했으면(금융사 등 계정 이름이 다른 경우) None으로 섹션을 생략한다
+    (틀린 값을 보이느니 생략한다)."""
     if getattr(company, "asset_type", None) != "stock":
         return None
     from sqlalchemy.exc import ProgrammingError
@@ -148,12 +203,63 @@ def recent_for_answer(db, company, n: int = ANSWER_ROWS) -> list[dict] | None:
     except ProgrammingError:
         db.rollback()
         return None
-    rows.sort(key=lambda r: (r.bsns_year, REPORT_ORDER[r.reprt_code]), reverse=True)
+    series = quarterly_series(rows)
+    if not series:
+        return []
+    keys = sorted(series, reverse=True)[:n]
+    if any(series[k].get("revenue") is None or series[k].get("operating_income") is None
+           or revenue_suspect(series[k]["revenue"], series[k]["operating_income"]) for k in keys):
+        return None
     out = []
-    for r in rows[:n]:
-        d = {k: (float(getattr(r, k)) if getattr(r, k) is not None else None)
-             for k in ("revenue", "operating_income", "net_income", "revenue_prev", "operating_income_prev", "net_income_prev")}
-        d.update(period_label=period_label(r.bsns_year, r.reprt_code), fs_div=r.fs_div, rcept_no=r.rcept_no,
-                 disclosed_date=r.disclosed_date.isoformat(), bsns_year=r.bsns_year, reprt_code=r.reprt_code)
-        out.append(d)
+    for year, q in keys:
+        v = dict(series[(year, q)])
+        v.update(period_label=period_label(year, q), bsns_year=year,
+                 quarter=q, disclosed_date=v["disclosed_date"].isoformat())
+        out.append(v)
+    return out
+
+
+def revenue_suspect(revenue: float | None, operating_income: float | None) -> bool:
+    """영업이익이 매출액보다 크면 매출 계정을 잘못 고른 것으로 본다(지주사가 '영업수익' 대신 하위 '매출'을 고른 경우 등).
+    영업이익 = 매출 - 비용이라 정상 값에서는 일어나지 않는다. 답변에서는 실적 섹션을 생략한다(틀린 값보다 없는 게 낫다)."""
+    return revenue is not None and operating_income is not None and revenue > 0 and operating_income > revenue
+
+
+def anomalies(rows: list) -> list[str]:
+    """수집 결과 점검(DB 없음): |당기순이익| > 매출액, 분기 값 > 같은 해 누적, 1~n분기 합 != 누적, 보고서의 전기 금액 != 전년 행,
+    전년 동기 대비 ±500% 초과. 사람이 확인할 목록이다(원본 값이 실제로 그런 경우도 있다)."""
+    out = []
+    by = {(r.bsns_year, r.reprt_code): r for r in rows}
+    for r in rows:
+        tag = f"{r.bsns_year} {r.reprt_code} {r.fs_div}"
+        rev, net, op = _f(r.revenue), _f(r.net_income), _f(r.operating_income)
+        if rev and net is not None and rev > 0 and abs(net) > rev:
+            out.append(f"{tag}: |당기순이익| {net:,.0f} > 매출액 {rev:,.0f}")
+        if revenue_suspect(rev, op):
+            out.append(f"{tag}: 영업이익 {op:,.0f} > 매출액 {rev:,.0f}(매출 계정 인식 의심)")
+        q = QUARTER_OF.get(r.reprt_code)
+        if q is None:
+            continue
+        for k in ACCOUNTS:
+            cur, cum = _f(getattr(r, k)), _f(getattr(r, f"{k}_cum"))
+            if q == 1 and cur is not None and cum is not None and abs(cur - cum) > SUM_TOLERANCE * max(abs(cum), 1):
+                out.append(f"{tag} {k}: 1분기 값 {cur:,.0f} != 누적 {cum:,.0f}")
+            if q > 1 and cum is not None:
+                parts = [by.get((r.bsns_year, c)) for c in ("11013", "11012", "11014")[:q]]
+                if all(x is not None and getattr(x, k) is not None and x.fs_div == r.fs_div for x in parts):
+                    total = sum(float(getattr(x, k)) for x in parts)
+                    if abs(total - cum) > SUM_TOLERANCE * max(abs(cum), 1):
+                        out.append(f"{tag} {k}: 1~{q}분기 합 {total:,.0f} != 누적 {cum:,.0f}")
+                # 앞 분기가 모두 0 이상일 때만 이상치다(앞 분기 손실이면 누적이 분기 값보다 작을 수 있다)
+                earlier = [by.get((r.bsns_year, c)) for c in ("11013", "11012", "11014")[:q - 1]]
+                earlier_ok = all(x is not None and getattr(x, k) is not None and float(getattr(x, k)) >= 0 for x in earlier)
+                if earlier_ok and cur is not None and cur > cum * (1 + SUM_TOLERANCE) + 1:
+                    out.append(f"{tag} {k}: 분기 값 {cur:,.0f} > 누적 {cum:,.0f}")
+            prev_row = by.get((r.bsns_year - 1, r.reprt_code))
+            prev = _f(getattr(r, f"{k}_prev"))
+            if prev_row is not None and prev_row.fs_div == r.fs_div and prev is not None and getattr(prev_row, k) is not None:
+                if abs(prev - float(getattr(prev_row, k))) > SUM_TOLERANCE * max(abs(prev), 1):
+                    out.append(f"{tag} {k}: 보고서 전기 금액 {prev:,.0f} != 전년 행 {float(getattr(prev_row, k)):,.0f}")
+            if cur is not None and prev is not None and prev > 0 and cur >= 0 and abs(cur / prev - 1) > YOY_ANOMALY:
+                out.append(f"{tag} {k}: 전년 동기 대비 {(cur / prev - 1) * 100:+.0f}%")
     return out
