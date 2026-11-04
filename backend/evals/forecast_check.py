@@ -976,3 +976,127 @@ def check_data24(db, answer: str, company_name: str) -> list[str]:
     if status != "최신" and f"기대 거래일 {exp}" not in a:
         errs.append(f"기대 거래일 {exp} 없음")
     return errs
+
+
+# ---------- batch 22(2026-11-04, 25차): 단기 방향과 국면 분리, 첫 문장 방향, 신뢰도, 짧은 후속 답, 시세 신선도 문구 ----------
+# 규칙은 API.md "전망 5차" 절을 그대로 옮겼다(app/outlook.py를 import하지 않는다).
+
+DIRECTIONS = ("상승 쪽", "하락 쪽", "중립", "판단 유보")
+_DIR_TITLE = re.compile(r"^.+?\([0-9A-Z]{6}\) · 향후 \d+거래일 · 방향: (상승 쪽|하락 쪽|중립|판단 유보)(?:\(신뢰도 (낮음|보통|높음)\))?")
+_DIR_FIRST = {
+    "상승 쪽": ("상승 쪽입니다", "하나만 고르면 상승 쪽입니다"),
+    "하락 쪽": ("하락 쪽입니다", "하나만 고르면 하락 쪽입니다"),
+    "중립": ("현재는 상승과 하락 중 어느 쪽도 뚜렷하게 우세하지 않습니다", "하나만 고르라고 해도 현재는 상승과 하락 중 어느 쪽도 뚜렷하게 우세하지 않습니다"),
+    "판단 유보": ("데이터가 부족해 현재는 방향 판단을 보류하겠습니다", "하나만 고르라고 해도 데이터가 부족해 현재는 방향 판단을 보류하겠습니다"),
+}
+_CONTRADICTION25 = re.compile(r"중립[^.\n]{0,25}굳이 고르면|현재 판단: 중립\(굳이")
+_PROB25 = re.compile(r"(?:상승|하락|오를|내릴)\s*확률(?:은|이|는)?\s*(?:약\s*)?\d|확률(?:은|이|는)?\s*\d+(?:\.\d+)?\s*%|\d+(?:\.\d+)?\s*%\s*(?:의\s*)?확률")
+_LATE_WORD25 = re.compile(r"영업일 늦습니다|영업일 늦어")
+_LAG25 = re.compile(r"기대 거래일\((\d{4}-\d{2}-\d{2})\)보다 (\d+)영업일 (이전 데이터|지연)")
+MAX_LINES25 = {"oneline": 1, "pick": 3, "verdict": 5, "why": 6, "buy": 6, "compare": 6, "probability": 6, "risk": 6, "earnings": 6,
+               "data": 6}
+
+
+def direction_from_label(label: str) -> str:
+    """단기 방향 = 묶음 판정 그대로(국면과 일치를 요구하지 않는다)."""
+    return {"상승 우위": "상승 쪽", "하락 우위": "하락 쪽", "중립": "중립"}.get(label, "판단 유보")
+
+
+def confidence25(period: str, label: str, up: int, down: int, total: int, lag: int) -> str | None:
+    """신뢰도(방향이 상승 쪽·하락 쪽일 때만): 과거 검증이 유의하지 않거나 없으면 낮음, 유의하지만 약한 우위(우세 묶음 < 절반)이거나
+    시세가 2영업일 이상 지연이면 보통, 그 밖은 높음."""
+    if label not in ("상승 우위", "하락 우위"):
+        return None
+    r = _backtest_row24(period, label)
+    if r is None or not r.get("significant"):
+        return "낮음"
+    lead = up if label == "상승 우위" else down
+    return "보통" if lead * 2 < total or lag >= 2 else "높음"
+
+
+def _lag_of(answer: str) -> int:
+    m = _LAG25.search(answer or "")
+    return int(m.group(2)) if m else 0
+
+
+def check_direction25(db, answer: str, company_name: str, period: str, kind: str) -> list[str]:
+    """(25차) 제목 줄의 방향·신뢰도 = 묶음 비중으로 다시 계산한 값, 첫 내용 문장이 그 방향으로 시작, 국면(SQL)은 따로 표시,
+    모순·확률 표현 없음, 종류별 줄 수, 시세 신선도 문구. kind: standalone 또는 후속 답 종류."""
+    a = answer or ""
+    lines = [x for x in a.splitlines() if x.strip()]
+    errs = []
+    t = title_of(lines[0] if lines else "")
+    if not t or t["name"] != company_name or t["period"] != period:
+        errs.append(f"제목(종목·기간) {lines[0][:40] if lines else None!r}")
+    m = _DIR_TITLE.match(lines[0] if lines else "")
+    tally = _TALLY24.search(a)
+    if not m:
+        return errs + ["제목 줄에 '방향: …' 없음"]
+    if not tally:
+        return errs + ["'N개 묶음 중 상승 a·하락 b·중립 c' 없음"]
+    total, up, down, neutral = map(int, tally.groups())
+    label = label_from_tally(up, down, total)
+    if re.search(r"(?:데이터가 부족합니다|시세가 없습니다\([^)]*\))\. 판단을 유보합니다", a):
+        label = "판단 유보"
+    want = direction_from_label(label)
+    if m.group(1) != want:
+        errs.append(f"제목 방향 {m.group(1)} != 묶음 비중으로 계산한 {want}")
+    want_conf = confidence25(period, label, up, down, total, _lag_of(a))
+    if m.group(2) != want_conf:
+        errs.append(f"신뢰도 {m.group(2)} != {want_conf}")
+    # 국면은 따로(상태 줄), 독립 SQL과 같아야 한다. 방향이 국면에 끌려가지 않았는지는 위 방향 비교가 본다.
+    st = _STATE.search(a)
+    if not st:
+        errs.append("국면(현재는 … (기준일 … 종가)) 없음")
+    elif db is not None:
+        want_regime = regime_expected(db, company_name, st.group("date"))
+        if st.group("regime") not in (want_regime, REGIMES[5]):
+            errs.append(f"국면 {st.group('regime')} != {want_regime}")
+    first_line = lines[0] if kind == "oneline" else next((x for x in lines[1:] if not x.startswith(("- ", "현재는 ", "데이터 경고"))), "")
+    if kind == "oneline":
+        first_line = first_line[m.end():].lstrip(" ·")
+    starts = _DIR_FIRST[want][1 if kind == "pick" else 0]
+    if not first_line.startswith(starts):
+        errs.append(f"첫 문장이 방향({want})으로 시작하지 않음: {first_line[:40]!r}")
+    if kind == "standalone":
+        first_sec = next((i for i, x in enumerate(lines) if x.startswith("## ")), 99)
+        where = next((i for i, x in enumerate(lines) if x.startswith(starts)), 99)
+        if where > first_sec:
+            errs.append("방향 문장이 첫 섹션 뒤에 있음")
+    else:
+        limit = MAX_LINES25.get(kind, 6)
+        if len(lines) > limit:
+            errs.append(f"{len(lines)}줄({kind}는 {limit}줄 이하)")
+        if "## " in a or "규칙" in a:
+            errs.append("후속 답에 섹션·규칙 설명")
+    if kind == "why":
+        body = " ".join(lines[1:])
+        if "이유" not in body:
+            errs.append("이유 문장 없음")
+    if kind == "buy" and "권하지 않습니다" not in a:
+        errs.append("매수·매도 권유 안 함 안내 없음")
+    if kind == "probability" and "확률" in a and "검증된 상승·하락 확률은 없" not in a:
+        errs.append("검증된 확률 없음 안내 없음")
+    errs += [f"모순 표현: {x}" for x in _CONTRADICTION25.findall(a)]
+    errs += [f"확률 표현: {x}" for x in _PROB25.findall(a)]
+    for line in lines:
+        if "상승 비율" in line and "과거" not in line:
+            errs.append(f"과거 빈도를 과거라고 밝히지 않음: {line[:40]}")
+    errs += [f"시세 신선도 문구: {x}" for x in _LATE_WORD25.findall(a)]
+    errs += [f"매수·매도 권유: {x}" for x in _BUY_PUSH.findall(a)]
+    return errs
+
+
+def check_stable25(answer: str, turn_answers: list[str], period: str) -> list[str]:
+    """같은 종목·기간이면 앞 턴(표식이 있는 답)과 방향이 같아야 한다."""
+    m = _DIR_TITLE.match((answer or "").splitlines()[0] if answer else "")
+    t = title_of(answer or "")
+    errs = []
+    for prev in turn_answers:
+        pm = _DIR_TITLE.match(prev.splitlines()[0] if prev else "")
+        pt = title_of(prev or "")
+        if not (m and pm and t and pt) or (pt["name"], pt["period"]) != (t["name"], t["period"]):
+            continue
+        if pm.group(1) != m.group(1):
+            errs.append(f"앞 턴 방향 {pm.group(1)} -> 이번 {m.group(1)}")
+    return errs

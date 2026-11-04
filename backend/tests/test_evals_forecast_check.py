@@ -184,3 +184,40 @@ def test_judgment24_catches_evasive_and_fake_probability(monkeypatch):
     assert any("규칙" in e for e in FC.check_judgment24(None, wrong, "SK하이닉스", "1주일", "verdict"))
     fake = ok + "\n- 상승 확률은 60%입니다."
     assert any("확률 지어냄" in e for e in FC.check_judgment24(None, fake, "SK하이닉스", "1주일", "verdict"))
+
+
+# ---------- 25차(batch 22): 단기 방향과 국면 분리, 첫 문장 방향 ----------
+
+HEAD25 = ("SK하이닉스(000660) · 향후 5거래일 · 방향: 상승 쪽(신뢰도 낮음) · 현재는 단기 반등 시도, 추세 전환은 미확인 "
+          "(기준일 2026-11-03 종가)")
+OK25 = (f"{HEAD25}\n\n상승 쪽입니다. 다만 신호가 약하고(5개 묶음 중 상승 2·하락 0·중립 3) 추세는 아직 하락 후 반등 단계여서 "
+        "신뢰도는 낮습니다.\n\n- 근거: 최근 5거래일 수익률 +2.91%")
+
+
+def test_direction25_follows_the_tally_not_the_regime(monkeypatch):
+    monkeypatch.setattr(FC, "regime_expected", lambda db, name, base, hold=False: "단기 반등 시도, 추세 전환은 미확인")
+    assert FC.direction_from_label("상승 우위") == "상승 쪽" and FC.direction_from_label("판단 유보") == "판단 유보"
+    assert FC.check_direction25(None, OK25, "SK하이닉스", "1주일", "verdict") == []
+    neutral = OK25.replace("방향: 상승 쪽(신뢰도 낮음)", "방향: 중립").replace("상승 쪽입니다.", "현재는 상승과 하락 중 어느 쪽도 뚜렷하게 우세하지 않습니다.")
+    assert any("방향" in e for e in FC.check_direction25(None, neutral, "SK하이닉스", "1주일", "verdict"))
+    pick = OK25.replace("\n\n상승 쪽입니다.", "\n\n하나만 고르면 상승 쪽입니다.").replace("\n\n- 근거: 최근 5거래일 수익률 +2.91%", "")
+    assert FC.check_direction25(None, pick, "SK하이닉스", "1주일", "pick") == []
+    bad = OK25 + "\n현재 판단: 중립(굳이 고르면 상승 쪽)\n- a\n- b\n- c"
+    errs = FC.check_direction25(None, bad, "SK하이닉스", "1주일", "verdict")
+    assert any("모순" in e for e in errs) and any("줄" in e for e in errs)
+    late = OK25 + "\n마지막 시세일(2026-11-03)이 기대 거래일(2026-11-04)보다 1영업일 늦습니다."
+    assert any("신선도" in e for e in FC.check_direction25(None, late, "SK하이닉스", "1주일", "verdict"))
+    prob = OK25.replace("- 근거: 최근 5거래일 수익률 +2.91%", "- 상승 확률은 52%입니다")
+    assert any("확률" in e for e in FC.check_direction25(None, prob, "SK하이닉스", "1주일", "verdict"))
+    one = ("SK하이닉스(000660) · 향후 5거래일 · 방향: 상승 쪽(신뢰도 낮음) · 상승 쪽입니다(5개 묶음 중 상승 2·하락 0·중립 3, 약한 신호). "
+           "현재는 단기 반등 시도, 추세 전환은 미확인 (기준일 2026-11-03 종가).")
+    assert FC.check_direction25(None, one, "SK하이닉스", "1주일", "oneline") == []
+    assert any("줄" in e for e in FC.check_direction25(None, one + "\n추가 줄", "SK하이닉스", "1주일", "oneline"))
+
+
+def test_stable25_catches_a_flipped_direction():
+    flipped = OK25.replace("방향: 상승 쪽(신뢰도 낮음)", "방향: 중립")
+    assert FC.check_stable25(OK25, [OK25], "1주일") == []
+    assert FC.check_stable25(flipped, [OK25], "1주일") == ["앞 턴 방향 상승 쪽 -> 이번 중립"]
+    other = OK25.replace("향후 5거래일", "향후 20거래일")
+    assert FC.check_stable25(flipped, [other], "1주일") == []  # 기간이 다르면 비교하지 않는다

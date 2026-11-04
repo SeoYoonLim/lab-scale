@@ -42,8 +42,9 @@ SOURCE_TOOLS = {"news_tool", "disclosure_tool", "rag_search_tool", "event_reacti
 #  batch 16: 2026-11-03 신호 묶음·과거 검증·간접 뉴스·주문 문장·실적(전부 holdout, 구현 전에 작성). batch 17은 그 dev다.
 #  batch 18: 2026-11-04 결론 먼저 답변·국면·짧은 후속 답(전부 holdout, 측정 전에 문항·기준 고정). batch 19는 그 dev다.
 #  batch 20: 2026-11-04 현재 판단 먼저·신호 강도·잠정실적·시세 지연 구분(전부 holdout, 구현 전에 문항·기준 고정). batch 21은 그 dev다.
+#  batch 22: 2026-11-04 단기 방향 판단과 국면 분리·첫 문장 방향·짧은 후속 답·시세 신선도 문구(전부 holdout, 측정 전 고정). batch 23은 그 dev다.
 #  batch 5는 ETF 구성종목 기능 문항이라 수정 라운드가 아니었다).
-UNSEEN_BATCH = 20
+UNSEEN_BATCH = 22
 # 브리핑 문항(must_briefing)용: 평가 계정에 모의 보유종목 1개(종목, 수량)와 관심종목 1개를 만든다. 계정을 지울 때 같이 지워진다.
 EVAL_HOLDING = ("삼성전자", 5)
 EVAL_WATCH = "SK하이닉스"
@@ -268,6 +269,7 @@ def score_forecast(db, item: dict, rec: dict, response: dict | None) -> None:
         _fail(rec, "assertion", "단정·목표가·확률·기대수익률 없음", hits)
     score_round23(db, item, rec, answer)
     score_round24(db, item, rec, answer)
+    score_round25(db, item, rec, answer)
 
 
 def score_round23(db, item: dict, rec: dict, answer: str) -> None:
@@ -309,6 +311,24 @@ def score_round24(db, item: dict, rec: dict, answer: str) -> None:
         flags[f"{name}_ok"] = not errs
         if errs:
             _fail(rec, name, "24차 기준(evals/README.md 14차 라운드)", errs)
+
+
+def score_round25(db, item: dict, rec: dict, answer: str) -> None:
+    """(2026-11-04, batch 22) 단기 방향(묶음 판정만으로)과 국면(SQL) 분리, 첫 문장 방향, 신뢰도, 모순 표현·확률 표현 금지,
+    질문 종류별 길이, 시세 신선도 문구, 앞 턴과 방향 일치(forecast_check.py 25차 절). must_direction25는 standalone 또는 후속 답 종류."""
+    exp, flags = item["expect"], rec["flags"]
+    kind = exp.get("must_direction25")
+    if not kind:
+        return
+    want = (exp.get("companies") or [None])[0]
+    checks = {}
+    if db is not None:
+        checks["direction25"] = FC.check_direction25(db, answer, want, exp["period"], kind)
+    checks["stable25"] = FC.check_stable25(answer, rec["detail"].get("turn_answers") or [], exp["period"])
+    for name, errs in checks.items():
+        flags[f"{name}_ok"] = not errs
+        if errs:
+            _fail(rec, name, "25차 기준(evals/README.md 15차 라운드)", errs)
 
 
 def score_live(item: dict, rec: dict, response: dict | None, calls: list[dict], data_start=None, today=None,
@@ -579,6 +599,8 @@ def run_live(items: list[dict], repeats: int, model: str, log=print, keep_tool_r
                     for turn in it.get("turns", []):
                         prev_resp = pool.submit(ask_question, turn, model=model, user_id=user.id, previous=previous).result(
                             timeout=LIVE_TIMEOUT_S)
+                        # 25차: 같은 데이터·기간에서 후속 질문이 방향 판단을 바꾸지 않는지 보려고 앞 턴 답변을 남긴다
+                        rec["detail"].setdefault("turn_answers", []).append(prev_resp.get("answer") or "")
                         previous = get_report(prev_resp["report_id"], user_id=user.id) if prev_resp.get("report_id") else None
                     counter.n = 0
                     t0 = time.perf_counter()
@@ -699,6 +721,8 @@ METRICS = [
     ("judgment_first_rate", "flag", "judgment24_ok", True),
     ("latest_earnings_rate", "flag", "earnings24_ok", True),
     ("data_status_rate", "flag", "data24_ok", True),
+    ("direction_first_rate", "flag", "direction25_ok", True),
+    ("direction_stable_rate", "flag", "stable25_ok", True),
     ("error_rate", "flag", "error", False),
     ("latency_p50_s", "latency", 50, False),
     ("latency_p95_s", "latency", 95, False),
