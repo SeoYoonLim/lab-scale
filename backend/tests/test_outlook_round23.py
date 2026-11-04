@@ -382,3 +382,14 @@ def test_title_marker_carries_period_for_the_next_followup():
     assert outlook.marker_of("KB금융(105560) · 향후 60거래일 · 현재는 횡보, 방향 불분명 (기준일 2026-11-03 종가)") == \
         {"name": "KB금융", "ticker": "105560", "period": "3개월"}
     assert outlook.marker_of("향후 5거래일") is None
+
+
+@pytest.mark.parametrize("q", ["그래서 오르냐 내리냐고", "오르냐 내리냐", "내일 떨어지냐?", "그럼 올라가냐"])
+def test_oreunya_naerinya_is_a_followup_verdict(q):
+    """b18_16(holdout에서 발견): "그래서 오르냐 내리냐고"가 후속 결론으로 인식되지 않아 LLM 경로로 갔다."""
+    assert outlook.is_followup_verdict_question(q) and outlook.followup_kind(q) == "verdict"
+
+
+def test_oreunya_with_a_company_is_a_forecast_question():
+    assert outlook.is_forecast_question("삼성전자 다음 주 오르냐 내리냐")
+    assert not outlook.is_forecast_question("삼성전자 왜 떨어지냐") and not outlook.is_followup_verdict_question("삼성전자 왜 떨어지냐")
