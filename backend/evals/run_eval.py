@@ -228,6 +228,13 @@ def score_forecast(db, item: dict, rec: dict, response: dict | None) -> None:
         if not ok:
             _fail(rec, "forecast", {"label_first": True, "indicators>=5": True, "company": want, "period": exp.get("period")},
                   {"label_first": st["label_first"], "indicators": st["indicators_with_date"], "marker": mk})
+    if exp.get("must_forecast_v5"):
+        # 2026-11-04(승인 뒤 기준 조정): must_forecast에서 첫 섹션 이름("최종 신호 판단")만 뺐다. 지표 날짜·종목·기간·라벨은 그대로
+        ok = st["indicators_with_date"] >= 5 and mk.get("name") == want and mk.get("period") == exp.get("period") and mk.get("label") in FC.LABELS
+        flags["forecast_ok"] = ok
+        if not ok:
+            _fail(rec, "forecast", {"indicators>=5": True, "company": want, "period": exp.get("period"), "label": "4종 중 하나"},
+                  {"indicators": st["indicators_with_date"], "marker": mk})
     if exp.get("must_followup"):
         ok = (mk.get("name") == want and mk.get("period") == exp.get("period") and mk.get("label") in FC.LABELS
               and "용어 사전" not in answer)
@@ -243,7 +250,7 @@ def score_forecast(db, item: dict, rec: dict, response: dict | None) -> None:
         flags["evidence_ok"] = not ev
         if ev:
             _fail(rec, "evidence", "근거 뉴스·공시가 모두 요청 종목", ev)
-    if exp.get("must_forecast") or exp.get("must_followup"):
+    if exp.get("must_forecast") or exp.get("must_followup") or exp.get("must_forecast_v5"):
         errs = FC.check_groups(answer)
         flags["groups_ok"] = not errs
         if errs:
@@ -296,6 +303,14 @@ def score_round24(db, item: dict, rec: dict, answer: str) -> None:
     """(2026-11-04, batch 20) 현재 판단 먼저·기울기·묶음 비중과 강도·예측력(표본·95% 구간), 최신 실적(잠정 포함)·출처·발표 뒤 주가,
     시세 지연 분류(forecast_check.py 24차 절). must_judgment24는 standalone 또는 후속 답 종류, earnings_quarter("2026-3")는 물은 분기."""
     exp, flags = item["expect"], rec["flags"]
+    content = exp.get("must_v24_content")
+    if content and db is not None:
+        # 2026-11-04(승인 뒤 기준 조정): 24차 형식 검사 대신 내용 검사만(과거 검증 숫자, 최신 실적, 시세 상태)
+        want = (exp.get("companies") or [None])[0]
+        for name, errs in FC.check_v24_content(db, answer, want, exp["period"], content, exp.get("earnings_quarter")).items():
+            flags[f"{name}_ok"] = not errs
+            if errs:
+                _fail(rec, name, "24차 내용 기준(evals/README.md 16차 라운드)", errs)
     kind = exp.get("must_judgment24")
     if not kind:
         return

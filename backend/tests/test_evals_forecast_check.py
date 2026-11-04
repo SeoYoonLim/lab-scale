@@ -229,3 +229,22 @@ def test_direction25_neutral_sentence_starting_with_hyeonjae_is_not_skipped(monk
     neutral = ("SK텔레콤(017670) · 향후 5거래일 · 방향: 중립 · 현재는 단기 반등 시도, 추세 전환은 미확인 (기준일 2026-11-03 종가)\n\n"
                "현재는 상승과 하락 중 어느 쪽도 뚜렷하게 우세하지 않습니다(5개 묶음 중 상승 1·하락 1·중립 3).")
     assert FC.check_direction25(None, neutral, "SK텔레콤", "1주일", "verdict") == []
+
+
+def test_direction25_data_kind_reads_the_direction_line(monkeypatch):
+    """승인 뒤 기준 조정: 데이터 질문은 생성 시각·기준일이 먼저이고 방향은 "- 방향: " 줄이다."""
+    monkeypatch.setattr(FC, "regime_expected", lambda db, name, base, hold=False: "하락 추세 지속")
+    head = "NAVER(035420) · 향후 5거래일 · 방향: 중립 · 현재는 하락 추세 지속 (기준일 2026-11-03 종가)"
+    ok = (f"{head}\n\n이 답변은 2026-11-04 18:38 KST에 만들었고, 시세 기준일은 2026-11-03 종가입니다.\n\n"
+          "- 방향: 현재는 상승과 하락 중 어느 쪽도 뚜렷하게 우세하지 않습니다(5개 묶음 중 상승 1·하락 2·중립 2).")
+    assert FC.check_direction25(None, ok, "NAVER", "1주일", "data") == []
+    bad = ok.replace("- 방향: 현재는 상승과 하락 중 어느 쪽도 뚜렷하게 우세하지 않습니다", "- 방향: 상승 쪽입니다")
+    assert any("방향" in e for e in FC.check_direction25(None, bad, "NAVER", "1주일", "data"))
+
+
+def test_v24_content_keeps_the_numbers_without_the_old_wording(monkeypatch):
+    monkeypatch.setattr(FC, "_backtest_row24", lambda period, label: {"n": 22176, "diff_ci95": [-0.014, 0.053], "significant": False})
+    ok = "5개 묶음 중 상승 2·하락 0·중립 3. 과거 검증(표본 22,176, 95% 구간 -1.4~+5.3%p) 방향 예측력은 확인되지 않았습니다."
+    assert FC.check_v24_content(None, ok, "SK하이닉스", "1주일", "verdict") == {"power24": []}
+    assert FC.check_v24_content(None, ok.replace("표본 22,176", "표본 22,000"), "SK하이닉스", "1주일", "verdict")["power24"]
+    assert FC.check_v24_content(None, ok, "SK하이닉스", "1주일", "pick") == {}  # 고르기 답에는 과거 검증 줄이 없다(2줄)

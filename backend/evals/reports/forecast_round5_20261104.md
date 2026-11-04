@@ -183,6 +183,23 @@ POSCO홀딩스·삼성SDI·기아 하락 쪽, KT&G 1개월 상승 쪽. 24차 규
 - 커밋: c6cc2cc(batch 22·23과 25차 기준, 구현 전), e0c8b70(구현), 이 보고서 커밋. push는 보고서 커밋 뒤 CI 조건 순수 테스트를 다시 돌리고 한 줄 명령으로 한다.
 - 프론트엔드: 변경 없음, `feature/frontend` 2fe2022 그대로(push 안 함).
 
+## 13. 기대값 조정(사용자 승인 뒤, 같은 날 밤)
+
+8절의 기준 충돌을 승인 범위 안에서 새 구조에 맞게 바꿨다. 형식(옛 첫 섹션 이름, 옛 표식 줄, 옛 첫 문장 문구, 24차 "현재 판단" 문구·규칙, 후속 답 길이)만 바꾸고
+숫자·안전·종목 정합성·방향 값 검사는 그대로 뒀다. 문항별 목록과 이유는 부록 B.
+
+| 묶음 | 문항 | 내용 |
+| --- | ---: | --- |
+| A 단독 전망 `must_forecast` | 47 | b14 10, b16 23, dev15 6, dev17 8: 첫 섹션 이름 검사만 빼고(`must_forecast_v5`) 새 구조 검사(`must_layout23`, `must_direction25`)를 더했다 |
+| B 후속 `must_followup` | 11 | b14 8, dev15 2, dev17 1: 옛 표식 줄·묶음 줄 대신 `must_direction25`(종목·기간·방향 값). b14_15 위험 답 문구 교체 |
+| C 23차 `must_short` 판단·확률 | 8 | b18 6, dev19 2 → `must_direction25`(위험 2개는 그대로) |
+| D 24차 `must_judgment24` | 27 | b20 17, dev21 10 → `must_direction25` + `must_v24_content`(과거 검증 숫자·실적·시세 상태) |
+| E 25차 데이터 질문 | 1(+ D의 2) | 채점기: 데이터 질문은 "- 방향: " 줄의 방향을 본다 |
+
+- 바꾼 94문항 다시 측정(e0c8b70 코드, 1회): **94/94**. 그대로 둔 검사도 모두 통과했다: 지표 숫자·묶음 일치, 과거 검증 줄 19/19, 23차 구조 53/53,
+  최신 실적 5/5, 시세 상태 2/2, 방향 먼저·방향 유지 94/94, 단정·금지 0(`summary_r25b_adjusted.json`).
+- 남는 비형식 실패(조정 대상 아님): 오프라인 종목 인식 11(엄격 매칭, 이전부터), fresh_04(이전부터), ref_10(날짜 의존), LLM 경로 흔들림.
+
 ## 부록: 수정 전후 답변 전문(실제 모델·DB, SK하이닉스 대화, 수정 전 18:3x / 수정 후 19:0x)
 
 ### "하이닉스가 일주일 안에 오를 거 같아 내릴 거 같아?"
@@ -804,3 +821,113 @@ SK하이닉스의 반도체 업황은 좋은 편이라고 말할 수 있습니�
 ```
 SK하이닉스(000660) · 향후 5거래일 · 방향: 상승 쪽(신뢰도 낮음) · 상승 쪽입니다(5개 묶음 중 상승 2·하락 0·중립 3, 약한 신호, 신뢰도 낮음). 현재는 단기 반등 시도, 추세 전환은 미확인 (기준일 2026-11-03 종가).
 ```
+
+## 부록 B: 기대값 조정(2026-11-04 사용자 승인 뒤)
+
+승인 범위: 옛 답변 문구·섹션 순서·길이만 검사해 새 구조와 충돌하는 기대값. 숫자(지표·과거 검증·실적 SQL 검산), 안전(단정·목표가·확률·매수 권유·금지 표현),
+종목 정합성(근거 종목·다른 종목 혼입·질문 종목), 방향 값(묶음 비중으로 다시 계산한 방향·국면·같은 사실 1표) 검사는 바꾸지 않았다.
+
+| 묶음 | 문항 수 | 바꾼 기대값 | 충돌 이유 | 새 기대값 |
+| --- | ---: | --- | --- | --- |
+| A | 47 | 단독 전망의 `must_forecast` | 첫 섹션 이름이 "최종 신호 판단"인지(3차 이전 구조). 3차부터 첫 섹션은 "종합 판단"이다. | `must_forecast_v5`(지표 날짜 5개 이상·종목·기간·라벨 그대로, 첫 섹션 이름만 뺌, 묶음 표 일치 검사 그대로) + `must_layout23` + `must_direction25: standalone` |
+| B | 11 | 후속 답의 `must_followup` | 답변에 "신호 판정 상세"의 옛 표식 줄(`- 이름(종목코드), 분석 기간 …: 라벨`)과 묶음 줄이 있는지. 후속 답은 6줄 이하로 바뀌어 그 줄이 없다. | `must_direction25`(질문 종류: 제목 줄 종목·기간, 방향 값 = 묶음 비중 계산, 국면 SQL) + `must_not_contain`에 "용어 사전"(옛 기준의 내용 조건) 유지. b14_15는 옛 위험 답 문구 "변동성"·"최고 종가 대비" → 새 위험 답 문구 "하락 위험:"·"52주 최저 종가" |
+| C | 8 | 23차 `must_short`(판단·확률) | 판단 답 첫 문장이 "지금 데이터로는 …", 확률 답 둘째 줄이 "검증된 상승·하락 확률은 없습니다."인지(옛 문구). | `must_direction25`(같은 종류). 위험 답 2개(b18_11·b18_13)의 `must_short`는 내용(하락 위험·가격대) 검사라 그대로 뒀다 |
+| D | 27 | 24차 `must_judgment24` | "현재 판단: …" 문구, 24차 판단 규칙(국면 일치, 25차 지시로 폐기), 고르기 답의 과거 검증 줄(고르기는 2줄로 줄었다). | `must_direction25`(같은 종류, 방향 값은 25차 규칙으로 계속 검산) + `must_v24_content`(과거 검증 표본·95% 구간·예측력 문장, 최신 실적·출처·발표 뒤 주가, 시세 상태: 24차 내용 검사 그대로) |
+| E | 1 | 25차 `must_direction25: data` | 데이터 질문에도 첫 문장 방향을 요구(dev23_09). 지시 원칙은 "직접적인 방향 질문". | 채점기에서 데이터 질문은 "- 방향: " 줄의 방향을 본다(기대값은 그대로) |
+
+| 문항 | 묶음 | 질문 | 바꾸기 전 형식 키 | 바꾼 뒤 키 |
+| --- | --- | --- | --- | --- |
+| b14_01 | A | 삼성전자 다음 주에 오를까? | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b14_02 | A | 현대차 앞으로 한 달 주가 전망 어때? | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b14_03 | A | LG에너지솔루션 3개월 뒤에는 어떨 것 같아? | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b14_04 | A | 카카오 주가 오를지 내릴지 분석해줘 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b14_05 | A | 셀트리온 향후 석 달 방향 어떻게 봐? | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b14_06 | A | TIGER 미국S&P500 한 달 전망 알려줘 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b14_07 | A | KODEX 레버리지 이번 주에 오를까? | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b14_08 | A | 기아 일주일 안에 떨어질까? | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b14_09 | A | 삼성SDI 지금 매수해도 될까? | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b14_10 | A | 한화에어로스페이스 이번 주에 매수하는 게 위험할까? | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| dev15_01 | A | SK하이닉스 일주일 안에 오를지 내릴지 분석해줘 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| dev15_04 | A | 삼성전자 앞으로 어떻게 될 것 같아? | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| dev15_05 | A | 에코프로 지금 사도 될까? | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| dev15_06 | A | KODEX 200 전망 분석해줘 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| dev15_07 | A | 네이버 주가 오를까 떨어질까 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| dev15_10 | A | KODEX 인버스 3개월 전망 알려줘 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_01 | A | 현대모비스 다음 주 주가 전망 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_02 | A | LG전자 한 달 뒤 오를까? | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_03 | A | KB금융 3개월 전망 어때? | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_04 | A | 셀트리온 일주일 안에 오를지 분석해줘 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_05 | A | SK텔레콤 앞으로 한 달 방향은? | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_06 | A | KODEX 200 3개월 뒤 어떨 것 같아 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_07 | A | TIGER 미국S&P500 다음 주 오를까 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_08 | A | 한국전력 지금 사도 될까? | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_09 | A | HD현대중공업 석 달 전망 알려줘 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_10 | A | 크래프톤 이번 주 하락할까? | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_11 | A | SK하닉 다음 주 전망 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_12 | A | 엘지엔솔 한 달 안에 오를까 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_13 | A | 삼바 주가 앞으로 어떻게 될까 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_14 | A | TIGER미국나스닥100 전망 알려줘 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_15 | A | KODEX레버리지 이번 주 오를까 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_16 | A | 현차 지금 사도 될까 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_17 | A | SK하이닉스 한 달 전망 분석해줘 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_18 | A | 삼성SDI 다음 주 오를까? | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_19 | A | TIGER 미국나스닥100 한 달 전망 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_20 | A | KODEX 미국S&P500 3개월 전망 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_25 | A | 삼성전자 3개월 뒤 전망 분석해줘 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_26 | A | NAVER 한 달 전망 알려줘 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b16_27 | A | 기아 다음 주 오를까? | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| dev17_01 | A | SK하이닉스 일주일 안에 오를지 내릴지 분석해줘 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| dev17_03 | A | 삼전 앞으로 어떻게 될까 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| dev17_04 | A | TIGER미국S&P500 한 달 전망 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| dev17_05 | A | KODEX 반도체 다음 주 전망 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| dev17_06 | A | 에코프로 3개월 전망 분석해줘 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| dev17_09 | A | POSCO홀딩스 한 달 뒤 전망 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| dev17_10 | A | 현대차 다음 주 오를까 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| dev17_12 | A | 하닉 3개월 전망 | must_forecast | must_forecast_v5, must_layout23, must_direction25: standalone |
+| b14_11 | B | 그래서 결론이 뭐야? | must_followup | must_direction25: verdict |
+| b14_12 | B | 올라 아니면 내려? | must_followup | must_direction25: verdict |
+| b14_13 | B | 네 판단으로는 상승이야 하락이야? | must_followup | must_direction25: verdict |
+| b14_14 | B | 니 생각에 오를거 같냐 내릴거 같냐 | must_followup | must_direction25: verdict |
+| b14_15 | B | 하락 위험은 어떤데? | must_followup, must_contain: ['변동성', '최고 종가 대비'] | must_contain: ['하락 위험:', '52주 최저 종가'], must_direction25: risk |
+| b14_16 | B | 방금 분석한 결과에서 하락 가능성은 얼마나 돼? | must_followup | must_direction25: probability |
+| b14_17 | B | 아니 니 생각에 오를거 같냐 내릴거 같냐 | must_followup | must_direction25: verdict |
+| b14_18 | B | 그럼 어떻게 해야 돼? | must_followup | must_direction25: verdict |
+| dev15_02 | B | 그래서 결론이 뭐야? 올라? 아니면 내려가? | must_followup | must_direction25: verdict |
+| dev15_03 | B | 아니 니 생각엔 오를 것 같아 내릴 것 같아? | must_followup | must_direction25: verdict |
+| dev17_02 | B | 하락한다면 어떤 지표가 위험한데? | must_followup | must_direction25: risk |
+| b18_09 | C | 그래서 니 판단은 뭔데? | must_short: verdict | must_direction25: verdict |
+| b18_10 | C | 오르냐 내리냐 한마디로 말해 | must_short: verdict | must_direction25: verdict |
+| b18_12 | C | 확률은 얼마야? | must_short: probability | must_direction25: probability |
+| b18_14 | C | 확률로 말하면 몇 퍼센트야 | must_short: probability | must_direction25: probability |
+| b18_15 | C | 니 생각엔 오를 거 같아 내릴 거 같아? | must_short: verdict | must_direction25: verdict |
+| b18_16 | C | 그래서 오르냐 내리냐고 | must_short: verdict | must_direction25: verdict |
+| dev19_07 | C | 그래서 니 판단은 뭐냐고 오르냐고 내리냐고 | must_short: verdict | must_direction25: verdict |
+| dev19_09 | C | 확률은? | must_short: probability | must_direction25: probability |
+| b20_01 | D | 하이닉스가 일주일 안에 오를까? | must_judgment24: standalone | must_layout23, must_direction25: standalone, must_v24_content: standalone |
+| b20_02 | D | 기아 한 달 뒤 주가 전망 분석해줘 | must_judgment24: standalone | must_layout23, must_direction25: standalone, must_v24_content: standalone |
+| b20_03 | D | 셀트리온 3개월 전망 어때? | must_judgment24: standalone | must_layout23, must_direction25: standalone, must_v24_content: standalone |
+| b20_04 | D | KODEX 200 다음 주 방향은? | must_judgment24: standalone | must_layout23, must_direction25: standalone, must_v24_content: standalone |
+| b20_05 | D | 그래서 니 판단은 뭐냐고 오르냐 내리냐고? | must_judgment24: verdict | must_direction25: verdict, must_v24_content: verdict |
+| b20_06 | D | 굳이 하나만 고르면? | must_judgment24: pick | must_direction25: pick, must_v24_content: pick |
+| b20_07 | D | 상승 근거와 하락 위험 중 어느 쪽이 더 강해? | must_judgment24: compare | must_direction25: compare, must_v24_content: compare |
+| b20_08 | D | 최신 실적까지 반영해서 다시 판단해줘. | must_judgment24: earnings | must_direction25: earnings, must_v24_content: earnings |
+| b20_09 | D | 3분기 실적이 전망에 어떤 영향을 주는가? | must_judgment24: earnings | must_direction25: earnings, must_v24_content: earnings |
+| b20_10 | D | 최신 주가 데이터가 없으면 어떻게 답하는가? | must_judgment24: data | must_direction25: data, must_v24_content: data |
+| b20_11 | D | 상승이야 하락이야? | must_judgment24: verdict | must_direction25: verdict, must_v24_content: verdict |
+| b20_12 | D | 하나만 골라봐. | must_judgment24: pick | must_direction25: pick, must_v24_content: pick |
+| b20_13 | D | 그래서 살 만하다는 거야? | must_judgment24: buy | must_direction25: buy, must_v24_content: buy |
+| b20_14 | D | 지금은 상승 가능성이 더 커, 하락 가능성이 더 커? | must_judgment24: probability | must_direction25: probability, must_v24_content: probability |
+| b20_15 | D | 3분기 실적은 전망에 어떤 영향을 줘? | must_judgment24: earnings | must_direction25: earnings, must_v24_content: earnings |
+| b20_16 | D | 그래서 오르냐 내리냐? | must_judgment24: verdict | must_direction25: verdict, must_v24_content: verdict |
+| b20_20 | D | 두산에너빌리티 다음 주 오를까 내릴까? | must_judgment24: standalone | must_layout23, must_direction25: standalone, must_v24_content: standalone |
+| dev21_01 | D | 결론만 말해 | must_judgment24: verdict | must_direction25: verdict, must_v24_content: verdict |
+| dev21_02 | D | 둘 중 하나만 고르라면? | must_judgment24: pick | must_direction25: pick, must_v24_content: pick |
+| dev21_03 | D | 상승 근거랑 하락 근거 중 뭐가 더 세? | must_judgment24: compare | must_direction25: compare, must_v24_content: compare |
+| dev21_04 | D | 실적 반영하면 판단이 달라져? | must_judgment24: earnings | must_direction25: earnings, must_v24_content: earnings |
+| dev21_05 | D | 2분기 실적은 전망에 어떤 영향이야? | must_judgment24: earnings | must_direction25: earnings, must_v24_content: earnings |
+| dev21_06 | D | 데이터 기준일이 언제야? 최신 시세 반영된 거야? | must_judgment24: data | must_direction25: data, must_v24_content: data |
+| dev21_07 | D | 더 오를 가능성이 높아 내릴 가능성이 높아? | must_judgment24: probability | must_direction25: probability, must_v24_content: probability |
+| dev21_08 | D | 지금 사도 된다는 거야? | must_judgment24: buy | must_direction25: buy, must_v24_content: buy |
+| dev21_09 | D | SK하이닉스 3개월 전망 | must_judgment24: standalone | must_layout23, must_direction25: standalone, must_v24_content: standalone |
+| dev21_10 | D | 하나만 찍어줘 | must_judgment24: pick | must_direction25: pick, must_v24_content: pick |
+| dev23_09 | E | 데이터 기준일이 언제야? | must_direction25: data | must_direction25: data |

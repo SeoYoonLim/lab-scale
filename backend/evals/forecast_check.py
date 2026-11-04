@@ -1057,6 +1057,9 @@ def check_direction25(db, answer: str, company_name: str, period: str, kind: str
         (x for x in lines[1:] if not (x.startswith(("- ", "데이터 경고")) or _STATE.match(x))), "")
     if kind == "oneline":
         first_line = first_line[m.end():].lstrip(" ·")
+    if kind == "data":
+        # 2026-11-04(승인 뒤 기준 조정): 데이터 질문은 생성 시각·기준일을 먼저 답하고 방향은 "- 방향: " 줄에 쓴다
+        first_line = next((x[len("- 방향: "):] for x in lines if x.startswith("- 방향: ")), "")
     starts = _DIR_FIRST[want][1 if kind == "pick" else 0]
     if not first_line.startswith(starts):
         errs.append(f"첫 문장이 방향({want})으로 시작하지 않음: {first_line[:40]!r}")
@@ -1102,3 +1105,25 @@ def check_stable25(answer: str, turn_answers: list[str], period: str) -> list[st
         if pm.group(1) != m.group(1):
             errs.append(f"앞 턴 방향 {pm.group(1)} -> 이번 {m.group(1)}")
     return errs
+
+
+def check_v24_content(db, answer: str, company_name: str, period: str, kind: str, quarter: str | None = None) -> dict[str, list[str]]:
+    """(2026-11-04, 승인 뒤 기준 조정) 24차 기준에서 형식(현재 판단 문구·옛 판단 규칙)을 뺀 내용 검사만 남긴다:
+    과거 검증 표본·95% 구간·예측력 문장(그 줄이 있는 종류), 최신 실적·출처·발표 뒤 주가(earnings), 시세 상태(data)."""
+    a = answer or ""
+    out = {}
+    if kind in ("standalone", "verdict", "compare", "buy", "earnings"):
+        tally = _TALLY24.search(a)
+        if not tally:
+            out["power24"] = ["'N개 묶음 중 …' 없음"]
+        else:
+            total, up, down, _ = map(int, tally.groups())
+            label = label_from_tally(up, down, total)
+            if re.search(r"(?:데이터가 부족합니다|시세가 없습니다\([^)]*\))\. 판단을 유보합니다", a):
+                label = "판단 유보"
+            out["power24"] = _check_power(a, period, label)
+    if kind == "earnings" and db is not None:
+        out["earnings24"] = check_earnings24(db, a, company_name, quarter)
+    if kind == "data" and db is not None:
+        out["data24"] = check_data24(db, a, company_name)
+    return out

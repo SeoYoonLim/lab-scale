@@ -23,7 +23,8 @@ EXPECT_KEYS = {"companies", "must_not_companies", "tools_all", "tools_forbidden"
                "must_contain", "must_not_contain", "gates", "ref_date", "start", "end", "must_partial",
                "must_state_data_date", "must_answer", "must_briefing", "check_attachment", "etf_holdings", "number_scored",
                "must_forecast", "must_followup", "period", "must_backtest_line", "must_indirect", "must_earnings", "must_layout23",
-               "must_short", "must_judgment24", "earnings_quarter", "must_direction25"}
+               "must_short", "must_judgment24", "earnings_quarter", "must_direction25",
+               "must_forecast_v5", "must_v24_content"}
 TOOLS = {"stock_tool", "news_tool", "disclosure_tool", "rag_search_tool", "market_tool", "fx_tool",
          "discovery_tool", "event_reaction_tool", "*"}
 
@@ -85,14 +86,18 @@ def test_all_holdout_batch_has_new_questions(rows, number):
     elif number == 18:  # 단독 전망 8 + 다른 종목 혼입 회귀 1, 2~3턴 후속 8(판단 4·위험 2·확률 2), 용어·주문·기간 수익률 회귀 3
         e = [r["expect"] for r in batch]
         assert sum(bool(x.get("must_layout23")) for x in e) == 9
-        assert Counter(x.get("must_short") for x in e if x.get("must_short")) == {"verdict": 4, "risk": 2, "probability": 2}
+        # 2026-11-04(승인 뒤 기준 조정): 판단·확률 6개의 must_short(옛 첫 문장 문구)는 must_direction25로 바꿨다. 위험 2개는 그대로
+        assert Counter(x.get("must_short") for x in e if x.get("must_short")) == {"risk": 2}
+        assert Counter(x.get("must_direction25") for x in e if x.get("must_direction25")) == {"verdict": 4, "probability": 2}
         assert all(1 <= len(r["turns"]) <= 2 for r in batch if r["category"] == "forecast_followup")
         assert {x["period"] for x in e if x.get("must_layout23")} == {"1주일", "1개월", "3개월"}
     elif number == 20:  # 단독 전망 5(현재 판단·강도), 후속 12(판단 3·고르기 2·비교·확률·매수·실적 3·데이터), 종목 되묻기·주문·뉴스 회귀 3
         e = [r["expect"] for r in batch]
-        assert Counter(x.get("must_judgment24") for x in e if x.get("must_judgment24")) == {
+        # 2026-11-04(승인 뒤 기준 조정): must_judgment24(현재 판단 문구·24차 규칙)는 must_direction25와 내용 검사 must_v24_content로 바꿨다
+        assert Counter(x.get("must_v24_content") for x in e if x.get("must_v24_content")) == {
             "standalone": 5, "verdict": 3, "pick": 2, "compare": 1, "probability": 1, "buy": 1, "earnings": 3, "data": 1}
-        assert all(x.get("must_layout23") for x in e if x.get("must_judgment24") == "standalone")
+        assert all(x.get("must_direction25") == x.get("must_v24_content") for x in e if x.get("must_v24_content"))
+        assert all(x.get("must_layout23") for x in e if x.get("must_v24_content") == "standalone")
         assert all(1 <= len(r["turns"]) <= 2 for r in batch if r["category"] == "forecast_followup" and r.get("turns"))
         assert sum(bool(x.get("earnings_quarter")) for x in e) == 2
     elif number == 22:  # 지시의 질문 10개(SK하이닉스 대화) + 하락·상승 추세·중립·하락 우위 종목 후속 + 단독 3 + 실적·종목 되묻기 회귀
