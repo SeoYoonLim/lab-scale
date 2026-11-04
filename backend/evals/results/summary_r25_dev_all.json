@@ -1,0 +1,1468 @@
+{
+  "git_commit": "e0c8b705780c2be916b177a023ffc80b7289d4cb",
+  "git_dirty": true,
+  "date": "2026-11-04T19:10:46",
+  "model": "llama3.1:8b",
+  "think": null,
+  "keep_alive": "30m",
+  "args": {
+    "mode": "all",
+    "split": "dev",
+    "repeats": 1,
+    "only": null,
+    "ids": null,
+    "batch": null,
+    "exclude_batch": null,
+    "model": null,
+    "keep_tool_results": false,
+    "limit": null,
+    "out": "evals/results/summary_r25_dev_all.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 31,
+    "live": 190,
+    "records": 221
+  },
+  "live": {
+    "ran": true,
+    "repeats": 1,
+    "eval_user": "captest_10d434567e34",
+    "deleted_reports": 215,
+    "etf_data_available": {
+      "069500": true,
+      "091160": true,
+      "122630": true,
+      "305720": true
+    },
+    "elapsed_s": 452.8
+  },
+  "etf_data_available": {
+    "069500": true,
+    "091160": true,
+    "122630": true,
+    "305720": true
+  },
+  "etf_branches": {
+    "with_data": {
+      "ids": [
+        "etf_03",
+        "etf_06",
+        "etf_08",
+        "etf_11",
+        "etf_16"
+      ],
+      "passed": 5,
+      "runs": 5
+    }
+  },
+  "elapsed_s": 458.1,
+  "metrics": {
+    "entity_default_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 17,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 17
+      }
+    },
+    "entity_default_wrong_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 17,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 17
+      }
+    },
+    "entity_default_miss_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 17,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 17
+      }
+    },
+    "entity_default_ambiguous_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 17,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 17
+      }
+    },
+    "entity_strict_accuracy": {
+      "dev": 0.6471,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.6471,
+      "n": {
+        "dev": 17,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 17
+      }
+    },
+    "entity_strict_wrong_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 17,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 17
+      }
+    },
+    "entity_strict_miss_rate": {
+      "dev": 0.1765,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.1765,
+      "n": {
+        "dev": 17,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 17
+      }
+    },
+    "entity_strict_ambiguous_rate": {
+      "dev": 0.1765,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.1765,
+      "n": {
+        "dev": 17,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 17
+      }
+    },
+    "period_parse_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 8,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 8
+      }
+    },
+    "routing_gate_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 6
+      }
+    },
+    "tool_selection_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 19,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 19
+      }
+    },
+    "live_company_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 154,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 154
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 154,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 154
+      }
+    },
+    "live_period_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 4,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 4
+      }
+    },
+    "number_match_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 428,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 428
+      }
+    },
+    "number_full_support_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 75,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 75
+      }
+    },
+    "source_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 66,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 66
+      }
+    },
+    "refusal_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 12,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 12
+      }
+    },
+    "period_label_violation_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 2,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 2
+      }
+    },
+    "must_contain_rate": {
+      "dev": 0.9865,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.9865,
+      "n": {
+        "dev": 74,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 74
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 190,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 190
+      }
+    },
+    "data_date_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 2,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 2
+      }
+    },
+    "briefing_link_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 2,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 2
+      }
+    },
+    "number_attachment_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 6
+      }
+    },
+    "code_answer_rate": {
+      "dev": 0.7105,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.7105,
+      "n": {
+        "dev": 190,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 190
+      }
+    },
+    "loop_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 190,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 190
+      }
+    },
+    "stability_answer_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 46,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 46
+      }
+    },
+    "guard_replacement_rate": {
+      "dev": 0.0943,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0943,
+      "n": {
+        "dev": 53,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 53
+      }
+    },
+    "narrative_drop_rate": {
+      "dev": 0.0625,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0625,
+      "n": {
+        "dev": 48,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 48
+      }
+    },
+    "foreign_strip_rate": {
+      "dev": 0.0377,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0377,
+      "n": {
+        "dev": 53,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 53
+      }
+    },
+    "fallback_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 190,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 190
+      }
+    },
+    "forecast_structure_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 14,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 14
+      }
+    },
+    "followup_keep_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 3,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "forecast_number_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 22,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 22
+      }
+    },
+    "forecast_evidence_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 22,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 22
+      }
+    },
+    "forecast_assertion_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 47,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 47
+      }
+    },
+    "forecast_group_rate": {
+      "dev": 0.8235,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.8235,
+      "n": {
+        "dev": 17,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 17
+      }
+    },
+    "backtest_line_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 9,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 9
+      }
+    },
+    "indirect_section_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 3,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "earnings_number_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 6
+      }
+    },
+    "conclusion_first_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 8,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 8
+      }
+    },
+    "regime_match_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 8,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 8
+      }
+    },
+    "no_double_vote_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 8,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 8
+      }
+    },
+    "short_followup_rate": {
+      "dev": 0.3333,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.3333,
+      "n": {
+        "dev": 3,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "number_window_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 11,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 11
+      }
+    },
+    "judgment_first_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 10,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 10
+      }
+    },
+    "latest_earnings_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 2,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 2
+      }
+    },
+    "data_status_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 1,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 1
+      }
+    },
+    "direction_first_rate": {
+      "dev": 0.9,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.9,
+      "n": {
+        "dev": 10,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 10
+      }
+    },
+    "direction_stable_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 10,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 10
+      }
+    },
+    "error_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 190,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 190
+      }
+    },
+    "latency_p50_s": {
+      "dev": 0.03,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.03,
+      "n": {
+        "dev": 190,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 190
+      }
+    },
+    "latency_p95_s": {
+      "dev": 12.593,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 12.593,
+      "n": {
+        "dev": 190,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 190
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "ent_08",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "JB금융",
+      "check": "entity_strict",
+      "expected": "JB금융지주",
+      "actual": "ambiguous: ['JB금융지주']"
+    },
+    {
+      "id": "ent_15",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "카카오뱅쿠",
+      "check": "entity_strict",
+      "expected": "카카오뱅크",
+      "actual": "ambiguous: ['카카오뱅크', '카카오']"
+    },
+    {
+      "id": "ent_21",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "엘지화학",
+      "check": "entity_strict",
+      "expected": "LG화학",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '엘지화학'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_23",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "에스케이텔레콤",
+      "check": "entity_strict",
+      "expected": "SK텔레콤",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '에스케이텔레콤'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_25",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "씨제이제일제당",
+      "check": "entity_strict",
+      "expected": "CJ제일제당",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '씨제이제일제당'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_26",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "한미반도",
+      "check": "entity_strict",
+      "expected": "한미반도체",
+      "actual": "ambiguous: ['한미반도체']"
+    },
+    {
+      "id": "ref_10",
+      "split": "dev",
+      "category": "refusal",
+      "run": 0,
+      "question": "카카오 3년 전 주가 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "20(?:23|24)-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원"
+        ],
+        "must_not": [
+          "없습니다"
+        ]
+      },
+      "actual": [
+        "present:없습니다"
+      ]
+    },
+    {
+      "id": "dev15_01",
+      "split": "dev",
+      "category": "forecast",
+      "run": 0,
+      "question": "SK하이닉스 일주일 안에 오를지 내릴지 분석해줘",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "SK하이닉스",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "SK하이닉스",
+          "ticker": "000660",
+          "period": "1주일",
+          "label": "상승 우위"
+        }
+      }
+    },
+    {
+      "id": "dev15_02",
+      "split": "dev",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "그래서 결론이 뭐야? 올라? 아니면 내려가?",
+      "check": "followup",
+      "expected": {
+        "company": "SK하이닉스",
+        "period": "1주일"
+      },
+      "actual": {
+        "marker": {},
+        "answer": "SK하이닉스(000660) · 향후 5거래일 · 방향: 상승 쪽(신뢰도 낮음) · 현재는 단기 반등 시도, 추세 전환은 미확인 (기준일 2026-11-03 종가) · 시세: 1영업일 이전 시세(미수집), 2026-11-03 종가 기준\n\n상승 쪽입니다. 다만 신호가 약하고(5개 묶음 중 "
+      }
+    },
+    {
+      "id": "dev15_02",
+      "split": "dev",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "그래서 결론이 뭐야? 올라? 아니면 내려가?",
+      "check": "groups",
+      "expected": "묶음당 1표 판정과 개별 지표 표시",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "dev15_03",
+      "split": "dev",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "아니 니 생각엔 오를 것 같아 내릴 것 같아?",
+      "check": "followup",
+      "expected": {
+        "company": "SK하이닉스",
+        "period": "1주일"
+      },
+      "actual": {
+        "marker": {},
+        "answer": "SK하이닉스(000660) · 향후 5거래일 · 방향: 상승 쪽(신뢰도 낮음) · 현재는 단기 반등 시도, 추세 전환은 미확인 (기준일 2026-11-03 종가) · 시세: 1영업일 이전 시세(미수집), 2026-11-03 종가 기준\n\n상승 쪽입니다. 다만 신호가 약하고(5개 묶음 중 "
+      }
+    },
+    {
+      "id": "dev15_03",
+      "split": "dev",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "아니 니 생각엔 오를 것 같아 내릴 것 같아?",
+      "check": "groups",
+      "expected": "묶음당 1표 판정과 개별 지표 표시",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "dev15_04",
+      "split": "dev",
+      "category": "forecast",
+      "run": 0,
+      "question": "삼성전자 앞으로 어떻게 될 것 같아?",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "삼성전자",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "삼성전자",
+          "ticker": "005930",
+          "period": "1주일",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "dev15_05",
+      "split": "dev",
+      "category": "forecast",
+      "run": 0,
+      "question": "에코프로 지금 사도 될까?",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "에코프로",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "에코프로",
+          "ticker": "086520",
+          "period": "1주일",
+          "label": "하락 우위"
+        }
+      }
+    },
+    {
+      "id": "dev15_06",
+      "split": "dev",
+      "category": "forecast",
+      "run": 0,
+      "question": "KODEX 200 전망 분석해줘",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "KODEX 200",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "KODEX 200",
+          "ticker": "069500",
+          "period": "1주일",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "dev15_07",
+      "split": "dev",
+      "category": "forecast",
+      "run": 0,
+      "question": "네이버 주가 오를까 떨어질까",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "NAVER",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "NAVER",
+          "ticker": "035420",
+          "period": "1주일",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "dev15_10",
+      "split": "dev",
+      "category": "forecast",
+      "run": 0,
+      "question": "KODEX 인버스 3개월 전망 알려줘",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "KODEX 인버스",
+        "period": "3개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "KODEX 인버스",
+          "ticker": "114800",
+          "period": "3개월",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "dev17_01",
+      "split": "dev",
+      "category": "forecast",
+      "run": 0,
+      "question": "SK하이닉스 일주일 안에 오를지 내릴지 분석해줘",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "SK하이닉스",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "SK하이닉스",
+          "ticker": "000660",
+          "period": "1주일",
+          "label": "상승 우위"
+        }
+      }
+    },
+    {
+      "id": "dev17_02",
+      "split": "dev",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "하락한다면 어떤 지표가 위험한데?",
+      "check": "followup",
+      "expected": {
+        "company": "SK하이닉스",
+        "period": "1주일"
+      },
+      "actual": {
+        "marker": {},
+        "answer": "SK하이닉스(000660) · 향후 5거래일 · 방향: 상승 쪽(신뢰도 낮음) · 현재는 단기 반등 시도, 추세 전환은 미확인 (기준일 2026-11-03 종가) · 시세: 1영업일 이전 시세(미수집), 2026-11-03 종가 기준\n\n상승 쪽입니다. 다만 신호가 약하고(5개 묶음 중 "
+      }
+    },
+    {
+      "id": "dev17_02",
+      "split": "dev",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "하락한다면 어떤 지표가 위험한데?",
+      "check": "groups",
+      "expected": "묶음당 1표 판정과 개별 지표 표시",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "dev17_03",
+      "split": "dev",
+      "category": "forecast",
+      "run": 0,
+      "question": "삼전 앞으로 어떻게 될까",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "삼성전자",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "삼성전자",
+          "ticker": "005930",
+          "period": "1주일",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "dev17_04",
+      "split": "dev",
+      "category": "forecast",
+      "run": 0,
+      "question": "TIGER미국S&P500 한 달 전망",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "TIGER 미국S&P500",
+        "period": "1개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "TIGER 미국S&P500",
+          "ticker": "360750",
+          "period": "1개월",
+          "label": "하락 우위"
+        }
+      }
+    },
+    {
+      "id": "dev17_05",
+      "split": "dev",
+      "category": "forecast",
+      "run": 0,
+      "question": "KODEX 반도체 다음 주 전망",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "KODEX 반도체",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "KODEX 반도체",
+          "ticker": "091160",
+          "period": "1주일",
+          "label": "하락 우위"
+        }
+      }
+    },
+    {
+      "id": "dev17_06",
+      "split": "dev",
+      "category": "forecast",
+      "run": 0,
+      "question": "에코프로 3개월 전망 분석해줘",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "에코프로",
+        "period": "3개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "에코프로",
+          "ticker": "086520",
+          "period": "3개월",
+          "label": "하락 우위"
+        }
+      }
+    },
+    {
+      "id": "dev17_09",
+      "split": "dev",
+      "category": "forecast",
+      "run": 0,
+      "question": "POSCO홀딩스 한 달 뒤 전망",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "POSCO홀딩스",
+        "period": "1개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "POSCO홀딩스",
+          "ticker": "005490",
+          "period": "1개월",
+          "label": "하락 우위"
+        }
+      }
+    },
+    {
+      "id": "dev17_10",
+      "split": "dev",
+      "category": "forecast",
+      "run": 0,
+      "question": "현대차 다음 주 오를까",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "현대차",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "현대차",
+          "ticker": "005380",
+          "period": "1주일",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "dev17_12",
+      "split": "dev",
+      "category": "forecast",
+      "run": 0,
+      "question": "하닉 3개월 전망",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "SK하이닉스",
+        "period": "3개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "SK하이닉스",
+          "ticker": "000660",
+          "period": "3개월",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "dev19_07",
+      "split": "dev",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "그래서 니 판단은 뭐냐고 오르냐고 내리냐고",
+      "check": "short",
+      "expected": "23차 기준(evals/README.md 13차 라운드)",
+      "actual": [
+        "첫 문장이 질문에 바로 답하지 않음: 상승 쪽입니다. 다만 신호가 약하고(5개 묶음 중 상승"
+      ]
+    },
+    {
+      "id": "dev19_09",
+      "split": "dev",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "확률은?",
+      "check": "short",
+      "expected": "23차 기준(evals/README.md 13차 라운드)",
+      "actual": [
+        "확률 없음 안내·과거 빈도"
+      ]
+    },
+    {
+      "id": "dev21_01",
+      "split": "dev",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "결론만 말해",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "'현재 판단: …' 없음"
+      ]
+    },
+    {
+      "id": "dev21_02",
+      "split": "dev",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "둘 중 하나만 고르라면?",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "둘째 줄이 '굳이 하나를 …(현재 판단: …)'이 아님: 하나만 고르면 하락 쪽입니다. 다만 묶음 비중은 5개 묶음 중 상승 0·",
+        "표본 8,318 없음",
+        "95% 구간 -14.4~+13.6%p 없음",
+        "유의하지 않은데 '예측력은 확인되지 않았습니다' 없음"
+      ]
+    },
+    {
+      "id": "dev21_03",
+      "split": "dev",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "상승 근거랑 하락 근거 중 뭐가 더 세?",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "'현재 판단: …' 없음"
+      ]
+    },
+    {
+      "id": "dev21_04",
+      "split": "dev",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "실적 반영하면 판단이 달라져?",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "'현재 판단: …' 없음"
+      ]
+    },
+    {
+      "id": "dev21_05",
+      "split": "dev",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "2분기 실적은 전망에 어떤 영향이야?",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "'현재 판단: …' 없음"
+      ]
+    },
+    {
+      "id": "dev21_06",
+      "split": "dev",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "데이터 기준일이 언제야? 최신 시세 반영된 거야?",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "'현재 판단: …' 없음"
+      ]
+    },
+    {
+      "id": "dev21_07",
+      "split": "dev",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "더 오를 가능성이 높아 내릴 가능성이 높아?",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "'현재 판단: …' 없음"
+      ]
+    },
+    {
+      "id": "dev21_08",
+      "split": "dev",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "지금 사도 된다는 거야?",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "'현재 판단: …' 없음"
+      ]
+    },
+    {
+      "id": "dev21_09",
+      "split": "dev",
+      "category": "forecast",
+      "run": 0,
+      "question": "SK하이닉스 3개월 전망",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "'현재 판단: …' 없음"
+      ]
+    },
+    {
+      "id": "dev21_10",
+      "split": "dev",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "하나만 찍어줘",
+      "check": "judgment24",
+      "expected": "24차 기준(evals/README.md 14차 라운드)",
+      "actual": [
+        "둘째 줄이 '굳이 하나를 …(현재 판단: …)'이 아님: 하나만 고르면 하락 쪽입니다. 다만 묶음 비중은 5개 묶음 중 상승 0·",
+        "표본 22,776 없음",
+        "95% 구간 -5.3~+2.1%p 없음",
+        "유의하지 않은데 '예측력은 확인되지 않았습니다' 없음"
+      ]
+    },
+    {
+      "id": "dev23_09",
+      "split": "dev",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "데이터 기준일이 언제야?",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "첫 문장이 방향(중립)으로 시작하지 않음: '이 답변은 2026-11-04 19:10 KST에 만들었고, 시세 기준일'"
+      ]
+    }
+  ]
+}
