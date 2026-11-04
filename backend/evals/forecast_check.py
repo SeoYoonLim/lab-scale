@@ -1127,3 +1127,211 @@ def check_v24_content(db, answer: str, company_name: str, period: str, kind: str
     if kind == "data" and db is not None:
         out["data24"] = check_data24(db, a, company_name)
     return out
+
+
+# ---------- batch 24(2026-11-04 밤, 26차): 간결·상세 모드, 첫 문장 방향 배치, 근거와 묶음 판정 일치, 뉴스·공시 날짜 ----------
+# 규칙은 API.md "전망 6차" 절을 그대로 옮겼다(app/outlook.py를 import하지 않는다).
+
+DETAIL_SECTIONS26 = ("종합 판단", "상승을 뒷받침하는 근거", "하락 위험 근거", "앞으로 확인할 사항", "과거 검증", "기술적 지표", "시장 상황",
+                     "신호 판정 상세", "불확실성과 한계", "데이터 기준일·출처")
+BRIEF_LINES26 = ("- 상승 근거: ", "- 하락 위험: ", "- 과거 검증: ", "- 시장 국면: 현재는 ")
+MAX_BRIEF_LINES26 = 8
+_TAG26 = re.compile(r"\[([^\]]+)\]")
+_CROSS_ALONE26 = re.compile(r"^- \[[^\]]+\] (?:\d{4}-\d{2}-\d{2} )?(?:골든크로스|데드크로스)")
+_DISC_LINE26 = re.compile(r"(?:- 공시 (\d{4}-\d{2}-\d{2}) 접수: \"(.+?)\"$|^  - (\d{4}-\d{2}-\d{2}) \"(.+?)\" 공시가 있었습니다\.$)")
+_NEWS_LINE26 = re.compile(r"(?:- 뉴스 (\d{4}-\d{2}-\d{2}) (?:\([^)]*\) )?\"(.+?)\"라는 제목의 기사|^  - (\d{4}-\d{2}-\d{2}) \"(.+?)\"라는 기사가 있었습니다\.$)")
+_RCEPT_DATE26 = re.compile(r"(?:접수·발표일|접수일|발표일) (\d{4}-\d{2}-\d{2}), DART 접수번호 (\d{14})")
+
+
+def check_mode26(answer: str, mode: str) -> list[str]:
+    """brief: 섹션 없음, 빈 줄 빼고 8줄 이하, 상승 근거·하락 위험·과거 검증·시장 국면 줄. detail: 상세 섹션 유지."""
+    a = answer or ""
+    lines = [x for x in a.splitlines() if x.strip()]
+    if mode == "brief":
+        errs = []
+        if "## " in a:
+            errs.append("간결 답에 섹션")
+        if len(lines) > MAX_BRIEF_LINES26:
+            errs.append(f"간결 답 {len(lines)}줄({MAX_BRIEF_LINES26}줄 이하)")
+        errs += [f"'{p.strip()}' 줄 없음" for p in BRIEF_LINES26 if not any(x.startswith(p) for x in lines)]
+        return errs
+    titles = [x[3:].strip() for x in lines if x.startswith("## ")]
+    return [f"상세 섹션 '{t}' 없음" for t in DETAIL_SECTIONS26 if t not in titles]
+
+
+def check_layout26(answer: str, company_name: str, period: str, mode: str) -> list[str]:
+    """제목 줄(종목·기간·방향) 다음 첫 줄이 방향 문장, 국면(현재는 … (기준일 … 종가))은 따로, 상세면 첫 섹션 종합 판단 2~3문장."""
+    lines = [x for x in (answer or "").splitlines() if x.strip()]
+    errs = []
+    t = title_of(lines[0] if lines else "")
+    if not t or t["name"] != company_name or t["period"] != period or not _DIR_TITLE.match(lines[0]):
+        errs.append(f"제목 줄 {lines[0][:50] if lines else None!r}")
+    m = _DIR_TITLE.match(lines[0]) if lines else None
+    if m:
+        starts = _DIR_FIRST[m.group(1)][0]
+        if len(lines) < 2 or not lines[1].startswith(starts):
+            errs.append(f"제목 다음 줄이 방향 문장이 아님: {(lines[1] if len(lines) > 1 else '')[:40]!r}")
+    first_sec = next((i for i, x in enumerate(lines) if x.startswith("## ")), len(lines))
+    if not any(_STATE.search(x) for x in lines[:first_sec]):
+        errs.append("국면(현재는 … (기준일 … 종가))이 머리말에 없음")
+    if mode == "detail":
+        sec = sections(answer)
+        first = next(iter(sec), None)
+        if first != "종합 판단":
+            errs.append(f"첫 섹션 {first}")
+        else:
+            para = next((x for x in sec[first] if not x.startswith(("-", " "))), "")
+            n = len(_SENTENCE_END.findall(para))
+            if not 2 <= n <= 3:
+                errs.append(f"종합 판단 {n}문장")
+    return errs
+
+
+def _tags_before(text: str, stops=("엇갈린 묶음", "추세 참고")) -> list[str]:
+    cut = min([text.find(s) for s in stops if s in text] or [len(text)])
+    return _TAG26.findall(text[:cut])
+
+
+def check_evidence26(answer: str, mode: str) -> list[str]:
+    """상승 근거는 상승 쪽 묶음, 하락 위험은 하락 쪽 묶음에서만. 엇갈린 묶음은 중립 묶음. 교차(골든·데드크로스)를 따로 세운 항목 없음.
+    상세: 판정 상세의 묶음 줄로 대조. 간결: 묶음 비중(상승 a·하락 b) 안에서 서로 다른 묶음 수."""
+    a = answer or ""
+    errs = []
+    if mode == "detail":
+        votes = {g.group("group").strip(): g.group("vote") for g in _GROUP_LINE23.finditer(a)}
+        if not votes:
+            return ["묶음 줄 없음"]
+        sec = sections(a)
+        for title, want in (("상승을 뒷받침하는 근거", "상승 쪽"), ("하락 위험 근거", "하락 쪽")):
+            for line in sec.get(title, []):
+                if _CROSS_ALONE26.match(line):
+                    errs.append(f"교차를 따로 세운 근거: {line[:40]}")
+                if line.startswith("- 엇갈린 묶음"):
+                    for g in _TAG26.findall(line):
+                        if votes.get(g) != "중립":
+                            errs.append(f"엇갈린 묶음 {g}의 판정이 {votes.get(g)}")
+                    continue
+                if line.startswith(("- 추세 참고", "  ")) or "판정된 묶음은 없습니다" in line:
+                    continue
+                tags = _TAG26.findall(line)
+                if not tags:
+                    errs.append(f"{title}에 묶음 표시 없는 항목: {line[:40]}")
+                for g in tags[:1]:
+                    if votes.get(g) != want:
+                        errs.append(f"{title}의 [{g}] 판정이 {votes.get(g)}")
+        return errs
+    tally = _TALLY24.search(a)
+    if not tally:
+        return ["묶음 비중 없음"]
+    _, up, down, _ = map(int, tally.groups())
+    lines = a.splitlines()
+    up_line = next((x for x in lines if x.startswith("- 상승 근거: ")), "")
+    down_line = next((x for x in lines if x.startswith("- 하락 위험: ")), "")
+    up_tags, down_tags = set(_tags_before(up_line)), set(_tags_before(down_line))
+    if len(up_tags) > up:
+        errs.append(f"상승 근거 묶음 {sorted(up_tags)} > 상승 묶음 {up}개")
+    if len(down_tags) > down:
+        errs.append(f"하락 위험 묶음 {sorted(down_tags)} > 하락 묶음 {down}개")
+    if up_tags & down_tags:
+        errs.append(f"같은 묶음이 상승·하락 양쪽: {sorted(up_tags & down_tags)}")
+    if re.search(r"\[[^\]]+\] (?:\d{4}-\d{2}-\d{2} )?(?:골든크로스|데드크로스)", up_line + down_line):
+        errs.append("교차를 따로 세운 근거")
+    return errs
+
+
+def _disclosure_dates(db, company_name: str) -> dict[str, set[str]]:
+    rows = db.execute(text(
+        "select d.title, d.source_url, to_char(d.disclosed_at at time zone 'Asia/Seoul', 'YYYY-MM-DD') from disclosure d "
+        "join company c on c.id = d.company_id where c.name = :n"), {"n": company_name}).fetchall()
+    out: dict[str, set[str]] = {}
+    for title, url, kst in rows:
+        m = re.search(r"rcptNo=(\d{8})", url or "")
+        d = f"{m.group(1)[:4]}-{m.group(1)[4:6]}-{m.group(1)[6:8]}" if m else kst
+        out.setdefault(title, set()).add(d)
+    return out
+
+
+def check_dates26(db, answer: str, company_name: str) -> list[str]:
+    """공시 날짜 = DART 접수번호의 날짜(없으면 한국 시간 접수일), 뉴스 날짜 = 한국 시간 발행일, 같은 자료는 어디서나 같은 날짜,
+    실적 줄의 접수(·발표)일 = 접수번호 날짜."""
+    a = answer or ""
+    errs, seen = [], {}
+    disc = _disclosure_dates(db, company_name) if db is not None else {}
+    for line in a.splitlines():
+        m = _DISC_LINE26.search(line)
+        if m:
+            d, title = (m.group(1), m.group(2)) if m.group(1) else (m.group(3), m.group(4))
+            if db is not None and d not in disc.get(title, set()):
+                errs.append(f"공시 \"{title[:20]}\" 날짜 {d} != {sorted(disc.get(title, set()))}")
+            if seen.setdefault(("공시", title), d) != d:
+                errs.append(f"같은 공시 \"{title[:20]}\"가 {seen[('공시', title)]}와 {d}로 다르게 표시")
+        m = _NEWS_LINE26.search(line)
+        if m:
+            d, title = (m.group(1), m.group(2)) if m.group(1) else (m.group(3), m.group(4))
+            if db is not None:
+                ok = db.execute(text(
+                    "select count(*) from news n join company c on c.id = n.company_id where c.name = :n and n.title = :t "
+                    "and to_char(n.published_at at time zone 'Asia/Seoul', 'YYYY-MM-DD') = :d"),
+                    {"n": company_name, "t": title, "d": d}).scalar()
+                if not ok:
+                    errs.append(f"뉴스 \"{title[:20]}\" 날짜 {d}가 한국 시간 발행일과 다름")
+            if seen.setdefault(("뉴스", title), d) != d:
+                errs.append(f"같은 기사 \"{title[:20]}\"가 두 날짜로 표시")
+        for d, rcept in _RCEPT_DATE26.findall(line):
+            if rcept[8:10] == "80" and d != f"{rcept[:4]}-{rcept[4:6]}-{rcept[6:8]}":
+                errs.append(f"거래소 공시 {rcept}의 접수·발표일 {d}가 접수번호 날짜와 다름")
+    return errs
+
+
+def check_consistency26(answer: str, turn_answers: list[str]) -> list[str]:
+    """같은 종목·기간의 앞 턴이 간결 답이고 이번이 상세 답이면(또는 반대) 근거 묶음이 같은 쪽이어야 한다."""
+    def sides(a: str) -> tuple[set, set] | None:
+        if "## " in a:
+            sec = sections(a)
+            up = {t for x in sec.get("상승을 뒷받침하는 근거", []) for t in _tags_before(x)[:1]}
+            down = {t for x in sec.get("하락 위험 근거", []) if not x.startswith(("- 엇갈린", "- 추세 참고")) for t in _tags_before(x)[:1]}
+            return up, down
+        lines = a.splitlines()
+        up_line = next((x for x in lines if x.startswith("- 상승 근거: ")), None)
+        down_line = next((x for x in lines if x.startswith("- 하락 위험: ")), None)
+        if up_line is None:
+            return None
+        return set(_tags_before(up_line)), set(_tags_before(down_line or ""))
+    errs = []
+    t, cur = title_of(answer or ""), sides(answer or "")
+    for prev in turn_answers:
+        pt, ps = title_of(prev or ""), sides(prev or "")
+        if not (t and pt and cur and ps) or (pt["name"], pt["period"]) != (t["name"], t["period"]):
+            continue
+        small, big = (ps, cur) if len(ps[0] | ps[1]) <= len(cur[0] | cur[1]) else (cur, ps)
+        if not small[0] <= big[0] or not small[1] <= big[1]:
+            errs.append(f"간결·상세 근거 묶음 불일치: {small} vs {big}")
+    return errs
+
+
+def check_filing26(db, answer: str, company_name: str) -> list[str]:
+    """공시 날짜 질문: 첫 내용 줄에 최신 실적 공시의 접수일(접수번호 날짜)과 접수번호를 먼저 쓴다."""
+    lines = [x for x in (answer or "").splitlines() if x.strip()]
+    first = lines[1] if len(lines) > 1 else ""
+    k, src, info = latest_quarter24(db, company_name)
+    if k is None:
+        return [] if "실적 공시를 찾지 못했습니다" in first else ["실적 공시 없음 안내 없음"]
+    want_d, want_r = info.get("date"), info.get("rcept")
+    errs = []
+    if want_d not in first or (want_r and want_r not in first) or "접수" not in first:
+        errs.append(f"첫 줄에 접수일 {want_d}·접수번호 {want_r} 없음: {first[:50]!r}")
+    return errs
+
+
+def check_signal26(answer: str, term: str) -> list[str]:
+    """신호 의미 질문: 그 신호의 정의와 지금 값, 그 신호가 속한 묶음의 판정(개별 신호 ≠ 묶음 표)을 6줄 이하로."""
+    a = answer or ""
+    lines = [x for x in a.splitlines() if x.strip()]
+    errs = []
+    if term not in a:
+        errs.append(f"'{term}' 설명 없음")
+    if not re.search(r"묶음(?:은|의 판정은) (?:상승 쪽|하락 쪽|중립)", a):
+        errs.append("속한 묶음의 판정 없음")
+    if len(lines) > 6 or "## " in a:
+        errs.append(f"{len(lines)}줄·섹션")
+    return errs

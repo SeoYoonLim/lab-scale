@@ -248,3 +248,64 @@ def test_v24_content_keeps_the_numbers_without_the_old_wording(monkeypatch):
     assert FC.check_v24_content(None, ok, "SK하이닉스", "1주일", "verdict") == {"power24": []}
     assert FC.check_v24_content(None, ok.replace("표본 22,176", "표본 22,000"), "SK하이닉스", "1주일", "verdict")["power24"]
     assert FC.check_v24_content(None, ok, "SK하이닉스", "1주일", "pick") == {}  # 고르기 답에는 과거 검증 줄이 없다(2줄)
+
+
+# ---------- 26차(batch 24): 간결·상세 모드, 방향 배치, 근거와 묶음 일치, 날짜 ----------
+
+TITLE26 = "SK하이닉스(000660) · 향후 5거래일 · 방향: 상승 쪽(신뢰도 낮음)"
+STATE26 = "현재는 단기 반등 시도, 추세 전환은 미확인 (기준일 2026-11-03 종가)"
+BRIEF26 = (f"{TITLE26}\n\n상승 쪽입니다. 다만 신호가 약하고(5개 묶음 중 상승 2·하락 0·중립 3) 신뢰도는 낮습니다.\n"
+           "- 상승 근거: [단기 흐름] 최근 5거래일 수익률 +2.91%; [MACD] MACD가 시그널 위\n"
+           "- 하락 위험: 하락 쪽으로 판정된 묶음은 없습니다. 엇갈린 묶음: [중기 추세] … 추세 참고: 20거래일 수익률 -23.24%\n"
+           "- 과거 검증: …\n"
+           f"- 시장 국면: {STATE26}")
+DETAIL26 = (f"{TITLE26}\n\n상승 쪽입니다. 다만 신뢰도는 낮습니다.\n{STATE26}\n\n"
+            "## 종합 판단\n단기 신호는 상승 쪽이 많습니다. 추세 전환은 확인되지 않았습니다.\n"
+            "  - 2026-10-28 \"연결재무제표기준영업(잠정)실적(공정공시)\" 공시가 있었습니다.\n\n"
+            "## 상승을 뒷받침하는 근거\n- [단기 흐름] 최근 5거래일 수익률 +2.91%\n- [MACD] MACD가 시그널 위\n\n"
+            "## 하락 위험 근거\n- 하락 쪽으로 판정된 묶음은 없습니다.\n- 엇갈린 묶음: [중기 추세] 5일선이 20일선 위(상승)지만 종가가 20일선 아래(하락)\n\n"
+            "## 뉴스·공시(직접 관련)\n- 공시 2026-10-28 접수: \"연결재무제표기준영업(잠정)실적(공정공시)\"\n\n"
+            "## 신호 판정 상세\n"
+            "  - 단기 흐름: 상승 쪽 1표 ← 최근 5거래일 수익률 +2.91%(상승 쪽)\n"
+            "  - 중기 추세: 중립 1표 ← 종가가 20일 이동평균 아래(하락 쪽), 5일선이 20일선 위(상승 쪽)\n"
+            "  - MACD(12,26,9): 상승 쪽 1표 ← MACD가 시그널 위(상승 쪽)\n")
+
+
+def test_mode26_and_layout26():
+    assert FC.check_mode26(BRIEF26, "brief") == []
+    assert any("줄" in e for e in FC.check_mode26(BRIEF26 + "\n- a\n- b\n- c\n- d", "brief"))
+    assert any("섹션" in e for e in FC.check_mode26(DETAIL26, "brief"))
+    assert any("기술적 지표" in e for e in FC.check_mode26(DETAIL26, "detail"))  # 상세 섹션이 빠지면 잡는다
+    assert FC.check_layout26(BRIEF26, "SK하이닉스", "1주일", "brief") == []
+    late = BRIEF26.replace("\n\n상승 쪽입니다.", f"\n\n{STATE26}\n상승 쪽입니다.")
+    assert any("방향 문장" in e for e in FC.check_layout26(late, "SK하이닉스", "1주일", "brief"))
+
+
+def test_evidence26_catches_a_neutral_group_shown_as_support():
+    detail = DETAIL26.replace("## 신호 판정 상세", "## 신호 판정 상세").replace("MACD(12,26,9): 상승 쪽", "MACD: 상승 쪽")
+    assert FC.check_evidence26(DETAIL26.replace("[MACD]", "[MACD(12,26,9)]"), "detail") == []
+    bad = DETAIL26.replace("- [MACD] MACD가 시그널 위\n", "- [MACD] MACD가 시그널 위\n- [중기 추세] 2026-11-02 골든크로스\n")
+    errs = FC.check_evidence26(bad.replace("[MACD]", "[MACD(12,26,9)]"), "detail")
+    assert any("교차" in e for e in errs) and any("중기 추세" in e for e in errs)
+    assert detail
+    assert FC.check_evidence26(BRIEF26, "brief") == []
+    assert any("하락 위험" in e for e in FC.check_evidence26(BRIEF26.replace("- 하락 위험: 하락 쪽", "- 하락 위험: [중기 추세] 종가가 20일선 아래. 하락 쪽"), "brief"))
+
+
+def test_dates26_same_item_one_date_and_consistency26():
+    assert FC.check_dates26(None, DETAIL26, "SK하이닉스") == []
+    two = DETAIL26.replace("- 공시 2026-10-28 접수", "- 공시 2026-10-27 접수")
+    assert any("다르게 표시" in e for e in FC.check_dates26(None, two, "SK하이닉스"))
+    wrong = "- 2026년 3분기(연결, 잠정): … (잠정실적 공정공시, 접수·발표일 2026-10-27, DART 접수번호 20261028800036, 감사 전 잠정치)"
+    assert any("접수번호 날짜" in e for e in FC.check_dates26(None, wrong, "SK하이닉스"))
+    detail = DETAIL26.replace("[MACD]", "[MACD(12,26,9)]")
+    brief = BRIEF26.replace("[MACD]", "[MACD(12,26,9)]")
+    assert FC.check_consistency26(detail, [brief]) == []
+    assert FC.check_consistency26(detail, [brief.replace("[단기 흐름]", "[거래량]")])
+
+
+def test_signal26():
+    ok = (f"{TITLE26}\n\n골든크로스는 최근 5거래일 안에 5일선이 20일선을 위로 교차한 것입니다.\n"
+          "- 지금: 2026-11-02 골든크로스\n- 판정: 개별로는 상승 쪽이지만 이 신호가 속한 중기 추세 묶음은 중립입니다.")
+    assert FC.check_signal26(ok, "골든크로스") == []
+    assert FC.check_signal26(ok.replace("묶음은 중립", "묶음 판정 없음"), "골든크로스")

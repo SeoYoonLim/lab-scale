@@ -43,8 +43,9 @@ SOURCE_TOOLS = {"news_tool", "disclosure_tool", "rag_search_tool", "event_reacti
 #  batch 18: 2026-11-04 결론 먼저 답변·국면·짧은 후속 답(전부 holdout, 측정 전에 문항·기준 고정). batch 19는 그 dev다.
 #  batch 20: 2026-11-04 현재 판단 먼저·신호 강도·잠정실적·시세 지연 구분(전부 holdout, 구현 전에 문항·기준 고정). batch 21은 그 dev다.
 #  batch 22: 2026-11-04 단기 방향 판단과 국면 분리·첫 문장 방향·짧은 후속 답·시세 신선도 문구(전부 holdout, 측정 전 고정). batch 23은 그 dev다.
+#  batch 24: 2026-11-04 밤 간결·상세 모드·첫 문장 방향 배치·근거와 묶음 일치·뉴스·공시 날짜(전부 holdout, 측정 전 고정). batch 25는 그 dev다.
 #  batch 5는 ETF 구성종목 기능 문항이라 수정 라운드가 아니었다).
-UNSEEN_BATCH = 22
+UNSEEN_BATCH = 24
 # 브리핑 문항(must_briefing)용: 평가 계정에 모의 보유종목 1개(종목, 수량)와 관심종목 1개를 만든다. 계정을 지울 때 같이 지워진다.
 EVAL_HOLDING = ("삼성전자", 5)
 EVAL_WATCH = "SK하이닉스"
@@ -277,6 +278,7 @@ def score_forecast(db, item: dict, rec: dict, response: dict | None) -> None:
     score_round23(db, item, rec, answer)
     score_round24(db, item, rec, answer)
     score_round25(db, item, rec, answer)
+    score_round26(db, item, rec, answer)
 
 
 def score_round23(db, item: dict, rec: dict, answer: str) -> None:
@@ -344,6 +346,40 @@ def score_round25(db, item: dict, rec: dict, answer: str) -> None:
         flags[f"{name}_ok"] = not errs
         if errs:
             _fail(rec, name, "25차 기준(evals/README.md 15차 라운드)", errs)
+
+
+def score_round26(db, item: dict, rec: dict, answer: str) -> None:
+    """(2026-11-04 밤, batch 24) 간결·상세 모드(must_mode26), 제목 다음 첫 줄 방향·국면 따로(must_layout26, 국면·숫자·같은 사실 1표 검산은
+    23차 그대로 함께), 근거와 묶음 판정 일치(must_evidence26), 뉴스·공시 날짜(must_dates26), 간결·상세 근거 일치(must_consistency26),
+    공시 날짜 질문(must_filing26), 신호 의미 질문(must_signal26). forecast_check.py 26차 절."""
+    exp, flags = item["expect"], rec["flags"]
+    want = (exp.get("companies") or [None])[0]
+    mode = exp.get("must_mode26")
+    checks = {}
+    if mode:
+        checks["mode26"] = FC.check_mode26(answer, mode)
+    if exp.get("must_layout26"):
+        checks["layout26"] = FC.check_layout26(answer, want, exp["period"], mode or "detail")
+        if db is not None:
+            checks["regime"] = FC.check_regime(db, answer, want)
+            checks["numbers23"] = FC.check_numbers23(db, answer, want)
+        if (mode or "detail") == "detail":
+            checks["double_vote"] = FC.check_double_vote(answer)
+    if exp.get("must_evidence26"):
+        ev = exp["must_evidence26"]
+        checks["evidence26"] = FC.check_evidence26(answer, ev if isinstance(ev, str) else (mode or "detail"))
+    if exp.get("must_dates26"):
+        checks["dates26"] = FC.check_dates26(db, answer, want)
+    if exp.get("must_consistency26"):
+        checks["consistency26"] = FC.check_consistency26(answer, rec["detail"].get("turn_answers") or [])
+    if exp.get("must_filing26") and db is not None:
+        checks["filing26"] = FC.check_filing26(db, answer, want)
+    if exp.get("must_signal26"):
+        checks["signal26"] = FC.check_signal26(answer, exp["must_signal26"])
+    for name, errs in checks.items():
+        flags[f"{name}_ok"] = not errs
+        if errs:
+            _fail(rec, name, "26차 기준(evals/README.md 17차 라운드)", errs)
 
 
 def score_live(item: dict, rec: dict, response: dict | None, calls: list[dict], data_start=None, today=None,
@@ -738,6 +774,11 @@ METRICS = [
     ("data_status_rate", "flag", "data24_ok", True),
     ("direction_first_rate", "flag", "direction25_ok", True),
     ("direction_stable_rate", "flag", "stable25_ok", True),
+    ("mode_rate", "flag", "mode26_ok", True),
+    ("layout26_rate", "flag", "layout26_ok", True),
+    ("evidence_consistency_rate", "flag", "evidence26_ok", True),
+    ("date_consistency_rate", "flag", "dates26_ok", True),
+    ("mode_consistency_rate", "flag", "consistency26_ok", True),
     ("error_rate", "flag", "error", False),
     ("latency_p50_s", "latency", 50, False),
     ("latency_p95_s", "latency", 95, False),
