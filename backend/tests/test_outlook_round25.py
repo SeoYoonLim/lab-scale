@@ -115,8 +115,8 @@ def test_why_answer_names_the_groups(backtest):
     lines = _lines(outlook.followup_answer(COMPANY, W1, _skhynix_like(), "why", NOW))
     assert lines[1] == ("상승 쪽입니다. 그렇게 본 이유는 상승 쪽 묶음이 2개(단기 흐름, MACD)이고 하락 쪽 묶음은 없으며 중립이 3개로, "
                         "상승·하락 묶음 차이 2개가 판정 기준(2개)에 이르기 때문입니다(5개 묶음 중 상승 2·하락 0·중립 3).")
-    assert lines[2].startswith("- 상승 근거: 최근 5거래일 수익률 +2.91%")
-    assert "아래" in lines[3]  # 주가가 이동평균선 아래(반대 근거)
+    assert lines[2].startswith("- 상승 근거: [단기 흐름] 최근 5거래일 수익률 +2.91%")  # 26차: 묶음 표시
+    assert lines[3].startswith("- 하락 위험: 하락 쪽으로 판정된 묶음은 없습니다.") and "아래" in lines[3]
     assert lines[4].startswith("- 추세(따로 봄): 현재는 단기 반등 시도")
 
 

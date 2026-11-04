@@ -51,7 +51,7 @@ def test_evidence_errors_flag_other_companies():
 def test_check_numbers_catches_a_tampered_return(dev_db):
     from app import agent
 
-    answer = agent.ask_question("삼성전자 일주일 안에 오를까?", save_report=False)["answer"]
+    answer = agent.ask_question("삼성전자 일주일 안에 오를까? 자세히 분석해줘", save_report=False)["answer"]  # 26차: 상세 리포트
     assert FC.check_numbers(dev_db, answer, "삼성전자", "1주일") == []
     import re
 

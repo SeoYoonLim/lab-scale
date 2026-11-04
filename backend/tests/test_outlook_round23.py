@@ -217,7 +217,10 @@ def test_answer_order_title_state_summary_then_details():
     text = outlook.forecast_answer(COMPANY, W1, _result(rows), [], [], None, _now_for(rows))
     lines = text.splitlines()
     assert lines[0].startswith("SK하이닉스(000660) · 향후 5거래일 · 방향: ")  # 25차: 제목 줄에 방향
-    assert lines[2].startswith("현재는 ") and any(r in lines[2] for r in outlook.REGIMES)
+    # 26차: 제목 다음 첫 줄은 방향 문장, 국면 줄("현재는 …")은 첫 섹션 전 머리말에 따로
+    first_sec = next(i for i, x in enumerate(lines) if x.startswith("## "))
+    assert lines[2].startswith(("상승 쪽입니다", "하락 쪽입니다", "현재는 상승과 하락 중", "데이터가 부족해"))
+    assert any(x.startswith("현재는 ") and any(r in x for r in outlook.REGIMES) for x in lines[3:first_sec])
     titles = [line[3:] for line in lines if line.startswith("## ")]
     assert titles[:5] == ["종합 판단", "상승을 뒷받침하는 근거", "하락 위험 근거", "앞으로 확인할 사항", "과거 검증"]
     assert titles[5:] == ["기술적 지표", "뉴스·공시(직접 관련)", "시장 상황", "신호 판정 상세", "불확실성과 한계", "데이터 기준일·출처"]
@@ -270,7 +273,8 @@ def test_summary_does_not_claim_dominance_when_regime_disagrees(backtest):
     text = outlook.summary_lines(res, regime, W1)[0]
     assert res["label"] == "상승 우위" and "우세" not in text
     assert "20거래일 -23.24% 급락 뒤의 반등" in text and "5일선·20일선·60일선 아래" in text and "추세 전환은 확인되지 않았습니다" in text
-    assert "1주일 뒤 방향을 전체 평균보다 잘 맞히지 못했습니다(상승 비율 51.8% vs 전체 49.9%, 표본 22,176, 차이 +1.9%p, 95% 구간 -1.4~+5.3%p)" in text
+    # 26차: 과거 검증 숫자는 "과거 검증" 섹션 한 곳에만 쓴다
+    assert "과거 검증에서 이 신호 조합(상승 우위)의 1주일 뒤 방향 예측력은 확인되지 않았습니다(아래 과거 검증)." in text
     assert len(re.findall(r"다\.", text)) <= 3
 
 
@@ -283,14 +287,18 @@ def test_summary_says_dominant_only_when_signals_and_regime_agree(backtest):
 
 
 def test_evidence_items_merge_the_same_fact(backtest):
+    """26차: 근거는 묶음 판정과 같은 원천(group_evidence). 교차는 같은 사실인 이동평균 배열 문장 안에만 있고 따로 세지 않는다."""
     res = _skhynix_like()
-    up, down = outlook.evidence_items(res["indicators"], res["signals"], W1)
-    assert up[0] == "최근 5거래일 수익률 +2.91%(2026-10-27 종가 대비)"
-    assert sum("골든크로스" in x or "5일선 1,461,800원이 20일선" in x for x in up) == 1
-    assert "MACD가 시그널 위(MACD -64,873.44, 시그널 -88,478.87, 단 MACD는 0 아래)" in up
-    assert down[0] == "20거래일 수익률 -23.24%(2026-10-02 종가 1,842,000원 대비)"
-    assert "종가 1,414,000원이 5일선(1,461,800원)·20일선(1,421,300원)·60일선(1,604,583원) 아래" in down
-    assert "기준일(2026-11-03) 하루 -4.46%, 거래량은 직전 20거래일 평균의 0.63배" in down
+    ge = outlook.group_evidence(res["indicators"], res["signals"], W1)
+    assert ge["up"][0].startswith("[단기 흐름] 최근 5거래일 수익률 +2.91%(2026-10-27 종가 대비)")
+    assert "(같은 묶음의 반대 신호: 종가 1,414,000원이 5일선(1,461,800원) 아래)" in ge["up"][0]
+    assert ge["up"][1] == "[MACD] MACD가 시그널 위(MACD -64,873.44, 시그널 -88,478.87, 단 MACD는 0 아래)"
+    assert ge["down"] == []  # 하락 쪽 묶음 없음
+    assert ge["mixed"] == ["[중기 추세] 5일선 1,461,800원이 20일선 1,421,300원 위, 2026-11-02 골든크로스(상승)지만 "
+                           "종가 1,414,000원이 20일선(1,421,300원) 아래(하락)라 묶음은 중립입니다"]
+    assert sum("골든크로스" in x for x in ge["up"] + ge["down"] + ge["mixed"]) == 1
+    assert ge["context"][0] == "20거래일 수익률 -23.24%(2026-10-02 종가 1,842,000원 대비)"
+    assert "기준일(2026-11-03) 하루 -4.46%" not in " ".join(ge["context"])  # 거래량 신호가 있으면 따로 싣지 않는다
 
 
 def test_fact_lines_use_news_disclosures_and_earnings_without_voting():
@@ -349,7 +357,8 @@ def test_verdict_followup_answers_directly_in_six_lines(backtest):
                         "(기준일 2026-11-03 종가)")
     assert lines[1] == ("상승 쪽입니다. 다만 신호가 약하고(5개 묶음 중 상승 2·하락 0·중립 3), 추세는 아직 하락 후 반등 시도(추세 전환 미확인) "
                         "단계이며, 과거 검증에서 이런 신호의 방향 예측력이 확인되지 않아 신뢰도는 낮습니다.")
-    assert lines[2].startswith("- 근거: ") and "위험: 20거래일 수익률 -23.24%" in lines[2]
+    assert lines[2].startswith("- 근거: [단기 흐름] ") and "위험: 하락 쪽으로 판정된 묶음은 없습니다." in lines[2]
+    assert "추세 참고(신호 판정 표 밖): 20거래일 수익률 -23.24%" in lines[2]
     assert lines[3].startswith("- 과거 검증: 과거 검증에서 이 신호 상태(상승 우위)의 1주일 뒤 상승 비율은 51.8%")
     assert "95% 구간 -1.4~+5.3%p" in lines[3] and lines[3].endswith("방향 예측력은 확인되지 않았습니다.")
     assert "규칙" not in text and "## " not in text and DISCLAIMER not in text
@@ -360,7 +369,9 @@ def test_risk_followup_shows_risks_and_price_levels_only(backtest):
     text = outlook.followup_answer(COMPANY, W1, _skhynix_like(), "risk", NOW)
     lines = _nonblank(text)
     assert len(lines) <= 6 and "규칙" not in text
-    assert sum(x.startswith("- 하락 위험: ") for x in lines) == 3
+    # 26차: 하락 쪽 묶음이 없으면 그렇게 쓰고, 엇갈린 묶음·추세 참고는 표시를 달아 따로
+    assert lines[2] == "- 하락 위험: 하락 쪽으로 판정된 묶음은 없습니다."
+    assert lines[3].startswith("- 하락 위험(엇갈린 묶음): [중기 추세] ") and lines[4].startswith("- 하락 위험(추세 참고, 신호 판정 표 밖): ")
     levels = next(x for x in lines if x.startswith("- 확인할 가격대: "))
     assert "20일선 1,421,300원(종가가 아래)" in levels
     assert "분석 기간 최저 종가 1,190,000원(2026-10-20, 최근 20거래일 기준)" in levels

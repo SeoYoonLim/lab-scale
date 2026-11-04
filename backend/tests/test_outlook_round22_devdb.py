@@ -58,7 +58,7 @@ def test_forecast_keeps_direct_and_indirect_news_apart(dev_db, no_llm):
 @pytest.mark.integration
 @pytest.mark.needs_collected_data
 def test_index_etf_shows_index_news_separately(dev_db, no_llm):
-    r = agent.ask_question("TIGER 미국나스닥100 한 달 전망", save_report=False)
+    r = agent.ask_question("TIGER 미국나스닥100 한 달 전망 자세히 분석해줘", save_report=False)  # 26차: 간접 뉴스는 상세 리포트
     assert "## 기초지수 관련 뉴스(간접)" in r["answer"]
     assert FC.check_indirect(r["answer"], "기초지수", "TIGER 미국나스닥100", name_forms("TIGER 미국나스닥100")) == []
 

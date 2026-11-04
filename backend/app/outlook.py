@@ -169,6 +169,18 @@ _ONELINE_RE = re.compile(r"한\s*줄")
 _EARNINGS_FOLLOWUP_RE = re.compile(r"실적.{0,20}(?:반영|영향|판단|달라|바뀌|전망)|(?:반영|영향).{0,10}실적")
 _DATA_FOLLOWUP_RE = re.compile(
     r"(?:주가|시세|가격|데이터).{0,12}(?:없으면|없을\s*때|없는\s*경우|늦으면|늦은|오래|최신|반영된|기준일)|기준일이\s*언제|언제\s*(?:기준|데이터)")
+# 26차(2026-11-04 밤): 간결 전망과 상세 리서치. "자세히", "전체", "리포트", "지표까지", "뉴스와 공시까지 모두 반영" 같은 말이 있으면 상세다.
+# 상세 요청은 "뉴스·공시·실적"이 들어 있어도(_OTHER_INTENT_RE) 전망 경로다. "분석해줘"는 상세로 본다(지시의 상세 예시: "자세히 분석해 줘").
+_STRONG_DETAIL_RE = re.compile(r"자세히|자세하게|상세|전체|리포트|보고서|기술적\s*지표|지표까지|모두\s*반영|포함해|포함한|까지\s*(?:반영|포함|분석|확인)|심층")
+_DETAIL_RE = re.compile(_STRONG_DETAIL_RE.pattern + r"|분석")
+_ANALYSIS_RE = re.compile(r"전망|분석|리포트|보고서|기술적\s*지표|지표까지|방향")
+# 직전 분석에 이어 상세를 달라는 후속 질문("전체적으로 자세히 분석해 줘", "기술적 지표까지 확인해줘"). "실적까지 반영해서 다시 판단"은 실적 후속이다.
+_DETAIL_FOLLOWUP_RE = re.compile(r"자세히|자세하게|상세|전체|리포트|보고서|기술적\s*지표|지표까지|심층|분석\s*해")
+_FILING_RE = re.compile(r"(?:실적|공시).{0,15}(?:언제|날짜|며칠|접수일|발표일|접수\s*됐|접수\s*되)|(?:언제|날짜).{0,10}(?:공시|발표|접수)")
+_SIGNAL_TERMS = (("cross", re.compile(r"골든\s*크로스|데드\s*크로스")), ("macd", re.compile(r"MACD|맥디", re.I)),
+                 ("rsi", re.compile(r"RSI", re.I)), ("volume", re.compile(r"거래량")), ("relative", re.compile(r"지수\s*대비|코스피\s*대비")),
+                 ("ma", re.compile(r"이동\s*평균|이평선|\d+\s*일선")))
+_MEANING_RE = re.compile(r"뜻|의미|뭐야|뭔데|뭐지|무슨|어떤\s*거|설명")
 _QUARTER_RE = re.compile(r"(?:(20\d{2})\s*년\s*)?([1-4])\s*분기")
 # 주문 요청은 이 경로가 아니다. "1주일", "2주 뒤"는 기간이다.
 _ORDER_RE = re.compile(
@@ -224,9 +236,21 @@ def _excluded(q: str) -> bool:
     return is_order_request(q) or bool(_OTHER_INTENT_RE.search(q))
 
 
+def wants_detail(question: str) -> bool:
+    """상세 리서치 요청인가(26차). 아니면 간결 전망이다."""
+    return bool(_DETAIL_RE.search(question or ""))
+
+
 def is_forecast_question(question: str) -> bool:
+    """전망 질문. 상세 요청("뉴스와 공시까지 모두 반영해서 전망 분석해줘", "기술적 지표까지 분석해줘")은 뉴스·공시·실적 단어가 있어도
+    전망이다(26차). 주문 요청은 아니다."""
     q = question or ""
-    return bool(_FORECAST_RE.search(q)) and not _excluded(q)
+    if is_order_request(q):
+        return False
+    strong = bool(_STRONG_DETAIL_RE.search(q))
+    if _FORECAST_RE.search(q):
+        return not _excluded(q) or strong
+    return strong and bool(_ANALYSIS_RE.search(q)) and not _OTHER_INTENT_RE.search(_STRONG_DETAIL_RE.sub("", q).replace("분석", ""))
 
 
 def is_followup_verdict_question(question: str) -> bool:
@@ -251,8 +275,9 @@ def followup_kind(question: str) -> str:
 
 
 def special_followup_kind(question: str) -> str | None:
-    """직전 분석(표식 있는 답변)에 이어 한 줄 답("oneline"), 판단 이유("why"), 실적 반영("earnings"), 시세 데이터 기준("data")을
-    묻는가. 아니면 None. "왜"·"실적"은 기존 흐름 단어(_OTHER_INTENT_RE)라 표식이 있을 때만 이 경로다."""
+    """직전 분석(표식 있는 답변)에 이어 한 줄 답("oneline"), 판단 이유("why"), 공시 날짜("filing"), 신호 의미("signal"),
+    시세 데이터 기준("data"), 실적 반영("earnings"), 상세 리서치("detail")를 묻는가. 아니면 None.
+    "왜"·"실적"·"공시"는 기존 흐름 단어(_OTHER_INTENT_RE)라 표식이 있을 때만 이 경로다."""
     q = question or ""
     if is_order_request(q):
         return None
@@ -260,10 +285,28 @@ def special_followup_kind(question: str) -> str | None:
         return "oneline"
     if _WHY_RE.search(q):
         return "why"
+    if _FILING_RE.search(q):
+        return "filing"
+    if signal_term(q):
+        return "signal"
     if _DATA_FOLLOWUP_RE.search(q):
         return "data"
     if _EARNINGS_FOLLOWUP_RE.search(q):
         return "earnings"
+    if _DETAIL_FOLLOWUP_RE.search(q):
+        return "detail"
+    return None
+
+
+def signal_term(question: str) -> tuple[str, str] | None:
+    """"골든크로스가 무슨 뜻이야?" -> (신호 종류, 질문에 쓴 말). 뜻·의미를 묻지 않으면 None."""
+    q = question or ""
+    if not _MEANING_RE.search(q):
+        return None
+    for kind, rx in _SIGNAL_TERMS:
+        m = rx.search(q)
+        if m:
+            return kind, m.group(0)
     return None
 
 
@@ -678,6 +721,37 @@ def power_short(period: Period, label: str) -> str:
     return f"과거 검증에서 방향 예측력은 확인되지 않았습니다({_power_stats(r)})"
 
 
+def direction_headline(res: dict, regime: str, period: Period) -> str:
+    """상세 답 첫 줄: 방향을 먼저, 짧게. 신호 비중·추세·과거 검증은 종합 판단에서."""
+    d, conf, t = _direction(res, period)
+    if d in (DIR_HOLD, DIR_NEUTRAL):
+        return direction_sentence(res, regime, period)
+    lead = t["up"] if d == DIR_UP else t["down"]
+    weak = "신호가 약하고 " if lead * 2 < t["total"] else ""
+    conf_word = {CONF_LOW: "낮습니다", CONF_MID: "보통입니다", CONF_HIGH: "높습니다"}[conf]
+    return f"{d}입니다. 다만 {weak}신뢰도는 {conf_word}({tally_text(t)})."
+
+
+def brief_answer(company, period: Period, res: dict, now: datetime) -> str:
+    """간결 전망(26차): 제목(방향·신뢰도) -> 방향 문장 -> 상승 근거 최대 2 -> 하락 위험 최대 2 -> 과거 검증 -> 국면·데이터 경고 -> 안내.
+    상세 답과 같은 계산(analyze)·같은 근거(group_evidence)를 쓴다. 지표 전체·뉴스·공시 목록은 넣지 않는다."""
+    ind, label, data = res["indicators"], res["label"], res["data"]
+    regime = classify_regime(ind, label)
+    ge = group_evidence(ind, res["signals"], period)
+    r = _backtest_row(period, label) if label != LABEL_HOLD else None
+    power = (" 이 신호 조합의 방향 예측력은 확인되지 않았습니다." if r is not None and not r.get("significant") else "")
+    warn = "".join(f" · 데이터 경고: {w}" for w in data["warnings"])
+    lines = [direction_title(company, period, res), "", direction_sentence(res, regime, period),
+             f"- 상승 근거: {_support_text(ge)}",
+             f"- 하락 위험: {_risk_text(ge)}",
+             _marker_line(company, period, label),  # 신호 판정 라벨(후속 질문·과거 검증 줄이 이 라벨을 쓴다)
+             f"- 과거 검증: {backtest_line(period, label).removeprefix('- ')}{power}",
+             f"- 시장 국면: {state_line(regime, ind)} · 기준일(최신 거래일): {ind['base_date']}, "
+             f"답변 생성 {now.astimezone(KST):%Y-%m-%d %H:%M} KST{warn}",
+             "- 과거 시세 신호를 요약한 것이며 투자 권유가 아닙니다. 기술적 지표·뉴스·공시·실적까지 보려면 \"자세히 분석해줘\"라고 물어보세요."]
+    return "\n".join(lines)
+
+
 def direction_summary_line(res: dict, period: Period) -> str:
     """단독 전망 머리말의 근거 요약 줄: 묶음 비중(강도) · 과거 검증 예측력."""
     t = vote_tally(res["signals"])
@@ -922,7 +996,7 @@ def indirect_lines(section: str | None, topic: str | None, items: list[dict], pe
     lines = [f"- 아래는 이 종목 기사가 아니라 {topic} 관련 기사입니다(제목 기준, 최근 {period.news_days}일). 신호 판정에는 쓰지 않습니다."]
     for n in items:
         src = f"({n['source']}) " if n.get("source") else ""
-        lines.append(f"- 뉴스 {(n.get('published_at') or '')[:10]} {src}\"{n['title']}\"라는 제목의 기사가 있었습니다.")
+        lines.append(f"- 뉴스 {_item_date(n)} {src}\"{n['title']}\"라는 제목의 기사가 있었습니다.")
     if not items:
         lines.append(f"- 최근 {period.news_days}일 안에 {topic} 관련 기사를 찾지 못했습니다.")
     return lines
@@ -955,7 +1029,7 @@ def earnings_row_text(r: dict) -> str:
     basis = r.get("basis") if pre else ("연결" if r["fs_div"] == "CFS" else "별도")
     head = f"{r['period_label']}({basis}, {'잠정' if pre else '확정'}{', 연간 - 3분기 누적' if r.get('derived') else ''})"
     if pre:
-        src = f"잠정실적 공정공시, 발표일 {r['disclosed_date']}, DART 접수번호 {r['rcept_no']}, 감사 전 잠정치"
+        src = f"잠정실적 공정공시, 접수·발표일 {r['disclosed_date']}, DART 접수번호 {r['rcept_no']}, 감사 전 잠정치"
         if r.get("corrected"):
             c = r["corrected"]
             return (f"{head}: 정정공시({c['date'].isoformat()}, DART 접수번호 {c['rcept_no']})가 있어 원 공시 수치를 싣지 않았습니다 "
@@ -977,15 +1051,24 @@ def _eok(v: float) -> str:
     return f"{v / 1e8:,.0f}억 원"
 
 
+def _item_date(item: dict) -> str:
+    """뉴스·공시 한 건의 표시 날짜(evidence()의 "date", 없으면 같은 규칙으로 계산)."""
+    if item.get("date"):
+        return item["date"]
+    if "disclosed_at" in item or "source_url" in item:
+        return disclosure_date(item.get("source_url"), item.get("disclosed_at")) or ""
+    return kst_date(item.get("published_at")) or ""
+
+
 def evidence_lines(news: list[dict], disclosures: list[dict], is_etf: bool, period: Period) -> list[str]:
     lines = []
     for n in news:
         src = f"({n['source']}) " if n.get("source") else ""
-        lines.append(f"- 뉴스 {(n.get('published_at') or '')[:10]} {src}\"{n['title']}\"라는 제목의 기사가 있었습니다.")
+        lines.append(f"- 뉴스 {_item_date(n)} {src}\"{n['title']}\"라는 제목의 기사가 있었습니다.")
     if not news and not is_etf:
         lines.append(f"- 관련 뉴스를 찾지 못했습니다(최근 {period.news_days}일, 제목에 종목 이름이 있는 기사 기준).")
     for d in disclosures:
-        lines.append(f"- 공시 {(d.get('disclosed_at') or '')[:10]} 접수: \"{d['title']}\"")
+        lines.append(f"- 공시 {_item_date(d)} 접수: \"{d['title']}\"")
     if not disclosures and not is_etf:
         lines.append(f"- 최근 {period.news_days}일 안에 접수된 공시를 찾지 못했습니다.")
     return lines
@@ -1082,12 +1165,15 @@ def _backtest_row(period: Period, label: str) -> dict | None:
 
 
 def backtest_sentence(period: Period, label: str) -> str | None:
-    """종합 판단의 과거 검증 문장. 판단 유보면 None."""
+    """종합 판단의 과거 검증 문장. 판단 유보도 그렇다고 한 문장 쓴다(26차: 종합 판단이 한 문장뿐이던 것)."""
     if label == LABEL_HOLD:
-        return None
+        return "판단 유보는 과거 검증 대상이 아니라 방향 예측력을 말할 수 없습니다."
     r = _backtest_row(period, label)
     if r is None:
         return "과거 검증 결과가 아직 없어 이 신호 상태가 과거에 방향을 맞혔는지는 말할 수 없습니다."
+    if not r.get("significant"):
+        # 26차: 숫자(상승 비율·표본·구간)는 "과거 검증" 섹션에 한 번만 쓴다
+        return f"과거 검증에서 이 신호 조합({label})의 {period.label} 뒤 방향 예측력은 확인되지 않았습니다(아래 과거 검증)."
     rates = f"상승 비율 {r['up_rate'] * 100:.1f}% vs 전체 {r['base_rate'] * 100:.1f}%, {_power_stats(r)}"
     if r.get("significant"):
         return (f"과거 검증에서 이 신호 상태({label})의 {period.label} 뒤 {rates}로 차이가 있었지만, "
@@ -1103,67 +1189,92 @@ def summary_lines(res: dict, regime: str, period: Period) -> list[str]:
     return [" ".join(p for p in parts if p)]
 
 
-def evidence_items(ind: dict, signals: list[dict], period: Period) -> tuple[list[str], list[str]]:
-    """상승을 뒷받침하는 근거와 하락 위험 근거(숫자·날짜 포함, 중요한 것부터). 같은 사실은 한 항목으로 합친다
-    (교차와 이동평균 배열, 종가와 여러 이동평균의 위치). 신호 판정과 별개로 국면 판단에 쓰는 20·60거래일 수익률과 큰 하루 등락도 싣는다."""
-    up: list[str] = []
-    down: list[str] = []
-    side_list = {UP: up, DOWN: down}
+def _signal_text(s: dict, ind: dict, period: Period, by_kind: dict) -> str:
+    """신호 한 개를 숫자·날짜가 있는 짧은 문장으로."""
+    k = s["kind"]
+    if k == "period_return":
+        r = ind["returns"][period.days]
+        return f"최근 {period.days}거래일 수익률 {_signed(r['pct'])}({r['from_date']} 종가 대비)"
+    if k in ("close_vs_ma_short", "close_vs_ma_long"):
+        n = period.ma[0] if k == "close_vs_ma_short" else period.ma[1]
+        return f"종가 {_won(ind['close'])}이 {n}일선({_won(round(ind[f'ma{n}']['value']))}) {'위' if s['side'] == UP else '아래'}"
+    if k == "ma_alignment":
+        short, long = period.ma
+        c = by_kind.get("cross")
+        cross = f", {c['name']}" if c and c["side"] == s["side"] else ""
+        return (f"{short}일선 {_won(round(ind[f'ma{short}']['value']))}이 {long}일선 {_won(round(ind[f'ma{long}']['value']))} "
+                f"{'위' if s['side'] == UP else '아래'}{cross}")
+    if k == "relative":
+        rel = ind["relative"]
+        return f"같은 {rel['period_days']}거래일 {rel['index_name']} 대비 {rel['diff_pct_point']:+.2f}%p"
+    if k == "macd":
+        m = ind["macd"]
+        caveat = ", 단 MACD는 0 아래" if s["side"] == UP and m["macd"] < 0 else ", 단 MACD는 0 위" if s["side"] == DOWN and m["macd"] > 0 else ""
+        return f"{s['name']}(MACD {m['macd']:,.2f}, 시그널 {m['signal']:,.2f}{caveat})"
+    if k == "rsi":
+        zone = "과매도" if s["side"] == UP else "과열" if s["side"] == DOWN else "중간"
+        return f"RSI(14) {ind['rsi']:.2f}, {zone} 구간"
+    if k == "volume" and ind.get("volume"):
+        return f"{s['name']}(기준일 하루 {_signed(ind.get('day_change_pct') or 0)}, 거래량은 직전 {VOLUME_AVG_DAYS}거래일 평균의 {ind['volume']['ratio']:.2f}배)"
+    return s["name"]
+
+
+def group_evidence(ind: dict, signals: list[dict], period: Period) -> dict[str, list[str]]:
+    """근거를 묶음 판정과 같은 원천에서 만든다(2026-11-04 26차). 상승 근거 = 상승 쪽 묶음의 상승 신호, 하락 위험 = 하락 쪽 묶음의 하락 신호,
+    엇갈린 묶음 = 상승·하락 신호가 섞여 중립이 된 묶음, 추세 참고 = 신호 판정 표에 넣지 않는 20·60거래일 수익률·큰 하루 등락.
+    교차는 같은 사실(이동평균 배열)이 있으면 배열 문장 안에만 쓰고 따로 세우지 않는다(SAME_FACT_AS). 항목 앞 [묶음]은 판정 상세의 묶음 이름."""
+    votes = group_votes(signals)
     by_kind = {s["kind"]: s for s in signals}
+    out: dict[str, list[str]] = {"up": [], "down": [], "mixed": [], "context": []}
+    for g, vote in votes.items():
+        members = [s for s in signals if s["group"] == g and not counted_elsewhere(s, signals)]
+        ups = [_signal_text(s, ind, period, by_kind) for s in members if s["side"] == UP]
+        downs = [_signal_text(s, ind, period, by_kind) for s in members if s["side"] == DOWN]
+        if vote == UP and ups:
+            out["up"].append(f"[{g}] {'; '.join(ups)}" + (f" (같은 묶음의 반대 신호: {'; '.join(downs)})" if downs else ""))
+        elif vote == DOWN and downs:
+            out["down"].append(f"[{g}] {'; '.join(downs)}" + (f" (같은 묶음의 반대 신호: {'; '.join(ups)})" if ups else ""))
+        elif vote == NEUTRAL and ups and downs:
+            out["mixed"].append(f"[{g}] {'; '.join(ups)}(상승)지만 {'; '.join(downs)}(하락)라 묶음은 중립입니다")
     ri = ind.get("regime_inputs") or {}
-    # 1) 추세(분석 기간 수익률이 아닌 20·60거래일)
     for n, threshold in ((20, REGIME_TREND20_PCT), (60, REGIME_TREND60_PCT)):
         if n == period.days or ri.get(f"r{n}") is None or abs(ri[f"r{n}"]) < threshold:
             continue
         d, c = ri[f"r{n}_from"]
-        side_list[UP if ri[f"r{n}"] > 0 else DOWN].append(f"{n}거래일 수익률 {_signed(ri[f'r{n}'])}({d} 종가 {_won(c)} 대비)")
-    # 2) 분석 기간 수익률
-    s = by_kind.get("period_return")
-    if s and s["side"] in side_list:
-        r = ind["returns"][period.days]
-        side_list[s["side"]].append(f"최근 {period.days}거래일 수익률 {_signed(r['pct'])}({r['from_date']} 종가 대비)")
-    # 3) 이동평균 배열(교차가 있으면 함께)
-    s, c = by_kind.get("ma_alignment"), by_kind.get("cross")
-    if s:
-        short, long = period.ma
-        pos = f"{short}일선 {_won(round(ind[f'ma{short}']['value']))}이 {long}일선 {_won(round(ind[f'ma{long}']['value']))} {'위' if s['side'] == UP else '아래'}"
-        if c and c["side"] == s["side"]:
-            side_list[s["side"]].append(f"{c['name']}({pos})")
-        else:
-            side_list[s["side"]].append(pos)
-    # 4) 종가와 이동평균 위치(분석 기간 단기·장기선과 60일선을 한 항목으로)
-    mas = _ma_values(ind, period)
-    for side, word in ((UP, "위"), (DOWN, "아래")):
-        ns = [n for n, v in mas.items() if (ind["close"] > v if side == UP else ind["close"] < v)]
-        if ns:
-            vals = "·".join(f"{n}일선({_won(round(mas[n]))})" for n in ns)
-            side_list[side].append(f"종가 {_won(ind['close'])}이 {vals} {word}")
-    # 5) 지수 대비, MACD, RSI, 거래량
-    s = by_kind.get("relative")
-    if s and s["side"] in side_list:
-        rel = ind["relative"]
-        side_list[s["side"]].append(f"같은 {rel['period_days']}거래일 {rel['index_name']} 대비 {rel['diff_pct_point']:+.2f}%p")
-    s = by_kind.get("macd")
-    if s and s["side"] in side_list:
-        m = ind["macd"]
-        caveat = ""
-        if s["side"] == UP and m["macd"] < 0:
-            caveat = ", 단 MACD는 0 아래"
-        elif s["side"] == DOWN and m["macd"] > 0:
-            caveat = ", 단 MACD는 0 위"
-        side_list[s["side"]].append(f"{s['name']}(MACD {m['macd']:,.2f}, 시그널 {m['signal']:,.2f}{caveat})")
-    s = by_kind.get("rsi")
-    if s and s["side"] in side_list:
-        side_list[s["side"]].append(f"RSI(14) {ind['rsi']:.2f}, {'과매도' if s['side'] == UP else '과열'} 구간")
-    s = by_kind.get("volume")
+        out["context"].append(f"{n}거래일 수익률 {_signed(ri[f'r{n}'])}({d} 종가 {_won(c)} 대비)")
+    if 60 not in period.ma and ri.get("ma60") is not None:
+        out["context"].append(f"종가가 60일선({_won(round(ri['ma60']))}) {'위' if ind['close'] > ri['ma60'] else '아래'}")
     day = ind.get("day_change_pct")
-    if s and s["side"] in side_list:
-        side_list[s["side"]].append(f"{s['name']}(기준일 하루 {_signed(day)}, 거래량은 직전 {VOLUME_AVG_DAYS}거래일 평균의 "
-                                    f"{ind['volume']['ratio']:.2f}배)")
-    elif day is not None and abs(day) >= BIG_DAY_MOVE_PCT:
-        vol = f", 거래량은 직전 {VOLUME_AVG_DAYS}거래일 평균의 {ind['volume']['ratio']:.2f}배" if ind.get("volume") else ""
-        side_list[UP if day > 0 else DOWN].append(f"기준일({ind['base_date']}) 하루 {_signed(day)}{vol}")
+    if "volume" not in by_kind and day is not None and abs(day) >= BIG_DAY_MOVE_PCT:
+        out["context"].append(f"기준일({ind['base_date']}) 하루 {_signed(day)}")
+    return out
+
+
+def evidence_section_lines(ge: dict) -> tuple[list[str], list[str]]:
+    """상세 답의 "상승을 뒷받침하는 근거"와 "하락 위험 근거" 섹션 줄."""
+    up = [f"- {x}" for x in ge["up"]] or ["- 상승 쪽으로 판정된 묶음은 없습니다."]
+    down = [f"- {x}" for x in ge["down"]] or ["- 하락 쪽으로 판정된 묶음은 없습니다."]
+    down += [f"- 엇갈린 묶음: {x}" for x in ge["mixed"]]
+    if ge["context"]:
+        down.append(f"- 추세 참고(신호 판정 표 밖): {'; '.join(ge['context'])}")
     return up, down
+
+
+def _risk_text(ge: dict, n: int = 2) -> str:
+    """간결 답·후속 답의 하락 위험 한 줄: 하락 쪽 묶음 근거, 없으면 그렇게 말하고 엇갈린 묶음·추세 참고."""
+    head = "; ".join(ge["down"][:n]) if ge["down"] else "하락 쪽으로 판정된 묶음은 없습니다."
+    extra = []
+    if ge["mixed"]:
+        extra.append(f"엇갈린 묶음: {ge['mixed'][0]}")
+    if ge["context"]:
+        extra.append(f"추세 참고(신호 판정 표 밖): {'; '.join(ge['context'][:2])}")
+    if not extra:
+        return head
+    return " ".join([head if head.endswith(".") else head + "."] + [x + "." for x in extra])
+
+
+def _support_text(ge: dict, n: int = 2) -> str:
+    return "; ".join(ge["up"][:n]) if ge["up"] else "상승 쪽으로 판정된 묶음은 없습니다."
 
 
 def check_items(ind: dict, res: dict, regime: str, period: Period, is_etf: bool) -> list[str]:
@@ -1209,9 +1320,9 @@ def fact_lines(news: list[dict], disclosures: list[dict], earnings: list[dict] |
     """신호 판정에 넣지 않은 최근 사실(공시·기사·실적). 기사 제목은 "~라는 기사" 형태로만 쓴다."""
     subs = []
     for d in [d for d in disclosures if _KEY_DISCLOSURE_RE.search(d.get("title") or "")][:1]:
-        subs.append(f"  - {(d.get('disclosed_at') or '')[:10]} \"{d['title']}\" 공시가 있었습니다.")
+        subs.append(f"  - {_item_date(d)} \"{d['title']}\" 공시가 있었습니다.")
     for n in key_news(news):
-        subs.append(f"  - {(n.get('published_at') or '')[:10]} \"{n['title']}\"라는 기사가 있었습니다.")
+        subs.append(f"  - {_item_date(n)} \"{n['title']}\"라는 기사가 있었습니다.")
     if earnings and not earnings[0].get("corrected"):
         r = earnings[0]
         cur, prev = r.get("operating_income"), r.get("operating_income_prev")
@@ -1219,7 +1330,7 @@ def fact_lines(news: list[dict], disclosures: list[dict], earnings: list[dict] |
             yoy = f", 전년 동기 대비 {(cur / prev - 1) * 100:+.1f}%" if prev is not None and prev > 0 and cur >= 0 else ""
             pre = r.get("source") == "preliminary"
             basis = r.get("basis") if pre else ("연결" if r["fs_div"] == "CFS" else "별도")
-            when = f", {r['disclosed_date']} 잠정실적 발표" if pre else ""
+            when = f", {r['disclosed_date']} 잠정실적 공정공시" if pre else ""
             subs.append(f"  - 실적: {r['period_label']}({basis}, {'잠정' if pre else '확정'}{when}) 영업이익 {_eok(cur)}{yoy}.")
     return ["- 신호 판정에 넣지 않은 최근 사실:", *subs] if subs else []
 
@@ -1239,7 +1350,7 @@ def source_lines(ind: dict, data: dict, period: Period, now: datetime) -> list[s
              f"- 기준일(최신 거래일): {ind['base_date']}, 오늘(Asia/Seoul): {now.astimezone(KST).date().isoformat()}, "
              f"기대 거래일: {data['expected_date']}" + (f", 시세 상태: {data['status']}" if data.get("status") else "")
              + (f", 시세 신선도: {data['freshness']}" if data.get("freshness") else "")]
-    lines += [f"- 경고: {w}" for w in data["warnings"]]
+    # 26차: 데이터 경고 문장은 머리말에 한 번만 쓴다(여기에는 시세 상태·신선도만)
     lines.append("- 수익률 계산식: (기준일 종가 ÷ N거래일 전 종가 - 1) × 100. 최고·최저 종가 대비도 같은 식이며 수익률이 아닙니다.")
     lines.append(f"- 지표 계산에 쓴 가격 범위(이동평균·MACD·RSI 등): {ind['first_date']}~{ind['base_date']} 종가 {ind['n_rows']}거래일. "
                  "최고·최저 종가는 각 줄에 적은 조회 기간만 봅니다.")
@@ -1277,10 +1388,11 @@ def forecast_answer(company, period: Period, res: dict, news: list[dict], disclo
     ind, label, data = res["indicators"], res["label"], res["data"]
     regime = classify_regime(ind, label)
     is_etf = getattr(company, "asset_type", None) == "etf"
-    intro = [direction_title(company, period, res), "", state_line(regime, ind)]
+    # 26차: 제목 다음 첫 줄이 방향, 바로 다음 데이터 경고, 그다음 국면. 근거 요약 줄은 종합 판단·판정 상세와 겹쳐 뺐다.
+    intro = [direction_title(company, period, res), "", direction_headline(res, regime, period)]
     intro += [f"데이터 경고: {w}" for w in data["warnings"]]
-    intro += [direction_sentence(res, regime, period), direction_summary_line(res, period)]
-    up, down = evidence_items(ind, res["signals"], period)
+    intro.append(state_line(regime, ind))
+    up, down = evidence_section_lines(group_evidence(ind, res["signals"], period))
     section, topic, items = indirect or (None, None, [])
     direct = evidence_lines(news, disclosures, is_etf, period)
     if is_etf and not news and section is not None:
@@ -1289,8 +1401,8 @@ def forecast_answer(company, period: Period, res: dict, news: list[dict], disclo
     facts = fact_lines(news, disclosures, earnings)
     sections = [
         ("종합 판단", summary + ([""] + facts if facts else [])),
-        ("상승을 뒷받침하는 근거", [f"- {x}" for x in up] or ["- 지금 계산한 지표에서는 없습니다."]),
-        ("하락 위험 근거", [f"- {x}" for x in down] or ["- 지금 계산한 지표에서는 없습니다."]),
+        ("상승을 뒷받침하는 근거", up),
+        ("하락 위험 근거", down),
         ("앞으로 확인할 사항", check_items(ind, res, regime, period, is_etf)),
         ("과거 검증", [backtest_line(period, label)]),
         ("기술적 지표", indicator_lines(ind, period)),
@@ -1382,6 +1494,56 @@ def oneline_answer(company, period: Period, res: dict, regime: str) -> str:
     return f"{direction_title(company, period, res)} · {core} {state_line(regime, res['indicators'])}."
 
 
+_SIGNAL_MEANING = {
+    "cross": "골든크로스는 단기 이동평균선이 장기 이동평균선을 아래에서 위로 뚫고 올라가는 것, 데드크로스는 위에서 아래로 내려가는 것입니다",
+    "macd": "MACD는 12일·26일 지수이동평균의 차이이고 시그널은 MACD의 9일 지수이동평균입니다. MACD가 시그널 위면 단기 상승 탄력이 커지는 쪽으로 봅니다",
+    "rsi": "RSI(14)는 최근 14거래일 상승폭과 하락폭으로 계산한 0~100 사이 값이며, 30 아래는 과매도·70 위는 과열 구간으로 봅니다",
+    "volume": "거래량 배수는 기준일 거래량을 직전 20거래일 평균 거래량으로 나눈 값입니다",
+    "relative": "지수 대비는 같은 기간 종목 수익률에서 지수(코스피·코스닥) 수익률을 뺀 값입니다",
+    "ma": "이동평균선은 최근 N거래일 종가의 평균이며, 종가가 그 위면 그 기간 평균보다 강한 흐름으로 봅니다",
+}
+_SIGNAL_KINDS = {"cross": ("cross",), "macd": ("macd",), "rsi": ("rsi",), "volume": ("volume",), "relative": ("relative",),
+                 "ma": ("ma_alignment", "close_vs_ma_short", "close_vs_ma_long")}
+
+
+def signal_answer(head: str, res: dict, period: Period, term: tuple[str, str] | None) -> str:
+    """신호 의미 질문(26차): 정의 -> 지금 값 -> 판정(개별 신호와 그 신호가 속한 묶음의 판정을 구분)."""
+    kind, word = term or ("ma", "이동평균")
+    sig = [s for s in res["signals"] if s["kind"] in _SIGNAL_KINDS[kind]]
+    votes = group_votes(res["signals"])
+    lines = [f"{word}: {_SIGNAL_MEANING[kind]}."]
+    if not sig:
+        lines.append(f"- 지금: 이 분석 기간({period.label})에는 해당 신호가 없습니다.")
+        return _blocks([[head], lines[:1], lines[1:]])
+    s = sig[0]
+    lines.append(f"- 지금: {s['name']}({s['value']}). 이 분석의 기준: {s['rule']}.")
+    g = s["group"]
+    note = (" 같은 묶음의 이동평균 배열과 같은 사실이라 표에 따로 세지 않습니다." if counted_elsewhere(s, res["signals"]) else "")
+    lines.append(f"- 판정: 개별 신호로는 {_SIDE_WORD[s['side']]}이고, 이 신호가 속한 {g} 묶음은 {_SIDE_WORD[votes.get(g, NEUTRAL)]}입니다.{note} "
+                 "방향 판정에는 묶음 표만 씁니다.")
+    return _blocks([[head], lines[:1], lines[1:]])
+
+
+def filing_answer(company, head: str, rows: list[dict] | None) -> str:
+    """공시 날짜 질문(26차): 최신 실적 공시의 접수일·접수번호를 먼저. 거래소 잠정실적 공시는 접수일이 곧 발표일이다."""
+    if not rows:
+        return _blocks([[head], [f"{company.name}의 실적 공시를 찾지 못했습니다(수집된 정기보고서·잠정실적 공시 없음)."]])
+    r = rows[0]
+    pre = r.get("source") == "preliminary"
+    kind = "잠정실적 공정공시" if pre else REPORT_NAMES.get(r.get("reprt_code"), "정기보고서")
+    first = (f"{company.name}의 최신 실적 공시는 {r['disclosed_date']}에 접수된 {r['period_label']} {kind}입니다"
+             f"(DART 접수번호 {r['rcept_no']}" + (", 거래소 공시라 접수일이 곧 발표일입니다)." if pre else ")."))
+    lines = [f"- 이 공시의 실적: {earnings_row_text(r)}"]
+    finals = [x for x in rows if x.get("source") == "final"]
+    if pre:
+        last = (f" 최근 정기보고서는 {finals[0]['period_label']}({REPORT_NAMES.get(finals[0].get('reprt_code'), '정기보고서')}, "
+                f"{finals[0]['disclosed_date']} 접수)입니다." if finals else "")
+        lines.append(f"- 정기보고서: {r['period_label']} 정기보고서는 아직 수집되지 않았습니다.{last}")
+        c = r.get("corrected")
+        lines.append(f"- 정정공시: {c['date'].isoformat()} 정정공시(DART 접수번호 {c['rcept_no']})가 있습니다." if c else "- 정정공시: 없습니다.")
+    return _blocks([[head], [first], lines])
+
+
 def followup_answer(company, period: Period, res: dict, kind: str, now: datetime, extra: dict | None = None) -> str:
     """후속 답(2026-11-04 25차): 첫 줄 제목에 방향, 둘째 줄 첫 문장이 방향(상승 쪽입니다/하락 쪽입니다/우세하지 않습니다/보류).
     국면은 첫 줄의 "현재는 …"로 따로 보인다. 질문 종류별로 필요한 줄만: 한 줄 1줄, 고르기 2줄, 판단 4줄, 그 밖 6줄 이하.
@@ -1397,15 +1559,19 @@ def followup_answer(company, period: Period, res: dict, kind: str, now: datetime
     stale = f" · 시세: {fresh}, {base} 종가 기준" if fresh and fresh != "최신 시세" and kind != "data" else ""
     head = f"{direction_title(company, period, res)} · {state_line(regime, ind)}{stale}"
     first = direction_sentence(res, regime, period, pick=(kind == "pick"))
-    up, down = evidence_items(ind, res["signals"], period)
-    reasons = (f"- 근거: {up[0] if up else '지금 계산한 지표에서 상승 쪽 근거는 없습니다'} / "
-               f"위험: {down[0] if down else '지금 계산한 지표에서 하락 쪽 근거는 없습니다'}")
+    ge = group_evidence(ind, res["signals"], period)
+    # 26차: 근거는 묶음 판정과 같은 원천(상승 근거 = 상승 쪽 묶음, 위험 = 하락 쪽 묶음, 없으면 엇갈린 묶음·추세 참고로 따로)
+    reasons = f"- 근거: {_support_text(ge, 1)} / 위험: {_risk_text(ge, 1)}"
     power = f"- 과거 검증: {power_sentence(period, label)}"
     level = f"- 확인할 가격대: {_level_line(ind, period)}"
     if kind == "pick":
         return _blocks([[head], [first]])
+    if kind == "filing":
+        return filing_answer(company, head, extra.get("earnings"))
+    if kind == "signal":
+        return signal_answer(head, res, period, extra.get("term"))
     if kind == "why":
-        lines = [f"- 상승 근거: {'; '.join(up[:2]) if up else '없음'}", f"- 반대 근거: {'; '.join(down[:3]) if down else '없음'}",
+        lines = [f"- 상승 근거: {_support_text(ge)}", f"- 하락 위험: {_risk_text(ge)}",
                  f"- 추세(따로 봄): 현재는 {regime}입니다. 추세는 방향 판정에 넣지 않습니다."]
         return _blocks([[head], [why_sentence(res, regime, period)], lines])
     if kind == "data":
@@ -1431,7 +1597,11 @@ def followup_answer(company, period: Period, res: dict, kind: str, now: datetime
         body += ([react] if react else []) + [power]
         return _blocks([[head], [lead], body])
     if kind == "risk":
-        lines = [f"- 하락 위험: {x}" for x in down[:3]] or ["- 하락 위험: 지금 계산한 지표에서는 하락 쪽 근거가 보이지 않습니다."]
+        lines = [f"- 하락 위험: {x}" for x in ge["down"][:2]] or ["- 하락 위험: 하락 쪽으로 판정된 묶음은 없습니다."]
+        if ge["mixed"]:
+            lines.append(f"- 하락 위험(엇갈린 묶음): {ge['mixed'][0]}")
+        if ge["context"] and len(lines) < 3:
+            lines.append(f"- 하락 위험(추세 참고, 신호 판정 표 밖): {'; '.join(ge['context'][:2])}")
         rg, r52 = ind["range"], ind.get("range52")
         levels = []
         if (ri := ind.get("regime_inputs") or {}).get("ma20") is not None:
@@ -1532,6 +1702,26 @@ def filter_titles(items: list[dict]) -> list[dict]:
     return [i for i in items if not _EXCLUDED_TITLE_RE.search(i.get("title") or "")]
 
 
+def kst_date(value) -> str | None:
+    """datetime 또는 ISO 문자열 -> 한국 시간 날짜(YYYY-MM-DD). 2026-11-04(26차): 공시는 한국 시간 자정(UTC 전날 15:00)으로 저장돼
+    UTC 문자열 앞 10자를 쓰면 하루 이른 날짜가 나왔다(SK하이닉스 잠정실적 20261028800036이 "2026-10-27")."""
+    if value is None:
+        return None
+    dt = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+    if dt.tzinfo is None:
+        return dt.date().isoformat()
+    return dt.astimezone(KST).date().isoformat()
+
+
+def disclosure_date(source_url: str | None, disclosed_at) -> str | None:
+    """공시 날짜 = DART 접수번호(앞 8자리)의 날짜. 접수번호가 없으면 한국 시간 접수일. 같은 공시는 답변 어디서나 이 날짜다."""
+    m = re.search(r"rcptNo=(\d{8})", source_url or "")
+    if m:
+        d = m.group(1)
+        return f"{d[:4]}-{d[4:6]}-{d[6:8]}"
+    return kst_date(disclosed_at)
+
+
 def evidence(db, company, period: Period, now: datetime) -> tuple[list[dict], list[dict]]:
     """근거 뉴스·공시. 뉴스: 이 종목(company_id) 행 중 is_relevant가 False가 아닌 최근 NEWS_FETCH건 -> app.news_relevance.evidence_news
     (제목에 이 종목 이름, 최근 period.news_days일, 중복 제목 하나) -> 목표가·확률 제목 제외 -> key_news 먼저, NEWS_LIMIT건.
@@ -1543,7 +1733,7 @@ def evidence(db, company, period: Period, now: datetime) -> tuple[list[dict], li
     rows = (db.query(News).filter(News.company_id == company.id, News.is_relevant.isnot(False))
             .order_by(News.published_at.desc()).limit(NEWS_FETCH).all())
     items = [{"company_name": company.name, "title": r.title, "source": r.source, "url": r.url,
-              "published_at": r.published_at.isoformat() if r.published_at else None} for r in rows]
+              "published_at": r.published_at.isoformat() if r.published_at else None, "date": kst_date(r.published_at)} for r in rows]
     others = ([n for (n,) in db.query(Company.name).filter(Company.asset_type == "etf", Company.id != company.id)]
               if getattr(company, "asset_type", None) == "etf" else [])
     found = filter_titles(evidence_news(company.name, company.asset_type, items, since=since, other_etf_names=others))
@@ -1556,6 +1746,7 @@ def evidence(db, company, period: Period, now: datetime) -> tuple[list[dict], li
         drows = (db.query(Disclosure).filter(Disclosure.company_id == company.id, Disclosure.disclosed_at >= since)
                  .order_by(Disclosure.disclosed_at.desc()).limit(DISCLOSURE_LIMIT).all())
         disclosures = [{"company_name": company.name, "title": d.title, "disclosure_type": d.disclosure_type,
-                        "disclosed_at": d.disclosed_at.isoformat() if d.disclosed_at else None, "source_url": d.source_url}
+                        "disclosed_at": d.disclosed_at.isoformat() if d.disclosed_at else None, "source_url": d.source_url,
+                        "date": disclosure_date(d.source_url, d.disclosed_at)}
                        for d in drows]
     return news, disclosures

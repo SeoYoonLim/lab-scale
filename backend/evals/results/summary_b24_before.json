@@ -1,0 +1,1433 @@
+{
+  "git_commit": "fabf23837bf194d21fb86ee99074f2ebc16be235",
+  "git_dirty": false,
+  "date": "2026-11-04T21:17:22",
+  "model": "llama3.1:8b",
+  "think": null,
+  "keep_alive": "30m",
+  "args": {
+    "mode": "live",
+    "split": "all",
+    "repeats": 1,
+    "only": null,
+    "ids": null,
+    "batch": "24",
+    "exclude_batch": null,
+    "model": null,
+    "keep_tool_results": false,
+    "limit": null,
+    "out": "evals/results/summary_b24_before.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 0,
+    "live": 20,
+    "records": 20
+  },
+  "live": {
+    "ran": true,
+    "repeats": 1,
+    "eval_user": "captest_293401283434",
+    "deleted_reports": 29,
+    "etf_data_available": {},
+    "elapsed_s": 51.2
+  },
+  "etf_data_available": {},
+  "etf_branches": {},
+  "elapsed_s": 56.4,
+  "metrics": {
+    "live_company_accuracy": {
+      "dev": null,
+      "holdout": 0.9,
+      "holdout_seen": null,
+      "holdout_unseen": 0.9,
+      "all": 0.9,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "source_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 13,
+        "holdout_seen": 0,
+        "holdout_unseen": 13,
+        "all": 13
+      }
+    },
+    "period_label_violation_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 1,
+        "holdout_seen": 0,
+        "holdout_unseen": 1,
+        "all": 1
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "code_answer_rate": {
+      "dev": null,
+      "holdout": 0.75,
+      "holdout_seen": null,
+      "holdout_unseen": 0.75,
+      "all": 0.75,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "loop_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "guard_replacement_rate": {
+      "dev": null,
+      "holdout": 0.4,
+      "holdout_seen": null,
+      "holdout_unseen": 0.4,
+      "all": 0.4,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "narrative_drop_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 0,
+        "holdout_unseen": 3,
+        "all": 3
+      }
+    },
+    "foreign_strip_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "fallback_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "forecast_structure_rate": {
+      "dev": null,
+      "holdout": 0.3333,
+      "holdout_seen": null,
+      "holdout_unseen": 0.3333,
+      "all": 0.3333,
+      "n": {
+        "dev": 0,
+        "holdout": 6,
+        "holdout_seen": 0,
+        "holdout_unseen": 6,
+        "all": 6
+      }
+    },
+    "forecast_number_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 10,
+        "holdout_seen": 0,
+        "holdout_unseen": 10,
+        "all": 10
+      }
+    },
+    "forecast_evidence_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 10,
+        "holdout_seen": 0,
+        "holdout_unseen": 10,
+        "all": 10
+      }
+    },
+    "forecast_assertion_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "forecast_group_rate": {
+      "dev": null,
+      "holdout": 0.3333,
+      "holdout_seen": null,
+      "holdout_unseen": 0.3333,
+      "all": 0.3333,
+      "n": {
+        "dev": 0,
+        "holdout": 6,
+        "holdout_seen": 0,
+        "holdout_unseen": 6,
+        "all": 6
+      }
+    },
+    "backtest_line_rate": {
+      "dev": null,
+      "holdout": 0.7143,
+      "holdout_seen": null,
+      "holdout_unseen": 0.7143,
+      "all": 0.7143,
+      "n": {
+        "dev": 0,
+        "holdout": 14,
+        "holdout_seen": 0,
+        "holdout_unseen": 14,
+        "all": 14
+      }
+    },
+    "earnings_number_rate": {
+      "dev": null,
+      "holdout": 0.6667,
+      "holdout_seen": null,
+      "holdout_unseen": 0.6667,
+      "all": 0.6667,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 0,
+        "holdout_unseen": 3,
+        "all": 3
+      }
+    },
+    "regime_match_rate": {
+      "dev": null,
+      "holdout": 0.7143,
+      "holdout_seen": null,
+      "holdout_unseen": 0.7143,
+      "all": 0.7143,
+      "n": {
+        "dev": 0,
+        "holdout": 14,
+        "holdout_seen": 0,
+        "holdout_unseen": 14,
+        "all": 14
+      }
+    },
+    "no_double_vote_rate": {
+      "dev": null,
+      "holdout": 0.3333,
+      "holdout_seen": null,
+      "holdout_unseen": 0.3333,
+      "all": 0.3333,
+      "n": {
+        "dev": 0,
+        "holdout": 6,
+        "holdout_seen": 0,
+        "holdout_unseen": 6,
+        "all": 6
+      }
+    },
+    "number_window_rate": {
+      "dev": null,
+      "holdout": 0.7143,
+      "holdout_seen": null,
+      "holdout_unseen": 0.7143,
+      "all": 0.7143,
+      "n": {
+        "dev": 0,
+        "holdout": 14,
+        "holdout_seen": 0,
+        "holdout_unseen": 14,
+        "all": 14
+      }
+    },
+    "data_status_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 1,
+        "holdout_seen": 0,
+        "holdout_unseen": 1,
+        "all": 1
+      }
+    },
+    "direction_first_rate": {
+      "dev": null,
+      "holdout": 0.7778,
+      "holdout_seen": null,
+      "holdout_unseen": 0.7778,
+      "all": 0.7778,
+      "n": {
+        "dev": 0,
+        "holdout": 18,
+        "holdout_seen": 0,
+        "holdout_unseen": 18,
+        "all": 18
+      }
+    },
+    "direction_stable_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 18,
+        "holdout_seen": 0,
+        "holdout_unseen": 18,
+        "all": 18
+      }
+    },
+    "mode_rate": {
+      "dev": null,
+      "holdout": 0.1429,
+      "holdout_seen": null,
+      "holdout_unseen": 0.1429,
+      "all": 0.1429,
+      "n": {
+        "dev": 0,
+        "holdout": 14,
+        "holdout_seen": 0,
+        "holdout_unseen": 14,
+        "all": 14
+      }
+    },
+    "layout26_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 14,
+        "holdout_seen": 0,
+        "holdout_unseen": 14,
+        "all": 14
+      }
+    },
+    "evidence_consistency_rate": {
+      "dev": null,
+      "holdout": 0.6,
+      "holdout_seen": null,
+      "holdout_unseen": 0.6,
+      "all": 0.6,
+      "n": {
+        "dev": 0,
+        "holdout": 15,
+        "holdout_seen": 0,
+        "holdout_unseen": 15,
+        "all": 15
+      }
+    },
+    "date_consistency_rate": {
+      "dev": null,
+      "holdout": 0.7143,
+      "holdout_seen": null,
+      "holdout_unseen": 0.7143,
+      "all": 0.7143,
+      "n": {
+        "dev": 0,
+        "holdout": 7,
+        "holdout_seen": 0,
+        "holdout_unseen": 7,
+        "all": 7
+      }
+    },
+    "mode_consistency_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 0,
+        "holdout_unseen": 2,
+        "all": 2
+      }
+    },
+    "error_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "latency_p50_s": {
+      "dev": null,
+      "holdout": 0.055,
+      "holdout_seen": null,
+      "holdout_unseen": 0.055,
+      "all": 0.055,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "latency_p95_s": {
+      "dev": null,
+      "holdout": 9.958,
+      "holdout_seen": null,
+      "holdout_unseen": 9.958,
+      "all": 9.958,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "b24_15",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "골든크로스가 무슨 뜻이야?",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "SK하이닉스"
+        ],
+        "must_not": null
+      },
+      "actual": []
+    },
+    {
+      "id": "b24_20",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "전체적으로 자세히 분석해 줘.",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "삼성SDI"
+        ],
+        "must_not": null
+      },
+      "actual": []
+    },
+    {
+      "id": "b24_01",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "SK하이닉스 일주일 전망 알려줘",
+      "check": "mode26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "간결 답에 섹션",
+        "간결 답 102줄(8줄 이하)",
+        "'- 상승 근거:' 줄 없음",
+        "'- 하락 위험:' 줄 없음",
+        "'- 과거 검증:' 줄 없음",
+        "'- 시장 국면: 현재는' 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_01",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "SK하이닉스 일주일 전망 알려줘",
+      "check": "layout26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "제목 다음 줄이 방향 문장이 아님: '현재는 단기 반등 시도, 추세 전환은 미확인 (기준일 2026-11-03'"
+      ]
+    },
+    {
+      "id": "b24_02",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "SK하이닉스 한 달 뒤 어떨까?",
+      "check": "mode26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "간결 답에 섹션",
+        "간결 답 99줄(8줄 이하)",
+        "'- 상승 근거:' 줄 없음",
+        "'- 하락 위험:' 줄 없음",
+        "'- 과거 검증:' 줄 없음",
+        "'- 시장 국면: 현재는' 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_02",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "SK하이닉스 한 달 뒤 어떨까?",
+      "check": "layout26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "제목 다음 줄이 방향 문장이 아님: '현재는 단기 반등 시도, 추세 전환은 미확인 (기준일 2026-11-03'"
+      ]
+    },
+    {
+      "id": "b24_03",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "삼성전자 다음 주 오를 것 같아?",
+      "check": "mode26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "간결 답에 섹션",
+        "간결 답 97줄(8줄 이하)",
+        "'- 상승 근거:' 줄 없음",
+        "'- 하락 위험:' 줄 없음",
+        "'- 과거 검증:' 줄 없음",
+        "'- 시장 국면: 현재는' 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_03",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "삼성전자 다음 주 오를 것 같아?",
+      "check": "layout26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "제목 다음 줄이 방향 문장이 아님: '현재는 단기 반등 시도, 추세 전환은 미확인 (기준일 2026-11-03'"
+      ]
+    },
+    {
+      "id": "b24_04",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "NAVER 한 달 전망 자세히 분석해줘",
+      "check": "layout26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "제목 다음 줄이 방향 문장이 아님: '현재는 하락 추세 지속 (기준일 2026-11-03 종가)'"
+      ]
+    },
+    {
+      "id": "b24_04",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "NAVER 한 달 전망 자세히 분석해줘",
+      "check": "evidence26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "상승을 뒷받침하는 근거에 묶음 표시 없는 항목: - 같은 20거래일 코스피 대비 +8.38%p",
+        "상승을 뒷받침하는 근거에 묶음 표시 없는 항목: - MACD가 시그널 위(MACD -6,118.35, 시그널 -6,560",
+        "하락 위험 근거에 묶음 표시 없는 항목: - 60거래일 수익률 -24.59%(2026-08-04 종가 226,50",
+        "하락 위험 근거에 묶음 표시 없는 항목: - 최근 20거래일 수익률 -11.13%(2026-10-02 종가 대비)",
+        "하락 위험 근거에 묶음 표시 없는 항목: - 20일선 178,255원이 60일선 199,747원 아래",
+        "하락 위험 근거에 묶음 표시 없는 항목: - 종가 170,800원이 20일선(178,255원)·60일선(199,7",
+        "하락 위험 근거에 묶음 표시 없는 항목: - 기준일(2026-11-03) 하루 -2.90%, 거래량은 직전 20거"
+      ]
+    },
+    {
+      "id": "b24_04",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "NAVER 한 달 전망 자세히 분석해줘",
+      "check": "dates26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "공시 \"[기재정정]주요사항보고서(유상증자결정\" 날짜 2026-11-02 != ['2026-10-30', '2026-11-03']",
+        "공시 \"[기재정정]주요사항보고서(유상증자결정\" 날짜 2026-11-02 != ['2026-10-30', '2026-11-03']",
+        "공시 \"[기재정정]장래사업ㆍ경영계획(공정공시\" 날짜 2026-11-02 != ['2026-07-27', '2026-10-27', '2026-11-03']",
+        "공시 \"기업설명회(IR)개최(안내공시)\" 날짜 2026-11-01 != ['2026-07-16', '2026-08-03', '2026-09-01', '2026-10-20', '2026-11-02']"
+      ]
+    },
+    {
+      "id": "b24_05",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "HMM 일주일 안에 상승할까 하락할까?",
+      "check": "mode26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "간결 답에 섹션",
+        "간결 답 90줄(8줄 이하)",
+        "'- 상승 근거:' 줄 없음",
+        "'- 하락 위험:' 줄 없음",
+        "'- 과거 검증:' 줄 없음",
+        "'- 시장 국면: 현재는' 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_05",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "HMM 일주일 안에 상승할까 하락할까?",
+      "check": "layout26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "제목 다음 줄이 방향 문장이 아님: '현재는 상승 추세 지속 (기준일 2026-11-03 종가)'"
+      ]
+    },
+    {
+      "id": "b24_06",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "KT&G 앞으로 한 달은 어떨까?",
+      "check": "mode26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "간결 답에 섹션",
+        "간결 답 88줄(8줄 이하)",
+        "'- 상승 근거:' 줄 없음",
+        "'- 하락 위험:' 줄 없음",
+        "'- 과거 검증:' 줄 없음",
+        "'- 시장 국면: 현재는' 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_06",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "KT&G 앞으로 한 달은 어떨까?",
+      "check": "layout26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "제목 다음 줄이 방향 문장이 아님: '현재는 상승 추세 지속 (기준일 2026-11-03 종가)'"
+      ]
+    },
+    {
+      "id": "b24_07",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "기아 다음 주 방향이 어때?",
+      "check": "mode26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "간결 답에 섹션",
+        "간결 답 94줄(8줄 이하)",
+        "'- 상승 근거:' 줄 없음",
+        "'- 하락 위험:' 줄 없음",
+        "'- 과거 검증:' 줄 없음",
+        "'- 시장 국면: 현재는' 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_07",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "기아 다음 주 방향이 어때?",
+      "check": "layout26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "제목 다음 줄이 방향 문장이 아님: '현재는 하락 추세 지속 (기준일 2026-11-03 종가)'"
+      ]
+    },
+    {
+      "id": "b24_08",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "KODEX 200 이번 주 오를까?",
+      "check": "mode26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "간결 답에 섹션",
+        "간결 답 85줄(8줄 이하)",
+        "'- 상승 근거:' 줄 없음",
+        "'- 하락 위험:' 줄 없음",
+        "'- 과거 검증:' 줄 없음",
+        "'- 시장 국면: 현재는' 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_08",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "KODEX 200 이번 주 오를까?",
+      "check": "layout26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "제목 다음 줄이 방향 문장이 아님: '현재는 단기 반등 시도, 추세 전환은 미확인 (기준일 2026-11-03'"
+      ]
+    },
+    {
+      "id": "b24_09",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "950260 3개월 전망 알려줘",
+      "check": "mode26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "간결 답에 섹션",
+        "간결 답 68줄(8줄 이하)",
+        "'- 상승 근거:' 줄 없음",
+        "'- 하락 위험:' 줄 없음",
+        "'- 과거 검증:' 줄 없음",
+        "'- 시장 국면: 현재는' 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_09",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "950260 3개월 전망 알려줘",
+      "check": "layout26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "제목 다음 줄이 방향 문장이 아님: '현재는 판단 유보(데이터 부족) (기준일 2026-11-03 종가)'"
+      ]
+    },
+    {
+      "id": "b24_10",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "SK하이닉스 일주일 전망을 자세히 분석해줘",
+      "check": "layout26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "제목 다음 줄이 방향 문장이 아님: '현재는 단기 반등 시도, 추세 전환은 미확인 (기준일 2026-11-03'"
+      ]
+    },
+    {
+      "id": "b24_10",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "SK하이닉스 일주일 전망을 자세히 분석해줘",
+      "check": "evidence26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "상승을 뒷받침하는 근거에 묶음 표시 없는 항목: - 최근 5거래일 수익률 +2.91%(2026-10-27 종가 대비)",
+        "상승을 뒷받침하는 근거에 묶음 표시 없는 항목: - 2026-11-02 골든크로스(5일선 1,461,800원이 20일선 ",
+        "상승을 뒷받침하는 근거에 묶음 표시 없는 항목: - 같은 5거래일 코스피 대비 +2.92%p",
+        "상승을 뒷받침하는 근거에 묶음 표시 없는 항목: - MACD가 시그널 위(MACD -64,873.44, 시그널 -88,4",
+        "하락 위험 근거에 묶음 표시 없는 항목: - 20거래일 수익률 -23.24%(2026-10-02 종가 1,842,",
+        "하락 위험 근거에 묶음 표시 없는 항목: - 60거래일 수익률 -10.34%(2026-08-04 종가 1,577,",
+        "하락 위험 근거에 묶음 표시 없는 항목: - 종가 1,414,000원이 5일선(1,461,800원)·20일선(1,",
+        "하락 위험 근거에 묶음 표시 없는 항목: - 기준일(2026-11-03) 하루 -4.46%, 거래량은 직전 20거"
+      ]
+    },
+    {
+      "id": "b24_10",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "SK하이닉스 일주일 전망을 자세히 분석해줘",
+      "check": "dates26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "공시 \"연결재무제표기준영업(잠정)실적(공정공\" 날짜 2026-10-27 != ['2026-07-29', '2026-10-28']",
+        "공시 \"풍문또는보도에대한해명(미확정)\" 날짜 2026-10-28 != ['2026-08-05', '2026-09-04', '2026-10-26', '2026-10-29']",
+        "공시 \"수시공시의무관련사항(공정공시)\" 날짜 2026-10-27 != ['2026-08-19', '2026-10-28']",
+        "공시 \"연결재무제표기준영업(잠정)실적(공정공\" 날짜 2026-10-27 != ['2026-07-29', '2026-10-28']",
+        "뉴스 \"여수시, 석유·화학 기반 ‘반도체 클\" 날짜 2026-11-03가 한국 시간 발행일과 다름"
+      ]
+    },
+    {
+      "id": "b24_11",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "기술적 지표까지 확인해줘",
+      "check": "forecast",
+      "expected": {
+        "indicators>=5": true,
+        "company": "SK하이닉스",
+        "period": "1주일",
+        "label": "4종 중 하나"
+      },
+      "actual": {
+        "indicators": 0,
+        "marker": {}
+      }
+    },
+    {
+      "id": "b24_11",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "기술적 지표까지 확인해줘",
+      "check": "groups",
+      "expected": "묶음당 1표 판정과 개별 지표 표시",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_11",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "기술적 지표까지 확인해줘",
+      "check": "backtest_line",
+      "expected": "과거 검증 줄 = outlook_backtest.json",
+      "actual": [
+        "과거 검증 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_11",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "기술적 지표까지 확인해줘",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목(종목·기간) '## 주가 동향'",
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b24_11",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "기술적 지표까지 확인해줘",
+      "check": "mode26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "상세 섹션 '종합 판단' 없음",
+        "상세 섹션 '상승을 뒷받침하는 근거' 없음",
+        "상세 섹션 '하락 위험 근거' 없음",
+        "상세 섹션 '앞으로 확인할 사항' 없음",
+        "상세 섹션 '과거 검증' 없음",
+        "상세 섹션 '기술적 지표' 없음",
+        "상세 섹션 '시장 상황' 없음",
+        "상세 섹션 '신호 판정 상세' 없음",
+        "상세 섹션 '불확실성과 한계' 없음",
+        "상세 섹션 '데이터 기준일·출처' 없음"
+      ]
+    },
+    {
+      "id": "b24_11",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "기술적 지표까지 확인해줘",
+      "check": "layout26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "제목 줄 '## 주가 동향'",
+        "국면(현재는 … (기준일 … 종가))이 머리말에 없음",
+        "첫 섹션 주가 동향"
+      ]
+    },
+    {
+      "id": "b24_11",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "기술적 지표까지 확인해줘",
+      "check": "regime",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "상태 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_11",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "기술적 지표까지 확인해줘",
+      "check": "numbers23",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "기준일 없음"
+      ]
+    },
+    {
+      "id": "b24_11",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "기술적 지표까지 확인해줘",
+      "check": "double_vote",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_11",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "기술적 지표까지 확인해줘",
+      "check": "evidence26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_12",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "삼성전자 뉴스와 공시까지 모두 반영해서 다음 주 전망 분석해줘",
+      "check": "forecast",
+      "expected": {
+        "indicators>=5": true,
+        "company": "삼성전자",
+        "period": "1주일",
+        "label": "4종 중 하나"
+      },
+      "actual": {
+        "indicators": 0,
+        "marker": {}
+      }
+    },
+    {
+      "id": "b24_12",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "삼성전자 뉴스와 공시까지 모두 반영해서 다음 주 전망 분석해줘",
+      "check": "groups",
+      "expected": "묶음당 1표 판정과 개별 지표 표시",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_12",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "삼성전자 뉴스와 공시까지 모두 반영해서 다음 주 전망 분석해줘",
+      "check": "backtest_line",
+      "expected": "과거 검증 줄 = outlook_backtest.json",
+      "actual": [
+        "과거 검증 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_12",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "삼성전자 뉴스와 공시까지 모두 반영해서 다음 주 전망 분석해줘",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목(종목·기간) '## 주가 동향'",
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b24_12",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "삼성전자 뉴스와 공시까지 모두 반영해서 다음 주 전망 분석해줘",
+      "check": "mode26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "상세 섹션 '종합 판단' 없음",
+        "상세 섹션 '상승을 뒷받침하는 근거' 없음",
+        "상세 섹션 '하락 위험 근거' 없음",
+        "상세 섹션 '앞으로 확인할 사항' 없음",
+        "상세 섹션 '과거 검증' 없음",
+        "상세 섹션 '기술적 지표' 없음",
+        "상세 섹션 '시장 상황' 없음",
+        "상세 섹션 '신호 판정 상세' 없음",
+        "상세 섹션 '불확실성과 한계' 없음",
+        "상세 섹션 '데이터 기준일·출처' 없음"
+      ]
+    },
+    {
+      "id": "b24_12",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "삼성전자 뉴스와 공시까지 모두 반영해서 다음 주 전망 분석해줘",
+      "check": "layout26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "제목 줄 '## 주가 동향'",
+        "국면(현재는 … (기준일 … 종가))이 머리말에 없음",
+        "첫 섹션 주가 동향"
+      ]
+    },
+    {
+      "id": "b24_12",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "삼성전자 뉴스와 공시까지 모두 반영해서 다음 주 전망 분석해줘",
+      "check": "regime",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "상태 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_12",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "삼성전자 뉴스와 공시까지 모두 반영해서 다음 주 전망 분석해줘",
+      "check": "numbers23",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "기준일 없음"
+      ]
+    },
+    {
+      "id": "b24_12",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "삼성전자 뉴스와 공시까지 모두 반영해서 다음 주 전망 분석해줘",
+      "check": "double_vote",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_12",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "삼성전자 뉴스와 공시까지 모두 반영해서 다음 주 전망 분석해줘",
+      "check": "evidence26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_13",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "LG전자 실적까지 포함해서 한 달 전망 리포트로 써줘",
+      "check": "forecast",
+      "expected": {
+        "indicators>=5": true,
+        "company": "LG전자",
+        "period": "1개월",
+        "label": "4종 중 하나"
+      },
+      "actual": {
+        "indicators": 0,
+        "marker": {}
+      }
+    },
+    {
+      "id": "b24_13",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "LG전자 실적까지 포함해서 한 달 전망 리포트로 써줘",
+      "check": "groups",
+      "expected": "묶음당 1표 판정과 개별 지표 표시",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_13",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "LG전자 실적까지 포함해서 한 달 전망 리포트로 써줘",
+      "check": "backtest_line",
+      "expected": "과거 검증 줄 = outlook_backtest.json",
+      "actual": [
+        "과거 검증 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_13",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "LG전자 실적까지 포함해서 한 달 전망 리포트로 써줘",
+      "check": "earnings",
+      "expected": "실적 숫자 = SQL 검산",
+      "actual": [
+        "실적 섹션 없음"
+      ]
+    },
+    {
+      "id": "b24_13",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "LG전자 실적까지 포함해서 한 달 전망 리포트로 써줘",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목(종목·기간) '## 주가 동향'",
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b24_13",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "LG전자 실적까지 포함해서 한 달 전망 리포트로 써줘",
+      "check": "mode26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "상세 섹션 '종합 판단' 없음",
+        "상세 섹션 '상승을 뒷받침하는 근거' 없음",
+        "상세 섹션 '하락 위험 근거' 없음",
+        "상세 섹션 '앞으로 확인할 사항' 없음",
+        "상세 섹션 '과거 검증' 없음",
+        "상세 섹션 '기술적 지표' 없음",
+        "상세 섹션 '시장 상황' 없음",
+        "상세 섹션 '신호 판정 상세' 없음",
+        "상세 섹션 '불확실성과 한계' 없음",
+        "상세 섹션 '데이터 기준일·출처' 없음"
+      ]
+    },
+    {
+      "id": "b24_13",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "LG전자 실적까지 포함해서 한 달 전망 리포트로 써줘",
+      "check": "layout26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "제목 줄 '## 주가 동향'",
+        "국면(현재는 … (기준일 … 종가))이 머리말에 없음",
+        "첫 섹션 주가 동향"
+      ]
+    },
+    {
+      "id": "b24_13",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "LG전자 실적까지 포함해서 한 달 전망 리포트로 써줘",
+      "check": "regime",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "상태 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_13",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "LG전자 실적까지 포함해서 한 달 전망 리포트로 써줘",
+      "check": "numbers23",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "기준일 없음"
+      ]
+    },
+    {
+      "id": "b24_13",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "LG전자 실적까지 포함해서 한 달 전망 리포트로 써줘",
+      "check": "double_vote",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_13",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "LG전자 실적까지 포함해서 한 달 전망 리포트로 써줘",
+      "check": "evidence26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_15",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "골든크로스가 무슨 뜻이야?",
+      "check": "signal26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "속한 묶음의 판정 없음"
+      ]
+    },
+    {
+      "id": "b24_17",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "3분기 잠정실적 공시는 언제 접수됐어?",
+      "check": "filing26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "첫 줄에 접수일 2026-10-28·접수번호 20261028800036 없음: ''"
+      ]
+    },
+    {
+      "id": "b24_20",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "전체적으로 자세히 분석해 줘.",
+      "check": "forecast",
+      "expected": {
+        "indicators>=5": true,
+        "company": "삼성SDI",
+        "period": "1주일",
+        "label": "4종 중 하나"
+      },
+      "actual": {
+        "indicators": 0,
+        "marker": {}
+      }
+    },
+    {
+      "id": "b24_20",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "전체적으로 자세히 분석해 줘.",
+      "check": "groups",
+      "expected": "묶음당 1표 판정과 개별 지표 표시",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_20",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "전체적으로 자세히 분석해 줘.",
+      "check": "backtest_line",
+      "expected": "과거 검증 줄 = outlook_backtest.json",
+      "actual": [
+        "과거 검증 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_20",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "전체적으로 자세히 분석해 줘.",
+      "check": "direction25",
+      "expected": "25차 기준(evals/README.md 15차 라운드)",
+      "actual": [
+        "제목(종목·기간) '종목명을 정확히 기재해주시면 관련된 뉴스나 공시 내용을 찾을 수 있습니다'",
+        "제목 줄에 '방향: …' 없음"
+      ]
+    },
+    {
+      "id": "b24_20",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "전체적으로 자세히 분석해 줘.",
+      "check": "mode26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "상세 섹션 '종합 판단' 없음",
+        "상세 섹션 '상승을 뒷받침하는 근거' 없음",
+        "상세 섹션 '하락 위험 근거' 없음",
+        "상세 섹션 '앞으로 확인할 사항' 없음",
+        "상세 섹션 '과거 검증' 없음",
+        "상세 섹션 '기술적 지표' 없음",
+        "상세 섹션 '시장 상황' 없음",
+        "상세 섹션 '신호 판정 상세' 없음",
+        "상세 섹션 '불확실성과 한계' 없음",
+        "상세 섹션 '데이터 기준일·출처' 없음"
+      ]
+    },
+    {
+      "id": "b24_20",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "전체적으로 자세히 분석해 줘.",
+      "check": "layout26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "제목 줄 '종목명을 정확히 기재해주시면 관련된 뉴스나 공시 내용을 찾을 수 있습니다.'",
+        "국면(현재는 … (기준일 … 종가))이 머리말에 없음",
+        "첫 섹션 None"
+      ]
+    },
+    {
+      "id": "b24_20",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "전체적으로 자세히 분석해 줘.",
+      "check": "regime",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "상태 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_20",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "전체적으로 자세히 분석해 줘.",
+      "check": "numbers23",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "기준일 없음"
+      ]
+    },
+    {
+      "id": "b24_20",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "전체적으로 자세히 분석해 줘.",
+      "check": "double_vote",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "b24_20",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "전체적으로 자세히 분석해 줘.",
+      "check": "evidence26",
+      "expected": "26차 기준(evals/README.md 17차 라운드)",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    }
+  ]
+}

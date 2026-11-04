@@ -56,7 +56,10 @@ def test_conclusion_first_answer_and_numbers_match_sql(dev_db, no_llm):
     r = agent.ask_question("SK하이닉스 일주일 안에 오를지 내릴지 분석해줘", save_report=False)
     a = r["answer"]
     lines = a.splitlines()
-    assert lines[0].startswith("SK하이닉스(000660) · 향후 5거래일 · 방향: ") and lines[2].startswith("현재는 ")  # 25차: 제목에 방향
+    # 26차: 제목(방향) -> 방향 문장 -> 데이터 경고 -> 국면
+    first_sec = next(i for i, x in enumerate(lines) if x.startswith("## "))
+    assert lines[0].startswith("SK하이닉스(000660) · 향후 5거래일 · 방향: ") and lines[2].startswith(("상승 쪽입니다", "하락 쪽입니다", "현재는 상승과", "데이터가"))
+    assert any(x.startswith("현재는 ") and "(기준일 " in x for x in lines[3:first_sec])
     assert next(x for x in lines if x.startswith("## ")) == "## 종합 판단"
     assert FC.check_numbers(dev_db, a, "SK하이닉스", "1주일") == []
     assert FC.check_groups(a) == [] and FC.check_backtest_line(a, "1주일") == []

@@ -1300,6 +1300,8 @@ def _forecast_subject(question: str, previous: dict | None):
     저장 시 도구 결과의 종목이 정확히 1개일 때만 채워진다)을 이어받는다. 여러 개면 기존 흐름이다."""
     special = outlook.special_followup_kind(question)
     marker = outlook.marker_of(previous.get("answer")) if previous else None
+    if special == "detail":
+        special = "forecast"  # 26차: "전체적으로 자세히 분석해 줘" -> 직전 종목·기간의 상세 리서치
     if special and marker:
         # "최신 실적까지 반영해서 다시 판단해줘", "최신 주가 데이터가 없으면?": 직전 분석(표식)이 있을 때만 이 경로다
         companies = _question_companies(question)
@@ -1328,7 +1330,7 @@ def _forecast_subject(question: str, previous: dict | None):
         company = companies[0]
         if verdict and not forecast and marker and company.name == prev_name:
             return company, marker, outlook.followup_kind(question)
-        return (company, marker if marker and company.name == prev_name else None, "forecast") if forecast else None
+        return (company, marker if marker and company.name == prev_name else None, _forecast_mode(question)) if forecast else None
     if prev_name:
         db = SessionLocal()
         try:
@@ -1341,9 +1343,14 @@ def _forecast_subject(question: str, previous: dict | None):
             if marker and (verdict or outlook.period_in(question) in (None, marker.get("period"))):
                 return company, marker, outlook.followup_kind(question)
             if forecast:
-                return company, marker, "forecast"
+                return company, marker, _forecast_mode(question)
             return None
     return (None, None, "ask") if outlook.asks_subject(question) else None
+
+
+def _forecast_mode(question: str) -> str:
+    """전망 질문의 모드(26차): 상세 요청("자세히", "분석해줘", "리포트", "뉴스와 공시까지 …")이면 "forecast"(상세 리서치), 아니면 "brief"(간결)."""
+    return "forecast" if outlook.wants_detail(question) else "brief"
 
 
 def _answer_forecast(question: str, previous: dict | None):
@@ -1367,7 +1374,9 @@ def _answer_forecast(question: str, previous: dict | None):
         news, disclosures = outlook.evidence(db, company, period, now) if mode == "forecast" else ([], [])
         fx = outlook.fx_summary(db, period, res["indicators"]["base_date"]) if mode == "forecast" else None
         indirect, earnings_rows, extra = None, None, {}
-        if mode == "earnings":
+        if mode == "signal":
+            extra = {"term": outlook.signal_term(question)}
+        if mode in ("earnings", "filing"):
             # 실적 후속 답: 최근 분기(잠정 포함)와, 최신 실적 발표(접수)일 직전 거래일 종가 -> 기준일 종가
             rows_e = earnings.recent_for_answer(db, company, n=8)
             extra = {"earnings": rows_e, "quarter": outlook.quarter_in(question, now)}
@@ -1407,6 +1416,8 @@ def _answer_forecast(question: str, previous: dict | None):
                             "result": {"company_name": company.name, "found": bool(disclosures), "disclosures": disclosures,
                                        "called_via": "forecast"}})
         answer = outlook.forecast_answer(company, period, res, news, disclosures, fx, now, indirect, earnings_rows)
+    elif mode == "brief":
+        answer = outlook.brief_answer(company, period, res, now)
     else:
         answer = outlook.followup_answer(company, period, res, mode, now, extra)
     return _code_answer(answer, records)

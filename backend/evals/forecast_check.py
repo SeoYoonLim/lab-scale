@@ -1198,9 +1198,15 @@ def check_evidence26(answer: str, mode: str) -> list[str]:
     a = answer or ""
     errs = []
     if mode == "detail":
-        votes = {g.group("group").strip(): g.group("vote") for g in _GROUP_LINE23.finditer(a)}
-        if not votes:
+        full = {g.group("group").strip(): g.group("vote") for g in _GROUP_LINE23.finditer(a)}
+        if not full:
             return ["묶음 줄 없음"]
+
+        class _Votes(dict):
+            """근거의 짧은 묶음 이름([MACD])을 판정 상세의 긴 이름(MACD(12,26,9))과 맞춘다(고정 뒤 결함 수정, 측정 전)."""
+            def get(self, k, default=None):
+                return next((v for n, v in full.items() if n == k or n.startswith(k + "(")), default)
+        votes = _Votes()
         sec = sections(a)
         for title, want in (("상승을 뒷받침하는 근거", "상승 쪽"), ("하락 위험 근거", "하락 쪽")):
             for line in sec.get(title, []):
@@ -1269,10 +1275,11 @@ def check_dates26(db, answer: str, company_name: str) -> list[str]:
         if m:
             d, title = (m.group(1), m.group(2)) if m.group(1) else (m.group(3), m.group(4))
             if db is not None:
+                # 업종·산업(간접) 뉴스는 다른 종목 기사라 종목을 가리지 않고 제목·한국 시간 발행일로 본다(고정 뒤 결함 수정, 측정 전)
                 ok = db.execute(text(
-                    "select count(*) from news n join company c on c.id = n.company_id where c.name = :n and n.title = :t "
+                    "select count(*) from news n where n.title = :t "
                     "and to_char(n.published_at at time zone 'Asia/Seoul', 'YYYY-MM-DD') = :d"),
-                    {"n": company_name, "t": title, "d": d}).scalar()
+                    {"t": title, "d": d}).scalar()
                 if not ok:
                     errs.append(f"뉴스 \"{title[:20]}\" 날짜 {d}가 한국 시간 발행일과 다름")
             if seen.setdefault(("뉴스", title), d) != d:

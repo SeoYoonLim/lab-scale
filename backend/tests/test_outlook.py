@@ -294,7 +294,10 @@ def test_etf_without_news_omits_the_section_and_keeps_leverage_notice():
 
 def test_hold_answer_states_the_reason():
     text = outlook.forecast_answer(COMPANY, outlook.PERIODS["1주일"], _result(hold=True), [], [], None, NOW)
-    assert "판단 유보" in text.splitlines()[2] and "판단을 유보합니다" in text and "데이터 경고:" in text
+    # 26차: 제목 다음 첫 줄이 방향(판단 유보와 이유), 그다음 데이터 경고, 그다음 국면
+    lines = text.splitlines()
+    assert "방향: 판단 유보" in lines[0] and lines[2].startswith("데이터가 부족해 현재는 방향 판단을 보류하겠습니다")
+    assert "판단을 유보합니다" in text and "데이터 경고:" in text
 
 
 def test_risk_followup_shows_risks_and_support_levels():

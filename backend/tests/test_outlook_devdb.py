@@ -46,7 +46,8 @@ def test_three_turn_followup_keeps_company_and_period(make_user, dev_db, no_llm)
 @pytest.mark.integration
 @pytest.mark.needs_collected_data
 def test_forecast_numbers_match_sql(dev_db, no_llm):
-    r = agent.ask_question("삼성전자 일주일 안에 오를까?", save_report=False)
+    # 26차: 짧은 질문은 간결 답이라, 지표 숫자 SQL 대조는 상세 리포트로 본다
+    r = agent.ask_question("삼성전자 일주일 안에 오를까? 자세히 분석해줘", save_report=False)
     base = re.search(r"기준일\(최신 거래일\): (\d{4}-\d{2}-\d{2})", r["answer"]).group(1)
     closes = [float(c) for (c,) in dev_db.execute(text(
         "SELECT p.close_price FROM stock_price p JOIN company c ON c.id = p.company_id "
@@ -106,7 +107,8 @@ def test_stale_prices_give_hold_with_real_data(dev_db):
     res = outlook.analyze(dev_db, company, period, late)
     assert res["label"] == "판단 유보" and res["data"]["hold"] and res["data"]["lag_business_days"] > outlook.MAX_LAG_BUSINESS_DAYS
     text = outlook.forecast_answer(company, period, res, [], [], None, late)
-    assert "판단 유보" in text.splitlines()[2] and "데이터가 부족합니다" in text  # 0: 제목 줄, 2: 상태 줄(2026-11-04)
+    lines = text.splitlines()  # 26차: 0 제목(방향: 판단 유보), 2 방향 문장(보류와 이유), 그다음 데이터 경고·국면
+    assert "방향: 판단 유보" in lines[0] and lines[2].startswith("데이터가 부족해") and "데이터가 부족합니다" in text
     fresh = datetime.combine(last + timedelta(days=1), datetime.min.time(), KST).replace(hour=18)
     res = outlook.analyze(dev_db, company, period, fresh)
     assert not res["data"]["hold"] and res["label"] != "판단 유보"
