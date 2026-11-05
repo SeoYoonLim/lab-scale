@@ -21,6 +21,7 @@ from app.api.deps import client_ip
 from app.api.disclaimer import router as disclaimer_router
 from app.api.discovery import router as discovery_router
 from app.api.etf import router as etf_router
+from app.api.history import router as history_router
 from app.api.oauth import router as oauth_router
 from app.api.exposure import router as exposure_router
 from app.api.performance import router as performance_router
@@ -169,4 +170,5 @@ app.include_router(briefing_router)
 app.include_router(performance_router)
 app.include_router(exposure_router)
 app.include_router(backtest_router)
+app.include_router(history_router)
 app.include_router(etf_router)

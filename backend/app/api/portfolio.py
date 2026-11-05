@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Any, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Response
@@ -6,7 +7,9 @@ from pydantic import BaseModel, Field
 import app.diagnosis_history as diagnosis_history
 from app import rate_limit
 from app.api.deps import get_current_user, get_owner_key
-from app.api.research import BIGINT_MAX
+from app.api.history_params import history_window, with_dates
+from app.api.research import BIGINT_MAX, DateGroup, View, timezone_query, view_query
+from app.history_terms import MAX_KEYWORD_LEN, split_terms
 from app.auth import CurrentUser
 from app.db.session import SessionLocal
 from app.diagnosis import NoHoldings, diagnose
@@ -300,6 +303,75 @@ class DiagnosisComparison(BaseModel):
     disclaimer: str = DISCLAIMER
 
 
+# ---------- view=record (2026-11-05): 기록 관리 화면용. 기본 응답(view 없음)은 위 모델 그대로다 ----------
+
+
+class TopHolding(BaseModel):
+    ticker: str | None = None
+    company_name: str | None = None
+    weight_pct: float | None = None
+
+
+class DiagnosisHistoryRecordItem(DiagnosisHistoryItem):
+    # 저장된 보유 종목으로 만든 제목("삼성전자 외 2종목 진단")
+    title: str
+    cash_weight_pct: float | None = None
+    # 비중 상위 3종목(저장된 비중 그대로)
+    top_holdings: list[TopHolding]
+    # 저장된 위험 요인 첫 문장
+    risk_summary: str | None = None
+    flag_codes: list[str]
+    # 진단을 계산한 시각(= 그때 쓴 시세의 기준 시각). 저장본 값 그대로
+    generated_at: str | None = None
+    local_date: str
+    local_time: str
+    date_group: DateGroup
+
+
+class DiagnosisHistoryRecordList(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    has_next: bool
+    total_pages: int
+    timezone: str
+    items: list[DiagnosisHistoryRecordItem]
+
+
+class MetricChange(BaseModel):
+    previous: float | None = None
+    current: float | None = None
+    change: float | None = None
+
+
+class MetricChanges(BaseModel):
+    cash_balance: MetricChange
+    cash_weight_pct: MetricChange
+    stock_eval_amount: MetricChange
+    holding_count: MetricChange
+    top1_weight_pct: MetricChange
+    top3_weight_pct: MetricChange
+    herfindahl_index: MetricChange
+    total_profit_loss_pct: MetricChange
+
+
+class ComparisonBasis(BaseModel):
+    current_created_at: str
+    current_generated_at: str | None = None
+    previous_created_at: str | None = None
+    previous_generated_at: str | None = None
+    # 항상 false: 비교는 두 저장본끼리이고 현재 시세로 다시 계산하지 않는다
+    recomputed: bool
+    note: str | None = None
+
+
+class DiagnosisRecordComparison(DiagnosisComparison):
+    basis: ComparisonBasis
+    metric_changes: MetricChanges | None = None
+    # 진단 저장본에 ETF 실질 노출이 없어서 항상 null(GET /api/portfolio/exposure는 현재 시점만 계산한다)
+    exposure_changes: None = None
+
+
 def _diagnosis_not_found(diagnosis_id: int) -> HTTPException:
     # 남의 진단도 "없음"과 똑같이 404로 응답한다(403이면 그 id가 존재한다는 사실이 드러난다).
     return HTTPException(status_code=404, detail=f"diagnosis_id={diagnosis_id} 진단을 찾을 수 없습니다.")
@@ -328,17 +400,31 @@ def diagnose_my_portfolio(user: CurrentUser = Depends(get_current_user)) -> Diag
 
 
 # /diagnosis/history는 /diagnosis/{diagnosis_id}보다 먼저 정의한다(그렇지 않으면 "history"가 id 자리에 들어간다).
-@router.get("/diagnosis/history", response_model=DiagnosisHistoryList)
+@router.get("/diagnosis/history", response_model=DiagnosisHistoryList | DiagnosisHistoryRecordList)
 def list_my_diagnoses(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0, le=MAX_OFFSET),
     sort: Literal["created_at", "id", "total_asset", "holdings_count"] = Query("created_at", description="정렬 기준"),
     order: Literal["asc", "desc"] = Query("desc", description="정렬 방향. 기본은 최신순(desc)"),
+    q: str | None = Query(
+        None, max_length=MAX_KEYWORD_LEN,
+        description="요약·위험·제안·플래그 문장·보유 종목명·종목코드 검색. 공백으로 나눈 낱말이 모두 들어 있어야 한다. 위험 키워드(집중도·현금 등)는 플래그로도 찾는다",
+    ),
+    date_from: date | None = Query(None, description="이 날짜(timezone 기준)부터. YYYY-MM-DD"),
+    date_to: date | None = Query(None, description="이 날짜(timezone 기준)까지, 그날 끝까지 포함. YYYY-MM-DD"),
+    timezone: str | None = timezone_query(),
+    view: View = view_query(),
     user: CurrentUser = Depends(get_current_user),
-) -> DiagnosisHistoryList:
-    """내 진단 이력(기본 최신순, 최근 50건까지 보관). 이력이 없으면 total 0, items []."""
-    total, items = diagnosis_history.list_diagnoses(user.id, limit, offset, sort, order)
-    return DiagnosisHistoryList(total=total, limit=limit, offset=offset, **page_meta(total, limit, offset), items=items)
+) -> DiagnosisHistoryList | DiagnosisHistoryRecordList:
+    """내 진단 이력(기본 최신순, 최근 50건까지 보관). 이력이 없으면 total 0, items [].
+    검색·날짜 조건(2026-11-05)은 준 것만 넘긴다: 아무것도 없으면 예전과 같은 호출이다."""
+    tz, start, end = history_window(date_from, date_to, timezone)
+    filters = {k: v for k, v in {"terms": split_terms(q), "start": start, "end": end}.items() if v}
+    total, items = diagnosis_history.list_diagnoses(user.id, limit, offset, sort, order, **filters)
+    meta = {"total": total, "limit": limit, "offset": offset, **page_meta(total, limit, offset)}
+    if view == "record":
+        return DiagnosisHistoryRecordList(**meta, timezone=tz.key, items=[with_dates(i, tz) for i in items])
+    return DiagnosisHistoryList(**meta, items=items)
 
 
 @router.get("/diagnosis/{diagnosis_id}", response_model=DiagnosisDetail, response_model_exclude_none=False)
@@ -352,13 +438,15 @@ def get_my_diagnosis(
     return DiagnosisDetail(**record["result"], id=record["id"], created_at=record["created_at"].isoformat())
 
 
-@router.get("/diagnosis/{diagnosis_id}/compare", response_model=DiagnosisComparison)
+@router.get("/diagnosis/{diagnosis_id}/compare", response_model=DiagnosisComparison | DiagnosisRecordComparison)
 def compare_my_diagnosis(
     diagnosis_id: int = Path(ge=1, le=BIGINT_MAX),
     base: int | None = Query(None, ge=1, le=BIGINT_MAX),
+    view: View = view_query(),
     user: CurrentUser = Depends(get_current_user),
-) -> DiagnosisComparison:
-    """내 진단과 이전 진단의 비교(코드로만 계산, LLM 없음). `base`가 없으면 바로 이전 진단과 비교한다."""
+) -> DiagnosisComparison | DiagnosisRecordComparison:
+    """내 진단과 이전 진단의 비교(코드로만 계산, LLM 없음). `base`가 없으면 바로 이전 진단과 비교한다.
+    view=record면 두 저장본의 기준 시점(basis)과 현금 비중·집중도 등 지표 변화(metric_changes)를 붙인다."""
     current = diagnosis_history.get_diagnosis(user.id, diagnosis_id)
     if current is None:
         raise _diagnosis_not_found(diagnosis_id)
@@ -368,6 +456,8 @@ def compare_my_diagnosis(
         previous = diagnosis_history.get_diagnosis(user.id, base)
         if previous is None:
             raise _diagnosis_not_found(base)
+    if view == "record":
+        return DiagnosisRecordComparison(**diagnosis_history.build_record_comparison(current, previous))
     return DiagnosisComparison(**diagnosis_history.build_comparison(current, previous))
 
 

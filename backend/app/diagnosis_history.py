@@ -2,7 +2,9 @@
 
 구성(위에서부터 DB 없는 순수 함수 → DB):
 - history_item / build_comparison: 이력 항목 요약, 두 진단의 비교. 코드로만 계산한다(LLM 없음)
+- record_fields / build_record_comparison: 기록 관리(2026-11-05) view=record의 추가 필드와 비교 보강. 저장본을 읽기만 한다
 - save_diagnosis / list_diagnoses / get_diagnosis / get_previous_diagnosis / delete_diagnosis: DB.
+  diagnosis_conditions / diagnoses_by_ids: 진단 이력 검색(q)과 통합 검색(app/history_search)이 같이 쓴다.
   모든 쿼리는 user_id가 일치하는 행만 대상으로 한다(남의 것과 없는 것을 구분하지 않는다). user_id에 기본값을 두지 않아
   소유자 조건을 빠뜨릴 수 없게 했다.
 
@@ -11,13 +13,16 @@ record(get_diagnosis가 돌려주는 dict): {"id", "created_at"(datetime), "sour
 """
 
 import logging
+from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal
 
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import Text, and_, cast, delete, func, literal_column, or_, select
 
 from app.db.session import SessionLocal
-from app.diagnosis import _pct, _r2
+from app.diagnosis import NO_RISK_SENTENCE, _pct, _r2
+from app.history_terms import ANY_FLAG, flag_codes, term_variants
 from app.models import PortfolioDiagnosis
-from app.pagination import order_by_clauses
+from app.pagination import escape_like, order_by_clauses
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +163,91 @@ def build_comparison(current: dict, previous: dict | None) -> dict:
     }
 
 
+# ---------- 기록 관리(2026-11-05): 목록 기록 필드, 비교 보강. 저장본을 읽기만 한다 ----------
+
+TOP_HOLDINGS = 3
+# 비교의 metrics 변화에 넣는 지표(저장된 metrics의 키). 비중은 %p, 금액은 원, HHI는 소수 4자리 차이다.
+COMPARED_METRICS = (
+    "cash_balance", "cash_weight_pct", "stock_eval_amount", "holding_count",
+    "top1_weight_pct", "top3_weight_pct", "herfindahl_index", "total_profit_loss_pct",
+)
+BASIS_NOTE = ("두 진단은 각각 저장 당시의 보유 구성과 시세로 계산한 결과입니다. 기준 시점이 서로 다르고, "
+              "현재 시세로 다시 계산하지 않았습니다.")
+
+
+def _top_holdings(holdings: list[dict] | None) -> list[dict]:
+    """비중이 큰 순 상위 TOP_HOLDINGS개(비중을 모르는 종목은 뒤). 저장된 비중 그대로다."""
+    rows = [h for h in holdings or [] if isinstance(h, dict)]
+    rows.sort(key=lambda h: (h.get("weight_pct") is None, -(h.get("weight_pct") or 0)))
+    return [{"ticker": h.get("ticker"), "company_name": h.get("company_name"), "weight_pct": h.get("weight_pct")}
+            for h in rows[:TOP_HOLDINGS]]
+
+
+def diagnosis_title(top: list[dict], holdings_count: int) -> str:
+    """진단 제목(제목 컬럼이 없어서 저장된 보유 종목으로 만든다): "삼성전자 외 2종목 진단"."""
+    if not top or not top[0].get("company_name"):
+        return "포트폴리오 진단"
+    name = top[0]["company_name"]
+    return f"{name} 진단" if holdings_count <= 1 else f"{name} 외 {holdings_count - 1}종목 진단"
+
+
+def record_fields(result: dict, holdings_count: int) -> dict:
+    """진단 이력 view=record 항목의 추가 필드. result는 저장된 진단 응답(또는 그 조각: metrics.cash_weight_pct, holdings,
+    risks, flags, generated_at만 있어도 된다)."""
+    top = _top_holdings(result.get("holdings"))
+    risks = result.get("risks") or []
+    codes = []
+    for f in result.get("flags") or []:
+        if f.get("code") and f["code"] not in codes:
+            codes.append(f["code"])
+    return {
+        "title": diagnosis_title(top, holdings_count),
+        "cash_weight_pct": (result.get("metrics") or {}).get("cash_weight_pct"),
+        "top_holdings": top,
+        "risk_summary": risks[0] if risks else None,
+        "flag_codes": codes,
+        "generated_at": result.get("generated_at"),
+    }
+
+
+def _diff4(current, previous):
+    if current is None or previous is None:
+        return None
+    return float((Decimal(str(current)) - Decimal(str(previous))).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
+
+
+def metric_changes(current: dict, previous: dict) -> dict:
+    """저장된 두 진단 응답(result)의 지표 변화: {지표: {"previous", "current", "change"}}. 어느 한쪽이 null이면 change도 null."""
+    cur, prev = current.get("metrics") or {}, previous.get("metrics") or {}
+    out = {}
+    for key in COMPARED_METRICS:
+        c, p = cur.get(key), prev.get(key)
+        out[key] = {"previous": p, "current": c, "change": _diff4(c, p) if key == "herfindahl_index" else _diff(c, p)}
+    return out
+
+
+def comparison_basis(current: dict, previous: dict | None) -> dict:
+    """두 진단이 각각 어떤 시점의 저장본인가. 시세 기준 시각은 저장된 generated_at이다."""
+    return {
+        "current_created_at": current["created_at"].isoformat(),
+        "current_generated_at": current["result"].get("generated_at"),
+        "previous_created_at": None if previous is None else previous["created_at"].isoformat(),
+        "previous_generated_at": None if previous is None else previous["result"].get("generated_at"),
+        "recomputed": False,
+        "note": BASIS_NOTE if previous is not None else None,
+    }
+
+
+def build_record_comparison(current: dict, previous: dict | None) -> dict:
+    """build_comparison + 기준 시점(basis)과 지표 변화(metric_changes). ETF 실질 노출은 진단 저장본에 없어서 비교하지 않는다."""
+    return {
+        **build_comparison(current, previous),
+        "basis": comparison_basis(current, previous),
+        "metric_changes": None if previous is None else metric_changes(current["result"], previous["result"]),
+        "exposure_changes": None,
+    }
+
+
 # ---------- DB ----------
 
 
@@ -230,14 +320,98 @@ def _prune(user_id: int, keep: int = MAX_KEPT_PER_USER) -> None:
         db.close()
 
 
+def _search_text():
+    """진단 검색 대상 글: 요약·강점·위험·제안·플래그 문장·보유 종목명·종목코드(저장된 result에서, 키 이름은 넣지 않는다)."""
+    r = PortfolioDiagnosis.result
+
+    def path(p: str):
+        # 상수 경로만 쓴다(사용자 입력이 아니다)
+        return cast(func.jsonb_path_query_array(r, literal_column(f"'{p}'::jsonpath")), Text)
+
+    return func.concat_ws(
+        " ",
+        r["summary"].as_string(),
+        cast(r["strengths"], Text),
+        # 플래그가 없을 때의 고정 문장("위험 항목은 없습니다")은 빼서 "위험" 검색에 걸리지 않게 한다
+        func.replace(cast(r["risks"], Text), NO_RISK_SENTENCE, ""),
+        cast(r["suggestions"], Text),
+        path("$.flags[*].message"),
+        path("$.holdings[*].company_name"),
+        path("$.holdings[*].ticker"),
+    )
+
+
+def _term_condition(term: str):
+    """검색 낱말 하나(app/history_terms 규칙): 검색 대상 글에 들어 있거나(별칭은 등록명으로도), 위험 키워드면 그 플래그가 있음."""
+    text = _search_text()
+    conds = [text.ilike(f"%{escape_like(v)}%", escape="\\") for v in term_variants(term)]
+    codes = flag_codes(term)
+    if ANY_FLAG in codes:
+        conds.append(func.jsonb_array_length(PortfolioDiagnosis.result["flags"]) > 0)
+    conds += [PortfolioDiagnosis.result["flags"].contains([{"code": c}]) for c in sorted(codes - {ANY_FLAG})]
+    return or_(*conds)
+
+
+def diagnosis_conditions(
+    user_id: int, *, terms: list[str] | None = None, start: datetime | None = None, end: datetime | None = None
+) -> list:
+    """진단 이력 목록·통합 검색의 WHERE 조건. 항상 소유자 조건으로 시작한다."""
+    conds = [_owned(user_id)]
+    if start is not None:
+        conds.append(PortfolioDiagnosis.created_at >= start)
+    if end is not None:
+        conds.append(PortfolioDiagnosis.created_at < end)
+    return conds + [_term_condition(t) for t in terms or []]
+
+
+def _list_columns():
+    r = PortfolioDiagnosis.result
+    return (
+        PortfolioDiagnosis.id,
+        PortfolioDiagnosis.created_at,
+        PortfolioDiagnosis.source,
+        PortfolioDiagnosis.total_asset,
+        PortfolioDiagnosis.holdings_count,
+        r["flags"],
+        r["summary"].as_string(),
+        # 기록 필드용 조각(2026-11-05)
+        r["metrics"]["cash_weight_pct"],
+        r["holdings"],
+        r["risks"],
+        r["generated_at"].as_string(),
+    )
+
+
+def _list_item(row) -> dict:
+    id_, created_at, source, total_asset, holdings_count, flags, summary, cash_pct, holdings, risks, generated_at = row
+    fragment = {"metrics": {"cash_weight_pct": cash_pct}, "holdings": holdings, "risks": risks, "flags": flags,
+                "generated_at": generated_at}
+    return {
+        **_history_item(id_, created_at, source, total_asset, holdings_count, flags, summary),
+        "created_at_dt": created_at,
+        **record_fields(fragment, holdings_count),
+    }
+
+
 def list_diagnoses(
-    user_id: int, limit: int, offset: int, sort: str = "created_at", order: str = "desc"
+    user_id: int,
+    limit: int,
+    offset: int,
+    sort: str = "created_at",
+    order: str = "desc",
+    *,
+    terms: list[str] | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
 ) -> tuple[int, list[dict]]:
-    """(user_id의 전체 진단 수, 목록(기본 최신순)). 목록 항목에 필요한 JSON 조각(flags, summary)만 읽는다.
-    sort는 created_at | id | total_asset | holdings_count, 같은 값은 id가 방향을 따라 정한다."""
+    """(조건에 맞는 user_id의 진단 수, 목록(기본 최신순)). 목록 항목에 필요한 JSON 조각만 읽는다.
+    sort는 created_at | id | total_asset | holdings_count, 같은 값은 id가 방향을 따라 정한다.
+    terms(검색 낱말)·start/end(UTC 이상/미만)는 2026-11-05에 추가한 선택 조건이고 total도 그 조건을 적용한 건수다.
+    항목은 history_item 필드 + 기록 필드(record_fields) + created_at_dt다(API 기본 응답은 history_item 필드만 내보낸다)."""
     db = SessionLocal()
     try:
-        total = db.query(func.count(PortfolioDiagnosis.id)).filter(_owned(user_id)).scalar()
+        conds = diagnosis_conditions(user_id, terms=terms, start=start, end=end)
+        total = db.query(func.count(PortfolioDiagnosis.id)).filter(*conds).scalar()
         sort_columns = {
             "created_at": PortfolioDiagnosis.created_at,
             "id": PortfolioDiagnosis.id,
@@ -245,21 +419,25 @@ def list_diagnoses(
             "holdings_count": PortfolioDiagnosis.holdings_count,
         }
         rows = db.execute(
-            select(
-                PortfolioDiagnosis.id,
-                PortfolioDiagnosis.created_at,
-                PortfolioDiagnosis.source,
-                PortfolioDiagnosis.total_asset,
-                PortfolioDiagnosis.holdings_count,
-                PortfolioDiagnosis.result["flags"],
-                PortfolioDiagnosis.result["summary"].as_string(),
-            )
-            .where(_owned(user_id))
+            select(*_list_columns())
+            .where(*conds)
             .order_by(*order_by_clauses(sort_columns[sort], PortfolioDiagnosis.id, order))
             .limit(limit)
             .offset(offset)
         ).all()
-        return total, [_history_item(*row) for row in rows]
+        return total, [_list_item(row) for row in rows]
+    finally:
+        db.close()
+
+
+def diagnoses_by_ids(user_id: int, diagnosis_ids: list[int]) -> dict[int, dict]:
+    """통합 검색 한 페이지의 진단 항목(list_diagnoses 항목과 같은 형태, id별). 남의 것은 소유자 조건으로 빠진다(쿼리 1개)."""
+    if not diagnosis_ids:
+        return {}
+    db = SessionLocal()
+    try:
+        rows = db.execute(select(*_list_columns()).where(_owned(user_id), PortfolioDiagnosis.id.in_(diagnosis_ids))).all()
+        return {item["id"]: item for item in map(_list_item, rows)}
     finally:
         db.close()
 

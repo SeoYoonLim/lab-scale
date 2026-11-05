@@ -18,7 +18,7 @@ Authorization: Bearer <access_token>
 
 | 구분 | 엔드포인트 |
 | --- | --- |
-| **인증 필요** | `/api/auth/me`(GET/DELETE), `/api/auth/logout`(POST), `/api/auth/change-password`(POST), `/api/auth/email`(PUT), `/api/auth/resend-verification`(POST), `/api/briefing`(GET), `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/performance`(GET), `/api/backtest`(POST), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET) |
+| **인증 필요** | `/api/auth/me`(GET/DELETE), `/api/auth/logout`(POST), `/api/auth/change-password`(POST), `/api/auth/email`(PUT), `/api/auth/resend-verification`(POST), `/api/briefing`(GET), `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/performance`(GET), `/api/backtest`(POST), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET), `/api/history/search`(GET) |
 | 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/auth/delete-account/confirm`(POST), `/api/auth/oauth/providers`(GET), `/api/auth/oauth/{provider}/login`·`/callback`(GET, 브라우저 이동), `/api/auth/oauth/exchange`(POST), `/api/auth/verify-email`, `/api/auth/find-username`, `/api/auth/forgot-password`, `/api/auth/reset-password`(모두 POST), `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status`, `/api/health`, `/api/stocks/{ticker}/event-reactions`, `/api/stocks/{ticker}/price-history` |
 
 - 데이터는 **사용자별로 분리**된다. 리서치 리포트 목록/조회/삭제/이어 쓰기(`previous_report_id`)는 본인 것만 대상이고,
@@ -187,8 +187,8 @@ ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응�
 | DELETE | `/api/auth/me` | 필요 | 회원 탈퇴: 모든 데이터 삭제(2026-10-30, 아래 "회원 탈퇴") |
 | POST | `/api/auth/delete-account/confirm` | 공개 | 소셜 계정의 탈퇴 확인 메일 링크로 탈퇴 확정 |
 | POST | `/api/research` | 필요 | 질문을 보내 AI 답변 생성(+리포트 저장). `previous_report_id`로 내 직전 보고서를 이어서 후속 질문 가능 |
-| GET | `/api/research` | 필요 | 내 리포트 목록(기본 최신순). `limit`/`offset` 페이지네이션(`has_next`, `total_pages`), `sort`/`order` 정렬, `q` 검색 |
-| GET | `/api/research/{report_id}` | 필요 | 내 리포트 한 건 조회 |
+| GET | `/api/research` | 필요 | 내 리포트 목록(기본 최신순). `limit`/`offset` 페이지네이션(`has_next`, `total_pages`), `sort`/`order` 정렬, `q` 검색. 2026-11-05: `date_from`/`date_to`/`timezone`/`analysis_type` 필터, `view=record`면 기록 관리 필드(아래 "기록 관리") |
+| GET | `/api/research/{report_id}` | 필요 | 내 리포트 한 건 조회. `view=record`면 종목 목록·분석 유형·기준일(`data_basis`)·날짜 그룹 추가 |
 | DELETE | `/api/research/{report_id}` | 필요 | 내 리포트 한 건 삭제(tool 호출 이력 포함) |
 | GET | `/api/stocks/{ticker}/realtime-price` | 공개 | 종목 현재가(비공식 소스 기반 실시간 시세, 장외/장애 시 자동 폴백) |
 | GET | `/api/companies` | 공개 | 종목 목록/검색(`q`로 종목명·티커 부분 일치, 별칭 포함) + 최근 종가·등락률. `asset_type=stock\|etf`로 주식/ETF만. `offset`, `sort`/`order`, 전체 건수는 `X-Total-Count` 헤더 |
@@ -203,9 +203,10 @@ ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응�
 | POST | `/api/backtest` | 필요 | 과거 종가로 buy_and_hold / sma_cross / dca 백테스트(1~5종목, 최대 5년, t일 신호 → t+1일 종가 체결), LLM 없음, 저장 안 함 (2026-10-29) |
 | POST | `/api/portfolio/reset` | 필요 | 내 모의투자 초기화(보유·체결 내역 삭제 + 잔고 초기값). 본문 `{"confirm": true}` 필수 |
 | POST | `/api/portfolio/diagnosis` | 필요 | 내 포트폴리오 AI 진단(지표·플래그는 코드 계산, 설명은 LLM 또는 규칙 기반 폴백). 결과를 저장하고 `diagnosis_id`·`created_at`을 붙인다 |
-| GET | `/api/portfolio/diagnosis/history` | 필요 | 내 진단 이력 목록(기본 최신순, `limit`/`offset` 페이지네이션(`has_next`, `total_pages`), `sort`/`order` 정렬, 최근 50건 보관) |
+| GET | `/api/portfolio/diagnosis/history` | 필요 | 내 진단 이력 목록(기본 최신순, `limit`/`offset` 페이지네이션(`has_next`, `total_pages`), `sort`/`order` 정렬, 최근 50건 보관). 2026-11-05: `q`/`date_from`/`date_to`/`timezone`, `view=record` |
 | GET | `/api/portfolio/diagnosis/{id}` | 필요 | 내 진단 한 건(저장된 진단 응답 그대로) |
-| GET | `/api/portfolio/diagnosis/{id}/compare` | 필요 | 이전 진단과 비교(코드로만 계산). `base`로 기준 진단 지정 |
+| GET | `/api/portfolio/diagnosis/{id}/compare` | 필요 | 이전 진단과 비교(코드로만 계산). `base`로 기준 진단 지정. `view=record`면 기준 시점(`basis`)·지표 변화(`metric_changes`) 추가 |
+| GET | `/api/history/search` | 필요 | 내 리서치·진단 기록 통합 검색(2026-11-05, 아래 "기록 관리"). `type`/`keyword`/`date_from`/`date_to`/`timezone`/`page`/`size`/`sort` |
 | DELETE | `/api/portfolio/diagnosis/{id}` | 필요 | 내 진단 한 건 삭제 |
 | GET | `/api/disclaimer` | 공개 | 서비스 면책 문구(`{"text": "..."}`) |
 | GET | `/api/status` | 공개 | 데이터 기준일(소스별 최신 날짜, 지수 stale 여부, 마지막 갱신 결과). 푸터의 "데이터 기준일" 표시용 |
@@ -4122,6 +4123,145 @@ ETF의 **구성종목과 편입 비중**(운용사가 공시하는 PDF를 수집
 - 선물·스왑으로 구성된 ETF(KODEX 레버리지·인버스 등)는 "구성종목"이 주식이 아니라 지수선물·스왑으로 나온다. 레버리지는 비중 합계가 200% 안팎이다.
 - 채팅 답변은 한 번에 최대 10개까지만 보여준다(질문이 더 많이 요청하면 그렇게 알린다). API는 `limit` 최대 50개다. 한 번에 최근 기준일 하나만 반환한다(과거 기준일 조회·비교 없음).
 - 쿼리 수는 종목 해석 + 최신 기준일 + 상위 N개 + 전체 합계로 고정이다(구성종목 수와 무관).
+
+---
+
+## 기록 관리: 날짜별 목록·검색·통합 검색 (2026-11-05)
+
+리서치 기록과 포트폴리오 진단 이력을 날짜별로 보고, 종목명·종목코드·키워드·날짜로 찾고, 당시 결과를 다시 여는 기능이다.
+**새 테이블·컬럼·마이그레이션은 없다.** 기존 `research_report`·`tool_call_log`·`portfolio_diagnosis`를 읽기만 한다(조회·검색이 어떤 행도 고치지 않는다).
+
+### 하위 호환 원칙
+
+- **파라미터를 안 주면 기존 응답이 한 글자도 바뀌지 않는다.** 새 필드는 `view=record`를 줄 때만 붙는다.
+- 새 필터(`date_from`, `date_to`, `timezone`, `analysis_type`, 진단 이력의 `q`)는 `view`와 관계없이 동작한다.
+- `GET /api/research`의 기존 `q` 의미(질문·요약·리포트 종목명·종목코드 부분 일치)는 그대로다. 답변 전문·여러 종목·별칭까지 찾는 넓은 검색은 통합 검색(`GET /api/history/search`)을 쓴다.
+
+### 날짜·시간대 규칙 (세 API 공통)
+
+| 항목 | 규칙 |
+| --- | --- |
+| 저장 | `created_at`은 DB에 UTC로 저장된 그대로 응답한다(`+00:00`) |
+| `timezone` | IANA 이름(`Asia/Seoul`, `America/New_York`, `UTC` …). 없거나 공백이면 `Asia/Seoul`. 모르는 이름·64자 초과는 422 |
+| `date_from` / `date_to` | `YYYY-MM-DD`, **`timezone`의 달력 날짜**. `date_to`는 그날 끝까지 포함(다음 날 0시 미만). 하나만 줘도 된다. `date_from > date_to`면 422, 없는 날짜(`2026-02-30`)도 422 |
+| `local_date` / `local_time` | `timezone` 기준 작성 날짜(`2026-11-05`)와 시각(`10:00`) |
+| `date_group` | `timezone`의 오늘 기준 달력 날짜 차이: `today`(0일) · `yesterday`(1일) · `last_7_days`(2~6일) · `last_30_days`(7~29일) · `older`(30일 이상). 미래 시각은 `today` |
+
+예: UTC `2026-11-04T15:00:00+00:00`은 서울 기준 `2026-11-05 00:00`(today), UTC 기준 `2026-11-04`(yesterday)다.
+
+### 검색 낱말 규칙 (통합 검색 `keyword`, 진단 이력 `q`)
+
+- 공백으로 나눈 낱말(최대 5개)이 **모두** 들어 있어야 한다(AND). `"ETF 중복"` = "ETF"와 "중복"이 각각 들어 있음.
+- 대소문자 무시 부분 일치. `%`, `_`, 백슬래시는 글자 그대로다(`"삼성%전자"`는 "삼성전자"를 찾지 않는다). 검색어는 바인딩 파라미터로만 전달된다.
+- 종목 별칭은 등록명으로도 찾는다(`삼전` → 삼성전자, `하닉` → SK하이닉스, `app/company_aliases.py`).
+- 리서치에서 찾는 곳: 질문·요약·**답변 전문**·리포트 종목(이름·코드)·tool 결과에 나온 종목(이름·코드). "ETF"가 들어간 낱말은 ETF를 조회한 리포트도 찾는다.
+- 진단에서 찾는 곳: 요약·강점·위험·제안·플래그 문장·보유 종목명·종목코드. 플래그가 없을 때의 고정 문장("규칙 기준으로 확인된 위험 항목은 없습니다.")은 검색 대상에서 뺐다.
+- 위험 키워드는 진단 플래그로도 찾는다(플래그 문장에는 "집중도" 같은 낱말이 없어서다):
+
+| 낱말에 들어 있으면 | 찾는 플래그 |
+| --- | --- |
+| 집중, 쏠림, 편중, concentration | `CONCENTRATION_HIGH`, `MARKET_SKEW` |
+| 분산 | `CONCENTRATION_HIGH`, `FEW_HOLDINGS` |
+| 종목수 | `FEW_HOLDINGS` |
+| 현금, cash | `CASH_HIGH`, `CASH_LOW` |
+| 손실, 손익, loss | `BIG_LOSS` |
+| 레버리지, 인버스, leverage | `LEVERAGED_INVERSE_ETF` |
+| 위험, 리스크, risk | 플래그가 하나라도 있는 진단 |
+
+### `GET /api/research` 추가 파라미터
+
+| 이름 | 기본값 | 설명 |
+| --- | --- | --- |
+| `date_from`, `date_to`, `timezone` | 없음, 없음, `Asia/Seoul` | 위 날짜 규칙 |
+| `analysis_type` | 없음 | `outlook`, `event`, `briefing`, `discovery`, `etf`, `disclosure`, `news`, `price`, `market`, `general` 중 하나. 그 유형이 `analysis_types`에 있는 리포트만 |
+| `view` | `default` | `record`면 아래 필드와 응답의 `timezone`을 붙인다. 그 밖의 값은 422 |
+
+`analysis_type`은 저장된 tool 이력으로 코드가 정한다(LLM 없음): `outlook` = 전망 경로, `event` = 사건 반응, `briefing` = 채팅 브리핑, `discovery` = 급등락 탐색,
+`etf` = ETF를 조회함, `disclosure` = 공시, `news` = 뉴스·문서 검색, `price` = 주가, `market` = 시장 지수·환율, `general` = 아는 tool을 하나도 쓰지 않음(개념 설명 등).
+한 리포트가 여러 유형일 수 있고 `analysis_type`은 이 순서에서 처음 걸린 값이다.
+
+`view=record` 항목에 붙는 필드(기존 필드는 그대로):
+
+| 필드 | 설명 |
+| --- | --- |
+| `title` | 질문을 공백 정리해 앞 60자(제목 컬럼이 없어 질문에서 만든다) |
+| `company_names`, `tickers` | 리포트 종목 + tool 결과에 나온 종목(순서 유지, 중복 없음). `company_name`(정확히 1종목일 때만)과 달리 여러 종목이면 모두 |
+| `analysis_type`, `analysis_types` | 위 분석 유형 |
+| `source_count` | 뉴스·공시 출처 수. 상세 `sources`와 같은 규칙으로 중복 제거 |
+| `local_date`, `local_time`, `date_group` | 위 날짜 규칙 |
+
+`GET /api/research/{report_id}?view=record`는 같은 필드에 `data_basis`(당시 tool 결과에 남은 기준일: `period_start_date`, `period_end_date`, `base_date`, `latest_date`, `data_date`, `price_as_of`, `as_of` 중 있는 것)와 `timezone`을 더한다.
+답변·출처는 저장된 그대로이고 현재 시세·뉴스로 다시 만들지 않는다. 뉴스·공시 제목은 원문 그대로다.
+
+### `GET /api/portfolio/diagnosis/history` 추가 파라미터
+
+`q`(최대 50자, 위 검색 낱말 규칙), `date_from`, `date_to`, `timezone`, `view`. `total`도 조건을 적용한 건수다.
+`view=record` 항목에 붙는 필드: `title`("삼성전자 외 2종목 진단", 저장된 보유 종목으로 만듦), `cash_weight_pct`, `top_holdings`(비중 상위 3종목: `ticker`, `company_name`, `weight_pct`),
+`risk_summary`(저장된 위험 요인 첫 문장), `flag_codes`, `generated_at`(진단을 계산한 시각 = 그때 쓴 시세의 기준 시각), `local_date`, `local_time`, `date_group`. 모두 저장본의 값이다.
+
+### `GET /api/portfolio/diagnosis/{id}/compare?view=record`
+
+기존 응답(`current`, `previous`, `changes`, `disclaimer`)에 다음을 더한다.
+
+| 필드 | 설명 |
+| --- | --- |
+| `basis` | `current_created_at`, `current_generated_at`, `previous_created_at`, `previous_generated_at`, `recomputed`(항상 false), `note`("두 진단은 각각 저장 당시의 보유 구성과 시세로 계산한 결과입니다…", 비교 대상이 없으면 null) |
+| `metric_changes` | `cash_balance`, `cash_weight_pct`, `stock_eval_amount`, `holding_count`, `top1_weight_pct`, `top3_weight_pct`, `herfindahl_index`, `total_profit_loss_pct` 각각 `{previous, current, change}`. 비중은 %p, HHI는 소수 4자리, 한쪽이 null이면 change도 null. 비교 대상이 없으면 null |
+| `exposure_changes` | 항상 null. 진단 저장본에 ETF 실질 노출이 없어서 비교하지 않는다(`GET /api/portfolio/exposure`는 현재 시점만 계산) |
+
+개선된 위험·새 위험은 기존 `changes.flags.resolved` / `changes.flags.added`다.
+
+### `GET /api/history/search` (인증 필요)
+
+| 이름 | 기본값 | 범위 | 설명 |
+| --- | --- | --- | --- |
+| `type` | `all` | `all`, `research`, `diagnosis` | 탭 |
+| `keyword` | 없음 | 최대 50자 | 위 검색 낱말 규칙. 없거나 공백이면 전체 |
+| `date_from`, `date_to`, `timezone` | | | 위 날짜 규칙 |
+| `page` | 1 | 1~10000 | |
+| `size` | 20 | 1~100 | |
+| `sort` | `created_at,desc` | `created_at,desc`, `created_at,asc` | 같은 시각이면 종류, 그다음 id(같은 방향). 페이지를 넘겨도 중복·누락 없음 |
+
+```json
+{
+  "type": "all", "keyword": "SK하이닉스", "terms": ["SK하이닉스"], "date_from": null, "date_to": null,
+  "timezone": "Asia/Seoul", "sort": "created_at,desc", "page": 1, "size": 20,
+  "total": 3, "total_pages": 1, "has_next": false,
+  "counts": {"all": 3, "research": 2, "diagnosis": 1},
+  "items": [
+    {
+      "kind": "research", "id": 32500, "created_at": "2026-11-05T01:00:00+00:00",
+      "local_date": "2026-11-05", "local_time": "10:00", "date_group": "today",
+      "title": "SK하이닉스 전망 알려줘", "summary": "SK하이닉스 단기 방향은 상승 쪽입니다.",
+      "company_names": ["SK하이닉스"], "tickers": ["000660"], "detail_path": "/api/research/32500",
+      "research": {"report_id": 32500, "previous_report_id": null, "question": "SK하이닉스 전망 알려줘",
+                   "analysis_type": "outlook", "analysis_types": ["outlook", "news", "price"], "source_count": 2,
+                   "used_tools": ["stock_tool", "news_tool"]},
+      "diagnosis": null
+    },
+    {
+      "kind": "diagnosis", "id": 51639, "created_at": "2026-11-05T00:30:00+00:00",
+      "local_date": "2026-11-05", "local_time": "09:30", "date_group": "today",
+      "title": "삼성전자 외 2종목 진단", "summary": "총자산 9,000,000원 중 현금이 3,000,000원(비중 33.33%)이고, 보유 종목은 3개입니다. …",
+      "company_names": ["삼성전자", "SK하이닉스", "에코프로비엠"], "tickers": ["005930", "000660", "247540"],
+      "detail_path": "/api/portfolio/diagnosis/51639", "research": null,
+      "diagnosis": {"diagnosis_id": 51639, "source": "rule_based", "total_asset": 9000000.0, "holdings_count": 3,
+                    "cash_weight_pct": 33.33, "top_holdings": [{"ticker": "005930", "company_name": "삼성전자", "weight_pct": 22.22}],
+                    "risk_summary": "규칙 기준으로 확인된 위험 항목은 없습니다.", "flags": [], "flag_codes": [],
+                    "generated_at": "2026-11-05T00:56:00.344219+00:00"}
+    }
+  ]
+}
+```
+
+(dev DB에 테스트용 사용자와 합성 기록을 넣고 실제로 호출한 응답에서 줄였다. `top_holdings`는 3개 중 1개만 남겼고, 합성 데이터라 `generated_at`이 `created_at`과 다르다.)
+
+- `kind`가 기록 종류다. 상세는 `detail_path`(기존 API: `GET /api/research/{id}`, `GET /api/portfolio/diagnosis/{id}`)로 연다.
+- `total`은 `type` 탭의 건수, `counts`는 `type`과 관계없이 탭마다의 건수다(탭 숫자 표시용, 같은 검색 조건).
+- 결과가 없으면 200, `total: 0`, `items: []`. `page`가 끝을 넘어도 200, 빈 `items`.
+- 에러: 401(토큰 없음, 잘못된 파라미터를 같이 보내도 401이 먼저), 422(위 범위 밖, 검증 오류 형식), 503(DB 연결 불가).
+- 다른 사용자의 기록은 어떤 조건으로도 나오지 않는다(모든 쿼리가 `user_id` 조건으로 시작한다).
+- 성능: 두 테이블의 `(종류, id, created_at)`만 `UNION ALL`로 모아 DB에서 정렬·`LIMIT/OFFSET` 한 뒤 그 페이지 행만 읽는다. 쿼리 수는 페이지 크기와 무관하게 인증 1 + 건수 2 + 페이지 1 + 리서치 3 + 진단 1 = 최대 8개(테스트가 센다).
 
 ---
 
