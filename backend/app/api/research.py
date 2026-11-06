@@ -11,6 +11,7 @@ from app.api.history_params import history_window, with_dates
 from app.auth import CurrentUser
 from app.disclaimer import DISCLAIMER
 from app.history_dates import DEFAULT_TIMEZONE, MAX_TIMEZONE_LEN
+from app.i18n import MAX_LOCALE_LEN, disclaimer, is_default, resolve_locale
 from app.pagination import MAX_OFFSET, page_meta
 from app.reports import delete_report, get_report, list_reports
 
@@ -28,6 +29,8 @@ class ResearchRequest(BaseModel):
     question: str = Field(max_length=MAX_QUESTION_LEN)
     # 후속 질문일 때 이어받을 바로 직전 보고서. 그 보고서의 질문/답변이 대화 맥락으로 쓰인다(체이닝은 1개까지).
     previous_report_id: int | None = Field(default=None, ge=1, le=BIGINT_MAX)
+    # 답변 언어(2026-11-05): ko-KR, en-US, ja-JP, zh-CN. 없으면 계정 설정(preferred_locale), 지원하지 않는 값이면 ko-KR.
+    locale: str | None = Field(default=None, max_length=MAX_LOCALE_LEN)
 
     @field_validator("question")
     @classmethod
@@ -128,7 +131,8 @@ class DataBasis(BaseModel):
 
 
 class ReportRecordItem(RecordFields, ReportListItem):
-    pass
+    # 기록을 만든 언어(기존 기록은 ko-KR)
+    locale: str
 
 
 class ReportRecordList(BaseModel):
@@ -143,6 +147,11 @@ class ReportRecordList(BaseModel):
 class ReportRecordDetail(RecordFields, ReportDetail):
     data_basis: list[DataBasis]
     timezone: str
+    locale: str
+    # ko-KR이 아닌 기록만: translated(번역) | localized(그 언어 템플릿) | fallback_original(번역 검증 실패, answer는 한국어 원문)
+    translation_status: str | None = None
+    # ko-KR이 아닌 기록만: 번역 전에 검증을 거친 한국어 답변
+    original_answer: str | None = None
 
 
 View = Literal["default", "record"]
@@ -169,15 +178,23 @@ def _report_not_found(report_id: int) -> HTTPException:
 def research(request: ResearchRequest, user: CurrentUser = Depends(get_current_user)) -> ResearchResponse:
     # 인증(401) 다음에 사용자당 분당 횟수와 동시 1건을 본다(429). LLM이 Ollama를 오래 점유하기 때문이다(app/rate_limit).
     rate_limit.check(rate_limit.research, user.owner_key, "RATE_LIMIT_RESEARCH_PER_MIN")
+    # 답변 언어: 요청 locale > 계정 설정 > ko-KR. ko-KR이면 예전과 같은 호출이다(locale 인자를 넘기지 않는다).
+    locale = resolve_locale(request.locale, user.preferred_locale)
+    localized = {} if is_default(locale) else {"locale": locale}
     with rate_limit.research_slot(user.owner_key):
         if request.previous_report_id is None:
-            result = ask_question(request.question, user_id=user.id)
+            result = ask_question(request.question, user_id=user.id, **localized)
         else:
             # 이어 쓰기도 본인 리포트만. 남의 리포트 id면 없는 것과 같은 404다.
             previous = get_report(request.previous_report_id, user_id=user.id)
             if previous is None:
                 raise _report_not_found(request.previous_report_id)
-            result = ask_question(request.question, previous=previous, user_id=user.id)
+            # 번역된 기록이면 후속 질문의 맥락은 번역 전 한국어 답변이다(전망 표식 등 한국어 규칙이 그 답을 읽는다)
+            if previous.get("original_answer"):
+                previous = {**previous, "answer": previous["original_answer"]}
+            result = ask_question(request.question, previous=previous, user_id=user.id, **localized)
+    if localized:
+        return ResearchResponse(**{**result, "disclaimer": disclaimer(locale)})
     return ResearchResponse(**result)
 
 
@@ -201,7 +218,7 @@ def list_research(
 ) -> ReportList | ReportRecordList:
     """내 리포트 목록(기본 최신순). total은 조건을 적용한 건수(페이지네이션용), has_next/total_pages는 그 total 기준이다.
     날짜·유형 조건(2026-11-05)은 준 것만 넘긴다: 아무것도 없으면 예전과 같은 호출이다."""
-    tz, start, end = history_window(date_from, date_to, timezone)
+    tz, start, end = history_window(date_from, date_to, timezone or user.preferred_timezone)
     filters = {k: v for k, v in {"start": start, "end": end, "analysis_type": analysis_type}.items() if v is not None}
     total, items = list_reports(user_id=user.id, limit=limit, offset=offset, sort=sort, order=order, q=q, **filters)
     meta = page_meta(total, limit, offset)
@@ -218,7 +235,7 @@ def get_research(
     user: CurrentUser = Depends(get_current_user),
 ) -> ReportDetail | ReportRecordDetail:
     """내 리포트 한 건(질문/답변/sources). 저장된 답변·tool 결과 그대로이고 다시 계산하지 않는다."""
-    tz, _, _ = history_window(None, None, timezone)
+    tz, _, _ = history_window(None, None, timezone or user.preferred_timezone)
     report = get_report(report_id, user_id=user.id)
     if report is None:
         raise _report_not_found(report_id)

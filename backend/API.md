@@ -18,7 +18,7 @@ Authorization: Bearer <access_token>
 
 | 구분 | 엔드포인트 |
 | --- | --- |
-| **인증 필요** | `/api/auth/me`(GET/DELETE), `/api/auth/logout`(POST), `/api/auth/change-password`(POST), `/api/auth/email`(PUT), `/api/auth/resend-verification`(POST), `/api/briefing`(GET), `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/performance`(GET), `/api/backtest`(POST), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET), `/api/history/search`(GET) |
+| **인증 필요** | `/api/auth/me`(GET/DELETE), `/api/auth/logout`(POST), `/api/auth/change-password`(POST), `/api/auth/email`(PUT), `/api/auth/resend-verification`(POST), `/api/briefing`(GET), `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/performance`(GET), `/api/backtest`(POST), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET), `/api/history/search`(GET), `/api/auth/preferences`(GET/PUT) |
 | 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/auth/delete-account/confirm`(POST), `/api/auth/oauth/providers`(GET), `/api/auth/oauth/{provider}/login`·`/callback`(GET, 브라우저 이동), `/api/auth/oauth/exchange`(POST), `/api/auth/verify-email`, `/api/auth/find-username`, `/api/auth/forgot-password`, `/api/auth/reset-password`(모두 POST), `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status`, `/api/health`, `/api/stocks/{ticker}/event-reactions`, `/api/stocks/{ticker}/price-history` |
 
 - 데이터는 **사용자별로 분리**된다. 리서치 리포트 목록/조회/삭제/이어 쓰기(`previous_report_id`)는 본인 것만 대상이고,
@@ -206,6 +206,8 @@ ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응�
 | GET | `/api/portfolio/diagnosis/history` | 필요 | 내 진단 이력 목록(기본 최신순, `limit`/`offset` 페이지네이션(`has_next`, `total_pages`), `sort`/`order` 정렬, 최근 50건 보관). 2026-11-05: `q`/`date_from`/`date_to`/`timezone`, `view=record` |
 | GET | `/api/portfolio/diagnosis/{id}` | 필요 | 내 진단 한 건(저장된 진단 응답 그대로) |
 | GET | `/api/portfolio/diagnosis/{id}/compare` | 필요 | 이전 진단과 비교(코드로만 계산). `base`로 기준 진단 지정. `view=record`면 기준 시점(`basis`)·지표 변화(`metric_changes`) 추가 |
+| GET | `/api/auth/preferences` | 필요 | 내 언어·시간대 설정(2026-11-05, 아래 "다국어") |
+| PUT | `/api/auth/preferences` | 필요 | 내 언어·시간대 설정 변경(지원하지 않는 값은 422) |
 | GET | `/api/history/search` | 필요 | 내 리서치·진단 기록 통합 검색(2026-11-05, 아래 "기록 관리"). `type`/`keyword`/`date_from`/`date_to`/`timezone`/`page`/`size`/`sort` |
 | DELETE | `/api/portfolio/diagnosis/{id}` | 필요 | 내 진단 한 건 삭제 |
 | GET | `/api/disclaimer` | 공개 | 서비스 면책 문구(`{"text": "..."}`) |
@@ -4262,6 +4264,72 @@ ETF의 **구성종목과 편입 비중**(운용사가 공시하는 PDF를 수집
 - 에러: 401(토큰 없음, 잘못된 파라미터를 같이 보내도 401이 먼저), 422(위 범위 밖, 검증 오류 형식), 503(DB 연결 불가).
 - 다른 사용자의 기록은 어떤 조건으로도 나오지 않는다(모든 쿼리가 `user_id` 조건으로 시작한다).
 - 성능: 두 테이블의 `(종류, id, created_at)`만 `UNION ALL`로 모아 DB에서 정렬·`LIMIT/OFFSET` 한 뒤 그 페이지 행만 읽는다. 쿼리 수는 페이지 크기와 무관하게 인증 1 + 건수 2 + 페이지 1 + 리서치 3 + 진단 1 = 최대 8개(테스트가 센다).
+
+---
+
+## 다국어: ko-KR · en-US · ja-JP · zh-CN (2026-11-05)
+
+프런트 인계 문서: `docs/FRONTEND_HANDOFF_I18N_HISTORY.md`, 번역 리소스 초안: `docs/i18n/{locale}.json`.
+
+### 원칙
+
+- **기본은 ko-KR이고, 설정을 바꾸지 않은 사용자의 응답은 한 글자도 바뀌지 않는다.** locale을 주지 않으면(그리고 계정 설정이 ko-KR이면) 기존 코드 경로를 그대로 탄다.
+- locale 결정: **요청의 `locale` > 계정 설정(`preferred_locale`) > ko-KR.** 요청에 지원하지 않는 값(`fr-FR`, `zh-TW` 등)이 오면 계정 설정이 아니라 ko-KR이다. `Accept-Language` 헤더는 보지 않는다.
+  표기는 대소문자·밑줄을 허용하고 언어만 와도 된다(`en`, `en_us` → en-US, `zh`, `zh-Hans` → zh-CN).
+- **숫자·날짜·종목명은 언어와 관계없이 같다.** 계산은 언어와 무관하게 한 번만 하고, 문장만 바꾼다. 금액은 값은 같고 표기만 바뀐다(`1,414,000원` → `KRW 1,414,000` / `1,414,000ウォン` / `1,414,000韩元`, `1조 2,000억원` → `KRW 1.2 trillion` / `1兆2,000億ウォン` / `1.2万亿韩元`).
+- 종목명·ETF 상품명은 공식 등록명(한글 포함) 그대로, 뉴스·공시 제목은 원문 그대로다(번역하지 않는다).
+- 과거 기록은 다시 번역하거나 덮어쓰지 않는다. 기록마다 만든 언어(`locale`)가 저장되고, 기존 기록은 ko-KR이다.
+
+### 계정 설정: `GET /api/auth/preferences`, `PUT /api/auth/preferences` (인증 필요, 본인만)
+
+```json
+{"preferred_locale": "ko-KR", "preferred_timezone": null, "effective_timezone": "Asia/Seoul",
+ "supported_locales": ["ko-KR", "en-US", "ja-JP", "zh-CN"], "default_locale": "ko-KR"}
+```
+
+PUT 본문: `{"preferred_locale": "en-US", "preferred_timezone": "America/New_York"}`(둘 다 선택, 보내지 않은 필드는 그대로, `preferred_timezone: null`은 Asia/Seoul로 되돌림).
+지원하지 않는 언어·모르는 시간대는 **422**(설정 저장은 조용히 ko-KR로 바꾸지 않는다). 응답은 GET과 같은 형태. 다시 로그인해도 유지된다.
+`preferred_timezone`은 기록 API(`/api/research`, `/api/portfolio/diagnosis/history`, `/api/history/search`)의 `timezone` 기본값이 된다.
+`GET /api/auth/me` 응답은 바꾸지 않았다(설정은 이 API로 읽는다).
+
+### locale을 받는 API
+
+| API | 전달 | 바뀌는 것 |
+| --- | --- | --- |
+| `POST /api/research` | 본문 `locale`(최대 20자) | `answer`, `disclaimer`. 응답 키는 그대로 |
+| `POST /api/portfolio/diagnosis` | 쿼리 `locale` | `summary`·`strengths`·`risks`·`suggestions`·`notes`·`flags[].message`·`disclaimer`, 보유 없음 400의 `detail` |
+| `GET /api/portfolio/diagnosis/{id}/compare?view=record` | 쿼리 `locale` | `basis.note` |
+| `GET /api/briefing` | 쿼리 `locale` | flag `text`·`unit`, 종목 `notice`, `message`, `portfolio.message`, `stale_notice`, 시장 지표 `name`, `disclaimer` |
+| `GET /api/portfolio/exposure` | 쿼리 `locale` | `message`, `flags[].message`, `data_warnings[].message`, `decomposed_etfs[].stale_notice`, `undecomposed_etfs[].reason`, `disclaimer` |
+| `GET /api/disclaimer` | 쿼리 `locale` | `text`(공개 API라 계정 설정은 보지 않는다) |
+
+### 리서치 답변을 그 언어로 만드는 방법 (`POST /api/research`)
+
+답변은 언제나 기존 한국어 경로로 먼저 만든다. 그래서 숫자 검증·종목 정합성·서술 검증·외국 문자 제거가 ko-KR과 똑같이 적용된다. 그다음 언어별로:
+
+1. 고정 안내(답변 실패·지연) → 언어별 고정 문구
+2. 용어 사전 답(종목 없는 정의·비교·해석 질문) → 언어별 사전(`app/glossary_i18n.py`, 40개 표제어를 언어별로 직접 작성). 한국어 답이 사전 답과 글자까지 같을 때만
+3. 전망 간결 답과 후속 답(결론·고르기·왜·한 줄·비교·확률·매수 가부·위험·데이터 기준) → **언어별 코드 템플릿**(`app/outlook_i18n.py`, 2026-11-06).
+   한국어 답과 같은 계산 결과(stock_tool 기록의 indicators·signals·label·data)로 문장만 그 언어로 쓴다(LLM 없음). 기록으로 한국어 답을 다시 만들어
+   저장된 답과 글자까지 같고, 템플릿 답의 숫자가 모두 한국어 답에 있는 값일 때만 쓴다. 아니면 4번으로 간다. `translation_status`는 `localized`.
+   예(ja-JP): `SK하이닉스(000660) · 今後5取引日 · 方向: 上昇寄り（信頼度: 低い）` / `上昇寄りです。ただし、シグナルが弱く（5つのシグナル群のうち上昇2・下落0・中立3）、…`
+4. 그 밖(상세 전망 리서치·실적/공시 날짜/신호 의미 후속·기간·시세·LLM 답 등) → **보호 번역**(`app/i18n_translate.py`): 숫자·날짜·금액·종목명·기사/공시 제목·링크를 코드가 자리표시자(⟦n⟧)로 가린 뒤
+   LLM이 문장만 번역하고 코드가 원래 값으로 되돌린다. 번역문이 ① 자리표시자를 정확히 한 번씩 쓰고 ② 자리표시자 밖에 숫자가 없고 ③ 한글이 남지 않고
+   ④ 그 언어의 글자이고 ⑤ 제목(#) 줄 수가 같을 때만 쓴다. 어기면 한 번 다시 시키고, 그래도 어기거나 LLM이 응답하지 않으면 **한국어 원문 + 안내 문구**다
+   ("※ We couldn't verify an accurate translation…"). 번역문 끝에는 "한국어 답변을 번역했고 이름·제목은 원문 그대로"라는 안내가 붙는다.
+
+리포트 저장: `content` = 사용자에게 보인 답(그 언어), `original_content` = 번역 전 한국어 답, `locale`, `translation_status`(`translated` | `localized` | `fallback_original`).
+같은 기록으로 후속 질문을 하면 맥락은 `original_content`(한국어)다. `GET /api/research/{id}?view=record`는 `locale`, `translation_status`, `original_answer`를 더 준다.
+목록·통합 검색 항목(`view=record`, `/api/history/search`)에는 `locale`이 있다.
+
+### 알려진 한계 (2026-11-05 확인)
+
+- 보호 번역은 LLM이 필요하다. 이 작업 중 로컬 Ollama(127.0.0.1:13434)는 모델 목록은 응답했지만 채팅 호출이 `llama-server binary not found`로 실패해,
+  **실제 모델의 번역 품질은 측정하지 못했다.** 그 상태에서는 상세 전망·시세 같은 답이 위 4번의 "한국어 원문 + 안내"로 나간다(테스트는 가짜 LLM으로 검증했다).
+  전망 간결 답·후속 답(3번)은 LLM 없이 템플릿이라 이 상태에서도 그 언어로 나온다(2026-11-06 dev DB 1,050개 종목·기간 × 10종류 × 3개 언어 31,500건 확인).
+- 질문 이해(라우팅·용어 사전 판정·전망 판정)는 한국어 규칙이다. 영어·일본어·중국어로 **질문**하면 대부분 LLM 경로로 간다.
+- HTTP 오류의 `detail` 문자열(401·404·422·429·503)은 호환을 위해 한국어 그대로다. 화면 문구는 상태 코드로 `docs/i18n/*.json`의 `errors.*`를 쓴다.
+- 기존 진단 저장본에는 `locale` 키가 없다(= ko-KR). ko-KR이 아닌 진단만 저장본(`result`)에 `locale`이 들어간다(컬럼은 늘리지 않았다).
 
 ---
 

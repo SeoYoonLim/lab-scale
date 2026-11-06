@@ -612,17 +612,35 @@ _HANGUL_RE = re.compile(r"[가-힣]")
 _FOREIGN_RUN_RE = re.compile(r"[぀-ヿㇰ-ㇿｦ-ﾟ㐀-䶿一-鿿]+")
 
 
-def strip_foreign_script(answer: str, records: list[dict], question: str = "") -> tuple[str, int]:
+# 다국어(2026-11-05): 답변 언어(locale)별 "그 언어가 아닌 글자" 덩어리. ja-JP는 가나·한자가 정상 글자라 지우지 않고(None),
+# zh-CN은 한자가 정상이라 가나만, en-US는 가나·한자(CJK)를 본다. 한글은 어느 언어에서도 지우지 않는다(공식 한글 종목명이 있다).
+_KANA_RUN_RE = re.compile("[぀-ヿㇰ-ㇿｦ-ﾟ]+")
+_FOREIGN_BY_LOCALE = {"ja-JP": None, "zh-CN": _KANA_RUN_RE, "en-US": _FOREIGN_RUN_RE}
+
+
+def strip_foreign_script(answer: str, records: list[dict], question: str = "", locale: str = "ko-KR") -> tuple[str, int]:
     """(답변, 지운 문장 수). 한국어 질문의 답변에서 도구 결과·질문에 없는 히라가나·가타카나·한자가 든 문장을 지운다.
-    영문(티커, 괄호 안 영문명)은 대상이 아니다. 질문이 한국어가 아니면 보지 않는다."""
+    영문(티커, 괄호 안 영문명)은 대상이 아니다. 질문이 한국어가 아니면 보지 않는다.
+
+    locale(2026-11-05)은 답변이 쓰인 언어다. ko-KR(기본)은 위 규칙 그대로다. 그 밖의 언어는 질문 언어와 관계없이,
+    그 언어에 없는 글자 덩어리(_FOREIGN_BY_LOCALE)가 도구 결과·질문에도 없을 때만 그 문장을 지운다. ja-JP는 지우지 않는다."""
+    if locale != "ko-KR":
+        run_re = _FOREIGN_BY_LOCALE.get(locale)
+        if run_re is None or not run_re.search(answer or ""):
+            return answer, 0
+        return _strip_runs(answer, records, question, run_re)
     if not _FOREIGN_RUN_RE.search(answer or "") or not _HANGUL_RE.search(question or ""):
         return answer, 0
+    return _strip_runs(answer, records, question, _FOREIGN_RUN_RE)
+
+
+def _strip_runs(answer: str, records: list[dict], question: str, run_re: re.Pattern) -> tuple[str, int]:
     evidence = "\n".join([question or "", *_strings_in([r.get("result") for r in records])])
     removed = 0
     kept = []
     for line in answer.split("\n"):
         sentences = [s for s in _SENTENCE_SPLIT_RE.split(line) if s]
-        good = [s for s in sentences if all(run in evidence for run in _FOREIGN_RUN_RE.findall(s))]
+        good = [s for s in sentences if all(run in evidence for run in run_re.findall(s))]
         removed += len(sentences) - len(good)
         if good or not line.strip():
             kept.append(" ".join(good))

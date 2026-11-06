@@ -685,7 +685,7 @@ def load_inputs(db, owner_key: str) -> tuple[float, list[HoldingInput]]:
     return float(account.cash_balance), inputs
 
 
-def build_diagnosis(cash_balance: float, inputs: list[HoldingInput]) -> dict:
+def build_diagnosis(cash_balance: float, inputs: list[HoldingInput], locale: str = "ko-KR") -> dict:
     """입력으로 진단 응답을 만든다(DB 없음, LLM 호출 포함). 보유 종목이 없으면 NoHoldings(LLM 호출 없음)."""
     if not inputs:
         raise NoHoldings(NO_HOLDINGS_MESSAGE)
@@ -726,7 +726,7 @@ def build_diagnosis(cash_balance: float, inputs: list[HoldingInput]) -> dict:
         }
         source, model = "llm", MODEL_NAME
 
-    return {
+    result = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "source": source,
         "model": model,
@@ -737,8 +737,16 @@ def build_diagnosis(cash_balance: float, inputs: list[HoldingInput]) -> dict:
         "notes": notes,
         "disclaimer": DISCLAIMER,
     }
+    if locale == "ko-KR":
+        return result
+    # 다국어(2026-11-05): 지표·플래그 값은 그대로 두고 문장만 그 언어로(app/diagnosis_i18n)
+    from app import diagnosis_i18n
+
+    return diagnosis_i18n.localize(result, items, metrics, locale)
 
 
-def diagnose(db, owner_key: str) -> dict:
+def diagnose(db, owner_key: str, locale: str = "ko-KR") -> dict:
     """owner_key의 포트폴리오를 진단한다. 보유 종목이 없으면 NoHoldings(LLM 호출 없음)."""
-    return build_diagnosis(*load_inputs(db, owner_key))
+    if locale == "ko-KR":
+        return build_diagnosis(*load_inputs(db, owner_key))
+    return build_diagnosis(*load_inputs(db, owner_key), locale=locale)

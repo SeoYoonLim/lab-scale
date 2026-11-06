@@ -27,6 +27,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_core import PydanticCustomError
+from sqlalchemy import update
 from sqlalchemy.exc import DBAPIError
 
 from app import account_recovery_db as recovery_db
@@ -55,6 +56,9 @@ from app.auth import (
     validate_password,
 )
 from app.db.session import SessionLocal
+from app.models import User
+from app.history_dates import DEFAULT_TIMEZONE, MAX_TIMEZONE_LEN, resolve_timezone
+from app.i18n import DEFAULT_LOCALE, MAX_LOCALE_LEN, SUPPORTED_LOCALES, normalize_locale
 
 logger = logging.getLogger(__name__)
 
@@ -294,6 +298,85 @@ def me(user: CurrentUser = Depends(get_current_user)) -> MeOut:
     finally:
         db.close()
     return MeOut(id=user.id, username=user.username, email=email, email_verified=verified)
+
+
+# ---------- 언어·시간대 설정 (2026-11-05) ----------
+
+
+class PreferencesOut(BaseModel):
+    """GET/PUT /api/auth/preferences. 기존 계정은 preferred_locale=ko-KR, preferred_timezone=null(= Asia/Seoul)이다."""
+
+    preferred_locale: str
+    preferred_timezone: str | None
+    # preferred_timezone이 null이면 Asia/Seoul
+    effective_timezone: str
+    supported_locales: list[str]
+    default_locale: str
+
+
+class PreferencesIn(BaseModel):
+    """둘 다 선택. 보내지 않은 필드는 그대로다. preferred_timezone에 null을 보내면 기본값(Asia/Seoul)으로 되돌린다.
+    설정 저장은 요청 파라미터와 달리 지원하지 않는 값을 ko-KR로 바꾸지 않고 422로 막는다(잘못 저장된 설정이 조용히 남지 않게)."""
+
+    preferred_locale: str | None = Field(default=None, max_length=MAX_LOCALE_LEN)
+    preferred_timezone: str | None = Field(default=None, max_length=MAX_TIMEZONE_LEN)
+
+    @field_validator("preferred_locale")
+    @classmethod
+    def supported_locale(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        locale = normalize_locale(v)
+        if locale is None:
+            raise PydanticCustomError("unsupported_locale", "지원하지 않는 언어입니다: ko-KR, en-US, ja-JP, zh-CN 중 하나")
+        return locale
+
+    @field_validator("preferred_timezone")
+    @classmethod
+    def known_timezone(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        try:
+            return resolve_timezone(v).key
+        except ValueError:
+            raise PydanticCustomError("unknown_timezone", "알 수 없는 시간대입니다(IANA 이름, 예: Asia/Seoul)") from None
+
+
+def _preferences_out(locale: str, timezone_name: str | None) -> PreferencesOut:
+    return PreferencesOut(
+        preferred_locale=locale, preferred_timezone=timezone_name, effective_timezone=timezone_name or DEFAULT_TIMEZONE,
+        supported_locales=list(SUPPORTED_LOCALES), default_locale=DEFAULT_LOCALE,
+    )
+
+
+@router.get("/preferences", response_model=PreferencesOut)
+def get_preferences(user: CurrentUser = Depends(get_current_user)) -> PreferencesOut:
+    """내 언어·시간대 설정(본인 것만). 토큰을 확인할 때 읽은 값이다."""
+    return _preferences_out(user.preferred_locale, user.preferred_timezone)
+
+
+@router.put("/preferences", response_model=PreferencesOut)
+def update_preferences(body: PreferencesIn, user: CurrentUser = Depends(get_current_user)) -> PreferencesOut:
+    """내 언어·시간대 설정을 바꾼다(본인 것만). 과거 리서치·진단 기록은 바뀌지 않는다(기록마다 만든 언어가 따로 저장돼 있다)."""
+    values = {}
+    if "preferred_locale" in body.model_fields_set and body.preferred_locale is not None:
+        values["preferred_locale"] = body.preferred_locale
+    if "preferred_timezone" in body.model_fields_set:
+        values["preferred_timezone"] = body.preferred_timezone
+    db = SessionLocal()
+    try:
+        if values:
+            db.execute(update(User).where(User.id == user.id).values(**values))
+            db.commit()
+        row = db.get(User, user.id)
+        if row is None:  # 토큰 검증과 이 사이에 사용자가 지워졌다
+            raise unauthorized()
+        return _preferences_out(row.preferred_locale, row.preferred_timezone)
+    except DBAPIError as e:
+        db.rollback()
+        raise _db_unavailable(e) from None
+    finally:
+        db.close()
 
 
 @router.post("/logout", response_model=LogoutResponse)

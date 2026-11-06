@@ -58,6 +58,8 @@ class HistoryItem(BaseModel):
     date_group: DateGroup
     title: str
     summary: str | None = None
+    # 기록을 만든 언어(기존 기록은 ko-KR). 화면 언어와 다르면 작성 언어를 표시한다
+    locale: str
     company_names: list[str]
     tickers: list[str]
     detail_path: str
@@ -93,7 +95,7 @@ class HistorySearchResponse(BaseModel):
 def _research_item(r: dict) -> dict:
     return {
         "kind": "research", "id": r["report_id"], "created_at": r["created_at"], "created_at_dt": r["created_at_dt"],
-        "title": r["title"], "summary": r["summary"], "company_names": r["company_names"], "tickers": r["tickers"],
+        "title": r["title"], "summary": r["summary"], "locale": r["locale"], "company_names": r["company_names"], "tickers": r["tickers"],
         "detail_path": f"/api/research/{r['report_id']}",
         "research": {**r},
     }
@@ -103,7 +105,7 @@ def _diagnosis_item(d: dict) -> dict:
     top = d["top_holdings"]
     return {
         "kind": "diagnosis", "id": d["id"], "created_at": d["created_at"], "created_at_dt": d["created_at_dt"],
-        "title": d["title"], "summary": d["summary_preview"],
+        "title": d["title"], "summary": d["summary_preview"], "locale": d["locale"],
         "company_names": [h["company_name"] for h in top if h.get("company_name")],
         "tickers": [h["ticker"] for h in top if h.get("ticker")],
         "detail_path": f"/api/portfolio/diagnosis/{d['id']}",
@@ -127,7 +129,7 @@ def search_history(
     user: CurrentUser = Depends(get_current_user),
 ) -> HistorySearchResponse:
     """내 리서치·진단 기록을 한 목록으로 검색한다(기본 최신순). 다른 사용자의 기록은 어떤 조건으로도 나오지 않는다."""
-    tz, start, end = history_window(date_from, date_to, timezone)
+    tz, start, end = history_window(date_from, date_to, timezone or user.preferred_timezone)
     terms = split_terms(keyword)
     offset = (page - 1) * size
     result = history_search.search(

@@ -52,7 +52,7 @@ from app.answer_guard import (
     strip_narrative_mismatch,
     strip_untrusted_urls,
 )
-from app import earnings, evidence_answer, outlook, related_news
+from app import answer_i18n, earnings, evidence_answer, outlook, related_news
 from app.etf_holdings import constituents_chat_answer, requested_top_n
 from app.llm_settings import call_options, chat_model
 from app.etf_holdings_db import chat_views
@@ -2146,6 +2146,7 @@ def ask_question(
     save_report: bool = True,
     previous: dict | None = None,
     user_id: int | None = None,
+    locale: str | None = None,
 ) -> dict:
     """질문을 받아 필요한 tool을 호출하고 최종 답변을 생성한다.
 
@@ -2164,6 +2165,9 @@ def ask_question(
         {"answer": str, "used_tools": list[str], "sources": list[dict], "report_id": int | None,
          "previous_report_id": int | None}
         sources는 tool 결과에서 뽑은 근거 문서(news/disclosure) 목록이다.
+
+    locale(2026-11-05)이 ko-KR이 아니면 위와 똑같이 한국어 답을 만든 뒤(검증 전부 적용) 그 언어로 바꾼다(app/answer_i18n).
+    리포트에는 바뀐 답(content)과 한국어 원문(original_content), locale, 번역 결과를 저장한다. None·ko-KR이면 예전과 같다.
     """
     previous_id = previous["report_id"] if previous else None
     _reset_llm_state()
@@ -2171,8 +2175,17 @@ def ask_question(
     response, records = _answer(question, model, previous)
     # 내부 메타(대체·fallback·잘림). API 응답 모델(ResearchResponse)에는 없는 키라 응답에 나가지 않는다.
     response["meta"] = dict(_meta())
+    extra = {}
+    if locale is not None and locale != "ko-KR":
+        original = response["answer"]
+        response["answer"], status = answer_i18n.localize_answer(
+            question, original, records, locale,
+            {"fallback_answer": FALLBACK_ANSWER, "timeout_answer": LLM_TIMEOUT_ANSWER},
+        )
+        response["meta"].update(locale=locale, translation_status=status)
+        extra = {"locale": locale, "original_content": original, "translation_status": status}
     response["report_id"] = (
-        save_report_row(question, response["answer"], records, previous_report_id=previous_id, user_id=user_id)
+        save_report_row(question, response["answer"], records, previous_report_id=previous_id, user_id=user_id, **extra)
         if save_report
         else None
     )

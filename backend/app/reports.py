@@ -77,8 +77,14 @@ def save_report(
     tool_records: list[dict],
     previous_report_id: int | None = None,
     user_id: int | None = None,
+    locale: str | None = None,
+    original_content: str | None = None,
+    translation_status: str | None = None,
 ) -> int | None:
     """질문/답변과 tool 실행 이력을 한 트랜잭션으로 저장하고 report_id를 돌려준다.
+
+    locale·original_content·translation_status(2026-11-05)는 ko-KR이 아닌 답변일 때만 넘긴다: answer는 사용자에게 보인 그 언어의
+    답변, original_content는 번역 전 한국어 답변이다. 넘기지 않으면 locale은 DB 기본값 ko-KR이다.
 
     previous_report_id는 후속 질문이 이어받은 직전 보고서다(없으면 None). 같은 사용자의 리포트인지는
     호출측(라우터)이 get_report(..., user_id=...)로 먼저 확인한다. user_id는 리포트 소유자(없으면 None).
@@ -102,6 +108,8 @@ def save_report(
                 question=question,
                 summary=_summary(answer),
                 content=answer,
+                **({"locale": locale, "original_content": original_content, "translation_status": translation_status}
+                   if locale else {}),
             )
             db.add(report)
             db.flush()
@@ -340,6 +348,10 @@ def get_report(report_id: int, *, user_id: int | None) -> dict | None:
             "sources": sources,
             **_extra_fields(report, company, metas, _tickers_by_name(db, metas), len(sources)),
             "data_basis": _data_basis(logs),
+            "locale": report.locale,
+            "translation_status": report.translation_status,
+            # ko-KR이 아닌 기록의 번역 전 한국어 답변(후속 질문의 맥락으로 쓴다). ko-KR 기록은 None
+            "original_answer": report.original_content,
         }
     finally:
         db.close()
@@ -379,6 +391,7 @@ def _list_items(db, rows: list[tuple]) -> list[dict]:
             "created_at": r.created_at.isoformat(),
             "created_at_dt": r.created_at,
             "used_tools": [m[0] for m in metas],
+            "locale": r.locale,
             **_extra_fields(r, (company_name, ticker) if company_name else None, metas, tickers_by_name,
                             len(build_sources((m[0], m[5]) for m in metas))),
         })

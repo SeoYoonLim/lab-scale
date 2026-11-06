@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Column, ForeignKey, Index, Integer, TIMESTAMP, Text, func
+from sqlalchemy import BigInteger, Column, ForeignKey, Index, Integer, String, TIMESTAMP, Text, func
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
@@ -18,6 +18,12 @@ class ResearchReport(Base):
     summary = Column(Text)
     content = Column(Text)
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    # 다국어(2026-11-05, 14a53dc73b9c): 답변을 만든 언어. content는 사용자에게 보인 답변(ko-KR이 아니면 번역문)이고,
+    # original_content는 그 번역 전에 검증을 거친 한국어 답변(후속 질문 맥락용), translation_status는 번역 결과다.
+    # ko-KR 기록(기존 기록 포함)은 original_content·translation_status가 NULL이다.
+    locale = Column(String(10), nullable=False, default="ko-KR", server_default="ko-KR")
+    original_content = Column(Text)
+    translation_status = Column(String(20))
 
     company = relationship("Company", back_populates="research_reports")
     tool_call_logs = relationship("ToolCallLog", back_populates="report", cascade="all, delete-orphan")

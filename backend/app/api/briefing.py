@@ -3,8 +3,10 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
-from app.api.deps import get_owner_key
+from app.api.deps import get_current_user
+from app.auth import CurrentUser
 from app.briefing_db import get_briefing
+from app.i18n import MAX_LOCALE_LEN, is_default, resolve_locale
 from app.db.session import SessionLocal
 
 router = APIRouter(prefix="/api", tags=["briefing"])
@@ -120,11 +122,18 @@ class BriefingResponse(BaseModel):
 @router.get("/briefing", response_model=BriefingResponse)
 def read_briefing(
     news_limit: int = Query(DEFAULT_NEWS_LIMIT, ge=1, le=MAX_NEWS_LIMIT, description="종목당 뉴스 수(최근 7일)"),
-    owner_key: str = Depends(get_owner_key),
+    locale: str | None = Query(None, max_length=MAX_LOCALE_LEN, description="문장 언어(ko-KR 기본, en-US, ja-JP, zh-CN). 없으면 계정 설정. 숫자·뉴스 제목은 같다"),
+    user: CurrentUser = Depends(get_current_user),
 ) -> dict:
     """로그인 사용자의 보유종목·관심종목 기준 오늘의 브리핑. LLM 없이 코드가 계산한 값만 담는다(읽기 전용, 계좌를 만들지 않음)."""
+    locale = resolve_locale(locale, user.preferred_locale)
     db = SessionLocal()
     try:
-        return get_briefing(db, owner_key, news_limit)
+        brief = get_briefing(db, user.owner_key, news_limit)
     finally:
         db.close()
+    if is_default(locale):
+        return brief
+    from app import briefing_i18n
+
+    return briefing_i18n.localize(brief, locale)

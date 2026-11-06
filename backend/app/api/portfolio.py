@@ -10,6 +10,8 @@ from app.api.deps import get_current_user, get_owner_key
 from app.api.history_params import history_window, with_dates
 from app.api.research import BIGINT_MAX, DateGroup, View, timezone_query, view_query
 from app.history_terms import MAX_KEYWORD_LEN, split_terms
+from app.i18n import MAX_LOCALE_LEN, is_default, resolve_locale
+from app.i18n import text as i18n_text
 from app.auth import CurrentUser
 from app.db.session import SessionLocal
 from app.diagnosis import NoHoldings, diagnose
@@ -315,6 +317,8 @@ class TopHolding(BaseModel):
 class DiagnosisHistoryRecordItem(DiagnosisHistoryItem):
     # 저장된 보유 종목으로 만든 제목("삼성전자 외 2종목 진단")
     title: str
+    # 진단 문장을 만든 언어(기존 진단은 ko-KR)
+    locale: str
     cash_weight_pct: float | None = None
     # 비중 상위 3종목(저장된 비중 그대로)
     top_holdings: list[TopHolding]
@@ -378,20 +382,29 @@ def _diagnosis_not_found(diagnosis_id: int) -> HTTPException:
 
 
 @router.post("/diagnosis", response_model=DiagnosisResponse, response_model_exclude_none=False)
-def diagnose_my_portfolio(user: CurrentUser = Depends(get_current_user)) -> DiagnosisResponse:
+def diagnose_my_portfolio(
+    locale: str | None = Query(
+        None, max_length=MAX_LOCALE_LEN,
+        description="진단 문장 언어(ko-KR, en-US, ja-JP, zh-CN). 없으면 계정 설정, 지원하지 않는 값이면 ko-KR. 지표·숫자는 언어와 무관하게 같다",
+    ),
+    user: CurrentUser = Depends(get_current_user),
+) -> DiagnosisResponse:
     """내 포트폴리오 AI 진단. 지표와 플래그는 코드가 계산하고 LLM은 설명만 한다(실패 시 규칙 기반 문장).
 
     보유 종목이 없으면 400(LLM 호출 없음, 저장 안 함). 결과는 사용자당 최근 50건까지 저장하고 `diagnosis_id`/`created_at`을
     붙인다(저장에 실패하면 null이고 진단은 정상 반환). LLM을 쓰면 수 초~수십 초 걸린다.
     """
+    locale = resolve_locale(locale, user.preferred_locale)
     db = SessionLocal()
     try:
-        body = DiagnosisBody(**diagnose(db, user.owner_key))
+        # ko-KR이면 예전과 같은 호출이다(locale 인자를 넘기지 않는다)
+        body = DiagnosisBody(**(diagnose(db, user.owner_key) if is_default(locale) else diagnose(db, user.owner_key, locale=locale)))
     except NoHoldings as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e) if is_default(locale) else i18n_text("no_holdings", locale))
     finally:
         db.close()
-    saved = diagnosis_history.save_diagnosis(user.id, body.model_dump(mode="json"))
+    saved = (diagnosis_history.save_diagnosis(user.id, body.model_dump(mode="json")) if is_default(locale)
+             else diagnosis_history.save_diagnosis(user.id, body.model_dump(mode="json"), locale=locale))
     return DiagnosisResponse(
         **body.model_dump(),
         diagnosis_id=saved["id"] if saved else None,
@@ -418,7 +431,7 @@ def list_my_diagnoses(
 ) -> DiagnosisHistoryList | DiagnosisHistoryRecordList:
     """내 진단 이력(기본 최신순, 최근 50건까지 보관). 이력이 없으면 total 0, items [].
     검색·날짜 조건(2026-11-05)은 준 것만 넘긴다: 아무것도 없으면 예전과 같은 호출이다."""
-    tz, start, end = history_window(date_from, date_to, timezone)
+    tz, start, end = history_window(date_from, date_to, timezone or user.preferred_timezone)
     filters = {k: v for k, v in {"terms": split_terms(q), "start": start, "end": end}.items() if v}
     total, items = diagnosis_history.list_diagnoses(user.id, limit, offset, sort, order, **filters)
     meta = {"total": total, "limit": limit, "offset": offset, **page_meta(total, limit, offset)}
@@ -443,6 +456,7 @@ def compare_my_diagnosis(
     diagnosis_id: int = Path(ge=1, le=BIGINT_MAX),
     base: int | None = Query(None, ge=1, le=BIGINT_MAX),
     view: View = view_query(),
+    locale: str | None = Query(None, max_length=MAX_LOCALE_LEN, description="view=record의 basis.note 언어. 없으면 계정 설정"),
     user: CurrentUser = Depends(get_current_user),
 ) -> DiagnosisComparison | DiagnosisRecordComparison:
     """내 진단과 이전 진단의 비교(코드로만 계산, LLM 없음). `base`가 없으면 바로 이전 진단과 비교한다.
@@ -457,7 +471,8 @@ def compare_my_diagnosis(
         if previous is None:
             raise _diagnosis_not_found(base)
     if view == "record":
-        return DiagnosisRecordComparison(**diagnosis_history.build_record_comparison(current, previous))
+        return DiagnosisRecordComparison(**diagnosis_history.build_record_comparison(
+            current, previous, resolve_locale(locale, user.preferred_locale)))
     return DiagnosisComparison(**diagnosis_history.build_comparison(current, previous))
 
 

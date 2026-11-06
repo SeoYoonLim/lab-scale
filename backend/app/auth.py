@@ -85,6 +85,9 @@ class CurrentUser:
     id: int
     username: str
     token_version: int = 0  # 토큰을 만들 때 tv로 넣고, 검증할 때 토큰의 tv와 비교한다
+    # 다국어(2026-11-05). 요청에 locale·timezone이 없을 때 쓰는 계정 설정. None이면 ko-KR / Asia/Seoul.
+    preferred_locale: str = "ko-KR"
+    preferred_timezone: str | None = None
 
     @property
     def owner_key(self) -> str:
@@ -283,7 +286,8 @@ def _rehash_if_needed(db, user: User, password: str) -> None:
 
 
 def _current(user: User) -> CurrentUser:
-    return CurrentUser(id=user.id, username=user.username, token_version=user.token_version)
+    return CurrentUser(id=user.id, username=user.username, token_version=user.token_version,
+                       preferred_locale=user.preferred_locale or "ko-KR", preferred_timezone=user.preferred_timezone)
 
 
 def get_user(db, user_id: int) -> CurrentUser | None:

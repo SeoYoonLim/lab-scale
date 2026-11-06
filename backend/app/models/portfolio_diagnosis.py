@@ -20,6 +20,7 @@ class PortfolioDiagnosis(Base):
     total_asset = Column(Numeric, nullable=False)
     holdings_count = Column(Integer, nullable=False)
     result = Column(JSONB, nullable=False)
+    # 다국어(2026-11-05): ko-KR이 아닌 진단은 result에 "locale"이 들어 있다(키가 없으면 ko-KR, 기존 진단 포함). 컬럼은 늘리지 않았다.
 
 
 Index(

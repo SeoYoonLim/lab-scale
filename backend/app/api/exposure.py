@@ -7,10 +7,12 @@ app/api/portfolio.py(주문·평가)와 분리한 이유: 그 흐름을 건드�
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
-from app.api.deps import get_owner_key
+from app.api.deps import get_current_user
+from app.auth import CurrentUser
 from app.db.session import SessionLocal
 from app.exposure import DEFAULT_LIMIT, MAX_LIMIT
 from app.exposure_db import get_exposure
+from app.i18n import MAX_LOCALE_LEN, is_default, resolve_locale
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
@@ -104,11 +106,18 @@ class ExposureResponse(BaseModel):
 @router.get("/exposure", response_model=ExposureResponse, response_model_exclude_none=False)
 def read_exposure(
     limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT, description="실질 비중이 큰 기업을 몇 개까지 보여줄지"),
-    owner_key: str = Depends(get_owner_key),
+    locale: str | None = Query(None, max_length=MAX_LOCALE_LEN, description="문장 언어(ko-KR 기본, en-US, ja-JP, zh-CN). 없으면 계정 설정. 숫자는 같다"),
+    user: CurrentUser = Depends(get_current_user),
 ) -> dict:
     """로그인 사용자의 보유 종목 + 보유 ETF 구성종목을 합친 기업별 실질 노출. 보유가 없으면 200 + 빈 목록 + message. 계좌를 만들지 않는다."""
+    locale = resolve_locale(locale, user.preferred_locale)
     db = SessionLocal()
     try:
-        return get_exposure(db, owner_key, limit)
+        result = get_exposure(db, user.owner_key, limit)
     finally:
         db.close()
+    if is_default(locale):
+        return result
+    from app import exposure_i18n
+
+    return exposure_i18n.localize(result, locale)

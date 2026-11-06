@@ -173,6 +173,20 @@ COMPARED_METRICS = (
 )
 BASIS_NOTE = ("두 진단은 각각 저장 당시의 보유 구성과 시세로 계산한 결과입니다. 기준 시점이 서로 다르고, "
               "현재 시세로 다시 계산하지 않았습니다.")
+BASIS_NOTES = {
+    "ko-KR": BASIS_NOTE,
+    "en-US": ("Each diagnosis was calculated with the holdings and prices at the time it was saved. The two use different reference points, "
+              "and neither was recalculated with current prices."),
+    "ja-JP": "2つの診断は、それぞれ保存時点の保有構成と相場で計算した結果です。基準時点が互いに異なり、現在の相場で再計算していません。",
+    "zh-CN": "两次诊断分别按保存当时的持仓构成和行情计算。两者的基准时点不同，且均未按当前行情重新计算。",
+}
+# 진단 제목(언어별): (보유 없음, 1종목, 여러 종목)
+_TITLES = {
+    "ko-KR": ("포트폴리오 진단", "{name} 진단", "{name} 외 {n}종목 진단"),
+    "en-US": ("Portfolio diagnosis", "Diagnosis: {name}", "Diagnosis: {name} and {n} more"),
+    "ja-JP": ("ポートフォリオ診断", "{name}の診断", "{name}ほか{n}銘柄の診断"),
+    "zh-CN": ("投资组合诊断", "{name}诊断", "{name}等{total}只股票诊断"),
+}
 
 
 def _top_holdings(holdings: list[dict] | None) -> list[dict]:
@@ -183,15 +197,16 @@ def _top_holdings(holdings: list[dict] | None) -> list[dict]:
             for h in rows[:TOP_HOLDINGS]]
 
 
-def diagnosis_title(top: list[dict], holdings_count: int) -> str:
-    """진단 제목(제목 컬럼이 없어서 저장된 보유 종목으로 만든다): "삼성전자 외 2종목 진단"."""
+def diagnosis_title(top: list[dict], holdings_count: int, locale: str = "ko-KR") -> str:
+    """진단 제목(제목 컬럼이 없어서 저장된 보유 종목으로 만든다): "삼성전자 외 2종목 진단". 기록을 만든 언어로 쓴다."""
+    none, one, many = _TITLES.get(locale, _TITLES["ko-KR"])
     if not top or not top[0].get("company_name"):
-        return "포트폴리오 진단"
+        return none
     name = top[0]["company_name"]
-    return f"{name} 진단" if holdings_count <= 1 else f"{name} 외 {holdings_count - 1}종목 진단"
+    return one.format(name=name) if holdings_count <= 1 else many.format(name=name, n=holdings_count - 1, total=holdings_count)
 
 
-def record_fields(result: dict, holdings_count: int) -> dict:
+def record_fields(result: dict, holdings_count: int, locale: str = "ko-KR") -> dict:
     """진단 이력 view=record 항목의 추가 필드. result는 저장된 진단 응답(또는 그 조각: metrics.cash_weight_pct, holdings,
     risks, flags, generated_at만 있어도 된다)."""
     top = _top_holdings(result.get("holdings"))
@@ -201,7 +216,7 @@ def record_fields(result: dict, holdings_count: int) -> dict:
         if f.get("code") and f["code"] not in codes:
             codes.append(f["code"])
     return {
-        "title": diagnosis_title(top, holdings_count),
+        "title": diagnosis_title(top, holdings_count, locale),
         "cash_weight_pct": (result.get("metrics") or {}).get("cash_weight_pct"),
         "top_holdings": top,
         "risk_summary": risks[0] if risks else None,
@@ -226,7 +241,7 @@ def metric_changes(current: dict, previous: dict) -> dict:
     return out
 
 
-def comparison_basis(current: dict, previous: dict | None) -> dict:
+def comparison_basis(current: dict, previous: dict | None, locale: str = "ko-KR") -> dict:
     """두 진단이 각각 어떤 시점의 저장본인가. 시세 기준 시각은 저장된 generated_at이다."""
     return {
         "current_created_at": current["created_at"].isoformat(),
@@ -234,15 +249,15 @@ def comparison_basis(current: dict, previous: dict | None) -> dict:
         "previous_created_at": None if previous is None else previous["created_at"].isoformat(),
         "previous_generated_at": None if previous is None else previous["result"].get("generated_at"),
         "recomputed": False,
-        "note": BASIS_NOTE if previous is not None else None,
+        "note": BASIS_NOTES.get(locale, BASIS_NOTE) if previous is not None else None,
     }
 
 
-def build_record_comparison(current: dict, previous: dict | None) -> dict:
+def build_record_comparison(current: dict, previous: dict | None, locale: str = "ko-KR") -> dict:
     """build_comparison + 기준 시점(basis)과 지표 변화(metric_changes). ETF 실질 노출은 진단 저장본에 없어서 비교하지 않는다."""
     return {
         **build_comparison(current, previous),
-        "basis": comparison_basis(current, previous),
+        "basis": comparison_basis(current, previous, locale),
         "metric_changes": None if previous is None else metric_changes(current["result"], previous["result"]),
         "exposure_changes": None,
     }
@@ -263,10 +278,11 @@ def _record(row: PortfolioDiagnosis) -> dict:
         "total_asset": float(row.total_asset),
         "holdings_count": row.holdings_count,
         "result": row.result,
+        "locale": row.result.get("locale") or "ko-KR",
     }
 
 
-def save_diagnosis(user_id: int, response: dict) -> dict | None:
+def save_diagnosis(user_id: int, response: dict, locale: str | None = None) -> dict | None:
     """진단 응답 본문을 저장하고 {"id", "created_at"(ISO 문자열)}을 돌려준 뒤, 초과분(오래된 것)을 지운다.
 
     저장 중 어떤 오류가 나도 예외를 밖으로 내지 않는다(진단 응답을 막지 않기 위해). 실패하면 None.
@@ -280,7 +296,8 @@ def save_diagnosis(user_id: int, response: dict) -> dict | None:
                 source=response["source"],
                 total_asset=response["metrics"]["total_asset"],
                 holdings_count=response["metrics"]["holding_count"],
-                result=response,
+                # 다국어(2026-11-05): ko-KR이 아닌 진단만 저장본에 locale을 넣는다(키가 없으면 ko-KR). ko-KR 저장본은 예전과 같다
+                result={**response, "locale": locale} if locale else response,
             )
             db.add(row)
             db.commit()
@@ -379,17 +396,19 @@ def _list_columns():
         r["holdings"],
         r["risks"],
         r["generated_at"].as_string(),
+        r["locale"].as_string(),
     )
 
 
 def _list_item(row) -> dict:
-    id_, created_at, source, total_asset, holdings_count, flags, summary, cash_pct, holdings, risks, generated_at = row
+    id_, created_at, source, total_asset, holdings_count, flags, summary, cash_pct, holdings, risks, generated_at, locale = row
     fragment = {"metrics": {"cash_weight_pct": cash_pct}, "holdings": holdings, "risks": risks, "flags": flags,
                 "generated_at": generated_at}
     return {
         **_history_item(id_, created_at, source, total_asset, holdings_count, flags, summary),
         "created_at_dt": created_at,
-        **record_fields(fragment, holdings_count),
+        "locale": locale or "ko-KR",
+        **record_fields(fragment, holdings_count, locale or "ko-KR"),
     }
 
 

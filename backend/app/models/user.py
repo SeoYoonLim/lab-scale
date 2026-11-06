@@ -20,6 +20,7 @@ class User(Base):
         # 이메일은 소문자·공백 제거로 정규화해 저장하고(app.account_recovery.normalize_email) 대소문자 무시로 유일하다.
         CheckConstraint("email = lower(btrim(email))", name="ck_users_email_normalized"),
         Index("uq_users_email_lower", text("lower(email)"), unique=True),
+        CheckConstraint("preferred_locale IN ('ko-KR', 'en-US', 'ja-JP', 'zh-CN')", name="ck_users_preferred_locale"),
     )
 
     id = Column(BigInteger, primary_key=True)
@@ -33,6 +34,9 @@ class User(Base):
     # 계정 복구(2026-10-30). 선택 입력이고, 복구 메일은 email_verified_at이 있는(인증된) 이메일에만 보낸다.
     email = Column(String(254))
     email_verified_at = Column(TIMESTAMP(timezone=True))
+    # 다국어(2026-11-05, 14a53dc73b9c). 언어는 app.i18n.SUPPORTED_LOCALES 중 하나(기본 ko-KR), 시간대는 IANA 이름(NULL이면 Asia/Seoul).
+    preferred_locale = Column(String(10), nullable=False, default="ko-KR", server_default="ko-KR")
+    preferred_timezone = Column(String(64))
 
     def __repr__(self) -> str:
         # 기본 repr이 로그/예외 메시지로 새어 나가도 해시가 찍히지 않게 한다.

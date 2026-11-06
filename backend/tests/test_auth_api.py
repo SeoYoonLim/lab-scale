@@ -39,6 +39,8 @@ PROTECTED = [
     ("GET", "/api/portfolio/diagnosis/1/compare"),
     ("DELETE", "/api/portfolio/diagnosis/1"),
     ("GET", "/api/history/search"),
+    ("GET", "/api/auth/preferences"),
+    ("PUT", "/api/auth/preferences"),
     ("GET", "/api/auth/me"),
     ("POST", "/api/auth/logout"),
     ("POST", "/api/auth/change-password"),
@@ -274,6 +276,8 @@ class TestRouteCoverage:
         ("GET", "/api/portfolio/diagnosis/{diagnosis_id}/compare"),
         ("DELETE", "/api/portfolio/diagnosis/{diagnosis_id}"),
         ("GET", "/api/history/search"),
+        ("GET", "/api/auth/preferences"),
+        ("PUT", "/api/auth/preferences"),
     }
 
     def _routes(self):
