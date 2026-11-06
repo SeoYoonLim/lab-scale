@@ -23,7 +23,7 @@ PRICE = 1000.0
 LLM_OK = {"summary": "현금 비중을 확인했습니다.", "suggestions": ["종목별 뉴스를 점검"]}
 BASE = "/api/portfolio/diagnosis"
 BODY_KEYS = {"generated_at", "source", "model", "metrics", "holdings", "flags", "summary", "strengths", "risks",
-             "suggestions", "notes", "disclaimer"}
+             "suggestions", "notes", "disclaimer", "look_through"}  # look_through: ETF 실질 노출 스냅샷(2026-11-06 추가, 기존 필드는 그대로)
 
 
 @pytest.fixture(autouse=True)

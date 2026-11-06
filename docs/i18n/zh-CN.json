@@ -246,5 +246,47 @@
       "no_data": "数据不足",
       "empty": "无可显示内容"
     }
+  },
+  "look_through": {
+    "title": "ETF实际敞口",
+    "company": "企业",
+    "direct": "直接敞口",
+    "via_etf": "经ETF间接敞口",
+    "total": "实际敞口合计",
+    "total_weight": "占总资产比重",
+    "total_asset": "总资产（含现金）",
+    "unidentified": "未确认敞口",
+    "nested_etf": "嵌套ETF（未分解）",
+    "residual": "成分权重外剩余",
+    "unlinked": "不在股票列表中的成分",
+    "unpriced": "无法估值（无收盘价）",
+    "constituents": "主要成分股",
+    "holdings_as_of": "成分基准日",
+    "eval_amount": "持仓市值",
+    "constituent_weight": "成分权重",
+    "contribution": "通过该ETF的敞口",
+    "data_quality": "数据质量",
+    "leverage_badge": "杠杆/反向",
+    "stale_badge": "成分较旧",
+    "show_all": "查看全部",
+    "exposure_type": {
+      "direct": "仅直接",
+      "etf": "仅经ETF",
+      "both": "直接＋ETF"
+    },
+    "etf_status": {
+      "decomposed": "已分解",
+      "not_decomposed": "未分解"
+    },
+    "reason": {
+      "no_holdings_data": "无成分数据",
+      "leveraged_inverse": "杠杆/反向",
+      "invalid_weights": "权重数据有误"
+    },
+    "sector_status": {
+      "available": "已计算",
+      "partial": "部分计算",
+      "unavailable": "无行业数据"
+    }
   }
 }

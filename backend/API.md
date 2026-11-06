@@ -4050,6 +4050,39 @@ buy_and_hold 35ms, sma_cross(5/250) 41ms, dca 33ms, 최대 72ms. 응답 크기 �
 
 ---
 
+## ETF 실질 노출(look-through)과 포트폴리오 집중도 (2026-11-06)
+
+화면용 상세(필드 표, 상태 처리, 추천 화면, 합성 응답 사례)는 `docs/FRONTEND_HANDOFF_ETF_EXPOSURE.md`. 여기는 규칙과 계약만 적는다.
+
+**새 라우트 없음.** `GET /api/portfolio/exposure?view=look_through`(계산 `app/look_through.py`, 문장 `app/look_through_i18n.py`, DB `app/exposure_db.get_look_through`·`load_constituents`)와 진단 결과의 `look_through`, 진단 비교의 `exposure_changes`로 제공한다. `view`가 없으면(`default`) 위 "GET /api/portfolio/exposure" 응답 그대로다(필드·값 불변).
+
+**조사 결과(기존 `app/exposure.py`)**: 보유 평가액 대비 비중(현금 제외), 양수 비중만 배분, 레버리지·인버스와 구성 데이터 없는 ETF는 분해 안 함, 비중 합계 95% 미만·100.5% 초과 경고는 이미 정확했다. 부족했던 것: 총자산(현금 포함) 대비 비중이 없음, 다른 ETF를 담은 ETF의 하위 ETF(dev DB 12행, 7개 ETF: TIGER 배당커버드콜액티브 안의 TIGER 200 13.93% 등)를 기업처럼 합침, ETF별 구성종목 기여·품질 값이 없음, 진단 저장본에 노출이 없어 `exposure_changes`가 코드에서 `None`으로 고정됨.
+
+**etf_holding 데이터(2026-11-06 읽기 전용 점검)**: 4,926행, ETF 38개(KODEX 23·TIGER 15), 기준일 ETF마다 1개(2026-10-29 또는 10-30, 수집 2026-10-29~31). `weight_pct`는 0~100 단위 Numeric(9,4) NOT NULL(-0.14 ~ 99.92). ETF별 구성종목 1~675개, 양수 비중 합계 42.96%(TIGER KOFR금리액티브(합성))~200.18%(KODEX 레버리지), 95% 미만 3개·100.5% 초과 4개(레버리지 2개 포함). 0 이하 비중 76행(음수는 2개 ETF), 코드 없음 360행, 같은 ETF·기준일 안 코드 중복 0건. company와 연결 1,547행(그중 ETF 12행), 6자리 코드인데 연결 안 됨 337행. 같은 발행사 이름의 서로 다른 CP·전단채(ISIN 다름)가 많아 중복 판정은 이름이 아니라 코드로 한다.
+
+**계산 규칙(`calc_version` = `look_through.v1`)**
+- 평가액 = 수량 × 최신 종가(장중 행 제외, 진단에서는 진단이 쓴 현재가). 종가가 없으면 `unpriced`로 따로 두고 0원으로 치지 않는다.
+- 총자산 = 현금 + 평가 가능한 직접 주식 + 평가 가능한 ETF. ETF 구성종목 금액을 총자산에 다시 더하지 않는다.
+- ETF 간접 노출 = ETF 평가액 × 구성 비중 / 100(양수만). 같은 기업은 직접 보유·여러 ETF를 합산한다(연결된 종목코드로, 연결 안 되면 이름으로).
+- 기업 비중 = 실질 노출 / 총자산 × 100. 100%로 정규화하지 않는다.
+- 분해한 ETF 평가액 = 기업 배분 + 중첩 ETF 배분 + 잔여(비중 합계 < 100%면 양수, > 100%면 음수). 분해하지 않은 ETF는 평가액 전체가 미확인이다. 미확인 노출 = 중첩 ETF + 양수 잔여 + 분해하지 않은 ETF. 불변식: 직접 + 간접 + 중첩 + 잔여 + 분해 안 함 = 보유 평가액(테스트가 무작위 30개 입력으로 확인).
+- 분해하지 않는 ETF: 레버리지·인버스(이름 판별, 배수를 곱하지 않고 공시 비중만 `constituents`에 금액 null로), 구성 데이터 없음, 비중 오류(한 종목 > 100% 또는 양수 비중 없음).
+- 중첩 ETF: 구성종목이 ETF(company.asset_type = 'etf')이거나 자기 자신이면 재귀 분해하지 않고 `nested_etf_amount`로 둔다(순환·중복 집계 없음).
+- 품질 경고(데이터를 고치지 않는다): null·음수 비중(뺌), 같은 종목 중복 행(합산하고 경고), 비중 합계, 연결 안 된 구성종목, 구성 기준일이 2영업일 이상 오래됨(`data_status.is_stale`).
+- 구성종목의 시세는 쓰지 않는다(간접 노출은 ETF 평가액 × 공시 비중이라 구성종목 종가가 없어도 계산된다).
+- 플래그(총자산 대비): 기업 실질 노출 ≥ 40%, ETF 간접 노출 ≥ 10%p, 한 ETF를 통한 한 기업 노출 ≥ 10%.
+- 업종: company.sector가 있는 기업이 기업 노출의 95% 이상이면 available, 일부면 partial, 없으면 unavailable(지금은 unavailable). 업종 뉴스용 제한 분류(반도체·2차전지·전력설비)는 쓰지 않는다.
+
+**응답(`view=look_through`)**: `calc_version, locale, status(ok|empty|no_prices), message, has_account, valuation_date, expected_date, price_lag_business_days, stale, stale_notice, etf_holdings_stale, limit, summary, companies[], overlaps[], etfs[], unpriced[], sector, flags[], data_warnings[], disclaimer`. 금액은 원(소수 둘째 자리), 비중은 %(소수 둘째 자리, 총자산 대비; `holdings_weight_pct`만 보유 평가액 대비), 구성 비중은 공시 값(%, 소수 넷째 자리). 총자산이 0이면 비중은 null. 필드별 설명은 인계 문서 3절.
+
+**진단 연결**: `POST /api/portfolio/diagnosis`(그리고 저장본 `GET /api/portfolio/diagnosis/{id}`)에 `look_through`가 더해진다. 진단이 쓴 현재가·현금과 그때의 ETF 최신 구성종목으로 위 규칙을 계산해 요약(상위 기업 20, 겹침 20, ETF별 당시 상위 구성종목·기준일, 플래그, 경고, `holding_top1_weight_pct` = 기존 직접 보유 기준 상위 1종목 비중, `computed_at`, `valuation_basis: diagnosis_prices`)을 진단 언어로 저장한다. 기존 진단 필드의 값·의미는 그대로다. 계산이 실패해도 진단은 정상이고 `look_through.status`가 `unavailable`이다. 저장 위치는 portfolio_diagnosis.result JSON이라 **마이그레이션은 없다**(Alembic head 그대로 `5e7b9d2c4a10`). 이 기능 전 저장본은 키가 없어 `look_through: null`로 나간다(채워 넣지 않는다).
+
+**진단 비교**: `GET /api/portfolio/diagnosis/{id}/compare?view=record`의 `exposure_changes`는 두 저장본의 `look_through`가 모두 status ok일 때만 `{calc_version, valuation_date, summary{…: {previous, current, change}}, look_through_top1, companies[{name, code, previous_total_weight_pct, current_total_weight_pct, change_pct, previous_total_amount, current_total_amount, status}], note_code: "stored_snapshots", companies_compared: "top_saved"}`. 저장본끼리 비교하며 다시 계산하지 않는다.
+
+**인증·성능**: 로그인 필요(401), 본인 `owner_key`의 보유·계좌만 읽는다. 쿼리는 보유 수와 관계없이 6개 이하(계좌·보유·종가·ETF id·구성종목). dev DB 구성종목 4,926행 전체 읽기 35ms(쿼리 1개), 38개 ETF를 모두 가진 포트폴리오 계산 27ms(기업 2,216개).
+
+**다국어**: 수치는 한 번 계산하고 `message`·`notice`·`stale_notice`·`sector.message`·`disclaimer`만 4개 언어 템플릿으로 쓴다(숫자·코드·기준일·상태는 언어와 무관하게 같다, 종목명은 원문).
+
 ## GET /api/etf/{ticker}/holdings (2026-10-30)
 
 ETF의 **구성종목과 편입 비중**(운용사가 공시하는 PDF를 수집해 `etf_holding`에 저장한 값). **공개**(인증 없음) - `/api/stocks/{ticker}/...` 시세 API와 같은 정책이다.
@@ -4231,7 +4264,7 @@ ETF의 **구성종목과 편입 비중**(운용사가 공시하는 PDF를 수집
 | --- | --- |
 | `basis` | `current_created_at`, `current_generated_at`, `previous_created_at`, `previous_generated_at`, `recomputed`(항상 false), `note`("두 진단은 각각 저장 당시의 보유 구성과 시세로 계산한 결과입니다…", 비교 대상이 없으면 null) |
 | `metric_changes` | `cash_balance`, `cash_weight_pct`, `stock_eval_amount`, `holding_count`, `top1_weight_pct`, `top3_weight_pct`, `herfindahl_index`, `total_profit_loss_pct` 각각 `{previous, current, change}`. 비중은 %p, HHI는 소수 4자리, 한쪽이 null이면 change도 null. 비교 대상이 없으면 null |
-| `exposure_changes` | 항상 null. 진단 저장본에 ETF 실질 노출이 없어서 비교하지 않는다(`GET /api/portfolio/exposure`는 현재 시점만 계산) |
+| `exposure_changes` | 두 진단 저장본 모두에 실질 노출 스냅샷(`look_through`, status ok)이 있을 때만 기업별 실질 비중 변화(아래 "ETF 실질 노출(look-through)" 절). 2026-11-06 전에 저장한 진단이 한쪽이라도 끼면 null(현재 구성종목으로 과거 진단을 다시 계산하지 않는다) |
 
 개선된 위험·새 위험은 기존 `changes.flags.resolved` / `changes.flags.added`다.
 

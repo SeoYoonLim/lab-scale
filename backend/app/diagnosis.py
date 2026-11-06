@@ -746,7 +746,43 @@ def build_diagnosis(cash_balance: float, inputs: list[HoldingInput], locale: str
 
 
 def diagnose(db, owner_key: str, locale: str = "ko-KR") -> dict:
-    """owner_key의 포트폴리오를 진단한다. 보유 종목이 없으면 NoHoldings(LLM 호출 없음)."""
+    """owner_key의 포트폴리오를 진단한다. 보유 종목이 없으면 NoHoldings(LLM 호출 없음).
+
+    2026-11-06: 결과에 ETF 실질 노출 스냅샷(look_through)을 더한다(attach_look_through). 기존 필드의 값·의미는 그대로다."""
     if locale == "ko-KR":
-        return build_diagnosis(*load_inputs(db, owner_key))
-    return build_diagnosis(*load_inputs(db, owner_key), locale=locale)
+        result = build_diagnosis(*load_inputs(db, owner_key))
+    else:
+        result = build_diagnosis(*load_inputs(db, owner_key), locale=locale)
+    return attach_look_through(db, result, locale)
+
+
+def attach_look_through(db, result: dict, locale: str = "ko-KR") -> dict:
+    """진단 결과에 실질 노출 스냅샷을 붙인다: 진단이 쓴 현재가·현금(metrics.cash_balance)과 그때의 ETF 구성종목(DB 최신 기준일)으로
+    app.look_through를 계산하고, 저장본에 남길 요약(app.look_through.snapshot)을 진단 언어로 넣는다. 저장본을 다시 열 때 재계산하지 않는다.
+
+    실패해도 진단은 막지 않는다(look_through = {"status": "unavailable", ...})."""
+    from app import look_through, look_through_i18n
+    from app.exposure import HoldingIn
+    from app.exposure_db import load_constituents
+    from app.outlook import expected_trading_day
+    from app.briefing import KST
+
+    try:
+        holdings = [HoldingIn(i["ticker"], i["company_name"], i.get("asset_type") or "stock", int(i["quantity"]), i["current_price"])
+                    for i in result["holdings"]]
+        etf_tickers = [h.ticker for h in holdings if h.asset_type == "etf"]
+        rows = db.execute(select(Company.id, Company.ticker, Company.name).where(Company.ticker.in_(etf_tickers))).all() if etf_tickers else []
+        etfs = load_constituents(db, [(r.id, r.ticker, r.name) for r in rows])
+        now = datetime.now(KST)
+        lt = look_through.compute(holdings, etfs, result["metrics"]["cash_balance"], now, expected_trading_day(now), look_through.MAX_LIMIT)
+        snap = look_through.snapshot(lt)
+        snap["computed_at"] = now.isoformat()
+        snap["valuation_basis"] = "diagnosis_prices"  # 진단이 쓴 현재가(실시간 또는 DB 종가)로 평가했다
+        snap["summary"]["holding_top1_weight_pct"] = result["metrics"].get("top1_weight_pct")  # 기존 진단의 직접 보유 기준 집중도
+        out = look_through_i18n.localize(snap, locale)
+        out.pop("disclaimer", None)  # 진단 응답에 면책 문구가 따로 있다
+        result["look_through"] = out
+    except Exception as e:  # DB 오류 등: 진단은 그대로 돌려준다
+        logger.warning("진단 실질 노출 계산 실패(%s)", type(e).__name__)
+        result["look_through"] = {"status": "unavailable", "calc_version": look_through.CALC_VERSION, "reason": "calculation_failed"}
+    return result

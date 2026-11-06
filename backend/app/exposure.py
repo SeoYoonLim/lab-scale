@@ -63,9 +63,11 @@ class HoldingIn:
 class ConstituentIn:
     name: str
     code: str | None  # 운용사가 준 식별자 그대로(없으면 None)
-    weight_pct: float
+    weight_pct: float | None  # 운용사 공시 비중(%, 0~100 단위). DB는 NOT NULL이지만 app.look_through는 None도 데이터 문제로 다룬다
     linked_ticker: str | None = None  # code가 company.ticker와 일치할 때 그 종목코드(DB 계층이 채운다)
     linked_name: str | None = None
+    linked_asset_type: str | None = None  # 연결된 company의 asset_type(app.look_through가 중첩 ETF를 가린다, 2026-11-06)
+    linked_sector: str | None = None  # 연결된 company의 sector(비어 있으면 None)
 
 
 @dataclass

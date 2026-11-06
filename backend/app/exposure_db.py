@@ -20,7 +20,7 @@ from app.exposure import ConstituentIn, EtfIn, HoldingIn, compute_exposure
 from app.models import Company, EtfHolding, Holding, StockPrice
 
 
-def load_inputs(db: Session, owner_key: str, now: datetime) -> tuple[list[HoldingIn], dict[str, EtfIn]]:
+def load_inputs(db: Session, owner_key: str, now: datetime, constituents: bool = True) -> tuple[list[HoldingIn], dict[str, EtfIn]]:
     rows = db.execute(
         select(Company.id, Company.ticker, Company.name, Company.asset_type, Holding.quantity)
         .join(Company, Company.id == Holding.company_id)
@@ -52,6 +52,8 @@ def load_inputs(db: Session, owner_key: str, now: datetime) -> tuple[list[Holdin
         for r in rows
     ]
 
+    if not constituents:  # look-through는 구성종목을 load_constituents로 따로 읽는다(레버리지·인버스 포함)
+        return holdings, {}
     # 레버리지·인버스 ETF는 분해하지 않으므로 구성종목을 읽지 않는다.
     etf_ids = {r.id: (r.ticker, r.name) for r in rows if r.asset_type == "etf" and not leverage_kind(r.name)}
     etfs: dict[str, EtfIn] = {}
@@ -89,3 +91,55 @@ def get_exposure(db: Session, owner_key: str, limit: int, now: datetime | None =
         "stale_notice": f"보유 종목의 최신 종가는 {vdate} 기준입니다." if stale else None,
         **out,
     }
+
+
+# ---------- ETF 실질 노출(look-through, 2026-11-06): GET /api/portfolio/exposure?view=look_through, 진단 저장본 ----------
+
+
+def load_constituents(db: Session, etf_rows: list[tuple[int, str, str]]) -> dict[str, EtfIn]:
+    """보유 ETF [(company_id, ticker, name)]의 가장 최근 기준일 구성종목(레버리지·인버스 포함, 분해 여부는 app.look_through가 정한다).
+
+    쿼리 1개: ETF별 최신 기준일(서브쿼리) + 구성종목 + 연결된 company(종목코드 = company.ticker, LEFT JOIN: 이름·자산 유형·업종)."""
+    if not etf_rows:
+        return {}
+    ids = {cid: (t, n) for cid, t, n in etf_rows}
+    newest = (
+        select(EtfHolding.company_id, func.max(EtfHolding.as_of_date).label("d"))
+        .where(EtfHolding.company_id.in_(list(ids)))
+        .group_by(EtfHolding.company_id)
+        .subquery()
+    )
+    rows = db.execute(
+        select(EtfHolding.company_id, EtfHolding.as_of_date, EtfHolding.holding_name, EtfHolding.holding_code, EtfHolding.weight_pct,
+               Company.ticker.label("linked_ticker"), Company.name.label("linked_name"), Company.asset_type.label("linked_type"),
+               Company.sector.label("linked_sector"))
+        .join(newest, and_(newest.c.company_id == EtfHolding.company_id, newest.c.d == EtfHolding.as_of_date))
+        .outerjoin(Company, Company.ticker == EtfHolding.holding_code)
+        .order_by(EtfHolding.company_id, EtfHolding.id)
+    ).all()
+    etfs: dict[str, EtfIn] = {}
+    for r in rows:
+        ticker, name = ids[r.company_id]
+        etf = etfs.get(ticker)
+        if etf is None:
+            etf = etfs[ticker] = EtfIn(ticker, name, r.as_of_date)
+        etf.constituents.append(ConstituentIn(r.holding_name, r.holding_code, float(r.weight_pct) if r.weight_pct is not None else None,
+                                              r.linked_ticker, r.linked_name, r.linked_type, r.linked_sector))
+    return etfs
+
+
+def get_look_through(db: Session, owner_key: str, limit: int, now: datetime | None = None) -> dict:
+    """보유(직접 주식 + ETF) + 현금으로 기업별 실질 노출. 쿼리 4개(계좌, 보유+종목, 최근 종가 2행, 구성종목). 읽기 전용."""
+    from app import look_through
+    from app.models import VirtualAccount
+    from app.outlook import expected_trading_day
+
+    now = (now or datetime.now(KST)).astimezone(KST)
+    account = db.get(VirtualAccount, owner_key)
+    holdings, _ = load_inputs(db, owner_key, now, constituents=False)
+    etf_ids = db.execute(select(Company.id, Company.ticker, Company.name)
+                         .where(Company.ticker.in_([h.ticker for h in holdings if h.asset_type == "etf"]))).all() if any(
+        h.asset_type == "etf" for h in holdings) else []
+    etfs = load_constituents(db, [(r.id, r.ticker, r.name) for r in etf_ids])
+    out = look_through.compute(holdings, etfs, float(account.cash_balance) if account is not None else None, now, expected_trading_day(now), limit)
+    return {"generated_at": now.isoformat(), **out}

@@ -31,7 +31,7 @@ GOOD = {
     "suggestions": ["카카오를 보유한 이유를 다시 점검해볼 수 있습니다."],
 }
 BODY_KEYS = {"generated_at", "source", "model", "metrics", "holdings", "flags", "summary", "strengths", "risks",
-             "suggestions", "notes", "disclaimer"}
+             "suggestions", "notes", "disclaimer", "look_through"}  # look_through: ETF 실질 노출 스냅샷(2026-11-06 추가, 기존 필드는 그대로)
 TOP_KEYS = BODY_KEYS | {"diagnosis_id", "created_at"}  # 저장 이력 도입으로 두 필드가 추가됐다(기존 필드는 그대로)
 
 

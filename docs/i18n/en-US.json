@@ -246,5 +246,47 @@
       "no_data": "Insufficient data",
       "empty": "Nothing to show"
     }
+  },
+  "look_through": {
+    "title": "ETF look-through exposure",
+    "company": "Company",
+    "direct": "Direct",
+    "via_etf": "Via ETFs",
+    "total": "Look-through total",
+    "total_weight": "Share of total assets",
+    "total_asset": "Total assets (incl. cash)",
+    "unidentified": "Unidentified exposure",
+    "nested_etf": "Nested ETFs (not broken down)",
+    "residual": "Residual outside weights",
+    "unlinked": "Constituents not in our stock list",
+    "unpriced": "Not valued (no close)",
+    "constituents": "Top constituents",
+    "holdings_as_of": "Constituents as of",
+    "eval_amount": "Holding value",
+    "constituent_weight": "Constituent weight",
+    "contribution": "Exposure via this ETF",
+    "data_quality": "Data quality",
+    "leverage_badge": "Leveraged/inverse",
+    "stale_badge": "Old composition",
+    "show_all": "Show all",
+    "exposure_type": {
+      "direct": "Direct only",
+      "etf": "Via ETFs only",
+      "both": "Direct + ETFs"
+    },
+    "etf_status": {
+      "decomposed": "Broken down",
+      "not_decomposed": "Not broken down"
+    },
+    "reason": {
+      "no_holdings_data": "No constituent data",
+      "leveraged_inverse": "Leveraged/inverse",
+      "invalid_weights": "Invalid weight data"
+    },
+    "sector_status": {
+      "available": "Calculated",
+      "partial": "Partly calculated",
+      "unavailable": "No sector data"
+    }
   }
 }

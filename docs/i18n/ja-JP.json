@@ -246,5 +246,47 @@
       "no_data": "データ不足",
       "empty": "表示する内容なし"
     }
+  },
+  "look_through": {
+    "title": "ETF実質エクスポージャー",
+    "company": "企業",
+    "direct": "直接",
+    "via_etf": "ETF経由",
+    "total": "実質エクスポージャー合計",
+    "total_weight": "総資産比",
+    "total_asset": "総資産（現金含む）",
+    "unidentified": "未確認エクスポージャー",
+    "nested_etf": "入れ子ETF（未分解）",
+    "residual": "構成比率外の残余",
+    "unlinked": "銘柄一覧にない構成銘柄",
+    "unpriced": "評価不可（終値なし）",
+    "constituents": "主な構成銘柄",
+    "holdings_as_of": "構成基準日",
+    "eval_amount": "保有評価額",
+    "constituent_weight": "構成比率",
+    "contribution": "このETF経由のエクスポージャー",
+    "data_quality": "データ品質",
+    "leverage_badge": "レバレッジ・インバース",
+    "stale_badge": "古い構成",
+    "show_all": "すべて表示",
+    "exposure_type": {
+      "direct": "直接のみ",
+      "etf": "ETF経由のみ",
+      "both": "直接＋ETF"
+    },
+    "etf_status": {
+      "decomposed": "分解済み",
+      "not_decomposed": "未分解"
+    },
+    "reason": {
+      "no_holdings_data": "構成データなし",
+      "leveraged_inverse": "レバレッジ・インバース",
+      "invalid_weights": "比率データの誤り"
+    },
+    "sector_status": {
+      "available": "計算済み",
+      "partial": "一部のみ計算",
+      "unavailable": "業種データなし"
+    }
   }
 }

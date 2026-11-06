@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from app import i18n
+from app import look_through as lt
 from app.daily_briefing import (SECTION_EMPTY, SECTION_NO_DATA, SECTION_OK, SECTION_PARTIAL, STATUS_DELAYED, STATUS_LATEST,
                                 STATUS_NO_DATA, STATUS_STALE)
 from app.diagnosis_i18n import T as DIAG_T
@@ -58,3 +59,8 @@ def test_matches_backend_values(res):
         # 일일 브리핑(2026-11-06): 상태 코드가 백엔드 값과 같다
         assert set(data["daily_briefing"]["market_data_status"]) == {STATUS_LATEST, STATUS_DELAYED, STATUS_STALE, STATUS_NO_DATA}
         assert set(data["daily_briefing"]["section_status"]) == {SECTION_OK, SECTION_PARTIAL, SECTION_NO_DATA, SECTION_EMPTY}
+        # ETF 실질 노출(2026-11-06): 코드값이 백엔드 값과 같다
+        assert set(data["look_through"]["reason"]) == {lt.REASON_NO_DATA, lt.REASON_LEVERAGED, lt.REASON_INVALID}
+        assert set(data["look_through"]["etf_status"]) == {lt.STATUS_DECOMPOSED, lt.STATUS_NOT_DECOMPOSED}
+        assert set(data["look_through"]["exposure_type"]) == {"direct", "etf", "both"}
+        assert set(data["look_through"]["sector_status"]) == {"available", "partial", "unavailable"}

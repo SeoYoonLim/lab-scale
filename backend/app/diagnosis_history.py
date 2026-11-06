@@ -254,12 +254,18 @@ def comparison_basis(current: dict, previous: dict | None, locale: str = "ko-KR"
 
 
 def build_record_comparison(current: dict, previous: dict | None, locale: str = "ko-KR") -> dict:
-    """build_comparison + 기준 시점(basis)과 지표 변화(metric_changes). ETF 실질 노출은 진단 저장본에 없어서 비교하지 않는다."""
+    """build_comparison + 기준 시점(basis)과 지표 변화(metric_changes) + 실질 노출 변화(exposure_changes).
+
+    exposure_changes는 두 저장본 모두에 실질 노출 스냅샷(2026-11-06 이후 진단의 look_through)이 있을 때만 채운다. 그 전 진단은
+    스냅샷이 없어서 null이다(현재 구성종목으로 과거 진단을 다시 계산하지 않는다)."""
+    from app import look_through
+
     return {
         **build_comparison(current, previous),
         "basis": comparison_basis(current, previous, locale),
         "metric_changes": None if previous is None else metric_changes(current["result"], previous["result"]),
-        "exposure_changes": None,
+        "exposure_changes": None if previous is None else look_through.compare(current["result"].get("look_through"),
+                                                                                previous["result"].get("look_through")),
     }
 
 

@@ -246,5 +246,47 @@
       "no_data": "데이터 부족",
       "empty": "표시할 내용 없음"
     }
+  },
+  "look_through": {
+    "title": "ETF 실질 노출",
+    "company": "기업",
+    "direct": "직접 노출",
+    "via_etf": "ETF 간접 노출",
+    "total": "실질 노출 합계",
+    "total_weight": "총자산 대비 비중",
+    "total_asset": "총자산(현금 포함)",
+    "unidentified": "미확인 노출",
+    "nested_etf": "중첩 ETF(분해 안 함)",
+    "residual": "구성 비중 밖 잔여",
+    "unlinked": "종목 목록에 없는 구성종목",
+    "unpriced": "평가 불가(종가 없음)",
+    "constituents": "주요 구성종목",
+    "holdings_as_of": "구성 기준일",
+    "eval_amount": "보유 평가액",
+    "constituent_weight": "구성 비중",
+    "contribution": "이 ETF를 통한 노출",
+    "data_quality": "데이터 품질",
+    "leverage_badge": "레버리지·인버스",
+    "stale_badge": "오래된 구성",
+    "show_all": "전체 보기",
+    "exposure_type": {
+      "direct": "직접만",
+      "etf": "ETF로만",
+      "both": "직접 + ETF"
+    },
+    "etf_status": {
+      "decomposed": "분해함",
+      "not_decomposed": "분해 안 함"
+    },
+    "reason": {
+      "no_holdings_data": "구성 데이터 없음",
+      "leveraged_inverse": "레버리지·인버스",
+      "invalid_weights": "비중 데이터 오류"
+    },
+    "sector_status": {
+      "available": "계산함",
+      "partial": "일부만 계산",
+      "unavailable": "업종 데이터 없음"
+    }
   }
 }

@@ -222,6 +222,8 @@ class DiagnosisBody(BaseModel):
     suggestions: list[str]
     notes: list[str]
     disclaimer: str
+    # ETF 실질 노출 스냅샷(2026-11-06, app.look_through). 이 기능 전에 저장한 진단은 null(과거 값을 만들지 않는다)
+    look_through: dict[str, Any] | None = None
 
 
 class DiagnosisResponse(DiagnosisBody):
@@ -372,8 +374,8 @@ class ComparisonBasis(BaseModel):
 class DiagnosisRecordComparison(DiagnosisComparison):
     basis: ComparisonBasis
     metric_changes: MetricChanges | None = None
-    # 진단 저장본에 ETF 실질 노출이 없어서 항상 null(GET /api/portfolio/exposure는 현재 시점만 계산한다)
-    exposure_changes: None = None
+    # 두 진단 저장본 모두에 실질 노출 스냅샷(look_through, status ok)이 있을 때만 변화(app.look_through.compare), 아니면 null
+    exposure_changes: dict[str, Any] | None = None
 
 
 def _diagnosis_not_found(diagnosis_id: int) -> HTTPException:
