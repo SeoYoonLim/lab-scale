@@ -5,7 +5,7 @@
 1. 고정 안내(답변 실패·지연)는 언어별 고정 문구
 2. 용어 사전 답(종목 없는 정의·비교·해석 질문)은 언어별 사전(app.glossary_i18n). 한국어 답이 사전 답과 글자까지 같을 때만
 3. 전망 간결 답·후속 답(app.outlook_i18n)은 같은 계산 결과로 언어별 템플릿(2026-11-06). 기록으로 다시 만든 한국어 답이 저장된 답과
-   글자까지 같고 새 숫자가 없을 때만 쓴다
+   글자까지 같고 새 숫자가 없을 때만 쓴다. 최근 N거래일 주가 흐름 답(app.price_flow_i18n)도 같은 조건의 언어별 템플릿이다
 4. 그 밖(상세 전망·실적·기간·시세·LLM 답 등)은 보호 번역(app.i18n_translate): 숫자·날짜·종목명·기사/공시 제목은 코드가 원문 그대로 되돌린다.
    검증에 실패하면 한국어 원문 + 안내 문구다.
 """
@@ -13,7 +13,7 @@
 import logging
 from functools import lru_cache
 
-from app import glossary, glossary_i18n, outlook_i18n
+from app import glossary, glossary_i18n, outlook_i18n, price_flow_i18n
 from app.i18n import text
 from app.i18n_translate import STATUS_LOCALIZED, protected_terms, translate
 
@@ -50,7 +50,7 @@ def localize_answer(question: str, answer: str, records: list[dict], locale: str
             localized = glossary_i18n.concept_answer(question, locale)
             if localized:
                 return localized, STATUS_LOCALIZED
-    templated = outlook_i18n.localize(answer, records, locale)
+    templated = outlook_i18n.localize(answer, records, locale) or price_flow_i18n.localize(answer, records, locale)
     if templated is not None:
         return templated, STATUS_LOCALIZED
     names = [n for n in _company_names() if n in answer]

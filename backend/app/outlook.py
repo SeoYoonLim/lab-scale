@@ -1643,17 +1643,24 @@ def no_data_answer(company) -> str:
 # ---------- DB ----------
 
 
-def analyze(db, company, period: Period, now: datetime | None = None) -> dict | None:
-    """시세(장중 행 제외)·지수를 읽어 지표·신호·판정·데이터 점검을 만든다. 시세가 2거래일 미만이면 None."""
-    from sqlalchemy import func
+def price_rows(db, company, now: datetime) -> list[tuple]:
+    """최근 PRICE_ROWS개 시세 [(date, close, volume)] 날짜 오름차순(장중 행 제외)."""
+    from app.models import StockPrice
 
-    from app.models import MarketIndex, StockPrice
-
-    now = now or datetime.now(KST)
     rows = (db.query(StockPrice.price_date, StockPrice.close_price, StockPrice.volume)
             .filter(StockPrice.company_id == company.id)
             .order_by(StockPrice.price_date.desc()).limit(PRICE_ROWS).all())
-    rows = list(reversed(drop_open_session(rows, now, lambda r: r[0])))
+    return list(reversed(drop_open_session(rows, now, lambda r: r[0])))
+
+
+def analyze(db, company, period: Period, now: datetime | None = None, rows: list[tuple] | None = None) -> dict | None:
+    """시세(장중 행 제외)·지수를 읽어 지표·신호·판정·데이터 점검을 만든다. 시세가 2거래일 미만이면 None."""
+    from sqlalchemy import func
+
+    from app.models import MarketIndex
+
+    now = now or datetime.now(KST)
+    rows = rows if rows is not None else price_rows(db, company, now)
     if len(rows) < 2:
         return None
     code = index_code_for_market(getattr(company, "market", None))

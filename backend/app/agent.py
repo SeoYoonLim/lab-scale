@@ -52,7 +52,7 @@ from app.answer_guard import (
     strip_narrative_mismatch,
     strip_untrusted_urls,
 )
-from app import answer_i18n, earnings, evidence_answer, outlook, related_news
+from app import answer_i18n, earnings, evidence_answer, outlook, price_flow, related_news
 from app.etf_holdings import constituents_chat_answer, requested_top_n
 from app.llm_settings import call_options, chat_model
 from app.etf_holdings_db import chat_views
@@ -1423,6 +1423,34 @@ def _answer_forecast(question: str, previous: dict | None):
     return _code_answer(answer, records)
 
 
+def _answer_price_flow(question: str, companies: list | None):
+    """최근 N거래일 주가 흐름(수익률·이동평균·거래량·국면) 질문, 종목 하나(app/price_flow, 2026-11-06). LLM 없이 코드가 계산한다.
+
+    기간 해석이 "1일·5일·20일 수익률"의 "1일"을 조회 기간으로 읽어 1일 시세만 조회하던 질문이다. 기간 질문 경로보다 먼저 본다."""
+    if not companies or len(companies) != 1 or not price_flow.is_price_flow_question(question):
+        return None
+    company = companies[0]
+    w = price_flow.windows(question)
+    now = datetime.now(KST)
+    called_at = datetime.now(timezone.utc)
+    started = time.perf_counter()
+    db = SessionLocal()
+    try:
+        rows = outlook.price_rows(db, company, now)
+        res = outlook.analyze(db, company, outlook.PERIODS[outlook.DEFAULT_PERIOD], now, rows=rows)
+    finally:
+        db.close()
+    if res is None:
+        return _code_answer(outlook.no_data_answer(company))
+    flow = price_flow.compute(rows, w)
+    result = {"company_name": company.name, "ticker": company.ticker, "found": True, "called_via": "price_flow",
+              "windows": {k: list(v) if isinstance(v, tuple) else v for k, v in w.items()}, "flow": flow,
+              "label": res["label"], "indicators": res["indicators"], "signals": res["signals"], "data": res["data"]}
+    records = [{"tool_name": "stock_tool", "arguments": {"ticker": company.name, "period_days": w["window"]}, "result": result,
+                "called_at": called_at, "elapsed_ms": round((time.perf_counter() - started) * 1000)}]
+    return _code_answer(price_flow.answer(company, flow, res, now), records)
+
+
 def _answer_etf_constituents(question: str, companies: list | None):
     """(B) ETF 구성종목·편입 비중 질문. 수집한 구성종목(운용사 공시 PDF)이 있는 ETF는 코드 템플릿으로 답하고(LLM을 부르지 않는다),
     데이터가 없는 ETF는 제공하지 않는다고 답한다(구성종목을 지어내지 않는다). DB를 읽지 못해도 제공하지 않음 답변으로 돌아간다."""
@@ -2009,7 +2037,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     _reset_llm_state()
     companies = _question_companies(question)
     # 시장 비교(_answer_market_period)는 범위 안내(_answer_period_scope)보다 먼저다: 종목 값만 답하면 지수 비교가 빠진다
-    for handler in (_answer_concept, _answer_etf_constituents, _answer_holding_return, _answer_market_period, _answer_period_scope, _answer_simple_quote,
+    for handler in (_answer_concept, _answer_price_flow, _answer_etf_constituents, _answer_holding_return, _answer_market_period, _answer_period_scope, _answer_simple_quote,
                     _answer_period_quote, _answer_period_history):
         handled = handler(question, companies)
         if handled is not None:
