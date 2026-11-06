@@ -91,9 +91,7 @@ def test_cash_mismatch_is_history_unavailable(captest, dev_db, ticker):
     dev_db.query(VirtualAccount).filter(VirtualAccount.device_id == f"user:{user['id']}").update({"cash_balance": 123})
     dev_db.commit()
     body = view(user).json()
-    if not has_prices(dev_db):
-        assert body["status"] == "no_prices"
-        return
+    # 이력 불일치는 시세가 있어도 계산할 수 없는 문제라 시세 유무(CI의 빈 DB)와 관계없이 history_unavailable이 우선이다
     assert body["status"] == "history_unavailable" and body["history_verified"] is False and body["series"]["points"] == []
     assert any(w["kind"] == "history_mismatch" and "cash" in w["parts"] for w in body["warnings"])
 

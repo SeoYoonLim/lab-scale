@@ -262,3 +262,9 @@ def test_numbers_identical_across_locales():
 def test_status_messages_exist(status):
     for L in LOCALES:
         assert pi.STATUS[status][L] and pi.BENCH["portfolio_unavailable"][L]
+
+
+def test_history_mismatch_takes_priority_over_missing_prices():
+    """시세가 없어도 이력이 맞지 않으면 history_unavailable이다(시세가 생겨도 계산할 수 없는 문제가 먼저다)."""
+    r = run([buy(D[1], "A", 1, 100)], {}, calendar=[], actual_cash=123)
+    assert r["status"] == "history_unavailable" and r["history_verified"] is False
