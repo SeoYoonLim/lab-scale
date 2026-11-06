@@ -1,5 +1,6 @@
 from app.models.account_token import AccountToken
 from app.models.company import Company
+from app.models.daily_briefing import DailyBriefing
 from app.models.data_refresh_log import DataRefreshLog
 from app.models.disclosure import Disclosure
 from app.models.etf_holding import EtfHolding
@@ -30,6 +31,7 @@ __all__ = [
     "ExchangeRate",
     "QuarterlyEarnings",
     "DataRefreshLog",
+    "DailyBriefing",
     "ResearchReport",
     "PortfolioDiagnosis",
     "ToolCallLog",

@@ -212,5 +212,39 @@
     "인버스": "인버스",
     "골든크로스": "골든크로스",
     "데드크로스": "데드크로스"
+  },
+  "daily_briefing": {
+    "title": "일일 투자 브리핑",
+    "generate": "오늘 브리핑 만들기",
+    "regenerate": "다시 만들기",
+    "generating": "브리핑을 만드는 중입니다…",
+    "not_generated": "오늘 브리핑이 아직 없습니다.",
+    "version_limit": "오늘은 더 만들 수 없습니다. 저장된 브리핑을 확인해 주세요.",
+    "history_title": "지난 브리핑",
+    "version": "버전 {n}",
+    "versions_on_date": "이 날짜에 {n}개 버전",
+    "all_versions": "모든 버전 보기",
+    "data_as_of": "데이터 기준일",
+    "generated_at": "생성 시각",
+    "original_toggle": "한국어 원문 보기",
+    "summary_llm": "AI 요약",
+    "summary_code": "자동 요약",
+    "notable": "주목할 변화",
+    "direct_news": "직접 관련 뉴스",
+    "indirect_news": "간접 관련 뉴스",
+    "similar_grouped": "비슷한 기사 {n}건",
+    "sources": "근거 자료",
+    "market_data_status": {
+      "latest": "최신",
+      "delayed": "지연",
+      "stale": "오래된 데이터",
+      "no_data": "데이터 없음"
+    },
+    "section_status": {
+      "ok": "정상",
+      "partial": "일부 데이터 부족",
+      "no_data": "데이터 부족",
+      "empty": "표시할 내용 없음"
+    }
   }
 }

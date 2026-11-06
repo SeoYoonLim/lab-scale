@@ -49,6 +49,7 @@ DEFAULTS = {
     "RATE_LIMIT_PUBLIC_GET_PER_MIN": 600,  # 모든 GET /api/* IP당 분당(공개 시세·검색·헬스 포함, 정상 사용보다 넉넉하게)
     "RATE_LIMIT_MAIL_PER_RECIPIENT_PER_HOUR": 10,  # 같은 수신 주소로 보내는 모든 메일(인증·아이디·재설정·알림 합산) 시간당
     "RATE_LIMIT_ACCOUNT_DELETE_PER_HOUR": 5,  # 사용자당 회원 탈퇴 시도(비밀번호 확인·확인 메일)
+    "RATE_LIMIT_DAILY_BRIEFING_PER_MIN": 3,  # 사용자당 일일 브리핑 생성(2026-11-06, LLM 요약 1회 + DB 조회)
 }
 MAX_KEYS = 10_000  # 리미터 하나가 기억하는 키 수 상한(넘으면 가장 오래 안 쓴 키부터 버린다)
 CONCURRENT_RETRY_AFTER_S = 5  # 동시 질문으로 거절할 때 안내하는 대기 시간
@@ -207,8 +208,10 @@ oauth_exchange = SlidingWindow(60)  # 키: ip
 public_get = SlidingWindow(60)  # 키: ip
 mail_recipient = SlidingWindow(3600)  # 키: 정규화한 수신 주소
 account_delete = SlidingWindow(3600)  # 키: owner_key
+daily_briefing = SlidingWindow(60)  # 키: owner_key
 ALL = (login_ip, signup_ip, login_failures, orders, research, research_active, logout, password_change, password_change_failures,
-       backtest, recovery_ip, recovery_email, token_ip, verification_mail, oauth_ip, oauth_exchange, public_get, mail_recipient, account_delete)
+       backtest, recovery_ip, recovery_email, token_ip, verification_mail, oauth_ip, oauth_exchange, public_get, mail_recipient, account_delete,
+       daily_briefing)
 
 
 def reset_all() -> None:

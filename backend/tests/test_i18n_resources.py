@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 
 from app import i18n
+from app.daily_briefing import (SECTION_EMPTY, SECTION_NO_DATA, SECTION_OK, SECTION_PARTIAL, STATUS_DELAYED, STATUS_LATEST,
+                                STATUS_NO_DATA, STATUS_STALE)
 from app.diagnosis_i18n import T as DIAG_T
 from app.history_dates import DATE_GROUPS
 from app.i18n_translate import FINANCE_TERMS
@@ -53,3 +55,6 @@ def test_matches_backend_values(res):
         for ko, by_loc in FINANCE_TERMS.items():
             assert data["finance_terms"][ko] == (ko if loc == "ko-KR" else by_loc[loc])
         assert set(data["locale_name"]) == set(i18n.SUPPORTED_LOCALES)
+        # 일일 브리핑(2026-11-06): 상태 코드가 백엔드 값과 같다
+        assert set(data["daily_briefing"]["market_data_status"]) == {STATUS_LATEST, STATUS_DELAYED, STATUS_STALE, STATUS_NO_DATA}
+        assert set(data["daily_briefing"]["section_status"]) == {SECTION_OK, SECTION_PARTIAL, SECTION_NO_DATA, SECTION_EMPTY}

@@ -212,5 +212,39 @@
     "인버스": "反向",
     "골든크로스": "金叉",
     "데드크로스": "死叉"
+  },
+  "daily_briefing": {
+    "title": "每日投资简报",
+    "generate": "生成今日简报",
+    "regenerate": "重新生成",
+    "generating": "正在生成简报…",
+    "not_generated": "今日简报尚未生成。",
+    "version_limit": "今日无法再生成。请查看已保存的简报。",
+    "history_title": "历史简报",
+    "version": "版本 {n}",
+    "versions_on_date": "该日期有{n}个版本",
+    "all_versions": "显示所有版本",
+    "data_as_of": "数据基准日",
+    "generated_at": "生成时间",
+    "original_toggle": "查看韩文原文",
+    "summary_llm": "AI摘要",
+    "summary_code": "自动摘要",
+    "notable": "值得关注的变化",
+    "direct_news": "直接相关新闻",
+    "indirect_news": "间接相关新闻",
+    "similar_grouped": "{n}篇相似文章",
+    "sources": "依据资料",
+    "market_data_status": {
+      "latest": "最新",
+      "delayed": "滞后",
+      "stale": "数据过旧",
+      "no_data": "无数据"
+    },
+    "section_status": {
+      "ok": "正常",
+      "partial": "部分数据缺失",
+      "no_data": "数据不足",
+      "empty": "无可显示内容"
+    }
   }
 }

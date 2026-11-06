@@ -212,5 +212,39 @@
     "인버스": "inverse",
     "골든크로스": "golden cross",
     "데드크로스": "dead cross"
+  },
+  "daily_briefing": {
+    "title": "Daily investment briefing",
+    "generate": "Create today's briefing",
+    "regenerate": "Create again",
+    "generating": "Creating the briefing…",
+    "not_generated": "Today's briefing has not been created yet.",
+    "version_limit": "No more briefings can be created today. Please check the saved ones.",
+    "history_title": "Past briefings",
+    "version": "Version {n}",
+    "versions_on_date": "{n} versions on this date",
+    "all_versions": "Show all versions",
+    "data_as_of": "Data as of",
+    "generated_at": "Created at",
+    "original_toggle": "Show Korean original",
+    "summary_llm": "AI summary",
+    "summary_code": "Automatic summary",
+    "notable": "Notable change",
+    "direct_news": "Directly related news",
+    "indirect_news": "Indirectly related news",
+    "similar_grouped": "{n} similar articles",
+    "sources": "Sources",
+    "market_data_status": {
+      "latest": "Latest",
+      "delayed": "Delayed",
+      "stale": "Old data",
+      "no_data": "No data"
+    },
+    "section_status": {
+      "ok": "OK",
+      "partial": "Partly missing data",
+      "no_data": "Insufficient data",
+      "empty": "Nothing to show"
+    }
   }
 }

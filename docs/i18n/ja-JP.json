@@ -212,5 +212,39 @@
     "인버스": "インバース",
     "골든크로스": "ゴールデンクロス",
     "데드크로스": "デッドクロス"
+  },
+  "daily_briefing": {
+    "title": "デイリー投資ブリーフィング",
+    "generate": "今日のブリーフィングを作成",
+    "regenerate": "作り直す",
+    "generating": "ブリーフィングを作成しています…",
+    "not_generated": "今日のブリーフィングはまだありません。",
+    "version_limit": "今日はこれ以上作成できません。保存済みのブリーフィングを確認してください。",
+    "history_title": "過去のブリーフィング",
+    "version": "バージョン{n}",
+    "versions_on_date": "この日に{n}件のバージョン",
+    "all_versions": "すべてのバージョンを表示",
+    "data_as_of": "データ基準日",
+    "generated_at": "作成日時",
+    "original_toggle": "韓国語の原文を表示",
+    "summary_llm": "AI要約",
+    "summary_code": "自動要約",
+    "notable": "注目すべき変化",
+    "direct_news": "直接関連ニュース",
+    "indirect_news": "間接関連ニュース",
+    "similar_grouped": "類似記事{n}件",
+    "sources": "根拠資料",
+    "market_data_status": {
+      "latest": "最新",
+      "delayed": "遅延",
+      "stale": "古いデータ",
+      "no_data": "データなし"
+    },
+    "section_status": {
+      "ok": "正常",
+      "partial": "一部データ不足",
+      "no_data": "データ不足",
+      "empty": "表示する内容なし"
+    }
   }
 }

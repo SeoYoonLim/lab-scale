@@ -41,6 +41,10 @@ PROTECTED = [
     ("GET", "/api/history/search"),
     ("GET", "/api/auth/preferences"),
     ("PUT", "/api/auth/preferences"),
+    ("POST", "/api/briefings/daily/generate"),
+    ("GET", "/api/briefings/daily/current"),
+    ("GET", "/api/briefings/daily/history"),
+    ("GET", "/api/briefings/daily/1"),
     ("GET", "/api/auth/me"),
     ("POST", "/api/auth/logout"),
     ("POST", "/api/auth/change-password"),
@@ -278,6 +282,10 @@ class TestRouteCoverage:
         ("GET", "/api/history/search"),
         ("GET", "/api/auth/preferences"),
         ("PUT", "/api/auth/preferences"),
+        ("POST", "/api/briefings/daily/generate"),
+        ("GET", "/api/briefings/daily/current"),
+        ("GET", "/api/briefings/daily/history"),
+        ("GET", "/api/briefings/daily/{briefing_id}"),
     }
 
     def _routes(self):

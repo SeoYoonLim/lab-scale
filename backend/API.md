@@ -215,6 +215,10 @@ ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응�
 | GET | `/api/health` | 공개 | 서비스 상태(DB·마이그레이션·Ollama·데이터 기준일, 항상 200, `ok`/`degraded`) |
 | GET | `/api/stocks/{ticker}/price-history` | 공개 | 주가 추이 차트용 일별 시세(종가·거래량·등락률·시가·고가·저가). `days`는 1~90(기본 90)이고 **최근 N거래일**(달력 일 아님). 날짜 오름차순. 주식은 2026-06-26부터, ETF는 2026-07-16부터 데이터가 있어 90개가 안 될 수 있다(`count`로 확인) |
 | GET | `/api/briefing` | 필요 | 오늘의 개인화 브리핑(보유·관심종목 기준 시장 요약, 종목별 등락률·거래량 배수·뉴스·공시, flag, 포트폴리오 요약). LLM 없이 코드가 계산하고 읽기 전용(계좌를 만들지 않음). `news_limit` 1~5 |
+| POST | `/api/briefings/daily/generate` | 필요 | 개인화 일일 투자 브리핑 만들기(5개 영역, 날짜별 저장·버전). 같은 날 이미 있으면 저장본 그대로(200), `regenerate`면 새 버전(201), 하루 5개 |
+| GET | `/api/briefings/daily/current` | 필요 | 오늘(사용자 시간대) 브리핑의 마지막 버전, 없으면 404 |
+| GET | `/api/briefings/daily/history` | 필요 | 내 일일 브리핑 목록(날짜 최신순, `latest_only`, 날짜 범위, 페이지) |
+| GET | `/api/briefings/daily/{id}` | 필요 | 저장된 브리핑 그대로(다시 계산하지 않음), 남의 것은 404 |
 | GET | `/api/stocks/{ticker}/event-reactions` | 공개 | 뉴스·공시 이후 주가 반응(1/5/20거래일 수익률, 지수 대비 초과수익률, 거래량 비율)을 코드로 계산. `event_type`/`limit`(1~30, 유형별)/`since_days`(최대 120) 쿼리. 시간적 선후관계일 뿐 인과가 아님 |
 
 아래 각 엔드포인트의 에러 표에는 401을 반복해 적지 않았다. **인증 필요 API는 모두 위 "인증 에러 (401)"가 공통으로 적용된다.**
@@ -4352,6 +4356,43 @@ PUT 본문: `{"preferred_locale": "en-US", "preferred_timezone": "America/New_Yo
 
 ---
 
+## 개인화 일일 투자 브리핑 (2026-11-06)
+
+화면용 상세(필드 표, 상태 처리, 추천 화면, 실제 응답 예시)는 `docs/FRONTEND_HANDOFF_DAILY_BRIEFING.md`. 여기는 백엔드 규칙만 적는다.
+
+**기존 `GET /api/briefing`과의 차이**: `/api/briefing`은 요청할 때마다 다시 계산하는 화면용 응답이고 저장하지 않는다(시장 3지표 1일 변화, 종목별 등락률·거래량·뉴스·공시·flag, 포트폴리오 요약). 일일 브리핑은 그 계산(`app.briefing.build_briefing`)을 그대로 재사용하고, 그 위에 아래를 더해 5개 영역으로 만든 뒤 날짜별로 저장한다(`app/daily_briefing.py`, `app/daily_briefing_db.py`, `app/api/daily_briefing.py`, 테이블 `daily_briefing`, 마이그레이션 `5e7b9d2c4a10`).
+
+| 영역 | 내용(모두 DB 값 또는 결정적 계산) | 재사용한 코드 |
+| --- | --- | --- |
+| `market` 오늘의 시장 요약 | 코스피·코스닥·원/달러 종가·1일·5거래일 변화, 제목에 시장 키워드가 있는 최근 3일 기사(제목만, 해석 안 함) | `briefing` 시세 정의 |
+| `holdings` 보유 종목 | 기준일·지연 영업일, 1·5·20거래일 등락률, 평가액·비중·손익, 위험 요인, 직접 관련 뉴스(제목에 종목명), 간접 뉴스(업종·기초지수), 공시 | `build_briefing`, `news_relevance.title_names_subject`, `related_news.indirect_news` |
+| `watchlist` 관심 종목 | 보유와 겹치는 종목 제외, 규칙 기준 변화가 있는 종목 먼저, 없으면 "특별한 업데이트가 없습니다", 마지막 리서치 이후 저장된 뉴스·공시 수 | `build_briefing`, `research_report` |
+| `risk` 위험 점검 | 진단 지표·플래그(DB 종가 기준), 업종 집중도는 데이터 없음 안내, ETF 실질 노출은 구성종목으로 분해한 경우에만 | `diagnosis.compute_portfolio`·`compute_flags`, `exposure_db.get_exposure` |
+| `checklist` 오늘 확인할 사항 | 최대 3개: 데이터 지연 > 보유 실적 공시·공시 > 위험 플래그 > 관심 종목 공시 | |
+
+- `diagnosis.load_inputs`는 실시간 시세(외부 호출)를 써서 쓰지 않았다. 위험 점검은 브리핑과 같은 DB 종가로 계산한다. 외부 시세·뉴스·공시 API는 부르지 않는다.
+- 비슷한 제목(`news_relevance.is_duplicate_title`, 0.9)은 한 묶음(`similar_count`)으로 보인다. 직접 관련 뉴스는 제목이 그 종목을 가리키는 기사만이다(기존 `/api/briefing`의 `news`는 종목에 연결된 기사 전부라 시황 마감 기사가 섞였다).
+
+**데이터 신선도**: 전망 경로와 같은 규칙이다. 기대 거래일 = `outlook.expected_trading_day`(장 마감 전이면 직전 평일), 지연 = `data_status.business_days_behind`, 0이면 `latest`, 1~5(`outlook.MAX_LAG_BUSINESS_DAYS`)면 `delayed`, 초과면 `stale`, 시세가 없으면 `no_data`. 늦은 이유는 `outlook.price_status`(미수집·수집 실패·휴장일 추정·종목만 누락), 마지막 갱신 실행은 `data_status.summarize_last_run`. `latest`가 아니면 `content.freshness.headline`이 경고 문장이고 `warning: true`다. 지수·환율 기준일이 다르면 `notices`에 따로 적는다. 뉴스·공시 수집 시각은 `max(created_at)`.
+
+**LLM 역할**: 요약 한 단락(`content.summary`)만 쓸 수 있다. 입력은 그 언어로 그린 브리핑의 사실뿐이고, 출력이 다음을 모두 지킬 때만 쓴다(아니면 1번 다시 시키고, 그래도 안 되면 코드 요약).
+1. 숫자가 입력에 있는 값(표기 변형 포함, `diagnosis.allowed_numbers`)뿐
+2. 금지 표현(매수·매도 지시, 목표 주가, 확률, 추천, "오를 것" 등)이 없음
+3. 브리핑에 없는 종목명(DB 종목명 전체 + 진단의 통칭 사전)이 없음
+4. 그 언어의 글자(종목명·뉴스/공시 제목 원문은 예외)
+5. 시세가 지연·오래됨이면 첫 문장에 기준일이 있음
+Ollama 연결 실패·타임아웃은 재시도 없이 코드 요약이다. 주소(`OLLAMA_HOST`)와 모델(`llm_settings.chat_model`)은 기존 설정 그대로다. `use_llm: false`면 부르지 않는다.
+
+**저장 정책**: 같은 사용자·같은 `local_date`(요청 `timezone` → 계정 `preferred_timezone` → Asia/Seoul 기준)는 version 1 한 건이다. 다시 `generate`하면 저장본을 200으로 돌려주고 다시 계산하지 않는다. `regenerate: true`면 version을 올린 새 행을 더하고 기존 행은 고치지 않는다(하루 `MAX_VERSIONS` = 5, 넘으면 409). 동시에 두 번 만들면 유니크 제약(`user_id, local_date, version`)이 막고 먼저 저장된 것을 돌려준다. 조회는 저장한 `content`를 그대로 돌려주며 현재 시세로 다시 계산하지 않는다. 사용자를 지우면 브리핑도 지워진다(CASCADE).
+
+**저장 컬럼**: `user_id`, `local_date`, `timezone`, `locale`, `version`, `generated_at`, `data_as_of`, `market_data_status`, `summary_source`(llm\|code), `content`(그 언어), `original_content`(같은 계산의 한국어), `tickers`, `sources`, `section_status`(JSONB).
+
+**다국어**: 문장은 모두 `app/daily_briefing_text.py`의 언어별 템플릿이다(진단·노출·브리핑 flag 문장은 기존 `diagnosis_i18n`·`exposure_i18n`·`briefing_i18n`). 같은 계산 결과를 언어만 바꿔 그리므로 숫자 필드는 언어와 관계없이 같다. 숫자·날짜·종목코드·회사 공식 명칭·뉴스/공시 제목은 번역하지 않는다. 기록은 만든 언어로 남고 나중에 다시 번역하지 않는다. 한국어 원본(`original_content`)의 요약은 코드 요약이다(LLM은 요청 언어로 한 번만 부른다).
+
+**인증·분리**: 4개 라우트 모두 로그인 필요(401). 모든 조회는 `user_id`로 거르고, 보유·관심 종목은 `owner_key`(`user:{id}`)로만 읽는다. 남의 브리핑 id는 404다. 생성은 사용자당 분당 3회(`RATE_LIMIT_DAILY_BRIEFING_PER_MIN`, 넘으면 429).
+
+**알려진 한계**: 업종 집중도 없음(company.sector 비어 있음), 미래 실적 발표 일정 데이터 없음, 시장 이벤트는 키워드 기사 목록뿐, 매일 자동 생성 안 함, 통합 검색(`/api/history/search`)에 브리핑이 나오지 않음, LLM 요약이 숫자를 나열하는 식으로 길어질 수 있음(검증은 통과).
+
 ## 운영 설정 (환경변수, 2026-10-28)
 
 비밀값은 코드에 두지 않는다(`backend/.env`, 커밋 금지, 예시는 `backend/.env.example`). 아래는 비밀값이 아닌 설정과 기본값이다.
@@ -4385,6 +4426,7 @@ PUT 본문: `{"preferred_locale": "en-US", "preferred_timezone": "America/New_Yo
 | `RATE_LIMIT_PUBLIC_GET_PER_MIN` | `600` | IP당 분당 모든 GET `/api/*` |
 | `RATE_LIMIT_MAIL_PER_RECIPIENT_PER_HOUR` | `10` | 같은 수신 주소로 보내는 메일 시간당(모든 종류 합산, 넘으면 생략) |
 | `RATE_LIMIT_ACCOUNT_DELETE_PER_HOUR` | `5` | 사용자당 시간당 회원 탈퇴 시도 |
+| `RATE_LIMIT_DAILY_BRIEFING_PER_MIN` | `3` | 사용자당 분당 일일 브리핑 생성(`POST /api/briefings/daily/generate`, 2026-11-06) |
 | `SECURITY_HSTS` | (꺼짐) | `1`이면 Strict-Transport-Security(HTTPS로만 서비스할 때) |
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | `/api/health`의 Ollama 검사 주소. 에이전트·진단·임베딩의 `ollama` 라이브러리도 같은 변수를 읽는다. 재부팅 뒤 11434가 막히면 README "재부팅 뒤 11434가 막혔을 때" 참고 |
 

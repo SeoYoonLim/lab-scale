@@ -16,6 +16,7 @@ from app import rate_limit, security
 from app.api.auth import router as auth_router
 from app.api.backtest import router as backtest_router
 from app.api.briefing import router as briefing_router
+from app.api.daily_briefing import router as daily_briefing_router
 from app.api.companies import router as companies_router
 from app.api.deps import client_ip
 from app.api.disclaimer import router as disclaimer_router
@@ -167,6 +168,7 @@ app.include_router(discovery_router)
 app.include_router(watchlist_router)
 app.include_router(portfolio_router)
 app.include_router(briefing_router)
+app.include_router(daily_briefing_router)
 app.include_router(performance_router)
 app.include_router(exposure_router)
 app.include_router(backtest_router)
