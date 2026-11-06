@@ -93,3 +93,29 @@ def get_performance(db: Session, owner_key: str, period: str, now: datetime | No
         **out,
         "disclaimer": DISCLAIMER,
     }
+
+
+def get_performance_view(db: Session, owner_key: str, period: str, benchmark: str, now: datetime | None = None) -> dict:
+    """view=benchmark(2026-11-06, app.performance_compare): 기존 입력(계좌·체결·달력·종가·코스피) + 실제 보유 수량 1 + 선택 지수 1.
+    쿼리는 보유·거래 종목 수와 관계없이 7개 이하다. 읽기 전용."""
+    from app import performance_compare
+    from app.models import Holding
+    from app.outlook import expected_trading_day
+
+    now = (now or datetime.now(KST)).astimezone(KST)
+    inputs = load_inputs(db, owner_key, now)
+    core = compute_performance(inputs["trades"], inputs["closes"], inputs["calendar"], inputs["index_series"], period, INITIAL_BALANCE,
+                               detail=True)
+    positions = {t: int(q) for t, q in db.execute(
+        select(Company.ticker, Holding.quantity).join(Company, Company.id == Holding.company_id).where(Holding.device_id == owner_key))}
+    if benchmark == BENCHMARK_CODE:
+        series = inputs["index_series"]
+    else:
+        rows = db.execute(select(MarketIndex.price_date, MarketIndex.close_price).where(MarketIndex.index_code == benchmark)
+                          .order_by(MarketIndex.price_date)).all()
+        series = [(d, float(c)) for d, c in drop_open_session(rows, now)]
+    replayed = replayed_cash(inputs["trades"], INITIAL_BALANCE) if inputs["trades"] else None
+    out = performance_compare.build(core, inputs["trades"], replayed, inputs["cash_balance"],
+                                    positions if inputs["cash_balance"] is not None else None, {benchmark: series}, benchmark,
+                                    expected_trading_day(now), inputs["closes"])
+    return {"generated_at": now.isoformat(), **out}

@@ -8,6 +8,8 @@ import pytest
 
 from app import i18n
 from app import look_through as lt
+from app import performance_compare as pc
+from app.performance import PERIOD_MONTHS
 from app.daily_briefing import (SECTION_EMPTY, SECTION_NO_DATA, SECTION_OK, SECTION_PARTIAL, STATUS_DELAYED, STATUS_LATEST,
                                 STATUS_NO_DATA, STATUS_STALE)
 from app.diagnosis_i18n import T as DIAG_T
@@ -64,3 +66,8 @@ def test_matches_backend_values(res):
         assert set(data["look_through"]["etf_status"]) == {lt.STATUS_DECOMPOSED, lt.STATUS_NOT_DECOMPOSED}
         assert set(data["look_through"]["exposure_type"]) == {"direct", "etf", "both"}
         assert set(data["look_through"]["sector_status"]) == {"available", "partial", "unavailable"}
+        # 성과·벤치마크 비교(2026-11-06): 코드값이 백엔드 값과 같다
+        assert set(data["performance"]["status"]) == set(pc.STATUSES)
+        assert set(data["performance"]["benchmark_status"]) == set(pc.BENCHMARK_STATUSES)
+        assert set(data["performance"]["index"]) == set(pc.BENCHMARKS)
+        assert set(data["performance"]["period"]) == set(PERIOD_MONTHS)

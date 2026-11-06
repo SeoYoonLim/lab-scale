@@ -3672,7 +3672,8 @@ curl "http://localhost:8000/api/portfolio/performance?period=3m" -H "Authorizati
 
 | 쿼리 | 값 | 기본 | 범위 밖 |
 | --- | --- | --- | --- |
-| `period` | `1m` / `3m` / `6m` / `all` | `all` | 422(대소문자 구분, `2y`·빈 값도 422) |
+| `period` | `1m` / `3m` / `6m` / `1y` / `all` (`1y`는 2026-11-06 추가) | `all` | 422(대소문자 구분, `2y`·빈 값도 422) |
+| `view` | `default` / `benchmark` | `default` | `benchmark`면 아래 "성과·벤치마크 비교" 응답(2026-11-06) |
 
 ### 계산 규칙
 
@@ -3785,6 +3786,30 @@ curl "http://localhost:8000/api/portfolio/performance?period=3m" -H "Authorizati
 - 변동성은 거래일 간 자산 등락률이라 표본(거래일)이 적으면 의미가 약하다.
 
 ---
+
+## 성과·벤치마크 비교: `GET /api/portfolio/performance?view=benchmark` (2026-11-06)
+
+화면용 상세(필드 표, 상태별 화면, 실제 dev DB 응답·빈 응답·계산 불가 응답 JSON)는 `docs/FRONTEND_HANDOFF_PORTFOLIO_PERFORMANCE.md`. 계산 `app/performance_compare.py`, 문장 `app/performance_i18n.py`, DB `app/performance_db.get_performance_view`. `view` 없이(`default`) 부르면 위 응답 그대로다(필드 불변). 이번에 `period`에 `1y`가 더해졌다(기본 응답에도 적용, 대문자 값은 여전히 422).
+
+**조사 결과**: 체결 내역(`trade`: 체결 시각·수량·체결가, 수정 없는 로그)을 날짜순으로 재생하는 성과 계산(`app/performance.py`, 2026-10-29)이 이미 있었다. 날짜별 보유 수량·현금 복원, 거래일 종가 평가, 1m·3m·6m·all, 최대 낙폭·변동성, 코스피 기간 수익률까지 있다. 수수료·세금은 주문 계산에 없고(체결가 × 수량), 입금·출금 기능도 없다. 계좌 초기화는 체결·보유를 지우고 현금을 `INITIAL_BALANCE`로 되돌린다. 그래서 초기 자금부터의 재생은 코드상 근거가 있다. 다만 재생 결과가 계좌와 다를 때 안내 문장만 붙이고 계산을 계속했고(`CASH_MISMATCH`), 보유 수량은 대조하지 않았다. 지수는 코스피만 쓰고 공통 거래일 시계열·정규화가 없었으며, 직전 종가로 평가한 날을 점마다 표시하지 않았다. 지수 데이터는 `market_index`의 KS11·KQ11 각 733거래일(2023-10-30~2026-11-03, 종목 시세 거래일과 같음)이고 KOSPI200은 없다.
+
+**새 계산(`calc_version` = `performance.v2`)**
+- 이력 대조: 모든 체결을 재생한 현금·보유 수량이 지금 계좌(`virtual_account.cash_balance`, `holding`)와 다르거나 재생할 수 없는 체결(보유보다 많이 판 기록 등)이 있으면 `status: history_unavailable`, 수익률·시계열·비교는 null·빈 값이다. 현재 보유를 과거에 소급하지 않는다.
+- 총자산 = 현금 + Σ(그날 보유 수량 × 그날 종가). 그날 종가가 없으면 직전 종가(없으면 마지막 체결가)로 평가하고 그 점에 `estimated`·`estimated_tickers`를 붙인다. 하나라도 있으면 `status: partial`이다.
+- 기간 시작 = `data_date`에서 개월 수를 뺀 날 이하의 마지막 거래일. 첫 체결 전이면 첫 체결 직전 거래일(inception)로 늦추고 `requested_start_date`를 함께 준다.
+- 시작 금액: `all`은 초기 자금, 그 밖은 실제 시작일 총자산. 기간 수익률 = 끝 ÷ 시작 − 1, 누적 수익률 = 끝 ÷ 초기 자금 − 1, 일별 수익률 = 당일 ÷ 전 거래일 − 1. 입출금이 없어 단순 수익률이 TWR과 같다(`cash_flows`).
+- 벤치마크(`benchmark` = KS11|KQ11|KOSPI|KOSDAQ): 포트폴리오와 지수가 둘 다 있는 거래일만 쓴다. 첫 공통 거래일을 양쪽 100으로 정규화하고(포트폴리오 시작일과 다르면 그날로 다시 맞춘다), 초과 수익률(%p) = 포트폴리오 − 지수다. 공통 거래일이 2일 미만이면 `insufficient_overlap`, 지수가 없으면 `no_data`, 포트폴리오가 계산 불가면 `portfolio_unavailable`, 지수가 빠진 날이 있거나 포트폴리오에 추정값이 있으면 `partial`.
+- 지표: 최고·최저 총자산(1개 이상), 최대 낙폭(2개 이상), 변동성(일간 수익률 20개 이상), 연환산 수익률(252개 이상). 기준에 못 미치면 null.
+- 가격 기준: 저장된 종가(`stock_price.close_price`). 배당·분배금은 포함하지 않는다. 분할·병합 보정은 하지 않고, 보유 종목의 하루 ±30.5% 초과 변동을 `price_discontinuity`로 경고한다(`app.price_quality`). 수집 소스의 수정주가 여부는 이 기능에서 확인하지 않았다(`corporate_actions_adjusted: not_verified`).
+- 지연: `data_lag_business_days` = 기대 거래일(`outlook.expected_trading_day`, 장 마감 전이면 직전 평일) 대비 마지막 종가일의 영업일 지연. 0보다 크면 `data_delayed` 경고.
+
+**상태**: `ok`, `partial`, `no_account`(계좌·체결 없음), `no_trades`, `pending_only`(체결이 모두 마지막 종가일 뒤), `no_prices`, `history_unavailable`.
+
+**응답 필드**: `generated_at, calc_version, locale, status, message, history_verified, period, requested_start_date, start_date, end_date, data_date, expected_date, data_lag_business_days, initial_balance, benchmark_code, benchmark_name, summary{current_cash, start_value, end_value, profit_loss, period_return_pct, cumulative_return_pct, eval_amount, cash_balance}, metrics{highest, lowest, max_drawdown, daily_volatility_pct, annualized_volatility_pct, annualized_return_pct, daily_return_count, trading_days, sample_rules}, series{points[{date, total_asset, cash_balance, eval_amount, daily_return_pct, cumulative_return_pct, portfolio_index, estimated, estimated_tickers}], total_points, sampled, max_points}, comparison{status, message, benchmark_code, benchmark_name, start_date, end_date, common_days, start_aligned, benchmark_start_value, benchmark_end_value, benchmark_last_date, benchmark_lag_business_days, portfolio_return_pct, benchmark_return_pct, excess_return_pp, points[{date, portfolio_index, benchmark_index, benchmark_close, portfolio_return_pct, benchmark_return_pct, excess_return_pp, estimated}], total_points, sampled}, estimated_dates, cash_flows, price_basis, warnings[{kind, …, message}], disclaimer`. 금액은 원, 수익률은 %(소수 둘째 자리), 초과 수익률은 %p, 지수 정규화 값은 소수 넷째 자리. 시계열은 400점 상한이다(첫·끝·최고·최저·최대 낙폭 점은 남긴다).
+
+**인증·성능·저장**: 로그인 필요(401), 본인 `owner_key`만 읽는다. 쿼리는 체결 수와 관계없이 7개 이하(계좌·체결·달력·종가·코스피 + 보유 1 + 선택 지수 1)다. 일별 스냅샷 테이블은 만들지 않았다. 체결 내역이 완전하면 재생으로 복원되고, 불완전하면 대조에서 `history_unavailable`로 드러나기 때문이다. 마이그레이션은 없다.
+
+**다국어**: 수치는 한 번 계산하고 `message`·`comparison.message`·`warnings[].message`·`benchmark_name`·`disclaimer`만 4개 언어로 쓴다.
 
 ## POST /api/backtest (2026-10-29)
 

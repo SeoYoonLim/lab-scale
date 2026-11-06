@@ -21,7 +21,7 @@ from datetime import date
 
 from app.portfolio import InsufficientBalance, InsufficientQuantity, apply_buy, apply_sell
 
-PERIOD_MONTHS = {"1m": 1, "3m": 3, "6m": 6, "all": None}
+PERIOD_MONTHS = {"1m": 1, "3m": 3, "6m": 6, "1y": 12, "all": None}  # 1y: 2026-11-06 추가
 MAX_POINTS = 400  # 자산 곡선 응답 포인트 상한(넘으면 간격 샘플링)
 TRADING_DAYS_PER_YEAR = 252
 BENCHMARK_CODE = "KS11"
@@ -216,8 +216,12 @@ def compute_performance(
     period: str,
     initial_balance: float,
     max_points: int = MAX_POINTS,
+    detail: bool = False,
 ) -> dict:
-    """trades는 체결 순서, closes·calendar·index_series는 날짜 오름차순이고 장중 행이 이미 빠져 있어야 한다."""
+    """trades는 체결 순서, closes·calendar·index_series는 날짜 오름차순이고 장중 행이 이미 빠져 있어야 한다.
+
+    detail=True(2026-11-06, app.performance_compare)면 응답에 내부 값 "_detail"을 더한다: 샘플링 전 전체 시계열(그날 종가가 없어
+    직전 종가·체결가로 평가한 종목 포함), 재생 끝의 현금·보유 수량, 재생하지 못한 체결 수. 기본 응답의 다른 값은 같다."""
     if period not in PERIOD_MONTHS:
         raise ValueError("period")
     calendar = sorted(set(calendar))
@@ -258,6 +262,7 @@ def compute_performance(
     in_window_from_start = period == "all" and not before_first
 
     curve_days, curve_values, points = [], [], []
+    estimated_by_day: list[list[str]] = []  # curve_days와 같은 순서: 그날 종가가 없어 다른 값으로 평가한 종목
     ti = 0
     for d in days:
         in_window = d > start_day or in_window_from_start
@@ -292,6 +297,7 @@ def compute_performance(
                 p.avg_price = 0.0  # 전량 매도하면 다음 매수는 새 평균단가로 시작(보유 행 삭제와 같은 효과)
 
         held_value = 0.0
+        estimated: list[str] = []
         for ticker, p in pos.items():
             if p.quantity == 0:
                 continue
@@ -302,6 +308,8 @@ def compute_performance(
                 kind = None if close_day == d else "previous_close"
             if kind and d >= start_day:
                 gaps.setdefault((ticker, kind), _Gap(kind)).days.append(d)
+            if kind:
+                estimated.append(ticker)
             held_value += p.quantity * close
         total = round(cash + held_value, 2)
         if d == start_day and not in_window_from_start:
@@ -313,6 +321,7 @@ def compute_performance(
         if d >= start_day:
             curve_days.append(d)
             curve_values.append(total)
+            estimated_by_day.append(sorted(estimated))
             points.append({"date": d.isoformat(), "total_asset": total, "cash_balance": round(cash, 2),
                            "eval_amount": round(held_value, 2)})
 
@@ -367,7 +376,14 @@ def compute_performance(
     if data_gaps:
         notices.append("종가가 없는 날이 있는 종목은 직전 종가(없으면 마지막 체결가)로 평가했습니다(data_gaps).")
 
-    return {
+    out_detail = {
+        "series": [{"date": d, "total_asset": v, "cash_balance": p["cash_balance"], "eval_amount": p["eval_amount"], "estimated": e}
+                   for d, v, p, e in zip(curve_days, curve_values, points, estimated_by_day)],
+        "start_day": start_day, "inception": inception, "first_trade_day": first_day,
+        "final_cash": round(cash, 2), "final_positions": {t: p.quantity for t, p in pos.items() if p.quantity},
+        "skipped": skipped, "replayed_count": len(done) - skipped,
+    } if detail else None
+    result = {
         "period": period,
         "start_date": curve_days[0].isoformat(),
         "end_date": data_date.isoformat(),
@@ -403,3 +419,6 @@ def compute_performance(
         "data_gaps": data_gaps,
         "notices": notices,
     }
+    if detail:
+        result["_detail"] = out_detail
+    return result

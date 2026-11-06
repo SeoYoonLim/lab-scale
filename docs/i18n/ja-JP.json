@@ -288,5 +288,52 @@
       "partial": "一部のみ計算",
       "unavailable": "業種データなし"
     }
+  },
+  "performance": {
+    "title": "ポートフォリオの成果",
+    "total_asset": "総資産",
+    "start_value": "基準金額",
+    "profit_loss": "損益",
+    "period_return": "期間収益率",
+    "cumulative_return": "累積収益率",
+    "benchmark_return": "指数収益率",
+    "excess_return": "市場比超過収益率",
+    "max_drawdown": "最大ドローダウン",
+    "volatility": "日次ボラティリティ",
+    "annualized_return": "年率換算収益率",
+    "highest": "最高総資産",
+    "lowest": "最低総資産",
+    "data_date": "データ基準日",
+    "estimated_badge": "推定値",
+    "not_enough_data": "データ不足",
+    "benchmark": "比較指数",
+    "portfolio": "マイポートフォリオ",
+    "period": {
+      "1m": "1か月",
+      "3m": "3か月",
+      "6m": "6か月",
+      "1y": "1年",
+      "all": "全期間"
+    },
+    "status": {
+      "ok": "正常",
+      "partial": "一部推定",
+      "no_account": "口座なし",
+      "no_trades": "取引なし",
+      "pending_only": "終値反映前",
+      "no_prices": "株価なし",
+      "history_unavailable": "履歴不一致"
+    },
+    "benchmark_status": {
+      "ok": "比較済み",
+      "partial": "一部のみ比較",
+      "no_data": "指数データなし",
+      "insufficient_overlap": "共通取引日不足",
+      "portfolio_unavailable": "成果計算不可"
+    },
+    "index": {
+      "KS11": "KOSPI",
+      "KQ11": "KOSDAQ"
+    }
   }
 }

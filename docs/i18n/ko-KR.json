@@ -288,5 +288,52 @@
       "partial": "일부만 계산",
       "unavailable": "업종 데이터 없음"
     }
+  },
+  "performance": {
+    "title": "포트폴리오 성과",
+    "total_asset": "총자산",
+    "start_value": "기준 금액",
+    "profit_loss": "손익",
+    "period_return": "기간 수익률",
+    "cumulative_return": "누적 수익률",
+    "benchmark_return": "지수 수익률",
+    "excess_return": "시장 대비 초과 수익률",
+    "max_drawdown": "최대 낙폭",
+    "volatility": "일간 변동성",
+    "annualized_return": "연환산 수익률",
+    "highest": "최고 총자산",
+    "lowest": "최저 총자산",
+    "data_date": "데이터 기준일",
+    "estimated_badge": "추정값",
+    "not_enough_data": "데이터 부족",
+    "benchmark": "비교 지수",
+    "portfolio": "내 포트폴리오",
+    "period": {
+      "1m": "1개월",
+      "3m": "3개월",
+      "6m": "6개월",
+      "1y": "1년",
+      "all": "전체"
+    },
+    "status": {
+      "ok": "정상",
+      "partial": "일부 추정",
+      "no_account": "계좌 없음",
+      "no_trades": "거래 없음",
+      "pending_only": "종가 반영 전",
+      "no_prices": "시세 없음",
+      "history_unavailable": "이력 불일치"
+    },
+    "benchmark_status": {
+      "ok": "비교함",
+      "partial": "일부만 비교",
+      "no_data": "지수 데이터 없음",
+      "insufficient_overlap": "공통 거래일 부족",
+      "portfolio_unavailable": "성과 계산 불가"
+    },
+    "index": {
+      "KS11": "코스피",
+      "KQ11": "코스닥"
+    }
   }
 }

@@ -288,5 +288,52 @@
       "partial": "Partly calculated",
       "unavailable": "No sector data"
     }
+  },
+  "performance": {
+    "title": "Portfolio performance",
+    "total_asset": "Total assets",
+    "start_value": "Starting value",
+    "profit_loss": "Profit/loss",
+    "period_return": "Period return",
+    "cumulative_return": "Cumulative return",
+    "benchmark_return": "Index return",
+    "excess_return": "Excess return vs. market",
+    "max_drawdown": "Max drawdown",
+    "volatility": "Daily volatility",
+    "annualized_return": "Annualized return",
+    "highest": "Highest total assets",
+    "lowest": "Lowest total assets",
+    "data_date": "Data as of",
+    "estimated_badge": "Estimated",
+    "not_enough_data": "Not enough data",
+    "benchmark": "Benchmark",
+    "portfolio": "My portfolio",
+    "period": {
+      "1m": "1M",
+      "3m": "3M",
+      "6m": "6M",
+      "1y": "1Y",
+      "all": "All"
+    },
+    "status": {
+      "ok": "OK",
+      "partial": "Partly estimated",
+      "no_account": "No account",
+      "no_trades": "No trades",
+      "pending_only": "Awaiting close",
+      "no_prices": "No prices",
+      "history_unavailable": "History mismatch"
+    },
+    "benchmark_status": {
+      "ok": "Compared",
+      "partial": "Partly compared",
+      "no_data": "No index data",
+      "insufficient_overlap": "Too few common days",
+      "portfolio_unavailable": "Performance unavailable"
+    },
+    "index": {
+      "KS11": "KOSPI",
+      "KQ11": "KOSDAQ"
+    }
   }
 }

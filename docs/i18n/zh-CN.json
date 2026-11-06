@@ -288,5 +288,52 @@
       "partial": "部分计算",
       "unavailable": "无行业数据"
     }
+  },
+  "performance": {
+    "title": "投资组合业绩",
+    "total_asset": "总资产",
+    "start_value": "起始金额",
+    "profit_loss": "盈亏",
+    "period_return": "区间收益率",
+    "cumulative_return": "累计收益率",
+    "benchmark_return": "指数收益率",
+    "excess_return": "相对市场超额收益",
+    "max_drawdown": "最大回撤",
+    "volatility": "日波动率",
+    "annualized_return": "年化收益率",
+    "highest": "最高总资产",
+    "lowest": "最低总资产",
+    "data_date": "数据基准日",
+    "estimated_badge": "估计值",
+    "not_enough_data": "数据不足",
+    "benchmark": "比较指数",
+    "portfolio": "我的组合",
+    "period": {
+      "1m": "1个月",
+      "3m": "3个月",
+      "6m": "6个月",
+      "1y": "1年",
+      "all": "全部"
+    },
+    "status": {
+      "ok": "正常",
+      "partial": "部分估计",
+      "no_account": "无账户",
+      "no_trades": "无交易",
+      "pending_only": "等待收盘价",
+      "no_prices": "无行情",
+      "history_unavailable": "记录不一致"
+    },
+    "benchmark_status": {
+      "ok": "已比较",
+      "partial": "部分比较",
+      "no_data": "无指数数据",
+      "insufficient_overlap": "共同交易日不足",
+      "portfolio_unavailable": "无法计算业绩"
+    },
+    "index": {
+      "KS11": "KOSPI",
+      "KQ11": "KOSDAQ"
+    }
   }
 }
