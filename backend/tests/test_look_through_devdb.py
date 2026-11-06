@@ -92,7 +92,10 @@ class TestApi:
         mine, theirs = lt(a).json(), lt(b).json()
         assert theirs["status"] == "empty" and theirs["companies"] == [] and theirs["has_account"] is False
         assert stocks[0].ticker not in json.dumps(theirs)
-        assert mine["status"] == "ok" and mine["calc_version"] == "look_through.v1"
+        has_price = dev_db.execute(text("SELECT count(*) FROM stock_price WHERE company_id IN (:a, :b)"), {"a": stocks[0].id, "b": etf.id}).scalar() > 0
+        # 시세가 있으면 ok, 없으면(CI의 빈 DB) no_prices: 0원으로 계산하지 않는다
+        assert mine["status"] == ("ok" if has_price else "no_prices") and mine["calc_version"] == "look_through.v1"
+        assert mine["has_account"] is True and mine["summary"]["holding_count"] == 2
         # 기본 응답(기존 계약)은 키가 그대로다
         default = client.get(LT, headers=a["headers"]).json()
         assert list(default) == ["generated_at", "valuation_date", "stale", "stale_notice", "etf_holdings_stale", "message", "limit", "summary",
