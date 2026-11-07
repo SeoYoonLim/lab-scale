@@ -1,0 +1,27 @@
+{
+ "version": "q1-2026-11-07",
+ "sha256": "6d2e0c0d1475b18cdc6ba04ad1dbf9cfd3e362cbe386b2913d45608416308436",
+ "cases": 209,
+ "by_kind": {
+  "product": 112,
+  "judge": 85,
+  "live": 12
+ },
+ "by_area": {
+  "entity": 32,
+  "routing": 25,
+  "numbers": 53,
+  "freshness": 24,
+  "language": 21,
+  "safety": 22,
+  "fallback": 14,
+  "evidence": 18
+ },
+ "note": "문항(evals/quality_cases.jsonl)을 추가·수정·삭제하면 version을 올리고 sha256을 다시 계산한다: python -c \"from evals.run_quality import dataset_sha256; print(dataset_sha256())\". 기준선(quality_baseline.json)의 dataset_version도 같이 맞춘다.",
+ "changelog": [
+  {
+   "version": "q1-2026-11-07",
+   "change": "첫 버전"
+  }
+ ]
+}

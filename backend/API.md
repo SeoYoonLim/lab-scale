@@ -4624,6 +4624,9 @@ PRD 비기능 요구사항은 일반 API P95 500ms 이내다(`POST /api/research
 
 ## 테스트 실행 (백엔드)
 
+AI 답변 품질 평가(2026-11-07, 개발자용, API 아님): `cd backend && python -m evals.run_quality`(DB·Ollama 불필요, 결정론, 보고서 `evals/results/quality_latest.{json,md}`),
+실제 모델 답 채점은 `OLLAMA_HOST=http://127.0.0.1:13434 python -m evals.run_quality --mode live`(로컬 전용, 리포트 저장 없음). 구조·지표·하드 실패·기준선은 `docs/AI_QUALITY_EVALUATION.md`.
+
 `cd backend && pytest` — 빠른 테스트 전체(단위·라우터 mock + dev DB 통합, 2026-10-28 기준 3159개). 단계별로는 `pytest -m "not slow and not integration"`(DB·Ollama 불필요, 2766개), `pytest -m "integration and not slow"`(dev DB 통합 393개, DB가 꺼져 있으면 자동 skip). 사건 반응 slow 측정은 `EVENT_REACTION_LLM_INTERPRETATION`을 스스로 켜고 돈다. LLM을 실제로 호출하는 느린 테스트는 기본 제외이며 `pytest -m slow`로 따로 돌린다(dev DB에 리포트를 만들었다가 지운다). 전부 한 번에: `pytest -m "slow or not slow"`. DB 없이 단위 테스트만: `pytest -m "not integration"`.
 인증 테스트는 `tests/conftest.py`가 테스트마다 임의 `JWT_SECRET`을 주입하므로 `.env`의 실제 키를 쓰지 않는다. 라우터 테스트는
 `login_as` 픽스처로 `get_current_user`를 가짜 사용자로 바꾸고, dev DB 통합 테스트(`tests/test_auth_devdb.py`)는 실제 가입/토큰으로

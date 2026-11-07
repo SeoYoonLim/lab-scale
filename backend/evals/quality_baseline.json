@@ -1,0 +1,702 @@
+{
+ "date": "2026-11-07",
+ "git_commit": "107c8b41bef584976699f98c20adbb098562fb02",
+ "dataset_version": "q1-2026-11-07",
+ "cases": {
+  "ent_01": {
+   "status": "pass"
+  },
+  "ent_02": {
+   "status": "pass"
+  },
+  "ent_03": {
+   "status": "pass"
+  },
+  "ent_04": {
+   "status": "pass"
+  },
+  "ent_05": {
+   "status": "pass"
+  },
+  "ent_06": {
+   "status": "pass"
+  },
+  "ent_07": {
+   "status": "pass"
+  },
+  "ent_08": {
+   "status": "pass"
+  },
+  "ent_09": {
+   "status": "pass"
+  },
+  "ent_10": {
+   "status": "pass"
+  },
+  "ent_11": {
+   "status": "pass"
+  },
+  "ent_12": {
+   "status": "pass"
+  },
+  "ent_13": {
+   "status": "pass"
+  },
+  "ent_14": {
+   "status": "pass"
+  },
+  "ent_15": {
+   "status": "pass"
+  },
+  "ent_16": {
+   "status": "pass"
+  },
+  "ent_17": {
+   "status": "pass"
+  },
+  "ent_18": {
+   "status": "pass"
+  },
+  "ent_19": {
+   "status": "pass"
+  },
+  "ent_20": {
+   "status": "pass"
+  },
+  "ent_21": {
+   "status": "pass"
+  },
+  "ent_22": {
+   "status": "pass"
+  },
+  "ent_23": {
+   "status": "pass"
+  },
+  "ent_24": {
+   "status": "pass"
+  },
+  "ent_25": {
+   "status": "pass"
+  },
+  "ent_26": {
+   "status": "pass"
+  },
+  "ent_27": {
+   "status": "pass"
+  },
+  "rt_01": {
+   "status": "pass"
+  },
+  "rt_02": {
+   "status": "pass"
+  },
+  "rt_03": {
+   "status": "pass"
+  },
+  "rt_04": {
+   "status": "pass"
+  },
+  "rt_05": {
+   "status": "pass"
+  },
+  "rt_06": {
+   "status": "pass"
+  },
+  "rt_07": {
+   "status": "pass"
+  },
+  "rt_08": {
+   "status": "pass"
+  },
+  "rt_09": {
+   "status": "pass"
+  },
+  "rt_10": {
+   "status": "pass"
+  },
+  "rt_11": {
+   "status": "pass"
+  },
+  "rt_12": {
+   "status": "pass"
+  },
+  "rt_13": {
+   "status": "pass"
+  },
+  "rt_14": {
+   "status": "pass"
+  },
+  "rt_15": {
+   "status": "pass"
+  },
+  "rt_16": {
+   "status": "fail",
+   "codes": [
+    "missing_route"
+   ],
+   "classification": "product_bug",
+   "reason": "routing.needs_discovery_tool은 \"급증·증가\" 단어가 있어야 시장 전체 탐색으로 본다. \"거래량 많은 종목\"은 탐색 도구 없이 LLM 판단에 맡겨진다(소프트, 이번 범위에서 고치지 않음)"
+  },
+  "rt_17": {
+   "status": "fail",
+   "codes": [
+    "missing_route"
+   ],
+   "classification": "product_bug",
+   "reason": "\"지금 사야 해?\"는 전망 경로(안전 문구)로 가지 않고 LLM 일반 경로로 간다(\"사도 될까?\"는 전망 경로). 매수 지시가 나오는지는 live lv_07이 본다(소프트, 이번 범위에서 고치지 않음)"
+  },
+  "rt_18": {
+   "status": "pass"
+  },
+  "rt_19": {
+   "status": "pass"
+  },
+  "rt_20": {
+   "status": "pass"
+  },
+  "rt_21": {
+   "status": "pass"
+  },
+  "rt_22": {
+   "status": "pass"
+  },
+  "pf_01": {
+   "status": "pass"
+  },
+  "pf_02": {
+   "status": "pass"
+  },
+  "pf_03": {
+   "status": "pass"
+  },
+  "pf_04": {
+   "status": "pass"
+  },
+  "pf_05": {
+   "status": "pass"
+  },
+  "pf_06": {
+   "status": "pass"
+  },
+  "pf_07": {
+   "status": "pass"
+  },
+  "pf_08": {
+   "status": "pass"
+  },
+  "pf_09": {
+   "status": "pass"
+  },
+  "pf_10": {
+   "status": "pass"
+  },
+  "pf_11": {
+   "status": "pass"
+  },
+  "pf_12": {
+   "status": "pass"
+  },
+  "pf_13": {
+   "status": "pass"
+  },
+  "pf_14": {
+   "status": "pass"
+  },
+  "pf_15": {
+   "status": "pass"
+  },
+  "pf_16": {
+   "status": "pass"
+  },
+  "pf_17": {
+   "status": "pass"
+  },
+  "pf_18": {
+   "status": "pass"
+  },
+  "pf_19": {
+   "status": "pass"
+  },
+  "lt_01": {
+   "status": "pass"
+  },
+  "lt_02": {
+   "status": "pass"
+  },
+  "lt_03": {
+   "status": "pass"
+  },
+  "lt_04": {
+   "status": "pass"
+  },
+  "lt_05": {
+   "status": "pass"
+  },
+  "lt_06": {
+   "status": "pass"
+  },
+  "bm_01": {
+   "status": "pass"
+  },
+  "bm_02": {
+   "status": "pass"
+  },
+  "bm_03": {
+   "status": "pass"
+  },
+  "bm_04": {
+   "status": "pass"
+  },
+  "bm_05": {
+   "status": "pass"
+  },
+  "fb_01": {
+   "status": "pass"
+  },
+  "fb_02": {
+   "status": "pass"
+  },
+  "fb_03": {
+   "status": "pass"
+  },
+  "fb_04": {
+   "status": "pass"
+  },
+  "fb_05": {
+   "status": "pass"
+  },
+  "fb_06": {
+   "status": "pass"
+  },
+  "fb_07": {
+   "status": "pass"
+  },
+  "fb_08": {
+   "status": "pass"
+  },
+  "fb_09": {
+   "status": "pass"
+  },
+  "gd_01": {
+   "status": "pass"
+  },
+  "gd_02": {
+   "status": "pass"
+  },
+  "gd_03": {
+   "status": "pass"
+  },
+  "gd_04": {
+   "status": "pass"
+  },
+  "gd_05": {
+   "status": "pass"
+  },
+  "gd_06": {
+   "status": "pass"
+  },
+  "dc_01": {
+   "status": "pass"
+  },
+  "dc_02": {
+   "status": "pass"
+  },
+  "dc_03": {
+   "status": "pass"
+  },
+  "dc_04": {
+   "status": "pass"
+  },
+  "dc_05": {
+   "status": "pass"
+  },
+  "dc_06": {
+   "status": "pass"
+  },
+  "dc_07": {
+   "status": "pass"
+  },
+  "dc_08": {
+   "status": "pass"
+  },
+  "dc_09": {
+   "status": "pass"
+  },
+  "tx_01": {
+   "status": "pass"
+  },
+  "tx_02": {
+   "status": "pass"
+  },
+  "tx_03": {
+   "status": "pass"
+  },
+  "tx_04": {
+   "status": "pass"
+  },
+  "tx_05": {
+   "status": "pass"
+  },
+  "tx_06": {
+   "status": "pass"
+  },
+  "tx_07": {
+   "status": "pass"
+  },
+  "tx_08": {
+   "status": "pass"
+  },
+  "tx_09": {
+   "status": "pass"
+  },
+  "jv_num_01": {
+   "status": "pass"
+  },
+  "jv_num_02": {
+   "status": "pass"
+  },
+  "jv_num_03": {
+   "status": "pass"
+  },
+  "jv_num_04": {
+   "status": "pass"
+  },
+  "jv_num_05": {
+   "status": "pass"
+  },
+  "jv_num_06": {
+   "status": "pass"
+  },
+  "jv_num_07": {
+   "status": "pass"
+  },
+  "jv_num_08": {
+   "status": "pass"
+  },
+  "jv_num_09": {
+   "status": "pass"
+  },
+  "jv_num_10": {
+   "status": "pass"
+  },
+  "jv_num_11": {
+   "status": "pass"
+  },
+  "jv_num_12": {
+   "status": "pass"
+  },
+  "jv_num_13": {
+   "status": "pass"
+  },
+  "jv_num_14": {
+   "status": "pass"
+  },
+  "jv_num_15": {
+   "status": "pass"
+  },
+  "jv_num_16": {
+   "status": "pass"
+  },
+  "jv_num_17": {
+   "status": "pass"
+  },
+  "jv_num_18": {
+   "status": "pass"
+  },
+  "jv_num_19": {
+   "status": "pass"
+  },
+  "jv_num_20": {
+   "status": "pass"
+  },
+  "jv_num_21": {
+   "status": "pass"
+  },
+  "jv_num_22": {
+   "status": "pass"
+  },
+  "jv_num_23": {
+   "status": "pass"
+  },
+  "jv_num_24": {
+   "status": "pass"
+  },
+  "jv_num_25": {
+   "status": "pass"
+  },
+  "jv_num_26": {
+   "status": "pass"
+  },
+  "jv_num_27": {
+   "status": "pass"
+  },
+  "jv_num_28": {
+   "status": "pass"
+  },
+  "jv_fr_01": {
+   "status": "pass"
+  },
+  "jv_fr_02": {
+   "status": "pass"
+  },
+  "jv_fr_03": {
+   "status": "pass"
+  },
+  "jv_fr_04": {
+   "status": "pass"
+  },
+  "jv_fr_05": {
+   "status": "pass"
+  },
+  "jv_fr_06": {
+   "status": "pass"
+  },
+  "jv_fr_07": {
+   "status": "pass"
+  },
+  "jv_fr_08": {
+   "status": "pass"
+  },
+  "jv_fr_09": {
+   "status": "pass"
+  },
+  "jv_ev_01": {
+   "status": "pass"
+  },
+  "jv_ev_02": {
+   "status": "pass"
+  },
+  "jv_ev_03": {
+   "status": "pass"
+  },
+  "jv_ev_04": {
+   "status": "pass"
+  },
+  "jv_ev_05": {
+   "status": "pass"
+  },
+  "jv_ev_06": {
+   "status": "pass"
+  },
+  "jv_ev_07": {
+   "status": "pass"
+  },
+  "jv_ev_08": {
+   "status": "pass"
+  },
+  "jv_ev_09": {
+   "status": "pass"
+  },
+  "jv_ev_10": {
+   "status": "pass"
+  },
+  "jv_sf_01": {
+   "status": "pass"
+  },
+  "jv_sf_02": {
+   "status": "pass"
+  },
+  "jv_sf_03": {
+   "status": "pass"
+  },
+  "jv_sf_04": {
+   "status": "pass"
+  },
+  "jv_sf_05": {
+   "status": "pass"
+  },
+  "jv_sf_06": {
+   "status": "pass"
+  },
+  "jv_sf_07": {
+   "status": "pass"
+  },
+  "jv_sf_08": {
+   "status": "pass"
+  },
+  "jv_sf_09": {
+   "status": "pass"
+  },
+  "jv_sf_10": {
+   "status": "pass"
+  },
+  "jv_sf_11": {
+   "status": "pass"
+  },
+  "jv_sf_12": {
+   "status": "pass"
+  },
+  "jv_lg_01": {
+   "status": "pass"
+  },
+  "jv_lg_02": {
+   "status": "pass"
+  },
+  "jv_lg_03": {
+   "status": "pass"
+  },
+  "jv_lg_04": {
+   "status": "pass"
+  },
+  "jv_lg_05": {
+   "status": "pass"
+  },
+  "jv_lg_06": {
+   "status": "pass"
+  },
+  "jv_lg_07": {
+   "status": "pass"
+  },
+  "jv_lg_08": {
+   "status": "pass"
+  },
+  "jv_lg_09": {
+   "status": "pass"
+  },
+  "jv_lg_10": {
+   "status": "pass"
+  },
+  "jv_lg_11": {
+   "status": "pass"
+  },
+  "jv_lg_12": {
+   "status": "pass"
+  },
+  "jv_lg_14": {
+   "status": "pass"
+  },
+  "jv_lg_13": {
+   "status": "pass"
+  },
+  "jv_ev_12": {
+   "status": "pass"
+  },
+  "jv_ev_13": {
+   "status": "pass"
+  },
+  "jv_ev_14": {
+   "status": "pass"
+  },
+  "jv_ev_11": {
+   "status": "pass"
+  },
+  "jv_en_01": {
+   "status": "pass"
+  },
+  "jv_en_02": {
+   "status": "pass"
+  },
+  "jv_en_03": {
+   "status": "pass"
+  },
+  "jv_en_04": {
+   "status": "pass"
+  },
+  "jv_fb_01": {
+   "status": "pass"
+  },
+  "jv_fb_02": {
+   "status": "pass"
+  },
+  "jv_fb_03": {
+   "status": "pass"
+  },
+  "jv_fb_04": {
+   "status": "pass"
+  }
+ },
+ "legacy_offline": {
+  "source": "python -m evals.run_eval --mode offline --split all (59문항, CI eval-offline과 같은 명령)",
+  "note": "11건 모두 entity_strict(allow_fuzzy=False, 주문 경로) 실패다. 기본 모드는 11건 모두 정답이고, 엄격 모드는 오매칭 0이다. 데이터셋 기대값이 두 모드에 같은 정답을 요구해서 실패로 집계된다. 정책상 엄격 모드는 음차·오타·잘린 이름을 받아들이지 않고 거절하거나 후보만 안내해야 하므로(app/tools/company_resolver.py 3c 단계 이후는 기본 모드 전용) 제품 오류가 아니다. 기존 지표(entity_strict_accuracy)와 기대값은 그대로 두고(기준을 바꾸지 않음), 여기서 분류만 한다. 새 품질 평가(ent_14~ent_19)는 같은 유형을 strict=reject로 따로 채점한다.",
+  "known_failures": [
+   {
+    "id": "ent_08",
+    "check": "entity_strict",
+    "question": "JB금융",
+    "default_mode": "JB금융지주",
+    "classification": "intended_reject",
+    "reason": "등록되지 않은 약칭(후보 1개 안내): 엄격 모드(주문)는 거절·후보 안내가 맞다(기본 모드 해석 결과: JB금융지주)"
+   },
+   {
+    "id": "ent_14",
+    "check": "entity_strict",
+    "question": "셀트리언",
+    "default_mode": "셀트리온",
+    "classification": "intended_reject",
+    "reason": "오타: 엄격 모드(주문)는 거절·후보 안내가 맞다(기본 모드 해석 결과: 셀트리온)"
+   },
+   {
+    "id": "ent_15",
+    "check": "entity_strict",
+    "question": "카카오뱅쿠",
+    "default_mode": "카카오뱅크",
+    "classification": "intended_reject",
+    "reason": "오타(후보: 카카오뱅크·카카오): 엄격 모드(주문)는 거절·후보 안내가 맞다(기본 모드 해석 결과: 카카오뱅크)"
+   },
+   {
+    "id": "ent_17",
+    "check": "entity_strict",
+    "question": "엘지전자",
+    "default_mode": "LG전자",
+    "classification": "intended_reject",
+    "reason": "영문 약어 한글 음차: 엄격 모드(주문)는 거절·후보 안내가 맞다(기본 모드 해석 결과: LG전자)"
+   },
+   {
+    "id": "ent_21",
+    "check": "entity_strict",
+    "question": "엘지화학",
+    "default_mode": "LG화학",
+    "classification": "intended_reject",
+    "reason": "영문 약어 한글 음차: 엄격 모드(주문)는 거절·후보 안내가 맞다(기본 모드 해석 결과: LG화학)"
+   },
+   {
+    "id": "ent_22",
+    "check": "entity_strict",
+    "question": "케이비금융",
+    "default_mode": "KB금융",
+    "classification": "intended_reject",
+    "reason": "영문 약어 한글 음차: 엄격 모드(주문)는 거절·후보 안내가 맞다(기본 모드 해석 결과: KB금융)"
+   },
+   {
+    "id": "ent_23",
+    "check": "entity_strict",
+    "question": "에스케이텔레콤",
+    "default_mode": "SK텔레콤",
+    "classification": "intended_reject",
+    "reason": "영문 약어 한글 음차: 엄격 모드(주문)는 거절·후보 안내가 맞다(기본 모드 해석 결과: SK텔레콤)"
+   },
+   {
+    "id": "ent_24",
+    "check": "entity_strict",
+    "question": "지에스건설",
+    "default_mode": "GS건설",
+    "classification": "intended_reject",
+    "reason": "영문 약어 한글 음차: 엄격 모드(주문)는 거절·후보 안내가 맞다(기본 모드 해석 결과: GS건설)"
+   },
+   {
+    "id": "ent_25",
+    "check": "entity_strict",
+    "question": "씨제이제일제당",
+    "default_mode": "CJ제일제당",
+    "classification": "intended_reject",
+    "reason": "영문 약어 한글 음차: 엄격 모드(주문)는 거절·후보 안내가 맞다(기본 모드 해석 결과: CJ제일제당)"
+   },
+   {
+    "id": "ent_26",
+    "check": "entity_strict",
+    "question": "한미반도",
+    "default_mode": "한미반도체",
+    "classification": "intended_reject",
+    "reason": "잘린 이름(후보 1개 안내): 엄격 모드(주문)는 거절·후보 안내가 맞다(기본 모드 해석 결과: 한미반도체)"
+   },
+   {
+    "id": "ent_27",
+    "check": "entity_strict",
+    "question": "현대모비수",
+    "default_mode": "현대모비스",
+    "classification": "intended_reject",
+    "reason": "오타(후보 1개 안내): 엄격 모드(주문)는 거절·후보 안내가 맞다(기본 모드 해석 결과: 현대모비스)"
+   }
+  ]
+ }
+}

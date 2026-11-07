@@ -11,6 +11,11 @@
 | `run_eval.py` | 실행기(offline/live), summary·raw 결과 저장 |
 | `compare.py` | summary 두 개의 지표별 변화 표 |
 | `results/` | `summary_*.json`만 커밋. `raw_*.jsonl`(답변 원문·도구 인자)은 `.gitignore` |
+| `quality_*.py`, `quality_cases.jsonl`, `quality_dataset.json`, `quality_baseline.json`, `run_quality.py` | (2026-11-07) 8개 영역 품질 평가: 제품 경로 결정론 평가, 판정기 검증, 기준선 비교, 하드 실패 집계. **`docs/AI_QUALITY_EVALUATION.md`** |
+
+> 2026-11-07부터 CI `eval-offline`은 위 offline 59문항 뒤에 `python -m evals.run_quality --legacy-summary ...`도 돈다. offline 실패 11건(전부 엄격 모드 `entity_strict`의
+> 의도된 거절: 음차·오타·잘린 이름)은 `quality_baseline.json`의 `legacy_offline`에 `intended_reject`로 분류했고, 목록이 바뀌면 알려 준다(새 실패는 게이트 실패).
+> 문항·기대값·`entity_strict_accuracy`는 바꾸지 않았다. 자세한 구조·지표·하드 실패·기준선·한계는 `docs/AI_QUALITY_EVALUATION.md`.
 
 ## 실행
 
@@ -134,6 +139,8 @@ live 평가 계정에는 브리핑 문항용으로 모의 보유종목 1개(삼�
 - **무엇을**: 종목 시드(`backend/scripts/ci_seed_companies.json`, company 350개: 종목명·코드·시장·자산 유형만)만 올린 빈 pgvector DB에서
   `python -m evals.run_eval --mode offline --split all`(entity 28 + period 14 + routing_gate 10 = 52문항)을 돌리고, `python -m evals.ci_gate`가 summary를 판정한다.
 - **게이트**: `entity_default_wrong_rate`, `entity_strict_wrong_rate`가 모든 split에서 0이 아니면 실패(오매칭은 못 찾는 것보다 나쁘다). 지표가 없거나 표본이 0이어도 실패다.
+- **품질 평가(2026-11-07)**: 같은 job에서 `python -m evals.run_quality --legacy-summary`가 8개 영역 결정론 평가와 기준선 비교를 한다(DB·Ollama 불필요). 회귀, 기준선에 없는 실패,
+  판정기 검증 실패, 데이터셋 버전 불일치, offline 실패 목록의 변화가 있으면 실패. `docs/AI_QUALITY_EVALUATION.md` 8절.
   나머지 지표(정확도, 미탐, 기간 파싱, 라우팅 게이트 등)는 게이트가 아니라 job summary 표와 아티팩트(`eval-offline-results`: summary JSON + raw JSONL)로만 남는다.
 - **live는 CI에서 돌지 않는다**: `--mode live`는 실제 Ollama(llama3.1:8b)가 있어야 하고(질문당 수 초~수십 초), 같은 질문도 호출마다 답이 달라 게이트로 쓸 수 없다.
   live 평가는 로컬에서 `python -m evals.run_eval --mode live`로 돌리고 `evals.compare`로 기준선과 비교한다.
