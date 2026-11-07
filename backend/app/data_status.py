@@ -57,11 +57,14 @@ def _kst_date(ts: datetime | None) -> date | None:
 def summarize_last_run(rows: list) -> dict | None:
     """최근 행(id 내림차순)에서 마지막 실행 한 번 분을 골라 요약한다. 기록이 없으면 None.
 
-    같은 step이 다시 나오면 그 앞은 이전 실행이다.
+    같은 step이 다시 나오면 그 앞은 이전 실행이다. 2026-11-07부터 행에 run_id가 있으면 같은 run_id끼리만 한 실행이다.
+    부분 성공(partial) 단계는 예전(일부 실패는 경고만 남긴 success)처럼 ok에 영향을 주지 않는다. 응답 필드는 그대로다
+    (부분 성공은 python -m scripts.refresh_data --status에서 본다).
     """
     run, seen = [], set()
+    first_run = getattr(rows[0], "run_id", None) if rows else None
     for r in rows:
-        if r.step in seen:
+        if r.step in seen or getattr(r, "run_id", None) != first_run:
             break
         seen.add(r.step)
         run.append(r)

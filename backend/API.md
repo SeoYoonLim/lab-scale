@@ -3024,7 +3024,8 @@ curl http://localhost:8000/api/status
 
 ### 갱신 스크립트와 기록 테이블
 
-데이터는 스케줄러 없이 `python -m scripts.refresh_data`(backend 디렉터리)로 수동 갱신한다. 평일 **15:30(KST) 이후** 실행을 권장한다.
+데이터는 `python -m scripts.refresh_data`(backend 디렉터리)로 갱신한다. 프로젝트에 스케줄러는 설치돼 있지 않다: 운영자가 Windows 작업 스케줄러나
+cron에 직접 등록한다(등록 방법·권장 시각·종료 코드·상태 조회·복구는 **`docs/DATA_REFRESH_MONITORING.md`**, 2026-11-07). 평일 **15:30(KST) 이후** 실행을 권장한다.
 장중에 실행하면 당일 행이 장중 값일 수 있어 경고를 출력하며, 15:30 이후 다시 실행하면 같은 날짜가 종가로 덮어써진다(upsert).
 
 | 옵션 | 설명 |
@@ -3036,12 +3037,27 @@ curl http://localhost:8000/api/status
 | `--dry-run` | 실제 호출·DB 기록 없이 계획만 출력 |
 | `--news-only` | news 단계에서 공시를 수집하지 않는다 |
 | `--news-state 파일` | news 단계의 이어하기 기록. 다시 실행하면 끝난 종목을 건너뛴다. 네이버가 401·403·429를 돌려주면 즉시 멈춘다 |
+| `--all` | 기본 6단계 전부(옵션 없음과 같다, 2026-11-07) |
+| `--source stock_price,etf_price,market_index,exchange_rate,news,dart,embeddings,disclosure_content,etf_holdings` | 데이터 이름으로 단계 선택. `dart`(=`disclosure`)는 news 단계(뉴스와 함께 수집). `kospi200`·`interest_rate`·`overseas_stock`·`earnings`는 사용법 오류(지원 안 함/따로 실행) |
+| `--etf-holdings` | 기본 단계 뒤에 ETF 구성종목(`etf_holdings`, KODEX·TIGER)을 더한다. 기본 단계가 아니다 |
+| `--retry-failed` | 마지막 시도가 `failed`·`partial`인 단계만 다시 실행(성공한 단계는 다시 받지 않는다) |
+| `--step-retries N` | 일시적 오류(timeout·연결·5xx)로 실패한 단계의 재시도 횟수, 기본 1(60초, 120초 … 대기). 401·403·429·형식 오류는 다시 하지 않는다 |
+| `--status [--json]` | 수집 없이 소스별 상태 보고서(마지막 실행·마지막 성공·데이터 기준일·지연·품질). 종료 코드 0 정상, 3 확인 필요, 5 DB 오류 |
+| `--report-dir 폴더` / `--no-report` | 상태 보고서 `refresh_status.json`·`.md` 저장 폴더(기본 `backend/logs/refresh`, 커밋 안 됨) / 저장 안 함 |
+| `--prune-logs [--keep-days 180] [--dry-run]` | 오래된 갱신 기록 정리. 단계별 마지막 성공·마지막 실패는 남긴다. 수집 데이터는 지우지 않는다 |
+| `--trigger scheduler` | 실행 기록(`data_refresh_run.trigger`)에 스케줄러 실행이라고 남긴다 |
 
-한 단계가 실패해도 다음 단계로 계속 진행하고, 마지막에 단계별 결과 표를 출력하며 하나라도 실패하면 종료 코드 1이다.
-종목별 수집 실패가 절반 미만이면 경고만 하고 그 단계는 성공으로 본다.
+한 단계가 실패해도 다음 단계로 계속 진행하고, 마지막에 단계별 결과 표를 출력한다. 종료 코드(2026-11-07): 0 전부 성공·품질 error 없음,
+1 실패 단계 있음, 2 사용법 오류, 3 실패는 없지만 부분 성공 단계 또는 품질 검사 error, 4 다른 갱신이 실행 중(Postgres advisory lock, 이번 실행은 아무것도 안 함),
+5 DB 연결 불가. 종목별 수집 실패가 절반 미만이면 그 단계는 `partial`(2026-11-07 이전에는 경고가 붙은 `success`), 절반 이상이면 `failed`다.
+`GET /api/status`의 `last_refresh` 응답 필드는 그대로다(`partial`은 예전처럼 `ok`에 영향을 주지 않는다. 부분 성공은 `--status`에서 본다).
 
 `data_refresh_log` 테이블(마이그레이션 `c5d8f3a07b14`)에는 실행마다 **6단계 모두 한 행씩**(건너뛴 단계는 `skipped`) 기록한다:
 `id`, `step`, `status`(`success`/`failed`/`skipped`), `started_at`, `finished_at`, `rows_added`(실행 전후 행 수 차이, 임베딩·본문 단계는 채워진 건수), `latest_date`, `error_type`(예외 클래스 이름만, 메시지는 저장하지 않는다).
+2026-11-07(마이그레이션 `b8d4f2a6c913`): `status`에 `partial`, 열 `run_id`(→ `data_refresh_run`), `duration_ms`, `retry_count`, `quality_status`(`ok`/`warning`/`error`),
+`warning_count`, `error_code`(`timeout`/`network`/`server_error`/`rate_limited`/`auth`/`bad_data`/`failure_ratio`/`collector_error`/`script_exit`/`http_error`/`unknown`)를 더했다(모두 null 허용, 기존 행 그대로).
+`data_refresh_run`은 실행 한 건(`running` → `success`/`partial`/`failed`, 끝나지 못한 실행은 다음 실행이 `aborted`로 바꾼다). 선택 단계 `etf_holdings`는 고른 실행에만 행을 남긴다.
+관리자 권한 체계가 없어 상태 조회 API는 새로 만들지 않았다(CLI `--status`만).
 
 ---
 

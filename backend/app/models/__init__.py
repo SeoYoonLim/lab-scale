@@ -2,6 +2,7 @@ from app.models.account_token import AccountToken
 from app.models.company import Company
 from app.models.daily_briefing import DailyBriefing
 from app.models.data_refresh_log import DataRefreshLog
+from app.models.data_refresh_run import DataRefreshRun
 from app.models.disclosure import Disclosure
 from app.models.etf_holding import EtfHolding
 from app.models.exchange_rate import ExchangeRate
@@ -31,6 +32,7 @@ __all__ = [
     "ExchangeRate",
     "QuarterlyEarnings",
     "DataRefreshLog",
+    "DataRefreshRun",
     "DailyBriefing",
     "ResearchReport",
     "PortfolioDiagnosis",
