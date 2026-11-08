@@ -41,7 +41,10 @@ from app.etf_holdings import (
     total_weight,
     weight_warnings,
 )
+from app.etf_holdings import expected_total
 from app.etf_holdings_db import save_snapshot
+from app import quarantine
+from app.ingest_validation import QUARANTINED, Checked, check_etf_snapshot
 from app.models import Company
 
 KST = ZoneInfo("Asia/Seoul")
@@ -69,11 +72,13 @@ class EtfResult:
     warnings: list[str] = field(default_factory=list)
     error: str | None = None
     retryable: bool = False  # 실패 원인이 일시적 오류라 2차 시도 대상
+    quarantined: bool = False  # 저장 전 검증에서 격리(2026-11-08): 수집 실패가 아니라 품질 문제. 기존 구성종목을 바꾸지 않는다
 
     def as_dict(self) -> dict:
         return {"ticker": self.ticker, "name": self.name, "ok": self.ok, "skipped": self.skipped, "source": self.source,
                 "as_of": self.as_of.isoformat() if self.as_of else None, "rows": self.rows,
-                "total_weight_pct": self.total_weight_pct, "warnings": self.warnings, "error": self.error}
+                "total_weight_pct": self.total_weight_pct, "warnings": self.warnings, "error": self.error,
+                "quarantined": self.quarantined}
 
 
 class HostBlocked(Exception):
@@ -223,7 +228,7 @@ def collect(db: Session, tickers: list[str] | None = None, delay: float = DEFAUL
     ids = {e.ticker: e.id for e in etfs}
 
     def attempt(r: EtfResult) -> None:
-        r.error, r.retryable = None, False
+        r.error, r.retryable, r.quarantined = None, False, False
         try:
             if r.source == KODEX:
                 if r.ticker not in fids:
@@ -235,6 +240,18 @@ def collect(db: Session, tickers: list[str] | None = None, delay: float = DEFAUL
                 raise ParseError("현금성 자산을 뺀 구성종목이 0개입니다")
             r.as_of, r.rows, r.total_weight_pct = snap.as_of, len(snap.holdings), total_weight(snap.holdings)
             r.warnings = [w["message"] for w in weight_warnings(r.name, r.total_weight_pct, r.rows)] + snap.notes
+            # 2026-11-08(36차): 저장 전 검증. 격리되면 저장하지 않는다(같은 기준일의 기존 구성종목은 그대로)
+            payload = {"ticker": r.ticker, "name": r.name, "as_of": snap.as_of, "source": snap.source,
+                       "holdings": [{"name": h.name, "code": h.code, "weight_pct": h.weight_pct} for h in snap.holdings]}
+            verdict = check_etf_snapshot(r.ticker, r.name, snap.as_of, payload["holdings"], expected_total(r.name), today)
+            checked = Checked(payload, f"etf_holding:{r.ticker}:{snap.as_of}", verdict)
+            if not dry_run:
+                quarantine.record("etf_holding", [checked])
+            if verdict.status == QUARANTINED:
+                r.quarantined = True
+                r.error = "quality_quarantined: " + "; ".join(f"{i.code}: {i.detail}" for i in verdict.issues)[:200]
+                log(f"{r.name}({r.ticker}) 격리 - {r.error}")
+                return
             if not dry_run:
                 save_snapshot(db, ids[r.ticker], snap)
             r.ok = True

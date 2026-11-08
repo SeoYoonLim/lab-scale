@@ -6,8 +6,15 @@
   이전에 받은 데이터가 최신이면 True다(최근 실패 때문에 멀쩡한 데이터가 사라진 것처럼 보이지 않게).
 
 DB는 읽기만 한다(SELECT). 상태 판정(evaluate_source)과 보고서 문장은 DB 없이 테스트한다(tests/test_data_monitor.py).
-영업일은 평일 기준이다(KRX 공휴일 달력 없음: app/data_status와 같은 한계). 그래서 최신성 기준은 지연 2영업일 이상을 stale로 본다
-(공휴일 하루 때문에 정상 데이터가 stale이 되지 않게, GET /api/status·look-through와 같은 기준).
+최신성 정책(freshness, 2026-11-08 36차부터 데이터 종류별):
+- krx_trading_close(주가·ETF 종가·지수): KRX 거래일 달력(app.krx_calendar). 거래일 15:30 뒤에는 그날 종가를, 장중·휴장일·주말에는
+  직전 거래일 종가를 기대하고 지연도 거래일로 센다(휴장일은 지연이 아니다). 달력 범위 밖·미확정 날은 calendar_unknown으로 밝힌다.
+- etf_holdings: 운용사가 거래일마다 공시하므로 KRX 거래일 기준(기준일이 오래된 것과 데이터가 틀린 것은 다르다: 품질 검사와 따로 본다).
+- fx_weekday_close(환율): KRX 달력을 쓰지 않는다. 출처(FinanceDataReader)가 한국 휴장일에도 값을 주고 날짜를 일요일로 붙이는 날도 있어
+  평일 기준으로 센다(36차 전과 같은 수).
+- weekday_publish(뉴스·공시): 발행·접수는 KRX 휴장과 무관하다. 평일 기준으로 센다(휴장일에 뉴스가 없다는 이유로 stale이 되지 않고,
+  휴장일이라는 이유로 오래된 뉴스가 최신이 되지도 않는다).
+최신성 기준은 지연 2영업일 이상을 stale로 본다(GET /api/status·look-through와 같은 기준).
 """
 
 from __future__ import annotations
@@ -22,7 +29,8 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
 
-from app.data_status import STALE_BUSINESS_DAYS, business_days_behind, last_business_day
+from app import krx_calendar
+from app.data_status import STALE_BUSINESS_DAYS, last_business_day, last_weekday, weekdays_behind
 
 KST = ZoneInfo("Asia/Seoul")
 logger = logging.getLogger(__name__)
@@ -37,7 +45,7 @@ class Source:
     key: str
     label: str
     step: str | None  # refresh_data 단계(없으면 이 실행기로 수집하지 않음)
-    freshness: str  # trading_close | business_day | etf_holdings | derived | quarterly | none
+    freshness: str  # krx_trading_close | fx_weekday_close | weekday_publish | etf_holdings | derived | quarterly | none
     schedule: str  # 권장 실행 시점(사람이 읽는 문장)
     origin: str  # 수집 출처·방식
     enabled: bool = True
@@ -47,17 +55,17 @@ class Source:
 
 
 SOURCES: tuple[Source, ...] = (
-    Source("stock_price", "국내 주식 종가", "prices", "trading_close", "거래일 16:30 KST 이후 1회",
+    Source("stock_price", "국내 주식 종가", "prices", "krx_trading_close", "거래일 16:30 KST 이후 1회",
            "FinanceDataReader(KRX), scripts/collect_prices --universe universe_top300.json, stock_price upsert"),
-    Source("etf_price", "ETF 종가", "prices", "trading_close", "거래일 16:30 KST 이후 1회(주식과 같은 단계)",
+    Source("etf_price", "ETF 종가", "prices", "krx_trading_close", "거래일 16:30 KST 이후 1회(주식과 같은 단계)",
            "FinanceDataReader(KRX), scripts/collect_prices --universe universe_etf50.json"),
-    Source("market_index", "시장 지수(KS11·KQ11)", "index", "trading_close", "거래일 16:30 KST 이후 1회",
+    Source("market_index", "시장 지수(KS11·KQ11)", "index", "krx_trading_close", "거래일 16:30 KST 이후 1회",
            "FinanceDataReader -> 별칭·Yahoo 폴백(collectors.MARKET_INDEX_SOURCES), market_index upsert"),
-    Source("exchange_rate", "환율(USD/KRW)", "fx", "trading_close", "거래일 16:30 KST 이후 1회",
+    Source("exchange_rate", "환율(USD/KRW)", "fx", "fx_weekday_close", "거래일 16:30 KST 이후 1회",
            "FinanceDataReader, exchange_rate upsert. 출처가 전일 값까지 주는 날이 있어 1영업일 지연은 정상 범위"),
-    Source("news", "뉴스", "news", "business_day", "평일 하루 1~2회(네이버 검색 API 일일 한도 안에서)",
+    Source("news", "뉴스", "news", "weekday_publish", "평일 하루 1~2회(네이버 검색 API 일일 한도 안에서)",
            "네이버 뉴스 검색 API, scripts/collect_universe(종목별 url 중복 검사)"),
-    Source("disclosure", "DART 공시", "news", "business_day", "평일 18:30 KST 이후 1회(뉴스와 같은 단계)",
+    Source("disclosure", "DART 공시", "news", "weekday_publish", "평일 18:30 KST 이후 1회(뉴스와 같은 단계)",
            "OpenDART list.json, scripts/collect_universe(접수번호가 든 source_url 중복 검사). 뉴스와 한 단계로 수집된다",
            note="--source dart는 news 단계를 실행한다(공시만 따로 받는 기존 옵션이 없다)"),
     Source("embeddings", "뉴스·공시 임베딩", "embed", "derived", "news 단계 뒤(같은 실행)",
@@ -87,20 +95,42 @@ SOURCE_BY_KEY = {s.key: s for s in SOURCES}
 
 
 def expected_close_date(now: datetime) -> date:
-    """종가가 있어야 할 가장 최근 평일. 평일 15:30(KST) 전이면 직전 평일(장중 값은 종가가 아니다)."""
+    """종가가 있어야 할 가장 최근 거래일(KRX 달력). 거래일 15:30(KST) 전이면 직전 거래일(장중 값은 종가가 아니다), 휴장일·주말이면 그 앞 거래일."""
+    return krx_calendar.expected_trading_day(now)
+
+
+def expected_weekday_close(now: datetime) -> date:
+    """환율: 평일 15:30 전이면 직전 평일, 아니면 오늘 이하의 마지막 평일(KRX 휴장일도 평일로 본다)."""
     now = now.astimezone(KST)
-    d = last_business_day(now.date())
+    d = last_weekday(now.date())
     if d == now.date() and (now.hour, now.minute) < MARKET_CLOSE:
-        d = last_business_day(d - timedelta(days=1))
+        d = last_weekday(d - timedelta(days=1))
     return d
 
 
+_TRADING_POLICIES = ("krx_trading_close", "etf_holdings")
+_WEEKDAY_POLICIES = ("fx_weekday_close", "weekday_publish")
+_DATED_POLICIES = _TRADING_POLICIES + _WEEKDAY_POLICIES
+
+
 def expected_as_of(src: Source, now: datetime) -> date | None:
-    if src.freshness == "trading_close":
+    if src.freshness == "krx_trading_close":
         return expected_close_date(now)
-    if src.freshness in ("business_day", "etf_holdings"):
+    if src.freshness == "etf_holdings":
         return last_business_day(now.astimezone(KST).date())
+    if src.freshness == "fx_weekday_close":
+        return expected_weekday_close(now)
+    if src.freshness == "weekday_publish":
+        return last_weekday(now.astimezone(KST).date())
     return None
+
+
+def source_lag(src: Source, data_as_of: date, expected: date) -> tuple[int, int]:
+    """(지연 일수, 그중 달력으로 확인할 수 없는 날 수). 거래일 정책은 KRX 달력, 평일 정책은 평일 수."""
+    if src.freshness in _TRADING_POLICIES:
+        lg = krx_calendar.lag(data_as_of, expected)
+        return lg.days, lg.unknown
+    return weekdays_behind(data_as_of, expected), 0
 
 
 # ---------- 상태 판정(순수) ----------
@@ -123,7 +153,7 @@ def evaluate_source(src: Source, facts: SourceFacts, history: dict | None, quali
     last_ok = history.get("last_success") or {}
     last_fail = history.get("last_failure") or {}
     exp = expected_as_of(src, now)
-    lag = business_days_behind(facts.data_as_of, exp) if (facts.data_as_of and exp) else None
+    lag, lag_unknown = source_lag(src, facts.data_as_of, exp) if (facts.data_as_of and exp) else (None, 0)
     stale = lag is not None and lag >= src.stale_after
     reasons: list[str] = []
 
@@ -146,7 +176,7 @@ def evaluate_source(src: Source, facts: SourceFacts, history: dict | None, quali
         reasons.append("마지막 실행에서 일부 대상 실패")
     elif stale:
         status = "stale"
-    elif src.freshness in ("trading_close", "business_day", "etf_holdings") and facts.data_as_of is None:
+    elif src.freshness in _DATED_POLICIES and facts.data_as_of is None:
         status = "stale"
         reasons.append("데이터 없음")
     else:
@@ -154,11 +184,13 @@ def evaluate_source(src: Source, facts: SourceFacts, history: dict | None, quali
     if stale:
         reasons.append(f"데이터 기준일 {facts.data_as_of}이 기대 기준일 {exp}보다 {lag}영업일 늦음")
     elif lag == 1:
-        reasons.append("1영업일 이전 데이터(정상 범위: 출처 갱신 시각·공휴일)")
+        reasons.append("1영업일 이전 데이터(정상 범위: 출처 갱신 시각)")
+    if lag_unknown:
+        reasons.append(f"calendar_unknown: 지연 {lag}일 중 {lag_unknown}일은 KRX 달력으로 확인할 수 없는 날(범위 밖·미확정)")
     if quality.get("status") == "error":
         reasons.append("품질 검사 error")
     usable = (src.supported and facts.data_as_of is not None and not stale and quality.get("status") != "error") \
-        if src.freshness in ("trading_close", "business_day", "etf_holdings") else \
+        if src.freshness in _DATED_POLICIES else \
         (src.supported and quality.get("status") != "error" and (facts.record_count or 0) > 0)
     warnings = [c for c in quality.get("checks", []) if c["severity"] == "warning" and c["count"]]
     return {
@@ -172,6 +204,7 @@ def evaluate_source(src: Source, facts: SourceFacts, history: dict | None, quali
         "data_as_of": facts.data_as_of.isoformat() if facts.data_as_of else None,
         "expected_as_of": exp.isoformat() if exp else None,
         "lag_business_days": lag,
+        "lag_calendar_unknown_days": lag_unknown,
         "duration_ms": last.get("duration_ms"),
         "records_inserted": last.get("rows_added"),
         "records_updated": None,  # 기존 수집기가 갱신 건수를 따로 세지 않는다(upsert)
@@ -345,13 +378,10 @@ QUALITY_ALIAS = {"etf_price": "stock_price"}
 
 
 def _stale_before(today: date) -> date:
-    """etf 기준일이 이 날보다 이르면 stale(look-through와 같은 is_stale: 최근 평일 대비 2영업일 이상)."""
+    """etf 기준일이 이 날보다 이르면 stale(look-through와 같은 is_stale: 최근 거래일 대비 2영업일 이상, KRX 달력)."""
     d = last_business_day(today)
-    n = 0
-    while n < STALE_BUSINESS_DAYS - 1:
-        d -= timedelta(days=1)
-        if d.weekday() < 5:
-            n += 1
+    for _ in range(STALE_BUSINESS_DAYS - 1):
+        d = krx_calendar.previous_trading_day(d)
     return d
 
 
@@ -399,16 +429,30 @@ def build_report(db, now: datetime | None = None, history_fn=None, running_steps
     # ETF 종가는 주가와 같은 표(stock_price)라 같은 품질 검사 결과를 쓴다
     rows = [evaluate_source(s, facts.get(s.key, SourceFacts()), hist.get(s.step) if s.step else None,
                             quality.get(s.key) or quality.get(QUALITY_ALIAS.get(s.key, "")), now, running_steps) for s in SOURCES]
+    ingestion = ingestion_summary(db)
     return {
         "generated_at": now.isoformat(timespec="seconds"),
         "timezone": "Asia/Seoul",
         "sources": rows,
         "summary": summarize(rows),
         "recent_runs": [{k: _iso(v) if isinstance(v, datetime) else v for k, v in r.items()} for r in (last_runs or [])],
-        "notes": ["영업일은 평일 기준이다(KRX 공휴일 달력 없음). 지연 2영업일 이상을 stale로 본다.",
+        "trading_calendar": krx_calendar.info(),
+        "ingestion_quarantine": ingestion,
+        "notes": ["주가·지수·ETF 구성은 KRX 거래일 달력(휴장일은 지연이 아님), 환율·뉴스·공시는 평일 기준이다. 지연 2영업일 이상을 stale로 본다.",
                   "usable_for_analysis는 데이터 기준일과 품질로만 정한다(마지막 실행 실패와 별개).",
                   "records_updated·records_skipped는 기존 수집기가 세지 않아 null이다."],
     }
+
+
+def ingestion_summary(db) -> dict:
+    """저장 전 검증의 미해결 격리 현황(소스별·오류 코드별, 2026-11-08). 표가 없거나 읽지 못하면 {"available": False}."""
+    from app import quarantine
+
+    try:
+        return {"available": True, "sources": quarantine.open_summary(db)}
+    except Exception as e:  # noqa: BLE001 - 보고서는 격리 표 없이도 만든다(마이그레이션 전 DB)
+        db.rollback()
+        return {"available": False, "error": type(e).__name__}
 
 
 def summarize(rows: list[dict]) -> dict:
@@ -464,6 +508,18 @@ def render_markdown(report: dict) -> str:
         for r in report["recent_runs"]:
             L.append(f"| {r['id']} | {_cell(r.get('started_at'))} | {_cell(r.get('finished_at'))} | {r['status']} | {r['steps']} | "
                      f"{_cell(r.get('exit_code'))} | {_cell(r.get('note'))} |")
+    ing = report.get("ingestion_quarantine") or {}
+    L += ["", "## 저장 전 검증 격리(미해결)", ""]
+    if not ing.get("available"):
+        L.append(f"- 확인 불가({ing.get('error', '격리 표 없음')})")
+    else:
+        L += [f"- `{src}` {v['open_quarantined']}건 ({', '.join(f'{k} {n}' for k, n in sorted(v['by_code'].items()))}), 마지막 {v['last_seen_at']}"
+              for src, v in sorted(ing["sources"].items())] or ["- 없음"]
+        L.append("- 확인·재처리: `python -m scripts.quarantine list` (docs/DATA_QUALITY_AND_TRADING_CALENDAR.md)")
+    cal = report.get("trading_calendar") or {}
+    if cal:
+        L += ["", "## 거래일 달력", "", f"- {cal.get('version')} · 적용 범위 {cal.get('coverage_start')}~{cal.get('coverage_end')} · "
+              f"휴장일 {cal.get('holidays')}일 · 미확정 {', '.join(cal.get('unconfirmed') or []) or '없음'} · `{cal.get('source_file')}`"]
     L += ["", "## 참고", ""] + [f"- {n}" for n in report["notes"]]
     return "\n".join(L) + "\n"
 

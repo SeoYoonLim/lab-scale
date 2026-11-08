@@ -107,9 +107,11 @@ def mask_secrets(text: str, secrets: tuple[str, ...] | None = None) -> str:
 
 
 def is_market_hours(now: datetime) -> bool:
-    """평일 09:00~15:30 KST이면 True(공휴일은 모른다)."""
+    """거래일 09:00~15:30 KST이면 True. 2026-11-08(36차)부터 KRX 휴장일은 장중이 아니다(app.krx_calendar)."""
+    from app.krx_calendar import HOLIDAY, day_status
+
     now = now.astimezone(KST)
-    return now.weekday() < 5 and (9, 0) <= (now.hour, now.minute) <= (15, 30)
+    return now.weekday() < 5 and day_status(now.date()) != HOLIDAY and (9, 0) <= (now.hour, now.minute) <= (15, 30)
 
 
 def select_steps(only: list[str] | None, skip: list[str] | None) -> list[str]:
@@ -134,15 +136,17 @@ def default_days(present: set[date], today: date, *, minimum: int = DAYS_MIN, ca
     """기본 조회 기간(달력 일). 마지막 시세 날짜(present의 최댓값)와, 최근 lookback일 안에서 시세가 없는 가장 이른 평일
     중 더 이른 날부터 오늘까지 + slack일, [minimum, cap]으로 자른다. 시세가 하나도 없으면 cap.
 
-    present는 최근 lookback일 이상의 시세 날짜 집합이다. KRX 휴장일 달력을 모르므로 공휴일도 '시세가 없는 평일'로 보여
-    기간이 길어질 수 있다(종목당 요청 횟수는 같고 받는 행만 늘어난다). 오늘은 공백으로 보지 않는다(아직 수집 전일 수 있음)."""
+    present는 최근 lookback일 이상의 시세 날짜 집합이다. 2026-11-08(36차)부터 KRX 휴장일은 공백으로 보지 않는다(app.krx_calendar).
+    달력으로 확인할 수 없는 평일은 공백일 수 있는 날로 본다. 오늘은 공백으로 보지 않는다(아직 수집 전일 수 있음)."""
+    from app.krx_calendar import HOLIDAY, day_status
+
     if not present:
         return cap
     start = max(present)
     first = min(present)
     d = max(today - timedelta(days=lookback), first)
     while d < today:
-        if d.weekday() < 5 and d not in present:
+        if d.weekday() < 5 and day_status(d) != HOLIDAY and d not in present:
             start = min(start, d)
             break
         d += timedelta(days=1)
@@ -254,10 +258,15 @@ def run_steps(
     retries: int = 0,
     backoff: float = STEP_RETRY_BACKOFF_S,
     sleep: Callable[[float], None] = time.sleep,
+    before_step: Callable[[str], None] | None = None,
+    quality_counts: Callable[[str], dict] | None = None,
 ) -> list[StepResult]:
     """steps를 순서대로 실행한다. 한 단계가 실패(예외/SystemExit/시간 초과)해도 다음 단계로 계속하고,
     선택되지 않은 단계는 skipped로 기록한다. 단계마다 recorder(결과)를 호출한다(기록 실패는 실행을 막지 않는다).
-    retries > 0이면 일시적 오류(classify_error)로 실패한 단계를 backoff x 2^n초 쉰 뒤 다시 실행한다(수집은 upsert라 안전)."""
+    retries > 0이면 일시적 오류(classify_error)로 실패한 단계를 backoff x 2^n초 쉰 뒤 다시 실행한다(수집은 upsert라 안전).
+    before_step(단계): 실행 직전 호출(격리 기록의 실행 맥락 설정). quality_counts(단계) -> {"quarantined", "warning"}: 실행 뒤
+    저장 전 검증의 격리 건수. 격리가 있으면 성공 단계를 부분 성공(error_code=quality_quarantined)으로 바꾼다(2026-11-08, 36차:
+    수집 실패와 품질 격리를 다른 코드로 구분, 부분 성공을 전체 성공으로 표시하지 않는다)."""
     results = []
     for step in steps:
         started = clock()
@@ -265,6 +274,8 @@ def run_steps(
         if step.key not in selected:
             res = StepResult(step.key, "skipped", started, started)
         else:
+            if before_step:
+                before_step(step.key)
             res = _run_one(step, started, t0, clock, mono)
             attempt = 0
             while res.status == "failed" and res.error_code and attempt < retries and _RETRYABLE.get(res.error_code, False):
@@ -274,6 +285,8 @@ def run_steps(
                 attempt += 1
                 res = _run_one(step, started, t0, clock, mono)
             res.retry_count = attempt
+            if quality_counts and res.status != "failed":
+                apply_quality_counts(res, quality_counts(step.key))
         results.append(res)
         if recorder:
             try:
@@ -284,6 +297,19 @@ def run_steps(
 
 
 _RETRYABLE = {"timeout": True, "network": True, "server_error": True}
+QUALITY_QUARANTINED = "quality_quarantined"
+
+
+def apply_quality_counts(res: StepResult, counts: dict | None) -> StepResult:
+    """저장 전 검증 격리가 있으면 성공 단계를 부분 성공으로 바꾸고 이유를 붙인다(실패 단계는 그대로)."""
+    q = (counts or {}).get("quarantined") or 0
+    if not q or res.status == "failed":
+        return res
+    note = f"저장 전 검증 격리 {q}건(python -m scripts.quarantine list)"
+    res.status = "partial"
+    res.error_code = res.error_code or QUALITY_QUARANTINED
+    res.warning = Partial(f"{res.warning}; {note}" if res.warning else note)
+    return res
 
 
 def _run_one(step: Step, started: datetime, t0: float, clock, mono) -> StepResult:
@@ -533,9 +559,13 @@ def build_steps(days: int, timeout_min: float, news_only: bool = False, news_sta
 def etf_holdings_outcome(results) -> str | None:
     """ETF별 결과 -> 단계 결과. 대상(지원 운용사) 중 실패가 절반 이상이면 실패, 일부면 부분 성공(Partial), 없으면 None."""
     targets = [r for r in results if not r.skipped]
-    failed = [r for r in targets if not r.ok]
+    # 2026-11-08(36차): 저장 전 검증에서 격리된 ETF는 수집 실패가 아니다(품질 문제, 부분 성공으로 따로 센다)
+    quarantined = [r for r in targets if getattr(r, "quarantined", False)]
+    failed = [r for r in targets if not r.ok and not getattr(r, "quarantined", False)]
     if not targets:
         return None
+    if quarantined and not failed:
+        return Partial(f"격리 {len(quarantined)}/{len(targets)}건(저장 전 검증)")
     if len(failed) / len(targets) >= MAX_FAILURE_RATIO:
         raise RuntimeError("; ".join(f"{r.ticker}: {(r.error or '실패')[:60]}" for r in failed[:5])
                            + (f" 외 {len(failed) - 5}건" if len(failed) > 5 else ""))
@@ -749,7 +779,23 @@ def _locked_run(args, selected: list[str]) -> int:
 
     steps = [st for st in build_steps(args.days, args.timeout_min, args.news_only, args.news_state)
              if st.key in STEP_ORDER or st.key in selected]  # 선택 단계(etf_holdings)는 고른 경우에만 skipped 행을 남긴다
-    results = run_steps(steps, selected, recorder=lambda r: write_log(r, run_id), retries=max(0, args.step_retries))
+    from app import quarantine
+
+    def counts(step: str) -> dict:
+        db = SessionLocal()
+        try:
+            return quarantine.counts_for_run(db, run_id, step)
+        except Exception as e:  # noqa: BLE001 - 세기 실패가 수집 결과를 바꾸지 않는다
+            print(f"[경고] {step} 격리 건수를 세지 못했습니다: {type(e).__name__}")
+            return {}
+        finally:
+            db.close()
+
+    try:
+        results = run_steps(steps, selected, recorder=lambda r: write_log(r, run_id), retries=max(0, args.step_retries),
+                            before_step=lambda key: quarantine.set_context(run_id, key), quality_counts=counts)
+    finally:
+        quarantine.clear_context()
 
     print("\n===== 갱신 결과 =====")
     print(format_table(results))

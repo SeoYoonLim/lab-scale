@@ -406,3 +406,12 @@ def test_ci_runs_quality_inside_existing_eval_offline_job():
 def test_hard_failures_are_counted_separately_from_score():
     s = RQ.summarize([_r("a", [J.failure("number_mismatch")]), _r("b"), _r("c")])
     assert s["hard_failure_count"] == 1 and s["composite_area_mean"] is not None
+
+
+def test_expected_trading_day_skips_krx_holidays():
+    """(36차) 판정기의 기대 거래일·지연도 KRX 휴장일을 뺀다(제품과 같은 데이터 파일, 독립 구현)."""
+    assert J.expected_trading_day(date(2026, 10, 5), "12:00") == date(2026, 10, 2)  # 개천절 대체공휴일(월)
+    assert J.expected_trading_day(date(2026, 10, 12), "10:00") == date(2026, 10, 8)  # 한글날(금) 다음 월요일 장중
+    assert J.trading_days_behind(date(2026, 10, 8), date(2026, 10, 12)) == 1
+    assert J.weekdays_behind(date(2026, 10, 8), date(2026, 10, 12)) == 2  # 평일 기준(기존 함수)은 그대로
+    assert J.krx_closed(date(2027, 1, 1)) and not J.krx_closed(date(2027, 2, 8))  # 범위 밖: 고정 휴장일만 휴장

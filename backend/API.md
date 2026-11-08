@@ -3009,7 +3009,7 @@ curl http://localhost:8000/api/status
 | `sources.stock_price.latest_date` | date \| null | 주식 주가의 가장 최근 날짜 |
 | `sources.etf_price.latest_date` | date \| null | ETF 주가의 가장 최근 날짜 |
 | `sources.market_index.latest_date` | date \| null | 코스피/코스닥 중 더 뒤처진 쪽의 최신 날짜 |
-| `sources.market_index.stale` | boolean | 최근 거래일(평일 기준) 대비 **2영업일 이상** 뒤처졌거나 데이터가 없으면 `true`. 주말은 세지 않고 공휴일은 모른다 |
+| `sources.market_index.stale` | boolean | 최근 거래일 대비 **2영업일 이상** 뒤처졌거나 데이터가 없으면 `true`. 2026-11-08부터 KRX 거래일 달력 기준(주말·공휴일·연말 휴장을 세지 않는다, `docs/DATA_QUALITY_AND_TRADING_CALENDAR.md`). 필드는 그대로다 |
 | `sources.exchange_rate.latest_date` | date \| null | 환율(USD/KRW)의 최신 날짜 |
 | `sources.news.latest_published_date` | date \| null | 뉴스 발행일 중 가장 최근(KST 기준 날짜) |
 | `sources.disclosure.latest_date` | date \| null | 공시일 중 가장 최근(KST 기준 날짜) |
@@ -3021,6 +3021,19 @@ curl http://localhost:8000/api/status
 | `note` | string | 화면에 그대로 써도 되는 안내 문장 |
 
 `503`(DB 연결 불가)은 다른 API와 같은 형식이다. 날짜 필드는 데이터가 아예 없으면 `null`일 수 있다.
+
+### 거래일 달력·저장 전 검증(2026-11-08, 36차)
+
+API 응답 키는 바뀌지 않았다(새 엔드포인트 없음). 바뀐 것은 값의 기준과 일부 답 문장이다.
+
+- **영업일 기준**: `market_index.stale`(위 표), 전망·주가 흐름·단순 시세·주문 참고 시세의 "N영업일 지연", look-through·노출의 `holdings_stale`·`lag`,
+  성과 비교의 지연, 브리핑의 `stale`·장중 판정이 모두 KRX 거래일 달력 기준이다. 공휴일 다음 날 정상 데이터가 더 이상 "1영업일 이전/지연"으로 나오지 않는다
+  (예: 한글날 다음 월요일 장중의 목요일 종가는 지연 0).
+- **새 문장**: 지연 계산에 달력으로 확인할 수 없는 날(달력 범위 밖, 미확정 2026-12-31)이 들어 있으면 단순 시세·전망 답에
+  "지연 계산에 KRX 휴장일 달력으로 확인할 수 없는 날 N일이 들어 있어 실제 지연은 이보다 짧을 수 있습니다."(4개 언어)가 붙는다. 화면 처리는 필요 없다(본문 문장).
+- **휴장일 하루 질문**: 기간의 행 수(평일 근사)는 그대로다. 마지막 데이터 뒤의 휴장일 하루를 물으면 "아직 수집되지 않았습니다" 대신 "휴장일이라 시세 데이터가 없습니다".
+- **데이터 품질**: 수집 데이터는 저장 전에 검증되고 문제 레코드는 격리된다(사용자 API 없음, 운영 CLI `python -m scripts.quarantine`). 격리된 날짜는 저장되지 않으므로
+  화면에서는 기존과 같은 "데이터 없음/지연"으로 보인다. 자세한 내용은 `docs/DATA_QUALITY_AND_TRADING_CALENDAR.md`.
 
 ### 갱신 스크립트와 기록 테이블
 

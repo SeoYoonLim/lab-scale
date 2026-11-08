@@ -12,7 +12,9 @@ from app.data_status import (
     business_days_behind,
     is_stale,
     last_business_day,
+    last_weekday,
     summarize_last_run,
+    weekdays_behind,
 )
 from app.main import app
 
@@ -20,20 +22,37 @@ client = TestClient(app, raise_server_exceptions=False)
 
 # 2026-10-14는 수요일이다.
 WED, TUE, MON, FRI, SAT, SUN = date(2026, 10, 14), date(2026, 10, 13), date(2026, 10, 12), date(2026, 10, 9), date(2026, 10, 10), date(2026, 10, 11)
+THU = date(2026, 10, 8)
 
 
 class TestBusinessDays:
-    def test_last_business_day(self):
-        assert last_business_day(WED) == WED
-        assert last_business_day(SAT) == FRI
-        assert last_business_day(SUN) == FRI
+    # 2026-11-08(36차): last_business_day·business_days_behind는 KRX 거래일 달력 기준이 됐다. 이 파일이 고른 FRI(2026-10-09)는
+    # 한글날 휴장이고 9/17~10/14에는 추석(9/24·25)·개천절 대체(10/5)·한글날이 있다. 36차 전의 평일 기준 단언은 그대로
+    # 평일 함수(last_weekday·weekdays_behind, 환율·뉴스·공시가 쓴다)에 걸어 두고, 같은 날짜의 거래일 기준 값을 따로 확인한다.
+    def test_last_weekday(self):
+        assert last_weekday(WED) == WED
+        assert last_weekday(SAT) == FRI
+        assert last_weekday(SUN) == FRI
 
-    def test_behind_counts_weekdays_only(self):
+    def test_weekdays_behind_counts_weekdays_only(self):
+        assert weekdays_behind(WED, WED) == 0
+        assert weekdays_behind(TUE, WED) == 1
+        assert weekdays_behind(FRI, MON) == 1  # 주말은 세지 않는다
+        assert weekdays_behind(FRI, WED) == 3
+        assert weekdays_behind(date(2026, 9, 17), WED) == 19
+
+    def test_last_business_day_skips_krx_holidays(self):
+        assert last_business_day(WED) == WED
+        assert last_business_day(SAT) == THU  # 10-09(금)은 한글날 휴장
+        assert last_business_day(SUN) == THU
+        assert last_business_day(FRI) == THU
+
+    def test_behind_counts_krx_trading_days_only(self):
         assert business_days_behind(WED, WED) == 0
         assert business_days_behind(TUE, WED) == 1
-        assert business_days_behind(FRI, MON) == 1  # 주말은 세지 않는다
-        assert business_days_behind(FRI, WED) == 3
-        assert business_days_behind(date(2026, 9, 17), WED) == 19
+        assert business_days_behind(THU, MON) == 1  # 주말과 한글날은 세지 않는다
+        assert business_days_behind(THU, WED) == 3
+        assert business_days_behind(date(2026, 9, 17), WED) == 15  # 평일 19일 중 휴장 4일(9/24·25, 10/5, 10/9)
 
     def test_future_date_is_not_behind(self):
         assert business_days_behind(date(2026, 10, 20), WED) == 0

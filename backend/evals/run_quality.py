@@ -228,7 +228,7 @@ def run_price_flow(case: dict) -> tuple[list[dict], dict]:
     rows = _visible_rows(rows_all, now)
     truth = F.price_truth(rows, window=case["fixture"].get("window", 20))
     base = rows[-1][0]
-    lag = J.weekdays_behind(base, J.expected_trading_day(now.date(), now.strftime("%H:%M")))
+    lag = J.trading_days_behind(base, J.expected_trading_day(now.date(), now.strftime("%H:%M")))
     answers = _price_flow_product(case, rows_all, now)
     out, by_loc = [], {}
     for loc, ans in answers.items():
@@ -403,7 +403,7 @@ def run_data_check(case: dict) -> tuple[list[dict], dict]:
     base = date.fromisoformat(fx["base_date"])
     missing = [date.fromisoformat(d) for d in fx.get("missing_days", [])]
     res = o.data_check(base, now, missing, None)
-    lag = J.weekdays_behind(base, J.expected_trading_day(now.date(), now.strftime("%H:%M")))
+    lag = J.trading_days_behind(base, J.expected_trading_day(now.date(), now.strftime("%H:%M")))
     out = []
     if res["lag_business_days"] != lag:
         out.append(J.failure("result_mismatch", f"lag {res['lag_business_days']}, 평가기 {lag}"))
@@ -465,7 +465,7 @@ def run_quote_freshness(case: dict) -> tuple[list[dict], dict]:
 
     fx = case["fixture"]
     now, base = _kst(fx["now"]), date.fromisoformat(fx["base_date"])
-    lag = J.weekdays_behind(base, J.expected_trading_day(now.date(), now.strftime("%H:%M")))
+    lag = J.trading_days_behind(base, J.expected_trading_day(now.date(), now.strftime("%H:%M")))
     out, texts = [], {}
     for loc in case.get("locales") or ["ko-KR"]:
         t = quote_freshness.line(base, now, loc)
@@ -690,7 +690,7 @@ def run_live(cases: list[dict], model: str) -> tuple[list[dict], dict]:
                 elif e.get("market_base"):  # 시장 전체 질문: 정답 기준일은 DB의 최신 거래일(주식 시세 또는 지수)
                     base = _market_base(db, e["market_base"])
                 now = datetime.now(KST)
-                lag = J.weekdays_behind(base, J.expected_trading_day(now.date(), now.strftime("%H:%M"))) if base else 0
+                lag = J.trading_days_behind(base, J.expected_trading_day(now.date(), now.strftime("%H:%M"))) if base else 0
                 ev = _db_evidence(db, e.get("companies") or [], recs) if "evidence" in (case.get("checks") or ()) else None
                 fs, _ = judge_answer(answer, case, truth, base, lag, loc, evidence=ev)
                 fails += fs

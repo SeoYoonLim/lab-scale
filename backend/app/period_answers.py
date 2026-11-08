@@ -117,9 +117,14 @@ def code_answers_period(requested: RequestedPeriod | None, parsed, today: date) 
 
 
 def closed_reason(day: date, market_has_rows: bool, data_end: date) -> str:
-    """이 종목 시세가 없는 날의 사유."""
+    """이 종목 시세가 없는 날의 사유. 2026-11-08(36차): KRX 달력의 휴장일이면 수집 전이라도 휴장이다(예전에는 마지막 데이터 뒤의
+    공휴일을 "아직 수집되지 않았습니다"로 답했다)."""
     if day.weekday() >= 5:
         return REASON_WEEKEND
+    from app.krx_calendar import is_holiday
+
+    if is_holiday(day):
+        return REASON_HOLIDAY
     if day > data_end:
         return REASON_NOT_COLLECTED
     return REASON_COMPANY if market_has_rows else REASON_HOLIDAY

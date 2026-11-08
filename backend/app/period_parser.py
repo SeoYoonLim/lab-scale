@@ -66,7 +66,9 @@ def _today(now: datetime | None = None) -> date:
 
 
 def _business_days_between(start: date, end: date) -> int:
-    """start~end(포함) 사이의 평일(월~금) 수. 공휴일은 고려하지 않는 근사치다."""
+    """start~end(포함) 사이의 평일(월~금) 수. 공휴일은 고려하지 않는 근사치다.
+    2026-11-08(36차): KRX 거래일 달력이 생겼지만 이 값(stock_tool이 읽을 최근 행 수)은 바꾸지 않았다. 최신성 판정이 아니라 기존 기간 분석의
+    의미이고, 고정 평가 문항(evals/dataset.jsonl per_*)의 기대값이 이 정의다. 휴장일이 낀 기간은 휴장일 수만큼 앞 거래일이 더 들어간다(알려진 한계)."""
     if start > end:
         start, end = end, start
     total_days = (end - start).days + 1

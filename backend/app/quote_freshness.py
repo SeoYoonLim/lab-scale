@@ -1,7 +1,7 @@
 """저장된 종가 답(단순 시세·주문 안내의 참고 시세·시장 순위)에 붙이는 기준일·지연 안내(2026-11-07 35차).
 
 최신성 계산은 새로 만들지 않는다: 기대 거래일은 app.outlook.expected_trading_day(평일, 15:30 전이면 직전 평일),
-지연 영업일은 app.data_status.business_days_behind(평일 기준, 공휴일 달력 없음)로 주가 흐름·전망 답과 같다.
+지연 영업일은 app.data_status.business_days_behind(36차부터 KRX 거래일 달력, 휴장일은 세지 않음)로 주가 흐름·전망 답과 같다.
 이 답의 값은 실시간 시세가 아니라 DB에 저장된 종가라는 것을 항상 밝힌다(실시간 시세는 GET /api/stocks/{ticker}/realtime-price).
 
 문장은 언어별 템플릿이다. 한국어 답을 번역하지 않고 같은 값으로 바로 만든다(app.quote_i18n).
@@ -62,12 +62,23 @@ def reason_text(price_status: dict | None, locale: str = "ko-KR") -> str | None:
     return _REASON[L].format(label=label) if label else None
 
 
+_UNKNOWN = {
+    "ko-KR": "지연 계산에 KRX 휴장일 달력으로 확인할 수 없는 날 {n}일이 들어 있어 실제 지연은 이보다 짧을 수 있습니다.",
+    "en-US": "{n} day(s) in this delay could not be checked against the KRX holiday calendar, so the actual delay may be shorter.",
+    "ja-JP": "遅れの計算にKRX休場日カレンダーで確認できない日が{n}日含まれており、実際の遅れはこれより短い可能性があります。",
+    "zh-CN": "滞后天数中有{n}天无法用KRX休市日历确认，实际滞后可能更短。",
+}
+
+
 def status(base: date, now: datetime) -> dict:
-    """{"base", "expected", "lag"}: 기대 거래일과 지연 영업일(기존 계산 재사용)."""
+    """{"base", "expected", "lag", "calendar_unknown"}: 기대 거래일과 지연 영업일(기존 계산 재사용, 36차부터 KRX 거래일 달력).
+    calendar_unknown은 지연에 넣은 날 중 달력으로 확인할 수 없는 날 수(달력 범위 밖·미확정)."""
+    from app.krx_calendar import lag
     from app.outlook import expected_trading_day
 
     exp = expected_trading_day(now)
-    return {"base": base, "expected": exp, "lag": business_days_behind(base, exp)}
+    lg = lag(base, exp)
+    return {"base": base, "expected": exp, "lag": business_days_behind(base, exp), "calendar_unknown": lg.unknown}
 
 
 def line(base: date, now: datetime, locale: str = "ko-KR", price_status: dict | None = None) -> str:
@@ -82,6 +93,8 @@ def line(base: date, now: datetime, locale: str = "ko-KR", price_status: dict | 
         out += " " + _STALE[L].format(base=s["base"].isoformat(), exp=s["expected"].isoformat(), lag=s["lag"])
     if s["lag"] >= 1 and (why := reason_text(price_status, L)):
         out += " " + why
+    if s["lag"] >= 1 and s["calendar_unknown"]:
+        out += " " + _UNKNOWN[L].format(n=s["calendar_unknown"])
     return out
 
 

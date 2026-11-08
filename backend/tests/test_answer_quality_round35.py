@@ -365,31 +365,42 @@ def test_price_gap_days_are_not_filled():
 
 HOLIDAY = {"expected_date": "2026-10-09", "status": outlook.PRICE_STATUS_HOLIDAY,
            "detail": "2026-10-09 19:30 수집에서 시장 전체에 그날 시세 없음"}
-MON_AM = datetime(2026, 10, 12, 10, 0, tzinfo=KST)  # 한글날(10-09 금) 다음 월요일 장중: 기대 거래일 10-09(평일 기준)
+NOT_COLLECTED = {"expected_date": "2026-10-08", "status": outlook.PRICE_STATUS_NOT_COLLECTED,
+                 "detail": "장 마감 뒤 시세 수집 기록 없음, 마지막 시세 수집 2026-10-07 19:45"}
+MON_AM = datetime(2026, 10, 12, 10, 0, tzinfo=KST)  # 한글날(10-09 금) 다음 월요일 장중
 
 
-def test_holiday_reason_is_stated_and_lag_count_is_unchanged():
+# 2026-11-08(36차): 35차에는 휴장일 달력이 없어 한글날 다음 월요일 장중에 10-08 종가를 "1영업일 이전 + 휴장일 추정"으로 표시했다.
+# 이제 KRX 달력이 10-09를 휴장으로 알아 기대 거래일이 10-08이고 지연이 아니다(이번 작업이 고치려던 동작). 이유 문장 전달은
+# 실제로 늦은 경우(10-07 종가)로 확인한다.
+def test_day_after_holiday_is_not_a_delay():
+    assert quote_freshness.status(date(2026, 10, 8), MON_AM) == {"base": date(2026, 10, 8), "expected": date(2026, 10, 8), "lag": 0,
+                                                                 "calendar_unknown": 0}
     t = quote_freshness.line(date(2026, 10, 8), MON_AM, price_status=HOLIDAY)
-    assert "1영업일 이전 데이터" in t and "늦은 이유(수집 기록으로 추정): 휴장일 추정(2026-10-09 19:30" in t
-    assert quote_freshness.status(date(2026, 10, 8), MON_AM)["lag"] == 1  # 수는 전망·GET /api/status와 같다
-    en = quote_freshness.line(date(2026, 10, 8), MON_AM, "en-US", HOLIDAY)
-    assert "presumed market holiday" in en and not re.search(r"[가-힣]", en)
-    assert "休場日と推定" in quote_freshness.line(date(2026, 10, 8), MON_AM, "ja-JP", HOLIDAY)
-    assert "推定为休市日" in quote_freshness.line(date(2026, 10, 8), MON_AM, "zh-CN", HOLIDAY)
-    # 최신이면 이유를 붙이지 않는다
-    assert "늦은 이유" not in quote_freshness.line(date(2026, 10, 8), datetime(2026, 10, 8, 18, 0, tzinfo=KST), price_status=HOLIDAY)
+    assert "이전 데이터" not in t and "지연" not in t and "늦은 이유" not in t  # 지연이 아니면 이유도 붙이지 않는다
+
+
+def test_delay_reason_is_stated_in_each_locale():
+    t = quote_freshness.line(date(2026, 10, 7), MON_AM, price_status=NOT_COLLECTED)
+    assert "기대 거래일(2026-10-08)보다 1영업일 이전 데이터" in t and "늦은 이유(수집 기록으로 추정): 미수집(" in t
+    assert quote_freshness.status(date(2026, 10, 7), MON_AM)["lag"] == 1  # 한글날은 세지 않는다(평일 기준이면 2)
+    en = quote_freshness.line(date(2026, 10, 7), MON_AM, "en-US", NOT_COLLECTED)
+    assert "not collected" in en and not re.search(r"[가-힣]", en)
+    assert "未収集" in quote_freshness.line(date(2026, 10, 7), MON_AM, "ja-JP", NOT_COLLECTED)
+    assert "未采集" in quote_freshness.line(date(2026, 10, 7), MON_AM, "zh-CN", NOT_COLLECTED)
+    assert "presumed market holiday" in quote_freshness.line(date(2026, 10, 7), MON_AM, "en-US", HOLIDAY)
     assert quote_freshness.reason_text({"status": outlook.PRICE_STATUS_LATEST}) is None
 
 
 def test_simple_quote_carries_reason_into_locale_template(monkeypatch):
-    monkeypatch.setattr(agent, "_run_tool", lambda name, args: stock_result(d="2026-10-08"))
-    monkeypatch.setattr(agent, "_quote_price_status", lambda base, now: HOLIDAY)
+    monkeypatch.setattr(agent, "_run_tool", lambda name, args: stock_result(d="2026-10-07"))
+    monkeypatch.setattr(agent, "_quote_price_status", lambda base, now: NOT_COLLECTED)
     monkeypatch.setattr(agent, "datetime", type("D", (datetime,), {"now": staticmethod(lambda tz=None: MON_AM)}))
     resp, records = agent._answer_simple_quote("가나다전자 종가 알려줘", [_Co()])
     a = resp["answer"]
-    assert "휴장일 추정" in a and records[0]["result"]["price_status"] == HOLIDAY
+    assert "미수집" in a and records[0]["result"]["price_status"] == NOT_COLLECTED
     out = quote_i18n.localize(a, records, "en-US", now=MON_AM)
-    assert out and "presumed market holiday" in out and "2026-10-08" in out
+    assert out and "not collected" in out and "2026-10-07" in out
 
 
 def test_price_status_lookup_is_skipped_when_fresh_and_failure_is_safe(monkeypatch):

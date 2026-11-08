@@ -800,7 +800,8 @@ def price_status(db, base_date: date, now: datetime) -> dict:
 
 
 def expected_trading_day(now: datetime) -> date:
-    """지금(KST) 기준으로 종가가 있어야 할 가장 최근 평일. 장중(평일 15:30 전)이면 직전 평일."""
+    """지금(KST) 기준으로 종가가 있어야 할 가장 최근 거래일. 장중(거래일 15:30 전)이면 직전 거래일, 휴장일·주말이면 그 앞 거래일.
+    2026-11-08(36차)부터 KRX 거래일 달력(app.krx_calendar.expected_trading_day)과 같다(공휴일을 평일로 보지 않는다)."""
     today = now.astimezone(KST).date()
     d = last_business_day(today)
     if d == today and session_is_open(now):
@@ -825,10 +826,15 @@ def data_check(base_date: date, now: datetime, missing_days: list[date], status:
     elif lag > MAX_LAG_BUSINESS_DAYS:
         warnings.append(f"마지막 시세({base})가 기대 거래일({exp})보다 {lag}영업일 지연(5영업일 초과)되어{why} "
                         "데이터가 부족합니다. 판단을 유보합니다.")
+    from app.krx_calendar import lag as krx_lag
+
+    unknown = krx_lag(base_date, expected).unknown
+    if lag >= 1 and unknown:  # 36차: 달력 범위 밖·미확정 날이 지연에 들어 있으면 밝힌다(단순 시세 답과 같은 기준)
+        warnings.append(f"지연 계산에 KRX 휴장일 달력으로 확인할 수 없는 날 {unknown}일이 들어 있어 실제 지연은 이보다 짧을 수 있습니다.")
     if missing_days:
         shown = ", ".join(d.isoformat() for d in missing_days[:3]) + (" 등" if len(missing_days) > 3 else "")
         warnings.append(f"가격 데이터 부족: 계산 구간에 지수에는 있는 거래일 {len(missing_days)}일의 시세가 없습니다({shown}). 판단을 유보합니다.")
-    return {"expected_date": exp, "lag_business_days": lag, "missing_days": len(missing_days),
+    return {"expected_date": exp, "lag_business_days": lag, "calendar_unknown_days": unknown, "missing_days": len(missing_days),
             "warnings": warnings, "hold": lag > MAX_LAG_BUSINESS_DAYS or bool(missing_days),
             "status": (status or {}).get("status"), "status_detail": (status or {}).get("detail"),
             "freshness": freshness_label(lag, missing_days, status)}

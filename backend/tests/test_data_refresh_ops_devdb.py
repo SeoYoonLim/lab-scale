@@ -30,6 +30,8 @@ def cleanup(dev_db):
     dev_db.execute(text("DELETE FROM data_refresh_log WHERE step = 'zz_pytest'"))
     dev_db.execute(text("DELETE FROM data_refresh_run WHERE note = 'pytest'"))
     dev_db.execute(text("DELETE FROM exchange_rate WHERE pair_code = :p"), {"p": TEST_PAIR})
+    # 36차: 저장 전 검증이 범위를 모르는 가짜 통화쌍에 남기는 경고 기록도 지운다
+    dev_db.execute(text("DELETE FROM data_ingestion_quarantine WHERE source_key LIKE :k"), {"k": f"exchange_rate:{TEST_PAIR}:%"})
     dev_db.commit()
 
 

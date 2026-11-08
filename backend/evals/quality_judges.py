@@ -9,9 +9,12 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from datetime import date, timedelta
+from functools import lru_cache
+from pathlib import Path
 
 # ---------- 실패 코드 ----------
 
@@ -500,14 +503,46 @@ def weekdays_behind(latest: date, reference: date) -> int:
     return n
 
 
+_CALENDAR_FILE = Path(__file__).resolve().parents[1] / "app" / "data" / "krx_calendar.json"
+
+
+@lru_cache(maxsize=1)
+def _krx_holidays() -> tuple[frozenset, date, date, frozenset]:
+    """(휴장일, 범위 시작, 범위 끝, 범위 밖 고정 휴장 (월, 일)). 제품 코드(app.krx_calendar)를 import하지 않고 같은 데이터 파일만 읽는다
+    (36차: 정답 계산은 독립 구현, 달력 데이터는 하나)."""
+    data = json.loads(_CALENDAR_FILE.read_text(encoding="utf-8"))
+    hol = frozenset(date.fromisoformat(h["date"]) for h in data["holidays"])
+    fixed = frozenset((int(f["md"][:2]), int(f["md"][3:])) for f in data.get("fixed_annual", []))
+    return hol, date.fromisoformat(data["coverage"]["start"]), date.fromisoformat(data["coverage"]["end"]), fixed
+
+
+def krx_closed(d: date) -> bool:
+    """KRX 정규시장이 열리지 않는 날(주말·달력의 휴장일·범위 밖 고정 휴장일). 미확정·범위 밖 평일은 열릴 수 있는 날로 본다."""
+    hol, start, end, fixed = _krx_holidays()
+    if d.weekday() >= 5 or d in hol:
+        return True
+    return not start <= d <= end and (d.month, d.day) in fixed
+
+
+def trading_days_behind(latest: date, reference: date) -> int:
+    """latest가 reference보다 몇 KRX 거래일 뒤처졌는지(주말·휴장일 제외)."""
+    if latest >= reference:
+        return 0
+    n, d = 0, latest
+    while d < reference:
+        d += timedelta(days=1)
+        n += not krx_closed(d)
+    return n
+
+
 def expected_trading_day(now_date: date, now_hhmm: str = "20:00") -> date:
-    """KST 기준 종가가 있어야 할 가장 최근 평일. 평일 15:30 전이면 직전 평일(장중)."""
+    """KST 기준 종가가 있어야 할 가장 최근 거래일. 거래일 15:30 전이면 직전 거래일(장중), 주말·휴장일이면 그 앞 거래일."""
     d = now_date
-    while d.weekday() >= 5:
+    while krx_closed(d):
         d -= timedelta(days=1)
     if d == now_date and now_hhmm < "15:30":
         d -= timedelta(days=1)
-        while d.weekday() >= 5:
+        while krx_closed(d):
             d -= timedelta(days=1)
     return d
 

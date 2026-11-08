@@ -123,9 +123,11 @@ class BriefingInputs:
 
 
 def session_is_open(now: datetime) -> bool:
-    """평일 15:30(KST) 전이면 True(공휴일은 모른다. 공휴일에는 오늘 행이 없으니 영향이 없다)."""
-    now = _aware(now).astimezone(KST)
-    return now.weekday() < 5 and now.time() < MARKET_CLOSE
+    """거래일 15:30(KST) 전이면 True. 2026-11-08(36차)부터 KRX 휴장일은 장이 열리지 않은 날이다(app.krx_calendar).
+    휴장일 오전에 "오늘 종가가 아직 없는 게 정상"이라며 직전 거래일을 한 번 더 건너뛰던 문제를 막는다."""
+    from app.krx_calendar import session_is_open as krx_open
+
+    return krx_open(_aware(now))
 
 
 def drop_open_session(rows: list, now: datetime, day=lambda r: r[0]) -> list:
