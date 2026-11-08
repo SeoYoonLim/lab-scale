@@ -149,11 +149,14 @@ class TestResearchLocale:
         # 같은 기록의 후속 질문: 맥락은 번역 전 한국어 답변
         client.post("/api/research", headers=user["headers"], json={"question": "왜?", "previous_report_id": body["report_id"], "locale": "en-US"})
         assert seen[-1]["answer"] == korean
-        # 번역 LLM이 실패하면 한국어 원문 + 안내
+        # 번역 LLM이 실패하면: 2026-11-07(35차)부터 한국어 원문이 아니라 그 언어의 안내 + 도구 결과 요약(app.quote_i18n.fallback_summary).
+        # 33차 live 평가에서 일본어·영어 화면에 한국어 답이 그대로 나온 문제를 고친 의도된 동작 변경이다. 한국어 원문은 original_content에 남는다.
         monkeypatch.setattr(tr, "_chat", lambda m: (_ for _ in ()).throw(ConnectionError("down")))
         body = client.post("/api/research", headers=user["headers"], json={"question": "SK하이닉스 전망", "locale": "ja-JP"}).json()
-        assert body["answer"] == f"{i18n.text('translation_fallback', 'ja-JP')}\n\n{korean}"
-        assert _row("SELECT translation_status FROM research_report WHERE id = :id", id=body["report_id"])["translation_status"] == "fallback_original"
+        assert body["answer"].startswith(i18n.text("translation_fallback_summary", "ja-JP")) and korean not in body["answer"]
+        assert "HBM 수요 3배 확대" in body["answer"]  # 기사 제목은 원문 정책 그대로
+        row = _row("SELECT translation_status, original_content FROM research_report WHERE id = :id", id=body["report_id"])
+        assert row["translation_status"] == "fallback_summary" and row["original_content"] == korean
 
     def test_other_users_translated_record_is_404(self, signup):
         me, other = signup(), signup()

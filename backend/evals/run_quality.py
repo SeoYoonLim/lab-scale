@@ -27,6 +27,7 @@ import time
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+import re
 from pathlib import Path
 
 from evals import quality_fixtures as F
@@ -124,7 +125,7 @@ def run_resolver(case: dict) -> tuple[list[dict], dict]:
     return out, detail
 
 
-_GATE_MODULES = ("routing", "price_flow", "outlook", "glossary", "code_answers")
+_GATE_MODULES = ("routing", "price_flow", "outlook", "glossary", "code_answers", "market_ranking", "market_overview")
 
 
 def _gate_func(name: str):
@@ -441,9 +442,87 @@ def run_text(case: dict) -> tuple[list[dict], dict]:
     return fs, {"text": text[:1500]}
 
 
+def run_request_safety(case: dict) -> tuple[list[dict], dict]:
+    """(35차) 확정 요청 분류(app.request_safety.classify)와 안내 문장: 기대 종류, 금지 표현 없음, 면책, 안 되는 이유를 밝힘."""
+    from app import request_safety
+
+    fx = case["fixture"]
+    kind = request_safety.classify(case["question"], fx.get("has_company", False))
+    out = []
+    if kind != case["expect"]["kind"]:
+        out.append(J.failure("wrong_route" if kind else "missing_route", f"kind {kind}, 기대 {case['expect']['kind']}"))
+    if kind:
+        text = request_safety.answer(kind, fx.get("company"))
+        fs, _ = judge_answer(text, case, locale="ko-KR")
+        out += fs
+        return out, {"kind": kind, "text": text[:1500]}
+    return out, {"kind": kind}
+
+
+def run_quote_freshness(case: dict) -> tuple[list[dict], dict]:
+    """(35차) 저장 종가 답의 기준일·지연 문장(app.quote_freshness.line): 평가기가 따로 센 지연과 같은지, 언어별로."""
+    from app import quote_freshness
+
+    fx = case["fixture"]
+    now, base = _kst(fx["now"]), date.fromisoformat(fx["base_date"])
+    lag = J.weekdays_behind(base, J.expected_trading_day(now.date(), now.strftime("%H:%M")))
+    out, texts = [], {}
+    for loc in case.get("locales") or ["ko-KR"]:
+        t = quote_freshness.line(base, now, loc)
+        texts[loc] = t
+        out += [{**f, "detail": f"[{loc}] {f['detail']}"} for f in J.check_freshness(t, base, lag) + J.check_language(t, loc)]
+    if quote_freshness.status(base, now)["lag"] != lag:
+        out.append(J.failure("result_mismatch", f"제품 지연 {quote_freshness.status(base, now)['lag']}, 평가기 {lag}"))
+    return out, {"lag": lag, "texts": texts}
+
+
+def run_tidy(case: dict) -> tuple[list[dict], dict]:
+    """(35차) LLM 답 표기 정리(app.answer_tidy): 값은 그대로, 원시 소수 표기·반복이 남지 않음, 다른 문장은 지우지 않음."""
+    from app import answer_tidy
+
+    src = case["fixture"]["text"]
+    out_text, removed = answer_tidy.tidy(src)
+    out = J.check_language(out_text, "ko-KR", case["expect"].get("allowed_names"))
+    before = sorted({v.value for v in J.find_values(src)})
+    after = sorted({v.value for v in J.find_values(out_text)})
+    if before != after:
+        out.append(J.failure("number_mismatch", f"정리 전후 값이 다름 {before} -> {after}"))
+    for keep in case["expect"].get("must_keep", []):
+        if keep not in out_text:
+            out.append(J.failure("missing_required_info", f"지우면 안 되는 문장이 사라짐: {keep[:40]}"))
+    if "removed" in case["expect"] and removed != case["expect"]["removed"]:
+        out.append(J.failure("result_mismatch", f"지운 반복 {removed}, 기대 {case['expect']['removed']}"))
+    return out, {"text": out_text, "removed": removed}
+
+
+def run_translation_fallback(case: dict) -> tuple[list[dict], dict]:
+    """(35차) 번역 검증 실패 시 언어별 폴백(app.quote_i18n.fallback_summary): 그 언어 문자, 도구 결과 숫자·날짜 그대로, 한국어 문장 없음."""
+    from app import quote_i18n
+
+    recs = _records(case)
+    now = _kst(case["fixture"]["now"])
+    out, texts, by_loc = [], {}, {}
+    supports = [v for r in recs for v in J.numbers_in(r.get("result"))]
+    for loc in case.get("locales") or ["en-US", "ja-JP", "zh-CN"]:
+        t = quote_i18n.fallback_summary(recs, loc, now)
+        texts[loc] = t
+        out += [{**f, "detail": f"[{loc}] {f['detail']}"} for f in J.check_language(t, loc, case["expect"].get("allowed_names"))]
+        for v in case["expect"].get("must_contain", []):
+            if v not in t:
+                out.append(J.failure("missing_required_info", f"[{loc}] 값 {v} 없음"))
+        bad = [x for x in J.unexplained_values(t, supports) if not re.match(r"^\d{1,2}$", x)]
+        if bad:
+            out.append(J.failure("fallback_ungrounded", f"[{loc}] 근거 없는 숫자 {bad[:5]}"))
+        by_loc[loc] = sorted(v.value for v in J.find_values(t) if v.unit)
+    if len({tuple(v) for v in by_loc.values()}) > 1:
+        out.append(J.failure("cross_locale_mismatch", f"언어별 값 다름 {by_loc}"))
+    return out, {"texts": {k: v[:1500] for k, v in texts.items()}}
+
+
 PRODUCT_TARGETS = {"resolver": run_resolver, "routing": run_routing, "price_flow": run_price_flow, "look_through": run_look_through,
                    "benchmark": run_benchmark, "fallback": run_fallback, "guard": run_guard, "data_check": run_data_check,
-                   "text": run_text}
+                   "text": run_text, "request_safety": run_request_safety, "quote_freshness": run_quote_freshness, "tidy": run_tidy,
+                   "translation_fallback": run_translation_fallback}
 
 
 # ---------- 판정기 검증(judge) ----------
@@ -524,6 +603,16 @@ def _db_truth(db, company_name: str, base: date | None) -> tuple[J.Truth | None,
     return F.price_truth(rows), rows[-1][0]
 
 
+def _market_base(db, kind: str) -> date | None:
+    """시장 전체 질문의 기준일 정답(평가기가 DB를 직접 읽음): stock = 주식 시세 최신일, index = 두 지수 중 늦은 쪽의 최신일."""
+    from sqlalchemy import text
+
+    if kind == "index":
+        return db.execute(text("SELECT min(d) FROM (SELECT max(price_date) d FROM market_index GROUP BY index_code) t")).scalar()
+    return db.execute(text("SELECT max(p.price_date) FROM stock_price p JOIN company c ON c.id = p.company_id "
+                           "WHERE c.asset_type = 'stock'")).scalar()
+
+
 def _db_evidence(db, company_names: list[str], records: list[dict]) -> list[dict]:
     """live 근거: 그 답이 실제로 받은 도구 결과의 뉴스·공시(제목·날짜·종목). 같은 제목이 DB에 실제로 있는지도 확인해 없으면 뺀다."""
     from app.models import Disclosure, News
@@ -533,7 +622,9 @@ def _db_evidence(db, company_names: list[str], records: list[dict]) -> list[dict
         res = r.get("result") if isinstance(r.get("result"), dict) else {}
         if not res.get("found"):
             continue
-        for k, model in (("news", News), ("disclosures", Disclosure), ("results", News)):
+        # indirect_news(35차 추가): news_tool이 따로 붙이는 업종·기초지수 기사. LLM이 실제로 받은 근거라 인용해도 지어낸 것이 아니다
+        # (live lv_15에서 오탐). 그 종목 기사가 아니므로 종목은 비운다(종목 불일치로 보지 않음).
+        for k, model in (("news", News), ("disclosures", Disclosure), ("results", News), ("indirect_news", News)):
             for it in res.get(k) or []:
                 t = it.get("title") or it.get("report_nm")
                 if not t:
@@ -541,7 +632,8 @@ def _db_evidence(db, company_names: list[str], records: list[dict]) -> list[dict
                 exists = db.query(model.id).filter(model.title == t).first() is not None if hasattr(model, "title") else True
                 if exists:
                     d = str(it.get("published_at") or it.get("rcept_dt") or it.get("disclosed_at") or "")[:10] or None
-                    ev.append({"id": it.get("id"), "title": t, "date": d, "company": res.get("company_name") or it.get("company_name"),
+                    company = None if k == "indirect_news" else (res.get("company_name") or it.get("company_name"))
+                    ev.append({"id": it.get("id"), "title": t, "date": d, "company": company,
                                "text": " ".join(str(it.get(k) or "") for k in ("content", "summary", "description"))})
     return ev
 
@@ -595,6 +687,8 @@ def run_live(cases: list[dict], model: str) -> tuple[list[dict], dict]:
                 if e.get("companies") and len(e["companies"]) == 1:
                     stated = J.stated_base_dates(answer)
                     truth, base = _db_truth(db, e["companies"][0], stated[0] if stated else None)
+                elif e.get("market_base"):  # 시장 전체 질문: 정답 기준일은 DB의 최신 거래일(주식 시세 또는 지수)
+                    base = _market_base(db, e["market_base"])
                 now = datetime.now(KST)
                 lag = J.weekdays_behind(base, J.expected_trading_day(now.date(), now.strftime("%H:%M"))) if base else 0
                 ev = _db_evidence(db, e.get("companies") or [], recs) if "evidence" in (case.get("checks") or ()) else None

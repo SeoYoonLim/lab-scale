@@ -33,7 +33,9 @@ def summarize_period(company_name: str, prices: list[dict], base: dict | None = 
     잘못 옮긴다(실측: 30거래일 조회 결과에서 하루치 -1.69%를 "지난 한 달 1.69% 하락"이라고 답함).
     base는 구간 직전 거래일의 {price_date, close_price}다. 있으면 그 종가 대비 len(prices)거래일간의 등락률을,
     없으면(저장된 주가가 모자람) prices의 첫 종가 대비 len(prices)-1거래일간의 등락률을 계산한다.
-    market_tool/진단의 20거래일 수익률과 같은 정의(구간 직전 종가 대비)다."""
+    market_tool/진단의 20거래일 수익률과 같은 정의(구간 직전 종가 대비)다.
+    기간 종가 최고·최저는 prices(구간 안의 거래일, 첫날·마지막 날 포함)만 본다. base(비교 기준 종가)는 넣지 않는다:
+    2026-11-07(35차)에 app/price_flow의 "최근 N거래일 범위"도 이 정의로 맞췄다."""
     if len(prices) < 2:
         return {}
     start, trading_days = (base, len(prices)) if base else (prices[0], len(prices) - 1)

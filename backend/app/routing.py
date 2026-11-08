@@ -57,6 +57,9 @@ _DISCOVERY_FIXED_PATTERNS = [
     r"오늘의\s*관심\s*종목",
     r"관심\s*종목\s*(?:추천|탐색)",
     r"(?:오늘|최근).{0,10}(?:많이|크게)\s*(?:오른|내린|떨어진|빠진)\s*종목",
+    # 2026-11-07(35차): 거래량 상위(많은 순) 질문도 시장 전체 탐색이다("오늘 거래량 많은 종목", "거래량 상위 10개 종목")
+    r"거래량.{0,8}(?:많은|많이|상위|순위|1위|top).{0,8}(?:종목|주식)",
+    r"거래량\s*(?:상위|순위)",
 ]
 _DISCOVERY_FIXED_RE = re.compile("|".join(_DISCOVERY_FIXED_PATTERNS), re.IGNORECASE)
 _VOLUME_RE = re.compile("거래량")

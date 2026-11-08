@@ -76,12 +76,13 @@ def price_truth(rows: list[tuple], window: int = 20, volume_avg: int = 20, windo
     k = min(window, len(closes) - 1)
     seg = closes[-(k + 1):]
     v[("period_return", None)] = _pct(c, seg[0])
-    v[("high", None)] = max(seg)
-    v[("low", None)] = min(seg)
+    # 기간 최고·최저(2026-11-07 35차 통일): 기간 안의 거래일 종가(첫날·마지막 날 포함)만. 비교 기준일(seg[0]) 종가는 수익률에만 쓴다.
+    # 33차에는 경로마다 정의가 달라 두 정의를 다 받았다(alts). 제품을 한 정의로 맞췄으므로 평가도 한 정의만 받는다(더 엄격).
+    inside = seg[1:] or seg
+    v[("high", None)] = max(inside)
+    v[("low", None)] = min(inside)
     v[("from_low", 20)] = _pct(c, min(closes[-21:]))
-    # 기간 최고·최저에 시작(비교 기준)일을 넣는지는 제품 경로마다 다르다(price_flow는 넣고 기간 질문 답은 뺀다). 둘 다 정답으로 받는다.
-    alts = {("high", None): [max(seg[1:])] if len(seg) > 1 else [], ("low", None): [min(seg[1:])] if len(seg) > 1 else []}
-    return Truth(v, {r[0].isoformat(): float(r[1]) for r in rows}, rows[-1][0].isoformat(), alts)
+    return Truth(v, {r[0].isoformat(): float(r[1]) for r in rows}, rows[-1][0].isoformat())
 
 
 def look_through_truth(holdings: list[dict], etfs: dict, cash: float) -> dict:

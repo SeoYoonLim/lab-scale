@@ -75,6 +75,20 @@ TEXTS: dict[str, dict[str, str]] = {
         "ja-JP": "※ この回答の翻訳を正確に検証できなかったため、韓国語の原文をそのまま表示します。",
         "zh-CN": "※ 未能确认此回答译文的准确性，因此以下显示韩语原文。",
     },
+    # 2026-11-07(35차): 번역 검증 실패 시 한국어 원문 대신(app.quote_i18n.fallback_summary). 계산 실패가 아니라 문장을 옮기지 못한 것이다
+    "translation_fallback_summary": {
+        "ko-KR": "※ 이 답변의 해설 문장은 정확히 번역됐는지 확인하지 못해 표시하지 않습니다. 대신 답변에 쓴 데이터를 요약합니다.",
+        "en-US": "※ We couldn't verify an accurate translation of this answer's explanation, so it is not shown. "
+                 "Here is a summary of the data the answer used instead (values are unchanged).",
+        "ja-JP": "※ この回答の解説文は翻訳の正確さを確認できなかったため表示しません。代わりに回答で使ったデータを要約します（数値はそのままです）。",
+        "zh-CN": "※ 未能确认此回答说明部分译文的准确性，因此不予显示。以下为回答所用数据的摘要（数值未作改动）。",
+    },
+    "translation_fallback_empty": {
+        "ko-KR": "※ 이 답변은 정확히 번역됐는지 확인하지 못해 표시하지 않습니다. 잠시 후 다시 질문하거나 한국어로 보세요.",
+        "en-US": "※ We couldn't verify an accurate translation of this answer, so it is not shown. Please ask again later or view it in Korean.",
+        "ja-JP": "※ この回答は翻訳の正確さを確認できなかったため表示しません。しばらくしてから再度質問するか、韓国語でご覧ください。",
+        "zh-CN": "※ 未能确认此回答译文的准确性，因此不予显示。请稍后重新提问，或以韩语查看。",
+    },
     # 번역문 끝에 붙인다: 이름·제목은 원문 그대로라는 안내
     "translation_note": {
         "en-US": "※ Translated from the Korean answer. Company names, ETF names, news and filing titles are kept in their original form.",

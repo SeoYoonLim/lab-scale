@@ -34,6 +34,7 @@ _WINDOW_RE = re.compile(r"최근\s*(\d{1,3})\s*(?:거래일|영업일|일)")
 _NUM_RE = re.compile(r"(\d{1,3})\s*(?:거래)?일")
 _WANTS_RE = re.compile(r"수익률|거래량|국면|추세|흐름|분석")
 _CAUSE_RE = re.compile(r"왜|이유|원인|때문")
+_OTHER_PERIOD_RE = re.compile(r"최근|지난|동안|개월|달|주간|년|부터|까지|올해|작년|분기")
 
 # 사용자가 고르는 국면 이름(질문 예: 상승 추세, 하락 추세, 횡보, 단기 반등 시도, 근거가 부족하면 추세 미확정)
 _REGIME_WORD = {
@@ -83,7 +84,11 @@ def is_price_flow_question(question: str) -> bool:
     if _CAUSE_RE.search(q) or o.is_forecast_question(q) or o.is_order_request(q):
         return False
     many_returns = any(len(_nums(m.group(1))) >= 2 for m in _RETURNS_RE.finditer(q))
-    return bool((_MA_RE.search(q) and _WANTS_RE.search(q)) or many_returns)
+    # 2026-11-07(35차): "삼성전자 20일 수익률 분석해 줘"는 기간 질문 경로가 "20일"을 달력 20일(약 15거래일)로 읽었다.
+    # 수익률 창 하나 + "분석"이고 다른 기간 표현(최근·지난·개월 등)이 없으면 거래일 창으로 이 경로에서 답한다.
+    single_analysis = (any(len(_nums(m.group(1))) == 1 for m in _RETURNS_RE.finditer(q)) and "분석" in q
+                       and not _OTHER_PERIOD_RE.search(q))
+    return bool((_MA_RE.search(q) and _WANTS_RE.search(q)) or many_returns or single_analysis)
 
 
 def _nums(text: str) -> list[int]:
@@ -129,8 +134,11 @@ def compute(rows: list[tuple], w: dict) -> dict:
         out["volume"] = {"value": int(vols[-1]) if vols[-1] is not None else None, "avg": None, "days": n}
     k = min(w["window"], len(rows) - 1)
     seg = list(zip(days, closes))[-(k + 1):]
-    hi_d, hi = max(seg, key=lambda x: (x[1], x[0]))
-    lo_d, lo = min(seg, key=lambda x: (x[1], -x[0].toordinal()))
+    # 기간 최고·최저(2026-11-07 35차, stock_tool.summarize_period와 같은 정의): 기간 안의 k거래일 종가(첫날·기준일 포함)만.
+    # seg[0]은 기간 직전 거래일(수익률의 비교 기준)이라 넣지 않는다. 이전에는 넣어서 기준 종가가 최저로 나오기도 했다.
+    inside = seg[1:] or seg
+    hi_d, hi = max(inside, key=lambda x: (x[1], x[0]))
+    lo_d, lo = min(inside, key=lambda x: (x[1], -x[0].toordinal()))
     out["window"] = {"days": k, "asked": w["window"], "from_date": seg[0][0].isoformat(), "high": hi, "high_date": hi_d.isoformat(),
                      "low": lo, "low_date": lo_d.isoformat(), "pct": o._pct(close, seg[0][1])}
     return out

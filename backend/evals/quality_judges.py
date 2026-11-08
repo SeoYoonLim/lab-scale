@@ -149,7 +149,8 @@ def find_values(text: str) -> list[Value]:
         if any(a <= s < b for a, b in spans) or any(c.start <= s < c.end for c in comp):
             continue
         prev = text[s - 1] if s > 0 else ""
-        if not m.group("sign") and not m.group("cur") and prev and (prev.isalpha() or prev in "&_"):
+        # 이름의 일부(S&P500, 코스닥150)는 영문·한글 바로 뒤의 숫자다. 띄어 쓰지 않는 일본어·중국어(終値は222,000ウォン)는 값이다(35차)
+        if not m.group("sign") and not m.group("cur") and prev and (prev.isascii() and prev.isalpha() or "가" <= prev <= "힣" or prev in "&_"):
             continue
         nxt = text[m.end("num"):m.end("num") + 1]
         if nxt == "-" and text[m.end("num") + 1:m.end("num") + 2].isdigit():  # 2026-10-30 같은 남은 조각
@@ -201,8 +202,9 @@ _LABELS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, re.I)) for k, p in [
     ("return_bare", rf"{_w('n')}\s*거래일\s*(?:간|동안)?(?=\s*[:：]?\s*[+\-−]?\d)|{_w('n2')} trading days?(?=\s*[:]?\s*[+\-−]?\d)|"
                     rf"{_w('n3')}取引日(?=\s*[:：]?\s*[+\-−]?\d)|{_w('n4')}个交易日(?=\s*[:：]?\s*[+\-−]?\d)"),
     ("daily_change", r"전일\s*대비(?:\s*등락률)?|하루\s*등락률|등락률|변동폭|변동률|daily change|前日比|日涨跌幅"),
-    ("high", r"최고\s*종가|종가\s*최고(?:가|치)?|highest close|最高終値|最高收盘价"),
-    ("low", r"최저\s*종가|종가\s*최저(?:가|치)?|lowest close|最安終値|最低收盘价"),
+    # 35차: 중국어 "收盘价最高为"·일본어 "終値の最高"(종가 최고 어순)가 close로 읽혀 metric_confusion 오탐(live lv_03@zh-CN)
+    ("high", r"최고\s*종가|종가\s*최고(?:가|치)?|highest close|最高終値|終値(?:の)?最高(?:値)?|最高收盘价|收盘价最高"),
+    ("low", r"최저\s*종가|종가\s*최저(?:가|치)?|lowest close|最安終値|終値(?:の)?最安(?:値)?|最低收盘价|收盘价最低"),
     ("price", r"현재\s*주가|최근\s*주가|주가(?=\s*(?:는|은|:|：))|현재가|current (?:share )?price|share price|株価(?=\s*(?:は|:|：))|股价(?=\s*(?:为|:|：))"),
     ("volume", r"거래량|volume|出来高|成交量"),
     ("close", r"종가|close|終値|收盘价"),
@@ -439,10 +441,25 @@ def numbers_in(obj) -> list[float]:
 _BASE_LABEL_RE = re.compile(r"(?:데이터\s*)?기준일|data as of|as of|データ基準日|基準日|数据基准日|基准日", re.I)
 _ISO_RE = re.compile(r"((?:19|20)\d{2})[-./](\d{1,2})[-./](\d{1,2})|((?:19|20)\d{2})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일")
 _STALE_WORD_RE = re.compile(r"지연|이전\s*(?:데이터|시세)|마지막\s*(?:데이터|시세)|갱신되지|업데이트되지|"
-                            r"delay|delayed|behind|stale|not (?:been )?updated|older|遅延|遅れ|以前の|延迟|滞后|之前", re.I)
+                            r"delay|delayed|behind|stale|not (?:been )?updated|older|遅延|遅れ|以前の|延迟|滞后|之前|"
+                            # 35차: 기존 언어별 문장(outlook_i18n w_lag1)의 1영업일 표현 "1営業日前のデータ", "早1个工作日"
+                            r"営業日前|早\d+个工作日|个工作日前", re.I)
 # 강한 표현(지연 없음·실시간)은 지연 데이터에 있으면 항상 실패. 약한 표현(최신 시세·latest prices)은 지연 안내가 전혀 없을 때만 실패다
 # (번역 답이 "最新の株価(2026-10-27)는 3営業日遅れ"처럼 '가장 최근 시세'라는 뜻으로 쓰고 지연을 밝히는 경우가 있다).
 _NO_DELAY_RE = re.compile(r"지연\s*[:：]?\s*없음|delay:\s*none|遅延[:：]\s*なし|延迟[：:]\s*无|실시간|real[- ]time|リアルタイム|实时", re.I)
+_NEGATED_AFTER_RE = re.compile(r"^.{0,12}?(?:아닙니다|아니며|아니라|아님|아닌|not|ではありません|ではなく|并非|不是)", re.I)
+_NEGATED_BEFORE_RE = re.compile(r"(?:not\s+(?:a\s+)?|non-|并非|不是)\s*$", re.I)
+
+
+def _strong_no_delay(text: str) -> bool:
+    """'지연 없음'·'실시간'을 지연 데이터에 붙였는지. '실시간 시세가 아닙니다', 'not a real-time quote'처럼 부정한 경우는 아니다(35차)."""
+    for m in _NO_DELAY_RE.finditer(text):
+        if _NEGATED_AFTER_RE.match(text[m.end():]) or _NEGATED_BEFORE_RE.search(text[max(0, m.start() - 12):m.start()]):
+            continue
+        return True
+    return False
+
+
 _LATEST_WORD_RE = re.compile(r"최신\s*시세|latest prices|最新の株価|最新股价", re.I)
 
 
@@ -507,7 +524,7 @@ def check_freshness(text: str, base_date: date | None, lag: int, require_base_da
             out.append(failure("missing_base_date", f"기준일 {base_date.isoformat()} 표시 없음"))
     if lag >= 1:
         stale_word = _STALE_WORD_RE.search(text or "")
-        if _NO_DELAY_RE.search(text or "") or (_LATEST_WORD_RE.search(text or "") and not stale_word):
+        if _strong_no_delay(text or "") or (_LATEST_WORD_RE.search(text or "") and not stale_word):
             out.append(failure("stale_presented_as_latest", f"{lag}영업일 지연 데이터를 최신·지연 없음으로 표시"))
         elif not stale_word:
             out.append(failure("missing_stale_notice", f"{lag}영업일 지연 안내 없음"))
@@ -524,6 +541,19 @@ _SOURCE_CLAIM_RE = re.compile(r"보도에\s*따르면|보도했|기사에\s*따�
                               r"開示によると|据报道|报道称|公告显示", re.I)
 NO_DATA_RE = re.compile(r"없습니다|찾지\s*못|확인되지\s*않|조회되지\s*않|데이터가\s*없|no (?:news|disclosures?|data|results?)|not found|"
                         r"could not find|ありません|見つかりません|没有|未找到|暂无", re.I)
+
+
+# 35차: 인용이 아닌 따옴표. ① 질문 예시("자세히 분석해줘"라고 물어보세요, 예: "…", for example, "…", 例: 「…」, 例如："…")
+# ② 없다고 밝힌 검색어('…'라는 키워드와 관련된 정보는 없습니다). "…"라고 보도됐다, "…" 보도가 있었다는 여전히 인용이다(jv_ev_15~19).
+_HINT_AFTER_RE = re.compile(r"^\s*(?:이?라고|처럼|(?:으)?로)\s*(?:다시\s*)?(?:물어|질문|입력|요청)")
+_HINT_BEFORE_RE = re.compile(r"(?:예|예시|for example|e\.g\.|例|例如)\s*[:：,，]?\s*$", re.I)
+_DENIED_AFTER_RE = re.compile(r"^\s*(?:이?라는|에\s*대한|와|과|관련)\s*(?:키워드|검색어|내용|사건|사고|뉴스|기사|공시|정보)?"
+                              r"(?:(?!보도|있었|있습|발표|밝혔)[^.!?。\n]){0,30}?(?:없습니다|없어요|없었습니다|찾지\s*못|확인되지\s*않|조회되지\s*않)")
+
+
+def _not_a_citation(line: str, m: re.Match) -> bool:
+    after, before = line[m.end():], line[max(0, m.start() - 16):m.start()]
+    return bool(_HINT_AFTER_RE.match(after) or _HINT_BEFORE_RE.search(before) or _DENIED_AFTER_RE.match(after))
 
 
 def _norm_title(s: str) -> str:
@@ -550,9 +580,14 @@ def check_evidence(text: str, evidence: list[dict], expected_companies: list[str
         out.append(failure("fabricated_source", f"주소 없는 가짜 링크: [{m.group(1)}]"))
     text = re.sub(r"\[([^\]\n]{1,80})\]\(\s*(?:#|)\s*\)", " ", text or "")
     for line in (text or "").splitlines():
+        # 35차: 줄에 근거 제목이 통째로 있으면 그 제목 안의 따옴표·괄호 조각("MIT 선후배", [데스크 칼럼])은 따로 인용한 것이 아니다(live lv_06 오탐)
+        nline = _norm_title(line)
+        listed = [_norm_title(ev["title"]) for ev in evidence if len(_norm_title(ev["title"])) >= 8 and _norm_title(ev["title"]) in nline]
         for m in _QUOTE_RE.finditer(line):
             quoted = next(g for g in m.groups() if g)
-            if not re.search(r"[가-힣A-Za-z぀-ヿ一-鿿]{2}", quoted) or _norm_title(quoted).isdigit():
+            if not re.search(r"[가-힣A-Za-z぀-ヿ一-鿿]{2}", quoted) or _norm_title(quoted).isdigit() or _not_a_citation(line, m):
+                continue
+            if any(_norm_title(quoted) in t and _norm_title(quoted) != t for t in listed):  # 제목 전체 인용은 종목·날짜를 그대로 본다
                 continue
             hit = next((ev for ev in evidence if _title_match(quoted, ev["title"])), None)
             body = hit is None and next((ev for ev in evidence if _body_match(quoted, ev)), None)

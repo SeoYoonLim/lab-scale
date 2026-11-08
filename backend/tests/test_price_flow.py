@@ -103,7 +103,9 @@ def test_compute_values():
     assert v["value"] == 3_000_000 and v["avg"] == 1_000_000 and v["ratio"] == 3.0
     assert v["from_date"] == rows[-21][0].isoformat() and v["to_date"] == rows[-2][0].isoformat()
     wd = flow["window"]
-    assert wd["days"] == 20 and wd["high"] == 35_900 and wd["low"] == 33_900
+    # 2026-11-07(35차) 기간 최고·최저 정의 통일: 기간 안의 20거래일(34,000~35,900)만. 비교 기준일 종가 33,900은 수익률에만 쓴다
+    assert wd["days"] == 20 and wd["high"] == 35_900 and wd["low"] == 34_000
+    assert wd["from_date"] == rows[-21][0].isoformat() and wd["low_date"] == rows[-20][0].isoformat()
 
 
 def test_short_history_says_not_enough():

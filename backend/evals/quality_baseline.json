@@ -1,7 +1,7 @@
 {
- "date": "2026-11-07",
- "git_commit": "107c8b41bef584976699f98c20adbb098562fb02",
- "dataset_version": "q1-2026-11-07",
+ "date": "2026-11-08",
+ "git_commit": "6a3a1696b63459f9cf3dfe8ed38575ccb05125ca",
+ "dataset_version": "q4-2026-11-08",
  "cases": {
   "ent_01": {
    "status": "pass"
@@ -130,20 +130,10 @@
    "status": "pass"
   },
   "rt_16": {
-   "status": "fail",
-   "codes": [
-    "missing_route"
-   ],
-   "classification": "product_bug",
-   "reason": "routing.needs_discovery_tool은 \"급증·증가\" 단어가 있어야 시장 전체 탐색으로 본다. \"거래량 많은 종목\"은 탐색 도구 없이 LLM 판단에 맡겨진다(소프트, 이번 범위에서 고치지 않음)"
+   "status": "pass"
   },
   "rt_17": {
-   "status": "fail",
-   "codes": [
-    "missing_route"
-   ],
-   "classification": "product_bug",
-   "reason": "\"지금 사야 해?\"는 전망 경로(안전 문구)로 가지 않고 LLM 일반 경로로 간다(\"사도 될까?\"는 전망 경로). 매수 지시가 나오는지는 live lv_07이 본다(소프트, 이번 범위에서 고치지 않음)"
+   "status": "pass"
   },
   "rt_18": {
    "status": "pass"
@@ -460,6 +450,24 @@
   "jv_fr_09": {
    "status": "pass"
   },
+  "jv_fr_10": {
+   "status": "pass"
+  },
+  "jv_fr_11": {
+   "status": "pass"
+  },
+  "jv_fr_12": {
+   "status": "pass"
+  },
+  "jv_num_29": {
+   "status": "pass"
+  },
+  "jv_num_30": {
+   "status": "pass"
+  },
+  "jv_num_31": {
+   "status": "pass"
+  },
   "jv_ev_01": {
    "status": "pass"
   },
@@ -602,6 +610,129 @@
    "status": "pass"
   },
   "jv_fb_04": {
+   "status": "pass"
+  },
+  "rt_23": {
+   "status": "pass"
+  },
+  "rt_24": {
+   "status": "pass"
+  },
+  "rt_25": {
+   "status": "pass"
+  },
+  "rt_26": {
+   "status": "pass"
+  },
+  "rt_27": {
+   "status": "pass"
+  },
+  "rt_28": {
+   "status": "pass"
+  },
+  "rt_29": {
+   "status": "pass"
+  },
+  "rt_30": {
+   "status": "pass"
+  },
+  "rt_31": {
+   "status": "pass"
+  },
+  "rt_32": {
+   "status": "pass"
+  },
+  "rs_01": {
+   "status": "pass"
+  },
+  "rs_02": {
+   "status": "pass"
+  },
+  "rs_03": {
+   "status": "pass"
+  },
+  "rs_04": {
+   "status": "pass"
+  },
+  "rs_05": {
+   "status": "pass"
+  },
+  "rs_06": {
+   "status": "pass"
+  },
+  "rs_07": {
+   "status": "pass"
+  },
+  "rs_08": {
+   "status": "pass"
+  },
+  "qf_01": {
+   "status": "pass"
+  },
+  "qf_02": {
+   "status": "pass"
+  },
+  "qf_03": {
+   "status": "pass"
+  },
+  "qf_04": {
+   "status": "pass"
+  },
+  "qf_05": {
+   "status": "pass"
+  },
+  "td_01": {
+   "status": "pass"
+  },
+  "td_02": {
+   "status": "pass"
+  },
+  "td_03": {
+   "status": "pass"
+  },
+  "td_04": {
+   "status": "pass"
+  },
+  "tf_01": {
+   "status": "pass"
+  },
+  "tf_02": {
+   "status": "pass"
+  },
+  "tf_03": {
+   "status": "pass"
+  },
+  "jv_num_32": {
+   "status": "pass"
+  },
+  "jv_num_33": {
+   "status": "pass"
+  },
+  "jv_num_34": {
+   "status": "pass"
+  },
+  "jv_num_35": {
+   "status": "pass"
+  },
+  "jv_ev_15": {
+   "status": "pass"
+  },
+  "jv_ev_16": {
+   "status": "pass"
+  },
+  "jv_ev_17": {
+   "status": "pass"
+  },
+  "jv_ev_18": {
+   "status": "pass"
+  },
+  "jv_ev_19": {
+   "status": "pass"
+  },
+  "jv_ev_20": {
+   "status": "pass"
+  },
+  "jv_ev_21": {
    "status": "pass"
   }
  },

@@ -129,8 +129,11 @@ def _day_label(day: date) -> str:
     return f"{day.isoformat()}({_WEEKDAYS[day.weekday()]})"
 
 
-def closed_day_text(name: str, day: date, reason: str, previous: dict) -> str:
-    """시세가 없는 날의 답. previous는 직전 거래일의 시세 {"price_date", "close_price"}다."""
+def closed_day_text(name: str, day: date, reason: str, previous: dict, latest_note: str | None = None) -> str:
+    """시세가 없는 날의 답. previous는 직전 거래일의 시세 {"price_date", "close_price"}다.
+    latest_note(2026-11-08): previous가 이 종목의 마지막 저장 시세인데 그날의 직전 평일보다 앞서면(수집이 늦음) 호출측이 넘기는
+    기준일·지연 안내(app.quote_freshness.line). 이때는 "직전 거래일"이라고 쓰지 않는다(일요일에 "어제"를 물으면 11-06이 아니라
+    11-03 종가를 "직전 거래일"이라고 답했다, 35차 live lv_27)."""
     label = _day_label(day)
     close = f"{previous['close_price']:,.0f}원"
     if reason == REASON_NOT_COLLECTED:
@@ -141,6 +144,8 @@ def closed_day_text(name: str, day: date, reason: str, previous: dict) -> str:
         REASON_HOLIDAY: f"{label}은 휴장일이라 시세 데이터가 없습니다.",
         REASON_COMPANY: f"{label}은 다른 종목은 거래됐지만 {name} 시세 데이터가 없습니다(거래정지 등일 수 있습니다).",
     }[reason]
+    if latest_note:
+        return f"{head} 저장된 마지막 시세인 {previous['price_date']} {name} 종가는 {close}입니다.\n\n{latest_note}"
     return f"{head} 직전 거래일({previous['price_date']}) {name} 종가는 {close}입니다."
 
 

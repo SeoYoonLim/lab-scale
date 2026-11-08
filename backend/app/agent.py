@@ -52,7 +52,9 @@ from app.answer_guard import (
     strip_narrative_mismatch,
     strip_untrusted_urls,
 )
-from app import answer_i18n, earnings, evidence_answer, outlook, price_flow, related_news
+from app import answer_i18n, answer_tidy, earnings, evidence_answer, market_ranking, outlook, price_flow, quote_freshness, related_news
+from app import market_overview, request_safety
+from app.data_status import last_business_day
 from app.etf_holdings import constituents_chat_answer, requested_top_n
 from app.llm_settings import call_options, chat_model
 from app.etf_holdings_db import chat_views
@@ -1287,9 +1289,143 @@ def _answer_order_command(question: str):
             if isinstance(result, dict):
                 result.setdefault("called_via", "order_command")
             answer += "\n\n참고 시세: " + quote
+            # 2026-11-07(35차): 참고 시세는 저장된 종가다. 기준일·기대 거래일·지연을 밝힌다(주문 체결 가격과는 별개, 체결 로직 불변)
+            if (line := _quote_freshness_line(result)) is not None:
+                answer += "\n" + line
             records.append({"tool_name": "stock_tool", "arguments": args, "result": result, "called_at": called_at,
                             "elapsed_ms": round((time.perf_counter() - started) * 1000)})
     return _code_answer(answer, records)
+
+
+def _quote_price_status(base, now: datetime) -> dict | None:
+    """지연(1영업일 이상)일 때만 전망 답과 같은 늦은 이유를 추정한다(app.outlook.price_status: 휴장일 달력 대신 수집 기록).
+    조회에 실패해도 답은 이유 없이 그대로 나간다."""
+    if quote_freshness.status(base, now)["lag"] < 1:
+        return None
+    db = SessionLocal()
+    try:
+        return outlook.price_status(db, base, now)
+    except Exception as e:  # noqa: BLE001 - 이유 추정은 부가 정보다
+        logger.warning("시세 지연 이유 조회 실패: %s", e)
+        return None
+    finally:
+        db.close()
+
+
+def _quote_freshness_line(result) -> str | None:
+    """(35차) 저장 종가 답(단순 시세·주문 참고 시세·확정 요청 참고 시세)의 기준일·지연 줄. 늦은 이유는 결과에 price_status로 남겨
+    언어별 템플릿·번역 실패 폴백(app.quote_i18n)이 같은 문장을 다시 만든다."""
+    base = quote_freshness.base_of(result)
+    if base is None:
+        return None
+    now = datetime.now(KST)
+    st = _quote_price_status(base, now)
+    if st is not None and isinstance(result, dict):
+        result["price_status"] = st
+    return quote_freshness.line(base, now, price_status=st)
+
+
+def _latest_quote_record(company, called_via: str):
+    """저장된 최근 종가(장중이면 직전 거래일) 한 건의 (stock_tool 기록, 한 줄 답). 시세가 없으면 (None, None)."""
+    called_at = datetime.now(timezone.utc)
+    started = time.perf_counter()
+    args = {"ticker": company.name, "period_days": 1}
+    result = code_answers.latest_of(_run_tool("stock_tool", {**args, "period_days": 2}), datetime.now(KST))
+    quote = quote_answer(result)
+    if quote is None:
+        return None, None
+    if isinstance(result, dict):
+        result.setdefault("called_via", called_via)
+    record = {"tool_name": "stock_tool", "arguments": args, "result": result, "called_at": called_at,
+              "elapsed_ms": round((time.perf_counter() - started) * 1000)}
+    return record, quote
+
+
+def _answer_request_safety(question: str):
+    """(35차) 목표주가 확정·특정 시점 가격·수익 보장·매수 시점 일반 질문은 LLM 없이 요청 종류별 안내로 답한다(app/request_safety).
+    종목이 정확히 하나면 저장된 최근 종가와 기준일·지연 안내를 참고 정보로 붙인다. 목표가·확률·기대수익률은 쓰지 않는다."""
+    companies = _question_companies(question) or []
+    kind = request_safety.classify(question, has_company=bool(companies))
+    if kind is None:
+        return None
+    company = companies[0] if len(companies) == 1 else None
+    records, reference = [], None
+    if company is not None:
+        record, quote = _latest_quote_record(company, "request_safety")
+        if record is not None:
+            line = _quote_freshness_line(record["result"])
+            reference = "참고 시세: " + quote + ("\n" + line if line else "")
+            records.append(record)
+    return _code_answer(request_safety.answer(kind, company.name if company else None, reference), records)
+
+
+_NO_SUBJECT_ANSWER = ("어떤 종목의 주가를 볼지 알 수 없습니다. 종목 이름이나 종목코드를 넣어 다시 물어봐 주세요. "
+                      "예: \"삼성전자 현재가 알려줘\", \"005930 최근 종가 알려줘\". 시장 전체는 \"지금 시장 상황이 어때?\"로 물어볼 수 있습니다.")
+
+
+# 종목 없는 시세 질문을 이루는 일반어(앞부분 일치). 이것 말고 남는 단어가 있으면 종목 이름(오타·음차 포함)일 수 있다
+_QUOTE_STOPWORDS = ("오늘", "지금", "현재", "요즘", "최근", "어제", "이번", "주가", "주식", "가격", "시세", "종가", "시가", "얼마", "몇",
+                    "알려", "보여", "말해", "줘", "주세요", "좀", "혹시", "이거", "이것", "그거", "해당", "종목", "원", "어때", "어떻", "궁금")
+
+
+def _has_only_quote_words(question: str) -> bool:
+    tokens = re.findall(r"[0-9A-Za-z가-힣]+", question or "")
+    return bool(tokens) and all(t.startswith(_QUOTE_STOPWORDS) for t in tokens)
+
+
+def _answer_missing_subject(question: str, companies: list | None):
+    """(35차) 종목 없이 시세만 묻는 질문("오늘 주가가 얼마야?")은 종목을 정하지 않고 되묻는다. 33~35차 live에서 LLM이 임의로 삼성전자를
+    조회해 답했다(질문에 없는 종목). 시장·환율·탐색 질문은 is_simple_quote가 이미 뺀다.
+    질문 추출(정확 이름·별칭)이 못 찾았어도 일반어 밖의 단어가 있으면("삼성잔자 주가 알려줘") 기존 흐름이다: LLM 경로의 리졸버가
+    후보를 되묻는다(2026-11-08, 이 처리가 오타 질문까지 막던 것을 고침)."""
+    if companies is None or companies or market_overview.is_overview_question(question):
+        return None
+    if not _has_only_quote_words(question):
+        return None
+    if not is_simple_quote(question, mentions_period(question), _period_text(question)):
+        return None
+    return _code_answer(_NO_SUBJECT_ANSWER)
+
+
+def _answer_market_overview(question: str, companies: list | None):
+    """(35차) 종목 없는 시장 상황 질문은 저장된 지수·상승 하락 종목 수로 코드가 정리한다(app/market_overview)."""
+    if companies is None or companies or not market_overview.is_overview_question(question):
+        return None
+    called_at = datetime.now(timezone.utc)
+    started = time.perf_counter()
+    db = SessionLocal()
+    try:
+        data = market_overview.compute(db)
+    finally:
+        db.close()
+    result = {"found": bool(data["indexes"]), "indexes": {k: {**v, "date": v["date"].isoformat()} for k, v in data["indexes"].items()},
+              "breadth": {**data["breadth"], "date": data["breadth"]["date"].isoformat()} if data.get("breadth") else None,
+              "called_via": "market_overview"}
+    record = {"tool_name": "market_overview", "arguments": {}, "result": result, "called_at": called_at,
+              "elapsed_ms": round((time.perf_counter() - started) * 1000)}
+    return _code_answer(market_overview.answer(data, datetime.now(KST)), [record])
+
+
+def _answer_market_ranking(question: str, companies: list | None):
+    """(35차) 종목을 특정하지 않은 거래량 상위·거래량 급증 질문은 저장된 시세로 코드가 순위를 답한다(app/market_ranking)."""
+    if companies is None or companies:
+        return None
+    kind = market_ranking.kind_of(question)
+    if kind is None:
+        return None
+    from app.discovery import get_trending
+
+    market, limit = market_ranking.market_of(question), market_ranking.limit_of(question)
+    called_at = datetime.now(timezone.utc)
+    started = time.perf_counter()
+    db = SessionLocal()
+    try:
+        result = get_trending(db, kind, limit, market=market)
+    finally:
+        db.close()
+    record = {"tool_name": "discovery_tool", "arguments": {"category": kind, "limit": limit, "market": market}, "result": result,
+              "called_at": called_at, "elapsed_ms": round((time.perf_counter() - started) * 1000)}
+    return _code_answer(market_ranking.answer(result, kind, market, datetime.now(KST)), [record])
 
 
 def _forecast_subject(question: str, previous: dict | None):
@@ -1598,7 +1734,13 @@ def _answer_simple_quote(question: str, companies: list | None):
         answer += "\n\n" + leverage_notice(company.name, kind)
     record = {"tool_name": "stock_tool", "arguments": args, "result": result, "called_at": called_at,
               "elapsed_ms": round((time.perf_counter() - started) * 1000)}
-    return _code_answer(_with_intraday_note(_with_freshness(answer, question, [record]), [record]), [record])
+    # 2026-11-07(35차): "오늘·지금"이 없는 시세 질문에도 기준일·저장 종가·지연을 밝힌다(이전에는 현재 시점 질문 + 2영업일 지연일 때만)
+    line = _quote_freshness_line(result)
+    if line is not None:
+        answer += "\n\n" + line
+    else:
+        answer = _with_freshness(answer, question, [record])
+    return _code_answer(_with_intraday_note(answer, [record]), [record])
 
 
 def _with_intraday_note(answer: str, records: list[dict]) -> str:
@@ -1677,7 +1819,12 @@ def _history_day_parts(db, company, day, requested, data_end, question: str) -> 
     previous = _price_dict(previous_row)
     result = {**base, "period_days": 1, "closed_reason": reason, "change_pct": previous["change_pct"],
               "volume": previous["volume"], "prices": [previous]}
-    return period_answers.closed_day_text(company.name, day, reason, previous), result
+    latest_note = None
+    prev_day = date.fromisoformat(str(previous["price_date"])[:10])
+    # 2026-11-08: 직전 시세가 이 종목의 마지막 저장 시세이고 그날의 직전 평일보다 앞서면 "직전 거래일"이 아니라 수집 지연이다
+    if prev_day == data_end and prev_day < last_business_day(day - timedelta(days=1)):
+        latest_note = _quote_freshness_line(result)
+    return period_answers.closed_day_text(company.name, day, reason, previous, latest_note), result
 
 
 def _history_parts(company, requested, now, question: str) -> tuple[str, dict] | None:
@@ -1896,6 +2043,8 @@ def _guard(answer: str, records: list[dict], question: str) -> str:
             guarded = remove_empty_sections(guarded)
             if narrative_body_is_thin(guarded):
                 guarded = code_summary(records) or guarded
+    # 2026-11-07(35차): 원시 숫자 표기(1414000.0원)와 같은 문단·문장 반복을 정리한다(값·뜻은 그대로, app/answer_tidy)
+    guarded, log["repeats_removed"] = answer_tidy.tidy(guarded)
     _meta()["answer_guard"] = log
     if log["replaced"]:
         logger.info("답변 숫자 검증: %s로 대체(설명되지 않는 숫자 %s)", log["mode"], log["violations"])
@@ -2022,6 +2171,10 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     order = _answer_order_command(question)
     if order is not None:
         return order
+    # 목표주가 확정·가격 단정·수익 보장 요청은 전망·시세 경로보다 먼저다(35차: 목표주가 요청이 단순 시세로 갔다)
+    safety = _answer_request_safety(question)
+    if safety is not None:
+        return safety
     briefing = _answer_briefing(question, getattr(_STATE, "user_id", None))
     if briefing is not None:
         return briefing
@@ -2037,7 +2190,8 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     _reset_llm_state()
     companies = _question_companies(question)
     # 시장 비교(_answer_market_period)는 범위 안내(_answer_period_scope)보다 먼저다: 종목 값만 답하면 지수 비교가 빠진다
-    for handler in (_answer_concept, _answer_price_flow, _answer_etf_constituents, _answer_holding_return, _answer_market_period, _answer_period_scope, _answer_simple_quote,
+    # 거래량 순위는 용어 사전보다 먼저다("거래량"이 사전 용어라 "거래량 많은 종목"이 정의 답이 된다)
+    for handler in (_answer_market_ranking, _answer_market_overview, _answer_concept, _answer_missing_subject, _answer_price_flow, _answer_etf_constituents, _answer_holding_return, _answer_market_period, _answer_period_scope, _answer_simple_quote,
                     _answer_period_quote, _answer_period_history):
         handled = handler(question, companies)
         if handled is not None:

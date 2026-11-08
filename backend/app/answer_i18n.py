@@ -7,15 +7,19 @@
 3. 전망 간결 답·후속 답(app.outlook_i18n)은 같은 계산 결과로 언어별 템플릿(2026-11-06). 기록으로 다시 만든 한국어 답이 저장된 답과
    글자까지 같고 새 숫자가 없을 때만 쓴다. 최근 N거래일 주가 흐름 답(app.price_flow_i18n)도 같은 조건의 언어별 템플릿이다
 4. 그 밖(상세 전망·실적·기간·시세·LLM 답 등)은 보호 번역(app.i18n_translate): 숫자·날짜·종목명·기사/공시 제목은 코드가 원문 그대로 되돌린다.
-   검증에 실패하면 한국어 원문 + 안내 문구다.
+   검증에 실패하면(2026-11-07 35차) 한국어 원문이 아니라 그 언어의 안내 + 도구 결과 데이터 요약이다(status fallback_summary).
+   단순 시세 답(app.quote_i18n)은 3번처럼 언어별 템플릿이다.
 """
 
 import logging
 from functools import lru_cache
 
-from app import glossary, glossary_i18n, outlook_i18n, price_flow_i18n
+from app import glossary, glossary_i18n, outlook_i18n, price_flow_i18n, quote_i18n
 from app.i18n import text
-from app.i18n_translate import STATUS_LOCALIZED, protected_terms, translate
+from app.i18n_translate import STATUS_FALLBACK, STATUS_LOCALIZED, protected_terms, translate
+
+# 2026-11-07(35차): 번역 검증 실패 시 한국어 원문 대신 그 언어의 안내 + 데이터 요약(app.quote_i18n.fallback_summary)
+STATUS_FALLBACK_SUMMARY = "fallback_summary"
 
 logger = logging.getLogger(__name__)
 
@@ -50,11 +54,15 @@ def localize_answer(question: str, answer: str, records: list[dict], locale: str
             localized = glossary_i18n.concept_answer(question, locale)
             if localized:
                 return localized, STATUS_LOCALIZED
-    templated = outlook_i18n.localize(answer, records, locale) or price_flow_i18n.localize(answer, records, locale)
+    templated = (outlook_i18n.localize(answer, records, locale) or price_flow_i18n.localize(answer, records, locale)
+                 or quote_i18n.localize(answer, records, locale))
     if templated is not None:
         return templated, STATUS_LOCALIZED
     names = [n for n in _company_names() if n in answer]
     result = translate(answer, locale, protected_terms(records, names))
     if result.failures:
         logger.info("답변 번역(%s) %s: %s", locale, result.status, result.failures)
+    if result.status == STATUS_FALLBACK:
+        # 한국어 원문을 내보내지 않는다. 원문은 리포트 original_content에 그대로 저장된다(GET /api/research/{id}?view=record)
+        return quote_i18n.fallback_summary(records, locale), STATUS_FALLBACK_SUMMARY
     return result.text, result.status
