@@ -18,8 +18,8 @@ Authorization: Bearer <access_token>
 
 | 구분 | 엔드포인트 |
 | --- | --- |
-| **인증 필요** | `/api/auth/me`(GET/DELETE), `/api/auth/logout`(POST), `/api/auth/change-password`(POST), `/api/auth/email`(PUT), `/api/auth/resend-verification`(POST), `/api/briefing`(GET), `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/performance`(GET), `/api/backtest`(POST), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET), `/api/history/search`(GET), `/api/auth/preferences`(GET/PUT) |
-| 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/auth/delete-account/confirm`(POST), `/api/auth/oauth/providers`(GET), `/api/auth/oauth/{provider}/login`·`/callback`(GET, 브라우저 이동), `/api/auth/oauth/exchange`(POST), `/api/auth/verify-email`, `/api/auth/find-username`, `/api/auth/forgot-password`, `/api/auth/reset-password`(모두 POST), `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status`, `/api/health`, `/api/stocks/{ticker}/event-reactions`, `/api/stocks/{ticker}/price-history` |
+| **인증 필요** | `/api/auth/me`(GET/DELETE), `/api/auth/logout`(POST), `/api/auth/change-password`(POST), `/api/auth/email`(PUT), `/api/auth/resend-verification`(POST), `/api/briefing`(GET), `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/performance`(GET), `/api/backtest`(POST), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET), `/api/history/search`(GET), `/api/auth/preferences`(GET/PUT), `/api/portfolio/exposure`(GET), `/api/briefings/daily/generate`(POST), `/api/briefings/daily/current`(GET), `/api/briefings/daily/history`(GET), `/api/briefings/daily/{id}`(GET) |
+| 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/auth/delete-account/confirm`(POST), `/api/auth/oauth/providers`(GET), `/api/auth/oauth/{provider}/login`·`/callback`(GET, 브라우저 이동), `/api/auth/oauth/exchange`(POST), `/api/auth/verify-email`, `/api/auth/find-username`, `/api/auth/forgot-password`, `/api/auth/reset-password`(모두 POST), `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status`, `/api/health`, `/api/stocks/{ticker}/event-reactions`, `/api/stocks/{ticker}/price-history`, `/api/etf/{ticker}/holdings` |
 
 - 데이터는 **사용자별로 분리**된다. 리서치 리포트 목록/조회/삭제/이어 쓰기(`previous_report_id`)는 본인 것만 대상이고,
   **남의 리포트 ID는 없는 리포트와 똑같이 404**다(403이 아니다 — 그 ID가 존재하는지 드러내지 않기 위해).
@@ -1154,7 +1154,7 @@ SK하이닉스(000660) · 향후 5거래일 · 방향: 상승 쪽(신뢰도 낮�
 - 실적 줄: `2026년 3분기(연결, 잠정): 매출액 1,046,155억 원, 전년 동기 대비 +327.9%; … (잠정실적 공정공시, 발표일 2026-10-28, DART 접수번호 20261028800036, 감사 전 잠정치)`, 확정은 `2026년 2분기(연결, 확정): … (반기보고서, 접수일 2026-08-14, DART 접수번호 …)`(4분기는 `확정, 연간 - 3분기 누적`, 사업보고서).
 - 2026-11-04 점검(211종목, 444건): 분기 표 350건(제외: 자회사 실적 47, 월별·판매 35, 정정 12). 기준을 가리지 않으면 정기보고서가 나온 분기와 불일치 15개 분기였고, 답변 규칙으로는 186개 분기 중 4건(영업이익 1~4% 차이, 감사 뒤 수정)이다. 규칙으로 뺀 잠정치는 기준 미표기 18·기준 다름 5·누적 불일치 5. 최신 분기가 잠정치인 종목 103개.
 
-**시세 기준일**(`app.outlook.price_status`). KRX 휴장일 달력이 없어 기대 거래일(평일 15:30 이후면 오늘, 그 전이면 직전 평일)에 시세가 없을 때 이유를 수집 기록으로 나눈다.
+**시세 기준일**(`app.outlook.price_status`). 기대 거래일(거래일 15:30 이후면 오늘, 그 전이면 직전 거래일. 2026-11-08부터 KRX 거래일 달력 기준, 그 전에는 평일)에 시세가 없을 때 이유를 수집 기록으로 나눈다.
 
 | 상태 | 조건 |
 | --- | --- |
@@ -3022,6 +3022,21 @@ curl http://localhost:8000/api/status
 
 `503`(DB 연결 불가)은 다른 API와 같은 형식이다. 날짜 필드는 데이터가 아예 없으면 `null`일 수 있다.
 
+### API 통합 점검과 프런트엔드 연동(2026-11-08, 37차)
+
+**프런트 연동 진입점: `docs/FRONTEND_INTEGRATION_HANDOFF.md`**(전체 목록·인증·오류·최신성·상태값·페이지네이션·기능별 연동·미해결 사항).
+TypeScript 타입: `docs/frontend-api-types.ts`(OpenAPI에서 자동 생성, `python -m scripts.export_api_types`, 테스트가 최신 여부 확인).
+
+- 응답 구조는 바꾸지 않았다. 바뀐 것:
+  - OpenAPI(`/openapi.json`)에 오류 응답을 선언했다(동작 변화 없음): 인증 API의 401, 경로 파라미터 API의 404, `GET /api/*`의 429(IP당 공개 GET 한도),
+    엔드포인트·같은 모듈 도우미 함수가 실제로 내는 400·404·409·429, 본문이 있으면 413, 모두 503. 오류 본문 스키마 `ErrorResponse {detail: string}`.
+  - `GET /api/portfolio/exposure?view=look_through`의 `summary.over_allocated_amount`가 `-0.0`(음수 0)으로 나오던 것을 `0.0`으로 고쳤다.
+  - `POST /api/briefings/daily/generate` 본문의 잘못된 `timezone` 422가 `loc: ["query", "timezone"]`이던 것을 `["body", "timezone"]`으로 고쳤다.
+  - 위 "인증" 표에 빠져 있던 `/api/portfolio/exposure`, `/api/briefings/daily/*` 4개, 공개 `/api/etf/{ticker}/holdings`를 넣었다(테스트가 실제 라우트와 대조).
+- 테스트: `tests/test_api_contract_round37.py`(DB 없음), `tests/test_api_contract_round37_devdb.py`(개발 DB·CI DB, 가짜 종목만).
+  테스트 전체에서 `requests`의 실제 HTTP를 막았다(`tests/conftest.py`의 `block_external_http`): 포트폴리오·주문은 네이버 실시간 시세를 먼저 부르는데,
+  이를 가짜로 바꾸지 않은 테스트가 실제로 외부에 요청하고 있었다. 막으면 설계대로 DB 종가 폴백을 쓴다.
+
 ### 거래일 달력·저장 전 검증(2026-11-08, 36차)
 
 API 응답 키는 바뀌지 않았다(새 엔드포인트 없음). 바뀐 것은 값의 기준과 일부 답 문장이다.
@@ -3651,7 +3666,7 @@ curl "http://localhost:8000/api/briefing?news_limit=3" -H "Authorization: Bearer
 - 숫자는 일별 종가 기준이고 실시간이 아니다. 평가금액·손익도 DB 종가로 계산하므로 `GET /api/portfolio`(실시간 시도)의 값과 다를 수 있다.
 - 뉴스·공시는 제목과 출처만 보여 주며, **기사 내용의 사실 여부는 확인하지 않는다**. 종목과 관련이 적은 기사가 섞일 수 있다(ETF는 이름이 직접 나온 기사로 걸러낸다).
 - "전일 대비 평가손익"은 종목마다 자기 직전 거래일 종가를 쓴다. 종목별 최신 날짜가 다르면(수집이 덜 된 종목) 같은 날의 변화가 아닐 수 있다. 종목별 `latest_date`를 확인한다.
-- 공휴일은 모른다(평일을 영업일로 본다). 연휴 직후에는 `stale`이 실제보다 일찍 true가 될 수 있다.
+- ~~공휴일은 모른다(평일을 영업일로 본다).~~ 2026-11-08(36차)부터 KRX 거래일 달력(`app/krx_calendar.py`)으로 공휴일·대체공휴일·연말 휴장을 뺀다. 연휴 직후의 `stale` 오탐이 없어졌다.
 - flag 임계값은 종목 변동성과 무관한 고정값이다(레버리지 ETF는 `day_move`가 자주 켜진다 - `notice` 참고).
 
 ### 프론트(zod) 메모
@@ -3712,8 +3727,8 @@ curl "http://localhost:8000/api/portfolio/performance?period=3m" -H "Authorizati
 - **기간**: `all`은 첫 체결 직전 거래일부터 `data_date`까지이고 시작값은 초기 자금(`initial_balance`, 1,000만원).
   `1m`/`3m`/`6m`은 `data_date`에서 그 개월 수를 뺀 날(말일 보정) 이전 마지막 거래일부터이고, 시작값은 그날의 자산이다.
   첫 체결 전 구간은 초기 자금 그대로다(notice로 알린다).
-- **장중 규칙**: 평일 15:30(KST) 전에는 오늘 날짜의 시세·지수 행을 쓰지 않는다(`GET /api/briefing`과 같은 함수).
-  `data_date`는 그렇게 정한 마지막 거래일이고, 평일 기준 2영업일 이상 뒤처지면 `stale: true`와 `stale_notice`가 붙는다.
+- **장중 규칙**: 거래일 15:30(KST) 전에는 오늘 날짜의 시세·지수 행을 쓰지 않는다(`GET /api/briefing`과 같은 함수, 2026-11-08부터 KRX 휴장일은 장중이 아니다).
+  `data_date`는 그렇게 정한 마지막 거래일이고, 2영업일(2026-11-08부터 KRX 거래일 기준, 그 전에는 평일) 이상 뒤처지면 `stale: true`와 `stale_notice`가 붙는다.
 - **`data_date` 이후 체결**(오늘 장중이나 종가 수집 전 주문)은 아직 종가가 없어 곡선·지표에 넣지 않고 `trades.pending_count`로만 센다(notice).
 - **결손**: 보유 종목의 그날 종가가 없으면 직전 종가를 쓰고, 종가가 한 번도 없으면 마지막 체결가를 쓴다. 어느 쪽이든 `data_gaps`에 남긴다.
   잔고·수량이 맞지 않아 재생할 수 없는 체결은 빼고 notice로 알린다. 체결 내역을 다시 계산한 현금이 현재 잔고와 다르면 notice로 알린다.
@@ -4465,7 +4480,7 @@ PUT 본문: `{"preferred_locale": "en-US", "preferred_timezone": "America/New_Yo
 - `diagnosis.load_inputs`는 실시간 시세(외부 호출)를 써서 쓰지 않았다. 위험 점검은 브리핑과 같은 DB 종가로 계산한다. 외부 시세·뉴스·공시 API는 부르지 않는다.
 - 비슷한 제목(`news_relevance.is_duplicate_title`, 0.9)은 한 묶음(`similar_count`)으로 보인다. 직접 관련 뉴스는 제목이 그 종목을 가리키는 기사만이다(기존 `/api/briefing`의 `news`는 종목에 연결된 기사 전부라 시황 마감 기사가 섞였다).
 
-**데이터 신선도**: 전망 경로와 같은 규칙이다. 기대 거래일 = `outlook.expected_trading_day`(장 마감 전이면 직전 평일), 지연 = `data_status.business_days_behind`, 0이면 `latest`, 1~5(`outlook.MAX_LAG_BUSINESS_DAYS`)면 `delayed`, 초과면 `stale`, 시세가 없으면 `no_data`. 늦은 이유는 `outlook.price_status`(미수집·수집 실패·휴장일 추정·종목만 누락), 마지막 갱신 실행은 `data_status.summarize_last_run`. `latest`가 아니면 `content.freshness.headline`이 경고 문장이고 `warning: true`다. 지수·환율 기준일이 다르면 `notices`에 따로 적는다. 뉴스·공시 수집 시각은 `max(created_at)`.
+**데이터 신선도**: 전망 경로와 같은 규칙이다. 기대 거래일 = `outlook.expected_trading_day`(장 마감 전이면 직전 거래일, 2026-11-08부터 KRX 거래일 달력), 지연 = `data_status.business_days_behind`(거래일 수), 0이면 `latest`, 1~5(`outlook.MAX_LAG_BUSINESS_DAYS`)면 `delayed`, 초과면 `stale`, 시세가 없으면 `no_data`. 늦은 이유는 `outlook.price_status`(미수집·수집 실패·휴장일 추정·종목만 누락), 마지막 갱신 실행은 `data_status.summarize_last_run`. `latest`가 아니면 `content.freshness.headline`이 경고 문장이고 `warning: true`다. 지수·환율 기준일이 다르면 `notices`에 따로 적는다. 뉴스·공시 수집 시각은 `max(created_at)`.
 
 **LLM 역할**: 요약 한 단락(`content.summary`)만 쓸 수 있다. 입력은 그 언어로 그린 브리핑의 사실뿐이고, 출력이 다음을 모두 지킬 때만 쓴다(아니면 1번 다시 시키고, 그래도 안 되면 코드 요약).
 1. 숫자가 입력에 있는 값(표기 변형 포함, `diagnosis.allowed_numbers`)뿐
@@ -4624,7 +4639,7 @@ FastAPI 기본 형식으로 `detail`이 **배열**이다. 필드별 위치는 `l
   프론트에서 종목 자동완성/선택 UI를 둔다면 등록명(company 테이블의 name)으로 보내는 것이 가장 안전하다.
 - 사건 이후 주가 반응은 인과가 아니고 표본이 적다(위 "사건(뉴스·공시) 이후 주가 반응 질문"과 `GET /api/stocks/{ticker}/event-reactions`의 한계). 이 질문 유형의 `POST /api/research`는 LLM을 부르지 않아 즉시 응답한다.
 - `POST /api/portfolio/diagnosis`는 LLM 설명 때문에 보통 4~5초, 모델이 내려가 있었다면 첫 호출이 더 걸린다. Ollama 장애 시 규칙 기반 문장으로 폴백한다(`source`).
-- `GET /api/status`의 `stale`은 공휴일을 모르는 평일 기준이다. 환율은 소스가 주는 날짜까지만 있어 보통 1~2일 늦다(2026-10-14 기준 10/12).
+- `GET /api/status`의 `stale`은 2026-11-08부터 KRX 거래일 기준이다(그 전에는 공휴일을 모르는 평일 기준). 환율은 소스가 주는 날짜까지만 있어 보통 1~2일 늦다(2026-10-14 기준 10/12).
 - 데이터는 수동으로 갱신한다(`python -m scripts.refresh_data`, 평일 15:30 이후 권장). 2026-10-14 갱신 기준 주가·지수·뉴스·공시는 10/14, 환율은 10/12까지다.
   현재 기준일은 `GET /api/status`로 확인한다. "오늘 주가"를 물어도 DB의 최신 종가로 답한다.
 
@@ -4674,11 +4689,11 @@ PRD 비기능 요구사항은 일반 API P95 500ms 이내다(`POST /api/research
 | "삼성전자 20일 수익률 분석해 줘" | 달력 20일(약 15거래일)로 해석 | 최근 20거래일 주가 흐름 답(거래일 기준) | `stock_tool` |
 | 휴장일 하루 질문("어제 종가"를 일요일에) | "직전 거래일(2026-11-03) 종가는 …"(실제 직전 거래일은 11-06인데 수집이 늦은 경우에도) | 그 종가가 종목의 마지막 저장 시세이고 그날의 직전 평일보다 앞서면 "저장된 마지막 시세인 2026-11-03 … 종가는 …" + 위 기준일·지연 줄. 과거 휴장일(예: 개천절 다음 토요일)은 예전 문장 그대로 | `stock_tool`(`called_via: period_history`) |
 
-기준일·지연 계산은 주가 흐름·전망 답과 같다(`app.outlook.expected_trading_day`: 평일, 15:30 전이면 직전 평일 / `app.data_status.business_days_behind`: 평일 기준,
-공휴일 달력 없음). 1영업일 이전은 정보로, 2영업일 이상은 "최신 시세가 아닙니다"로 쓴다. 실시간 시세는 별도 엔드포인트(`GET /api/stocks/{ticker}/realtime-price`)다.
+기준일·지연 계산은 주가 흐름·전망 답과 같다(`app.outlook.expected_trading_day`: 거래일, 15:30 전이면 직전 거래일 / `app.data_status.business_days_behind`: 거래일 수.
+2026-11-08 36차부터 KRX 거래일 달력 기준, 35차 작성 당시에는 평일 기준·공휴일 달력 없음). 1영업일 이전은 정보로, 2영업일 이상은 "최신 시세가 아닙니다"로 쓴다. 실시간 시세는 별도 엔드포인트(`GET /api/stocks/{ticker}/realtime-price`)다.
 지연이면(2026-11-08) 전망 답과 같은 늦은 이유 추정(`app.outlook.price_status`: 미수집·수집 실패·휴장일 추정·종목만 누락, 수집 기록으로 추정)을 한 문장 더 붙인다.
-예: `늦은 이유(수집 기록으로 추정): 휴장일 추정(2026-10-09 19:30 수집에서 시장 전체에 그날 시세 없음).` 공휴일 다음 날에는 평일 기준 지연 수가 1 늘어날 수 있어
-이 이유로 구분한다(지연 영업일 수는 전망·`GET /api/status`와 같게 둔다). en/ja/zh는 라벨만(`presumed market holiday` 등) 옮긴다.
+예: `늦은 이유(수집 기록으로 추정): 휴장일 추정(2026-10-09 19:30 수집에서 시장 전체에 그날 시세 없음).` 35차 당시에는 공휴일 다음 날 평일 기준 지연 수가 1 늘어나
+이 이유로 구분했다(36차부터는 달력이 휴장일을 빼므로 이 경우 지연이 아니다. 지연 영업일 수는 전망·`GET /api/status`와 같다). en/ja/zh는 라벨만(`presumed market holiday` 등) 옮긴다.
 
 **기간 최고·최저 정의(통일)**: 질문 기간 안의 거래일 종가만(기간 첫날·마지막 날 포함, 거래일 기준, 시세가 없는 날은 빠진다). 기간 직전 거래일 종가는 수익률의
 비교 기준으로만 쓰고 최고·최저에 넣지 않는다. 기간 질문 답(`stock_tool` 요약 "이 기간 종가 최고는 …")은 이미 이 정의였고, 주가 흐름 답("최근 20거래일 범위"의

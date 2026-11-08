@@ -91,8 +91,8 @@ class BriefingHistory(BaseModel):
     date_to: str | None
 
 
-def _tz(name: str | None, user: CurrentUser):
-    tz, _, _ = history_window(None, None, name or user.preferred_timezone)
+def _tz(name: str | None, user: CurrentUser, where: str = "query"):
+    tz, _, _ = history_window(None, None, name or user.preferred_timezone, where)
     return tz
 
 
@@ -101,7 +101,7 @@ def generate_daily_briefing(body: GenerateRequest, response: Response, user: Cur
     """오늘(사용자 시간대) 브리핑을 만든다. 이미 있으면 다시 계산하지 않고 저장본을 200으로 돌려준다(created=false).
     regenerate=true면 새 버전을 만들어 201(기존 버전은 보존). 하루 최대 MAX_VERSIONS개(넘으면 409)."""
     rate_limit.check(rate_limit.daily_briefing, user.owner_key, "RATE_LIMIT_DAILY_BRIEFING_PER_MIN")
-    tz = _tz(body.timezone, user)
+    tz = _tz(body.timezone, user, "body")
     locale = resolve_locale(body.locale, user.preferred_locale)
     db = SessionLocal()
     try:

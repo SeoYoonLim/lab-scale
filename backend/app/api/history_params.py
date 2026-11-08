@@ -11,22 +11,24 @@ from fastapi.exceptions import RequestValidationError
 from app.history_dates import date_fields, resolve_timezone, utc_range
 
 
-def _invalid(field: str, message: str, value) -> RequestValidationError:
-    return RequestValidationError([{"type": "value_error", "loc": ("query", field), "msg": message, "input": value}])
+def _invalid(field: str, message: str, value, where: str = "query") -> RequestValidationError:
+    return RequestValidationError([{"type": "value_error", "loc": (where, field), "msg": message, "input": value}])
 
 
 def history_window(
-    date_from: date | None, date_to: date | None, timezone_name: str | None
+    date_from: date | None, date_to: date | None, timezone_name: str | None, where: str = "query"
 ) -> tuple[ZoneInfo, datetime | None, datetime | None]:
-    """(시간대, 시작 UTC 이상, 끝 UTC 미만). 모르는 시간대·거꾸로 된 날짜 범위는 422."""
+    """(시간대, 시작 UTC 이상, 끝 UTC 미만). 모르는 시간대·거꾸로 된 날짜 범위는 422.
+    where: 오류의 loc 첫 칸("query" | "body"). 2026-11-08(37차): 본문으로 시간대를 받는 POST /api/briefings/daily/generate가
+    ["query", "timezone"]으로 보고하던 것을 ["body", "timezone"]으로 고쳤다."""
     try:
         tz = resolve_timezone(timezone_name)
     except ValueError as e:
-        raise _invalid("timezone", str(e), timezone_name)
+        raise _invalid("timezone", str(e), timezone_name, where)
     try:
         start, end = utc_range(date_from, date_to, tz)
     except ValueError as e:
-        raise _invalid("date_from", str(e), date_from.isoformat() if date_from else None)
+        raise _invalid("date_from", str(e), date_from.isoformat() if date_from else None, where)
     return tz, start, end
 
 

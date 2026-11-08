@@ -174,3 +174,109 @@ app.include_router(exposure_router)
 app.include_router(backtest_router)
 app.include_router(history_router)
 app.include_router(etf_router)
+
+
+# ---------- OpenAPI 오류 응답 선언(2026-11-08, 37차) ----------
+# 동작은 바꾸지 않는다. 라우트 선언에 200·422만 있어 OpenAPI로 타입을 만드는 프런트가 401·404·429를 몰랐다.
+# 실제 코드에서 사실을 읽어 붙인다: 인증 의존성(get_current_user)이 있으면 401, 경로 파라미터가 있으면 404(남의 자원도 404),
+# GET /api/*는 IP당 공개 GET 한도(app.security.public_get_limited)로 429, 엔드포인트와 그 안에서 부르는 같은 모듈 도우미 함수
+# (한 단계)의 소스에 status_code=4xx가 있으면 그 코드, rate_limit.check가 있으면 429, 본문이 있으면 413, 모두 503(DB·Ollama 장애).
+# 422 외의 오류 본문은 모두 {"detail": "문장"}이다. tests/test_api_contract_round37.py가 실제 응답 코드와 대조한다.
+ERROR_RESPONSE_SCHEMA = {"title": "ErrorResponse", "type": "object", "required": ["detail"],
+                         "properties": {"detail": {"type": "string", "title": "Detail"}}}
+_ERROR_DESCRIPTIONS = {
+    "400": "요청은 형식상 맞지만 처리할 수 없음(예: 잔고·보유 수량 부족, 잘못된 토큰·링크). detail 문장을 그대로 보여 준다",
+    "401": "인증 필요: 토큰 없음·형식 오류·만료·로그아웃·비밀번호 변경으로 폐기됨",
+    "403": "권한 없음",
+    "404": "없는 자원(다른 사용자의 자원도 404)",
+    "409": "현재 상태와 충돌(예: 이미 있는 관심종목, 하루 브리핑 버전 한도)",
+    "413": "요청 본문이 너무 큼",
+    "429": "요청이 너무 많음(Retry-After 헤더: 다시 시도할 수 있는 초)",
+    "503": "DB 또는 AI 모델 서버(Ollama) 일시 장애",
+}
+NOT_FOUND_WITHOUT_PATH_PARAM = {("GET", "/api/briefings/daily/current")}
+
+
+def _uses_dependency(dependant, target) -> bool:
+    return any(d.call is target or _uses_dependency(d, target) for d in dependant.dependencies)
+
+
+def _endpoint_source(endpoint) -> str:
+    """엔드포인트 함수 소스 + 그 안에서 부르는 같은 모듈의 도우미 함수(한 단계) 소스. 소스를 못 읽으면 빈 문자열."""
+    import inspect
+    import re
+    import sys as _sys
+
+    try:
+        src = inspect.getsource(endpoint)
+    except (OSError, TypeError):
+        return ""
+    module = _sys.modules.get(endpoint.__module__)
+    extra = []
+    for name in set(re.findall(r"\b(_[A-Za-z0-9_]+)\(", src)):
+        fn = getattr(module, name, None)
+        if callable(fn):
+            try:
+                extra.append(inspect.getsource(fn))
+            except (OSError, TypeError):
+                pass
+    return "\n".join([src, *extra])
+
+
+def _declared_error_codes(endpoint) -> set[str]:
+    """소스에서 실제로 내는 4xx(status_code=4xx)와 레이트 리밋(rate_limit.check → 429)을 찾는다."""
+    import re
+
+    src = _endpoint_source(endpoint)
+    codes = {c for c in re.findall(r"status_code=(4\d\d)", src) if c in _ERROR_DESCRIPTIONS}
+    if "rate_limit.check(" in src:
+        codes.add("429")
+    return codes
+
+
+def _api_routes(routes):
+    """앱의 라우트를 펼친다. FastAPI 0.141은 include_router한 라우터를 _IncludedRouter(original_router)로 감싼다."""
+    for r in routes:
+        inner = getattr(r, "original_router", None) or getattr(r, "router", None)
+        if getattr(r, "dependant", None) is not None:
+            yield r
+        elif inner is not None and hasattr(inner, "routes"):
+            yield from _api_routes(inner.routes)
+
+
+def custom_openapi() -> dict:
+    if app.openapi_schema:
+        return app.openapi_schema
+    from app.api.deps import get_current_user
+
+    schema = FastAPI.openapi(app)
+    schema.setdefault("components", {}).setdefault("schemas", {})["ErrorResponse"] = ERROR_RESPONSE_SCHEMA
+    content = {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}
+    for route in _api_routes(app.routes):
+        dependant, methods = getattr(route, "dependant", None), getattr(route, "methods", None)
+        ops = schema["paths"].get(getattr(route, "path", ""), {})
+        if dependant is None or not methods:
+            continue
+        auth = _uses_dependency(dependant, get_current_user)
+        raised = _declared_error_codes(route.endpoint)
+        for method in methods:
+            op = ops.get(method.lower())
+            if op is None:
+                continue
+            codes = {"503"} | raised
+            if auth:
+                codes.add("401")
+            if "{" in route.path or (method, route.path) in NOT_FOUND_WITHOUT_PATH_PARAM:
+                codes.add("404")
+            if method == "GET" and route.path.startswith("/api/"):
+                codes.add("429")
+            if "requestBody" in op:
+                codes.add("413")
+            responses = op.setdefault("responses", {})
+            for code in sorted(codes):
+                responses.setdefault(code, {"description": _ERROR_DESCRIPTIONS[code], "content": content})
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = custom_openapi

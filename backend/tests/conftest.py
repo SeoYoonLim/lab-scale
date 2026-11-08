@@ -28,6 +28,20 @@ def rate_limit_off(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def block_external_http(monkeypatch):
+    """테스트에서 requests로 나가는 실제 HTTP를 막는다(2026-11-08, 37차). 주문·포트폴리오·진단은 app.realtime_price가
+    네이버 실시간 시세를 먼저 부르는데(실패하면 DB 종가 폴백), 이 함수를 가짜로 바꾸지 않은 테스트가 실제로 외부에 요청하고 있었다.
+    연결 오류로 막으면 원래 설계대로 DB 종가 폴백이 쓰인다. requests.get 등을 직접 가짜로 바꾸는 테스트는 그 교체가 이보다 뒤라 그대로 돈다.
+    TestClient(httpx)·Ollama 클라이언트(httpx)·DB 연결은 requests가 아니라 영향이 없다."""
+    import requests
+
+    def _blocked(self, method, url, *args, **kwargs):
+        raise requests.ConnectionError(f"테스트에서 외부 HTTP 차단: {method} {url}")
+
+    monkeypatch.setattr(requests.sessions.Session, "request", _blocked)
+
+
+@pytest.fixture(autouse=True)
 def mail_outbox(monkeypatch):
     """모든 테스트의 메일 발송기를 메모리 보관함으로 바꾼다(실제 SMTP 연결·backups/dev_mail.log 쓰기를 하지 않는다).
     보관함(MemoryMailer)을 돌려주므로 테스트는 mail_outbox.outbox로 보낸 메일을 확인한다. SMTP 관련 환경변수도 지운다."""

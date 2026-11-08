@@ -267,7 +267,7 @@ def compute(holdings: list[HoldingIn], etfs: dict[str, EtfIn], cash: float | Non
             "linked_via_amount": _r(via_amount - unlinked_amount), "unlinked_via_amount": _r(unlinked_amount),
             "nested_etf_amount": _r(nested_amount), "residual_amount": _r(residual_amount), "undecomposed_etf_amount": _r(undecomposed_amount),
             "unidentified_amount": _r(unidentified), "unidentified_weight_pct": _pct(unidentified, total_asset),
-            "over_allocated_amount": _r(max(-residual_amount, 0.0)),
+            "over_allocated_amount": _r(max(0.0, -residual_amount)),  # 2026-11-08(37차): max(-0.0, 0.0)은 -0.0이라 화면에 "-0원"이 나왔다
             "cash_weight_pct": _pct(cash, total_asset), "companies_weight_pct": _pct(companies_amount, total_asset),
             "holding_count": len(holdings), "priced_holding_count": len(priced), "unpriced_count": len(unpriced),
             "company_count": len(items),
