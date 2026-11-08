@@ -108,7 +108,8 @@ def test_new_user_empty_states_are_200_or_documented_404(signup):
     r, exp = get("/api/portfolio/exposure?view=look_through", u)
     assert r.status_code == 200 and exp["status"] == "empty" and exp["companies"] == [] and exp["etfs"] == []
     r, perf = get("/api/portfolio/performance?view=benchmark", u)
-    assert r.status_code == 200 and perf["status"] in ("no_account", "no_trades") and perf["summary"]["period_return_pct"] is None
+    # 시세·지수가 하나도 없는 DB(CI)에서는 계좌·체결보다 먼저 no_prices다(2026-11-08 CI run 42475032009에서 확인). 셋 다 계산 불가 상태
+    assert r.status_code == 200 and perf["status"] in ("no_account", "no_trades", "no_prices") and perf["summary"]["period_return_pct"] is None
     r, body = get("/api/briefings/daily/current", u)  # 14: 브리핑 없음은 404 + 안내
     assert r.status_code == 404 and "generate" in body["detail"]
     for url in ("/api/briefings/daily/history", "/api/portfolio/diagnosis/history", "/api/research", "/api/history/search"):
