@@ -23,9 +23,13 @@ from dotenv import load_dotenv
 from sqlalchemy import or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from app import http_retry
+from app import ingest_validation as V
+from app import quarantine
 from app.db.session import SessionLocal
 from app.etf import mentions_etf_name
 from app.models import Company, Disclosure, ExchangeRate, MarketIndex, News, StockPrice
+from app.news_relevance import is_relevant_news, needs_context
 
 load_dotenv()
 
@@ -66,12 +70,25 @@ NAME_COLLISION_COMPANIES = frozenset(
     }
 )
 NAME_COLLISION_ANCHOR = "주가 실적"
+AMBIGUOUS_NAME_ANCHOR = "주가"
+# 실제 응답을 보고 고른 검색어(2026-11-02). 괄호는 받은 100건 중 is_relevant_news 통과 수, 그룹·계열사 기사가 얼마나 섞이는지는 읽어서 골랐다.
+NEWS_QUERY_NAMES = {
+    "NAVER": "네이버 실적",  # 76. 영문은 기자 이메일(@naver.com)이 걸리고, "네이버"만으로는 쇼핑·검색 언급이 많다
+    "SK": '"SK(주)"',  # 75. "SK 주가 실적"은 다른 SK 계열 기사뿐이었다
+    "GS": '"GS" 지주사 -GS건설 -GS리테일 -GS칼텍스',  # 96. "GS그룹"은 GS건설 기사가 대부분이었다
+    "LG": '"LG" 지주사 -LG전자 -LG화학 -LG에너지솔루션 -LG유플러스',  # "LG그룹"은 LG CNS 기사가 대부분이었다
+}
 
 
 def news_search_query(company_name: str) -> str:
-    """네이버 뉴스 검색어. 이름 충돌 종목이면 재무 키워드를 붙이고, 아니면 회사명 단독이다."""
+    """네이버 뉴스 검색어. NEWS_QUERY_NAMES에 있으면 그 값, 이름 충돌 종목이면 재무 키워드를 붙이고, 문맥이 필요한 모호한 이름이면
+    정확한 구문에 "주가"를 붙이고, 아니면 회사명 단독이다."""
+    if company_name in NEWS_QUERY_NAMES:
+        return NEWS_QUERY_NAMES[company_name]
     if company_name in NAME_COLLISION_COMPANIES:
         return f"{company_name} {NAME_COLLISION_ANCHOR}"
+    if needs_context(company_name):
+        return f'"{company_name}" {AMBIGUOUS_NAME_ANCHOR}'
     return company_name
 
 
@@ -104,8 +121,8 @@ def _load_dart_corp_code_map() -> dict[str, str]:
         return _dart_stock_to_corp_code
 
     key = os.environ["DART_API_KEY"]
-    resp = requests.get(DART_CORP_CODE_URL, params={"crtfc_key": key})
-    resp.raise_for_status()
+    # corpCode.xml은 11만 건이 넘는 zip이라 읽기 timeout을 길게 둔다
+    resp = http_retry.get(DART_CORP_CODE_URL, params={"crtfc_key": key}, timeout=(5, 60), label="DART corpCode")
 
     zf = zipfile.ZipFile(io.BytesIO(resp.content))
     root = ET.fromstring(zf.read("CORPCODE.xml"))
@@ -147,7 +164,7 @@ def fetch_dart_disclosures(corp_code: str, days: int = 90) -> list[dict]:
     items = []
     page_no = 1
     while True:
-        resp = requests.get(
+        resp = http_retry.get(
             DART_DISCLOSURE_LIST_URL,
             params={
                 "crtfc_key": key,
@@ -157,8 +174,8 @@ def fetch_dart_disclosures(corp_code: str, days: int = 90) -> list[dict]:
                 "page_no": page_no,
                 "page_count": 100,
             },
+            label="DART list",
         )
-        resp.raise_for_status()
         data = resp.json()
 
         if data.get("status") != "000":
@@ -217,6 +234,7 @@ class CollectResult:
 
     saved: 신규 저장 건수 (dry_run이면 저장 예정 건수), fetched: 필터 후 저장 대상으로 검토한 건수,
     skipped: 비금융 도메인이라 제외한 건수(뉴스만), records: dry_run일 때만 채워지는 저장 예정 레코드.
+    quarantined·warned(2026-11-08, 36차): 저장 전 검증(app/ingest_validation)에서 격리해 저장하지 않은 건수 / 경고를 남기고 저장한 건수.
     """
 
     ok: bool
@@ -226,9 +244,18 @@ class CollectResult:
     records: list = field(default_factory=list)
     skipped: int = 0
     source: str | None = None
+    quarantined: int = 0
+    warned: int = 0
 
 
 _API_KEY_RE = re.compile(r"(crtfc_key=)[^&\s]+")
+
+
+def _read_fdr(reader, symbol: str, start_date: str, end_date: str, retries: int = http_retry.RETRIES):
+    """FinanceDataReader 호출에 상한(http_retry.LIBRARY_TIMEOUT_S)과 일시적 오류 재시도(기본 2회)를 둔다.
+    FDR은 내부에서 timeout 없이 requests를 부르기 때문이다. 일시적 오류가 아닌 예외는 바로 올라간다."""
+    return http_retry.call_with_retry(lambda: http_retry.with_timeout(lambda: reader(symbol, start_date, end_date)),
+                                      retries=retries, label=f"FDR {symbol}")
 
 
 def _safe_error(e: Exception) -> str:
@@ -236,19 +263,30 @@ def _safe_error(e: Exception) -> str:
     return _API_KEY_RE.sub(r"\1***", f"{type(e).__name__}: {e}")
 
 
+naver_requests = 0  # 이 프로세스에서 네이버 뉴스 API에 보낸 요청 수(재시도 포함)
+
+
+class _CountingSession:
+    def get(self, *args, **kwargs):
+        global naver_requests
+        naver_requests += 1
+        return requests.get(*args, **kwargs)
+
+
 def fetch_naver_news(company_name: str, display: int = 10, sort: str = "date") -> list[dict]:
     client_id = os.environ["NAVER_CLIENT_ID"]
     client_secret = os.environ["NAVER_CLIENT_SECRET"]
 
-    resp = requests.get(
+    resp = http_retry.get(
         NAVER_NEWS_URL,
         params={"query": company_name, "display": display, "start": 1, "sort": sort},
         headers={
             "X-Naver-Client-Id": client_id,
             "X-Naver-Client-Secret": client_secret,
         },
+        session=_CountingSession(),
+        label="Naver news",
     )
-    resp.raise_for_status()
     return resp.json().get("items", [])
 
 
@@ -283,16 +321,17 @@ def _price_values(record: dict) -> tuple:
 # FinanceDataReader(KRX 로그인 불필요)로 주가 수집 후 DB에 upsert하는 함수.
 # 이미 있는 날짜는 최신 값으로 갱신한다. 장 마감 전에 저장된 행(거래량 등)이 남지 않게 하기 위해서다.
 def fetch_and_save_stock(
-    ticker: str, name: str, days: int = 7, dry_run: bool = False
+    ticker: str, name: str, days: int = 7, dry_run: bool = False, start_date: str | None = None, end_date: str | None = None
 ) -> CollectResult:
+    """start_date/end_date(YYYY-MM-DD)를 주면 days 대신 그 기간을 받는다(scripts/backfill_history.py가 장기 이력에 쓴다)."""
     today = datetime.now(KST)
-    start_date = (today - timedelta(days=days)).strftime("%Y-%m-%d")
-    end_date = today.strftime("%Y-%m-%d")
+    start_date = start_date or (today - timedelta(days=days)).strftime("%Y-%m-%d")
+    end_date = end_date or today.strftime("%Y-%m-%d")
 
     print(f"[{name}({ticker})] {start_date} ~ {end_date} 주가 데이터 수집 중...")
 
     try:
-        df = fdr.DataReader(ticker, start_date, end_date)
+        df = _read_fdr(fdr.DataReader, ticker, start_date, end_date)
     except Exception as e:
         msg = _safe_error(e)
         print(f"오류 발생: {msg}")
@@ -304,6 +343,13 @@ def fetch_and_save_stock(
         return CollectResult(ok=False, error=msg)
 
     records = [_price_row(i, r) for i, r in df.dropna(subset=["Close"]).iterrows()]
+    if not V.valid_ticker(ticker):
+        # 2026-11-08(36차): 잘못된 종목코드로 회사를 새로 만들지 않는다. 받은 시세는 전부 격리한다
+        checked = V.check_prices(ticker, records)
+        if not dry_run:
+            quarantine.record("stock_price", checked, {"ticker": ticker})
+        print(f"[격리] 종목코드 형식 오류 {ticker!r}: {len(records)}건 저장하지 않음")
+        return CollectResult(ok=True, saved=0, fetched=len(records), quarantined=len(records))
 
     db = SessionLocal()
     try:
@@ -323,13 +369,28 @@ def fetch_and_save_stock(
                 StockPrice.price_date >= records[0]["price_date"],
             )
         }
+        # 2026-11-08(36차): 저장 전 검증. 격리된 행은 upsert에서 빠지므로 같은 날짜의 기존 정상 값이 바뀌지 않는다
+        prev = db.query(StockPrice.close_price).filter(
+            StockPrice.company_id == company.id, StockPrice.price_date < records[0]["price_date"]
+        ).order_by(StockPrice.price_date.desc()).limit(1).scalar()
+        checked = V.check_prices(ticker, records, {d: v[3] for d, v in existing.items()},
+                                 float(prev) if prev is not None else None, today.date())
+        keep, bad = V.split(checked)
+        warned = sum(c.status == V.WARNING for c in keep)
+        fetched = len(records)
+        records = [c.record for c in keep]
         new = [r for r in records if r["price_date"] not in existing]
         changed = [r for r in records if r["price_date"] in existing and existing[r["price_date"]] != _price_values(r)]
-        summary = f"신규 {len(new)}건, 값 갱신 {len(changed)}건, 변경 없음 {len(records) - len(new) - len(changed)}건"
+        summary = (f"신규 {len(new)}건, 값 갱신 {len(changed)}건, 변경 없음 {len(records) - len(new) - len(changed)}건"
+                   + (f", 격리 {len(bad)}건" if bad else "") + (f", 경고 {warned}건" if warned else ""))
 
         if dry_run:
-            print(f"[dry-run] {summary} (조회 {len(records)}건)")
-            return CollectResult(ok=True, saved=len(new), fetched=len(records))
+            print(f"[dry-run] {summary} (조회 {fetched}건)")
+            return CollectResult(ok=True, saved=len(new), fetched=fetched, quarantined=len(bad), warned=warned)
+        quarantine.record("stock_price", checked, {"ticker": ticker})
+        if not records:
+            print(f"DB 저장 없음: {summary}")
+            return CollectResult(ok=True, saved=0, fetched=fetched, quarantined=len(bad), warned=warned)
 
         stmt = pg_insert(StockPrice).values([{**r, "company_id": company.id} for r in records])
         stmt = stmt.on_conflict_do_update(
@@ -339,7 +400,7 @@ def fetch_and_save_stock(
         db.execute(stmt)
         db.commit()
         print(f"DB 저장 완료: {summary}")
-        return CollectResult(ok=True, saved=len(new), fetched=len(records))
+        return CollectResult(ok=True, saved=len(new), fetched=fetched, quarantined=len(bad), warned=warned)
     except Exception as e:
         db.rollback()
         msg = _safe_error(e)
@@ -381,7 +442,8 @@ def fetch_index_frame(index_code: str, start_date: str, end_date: str, reader=No
     errors = []
     for source, symbol in MARKET_INDEX_SOURCES.get(index_code, ((f"fdr:{index_code}", index_code),)):
         try:
-            df = reader(symbol, start_date, end_date)
+            # 소스 폴백 체인이 재시도 역할을 하므로 소스마다 다시 시도하지 않는다(timeout만)
+            df = _read_fdr(reader, symbol, start_date, end_date, retries=0)
         except Exception as e:
             errors.append(f"{source}: {_safe_error(e)}")
             continue
@@ -397,11 +459,14 @@ def fetch_index_frame(index_code: str, start_date: str, end_date: str, reader=No
     return None, None, errors
 
 
-def fetch_and_save_market_index(index_code: str, days: int = 7, dry_run: bool = False) -> CollectResult:
-    """지수 일별 종가를 폴백 체인(MARKET_INDEX_SOURCES)으로 받아 market_index에 upsert한다(멱등)."""
+def fetch_and_save_market_index(
+    index_code: str, days: int = 7, dry_run: bool = False, start_date: str | None = None, end_date: str | None = None
+) -> CollectResult:
+    """지수 일별 종가를 폴백 체인(MARKET_INDEX_SOURCES)으로 받아 market_index에 upsert한다(멱등).
+    start_date/end_date를 주면 days 대신 그 기간을 받는다."""
     today = datetime.now(KST)
-    start_date = (today - timedelta(days=days)).strftime("%Y-%m-%d")
-    end_date = today.strftime("%Y-%m-%d")
+    start_date = start_date or (today - timedelta(days=days)).strftime("%Y-%m-%d")
+    end_date = end_date or today.strftime("%Y-%m-%d")
 
     df, source, errors = fetch_index_frame(index_code, start_date, end_date, today=today.date())
     for msg in errors:
@@ -422,9 +487,22 @@ def fetch_and_save_market_index(index_code: str, days: int = 7, dry_run: bool = 
                 MarketIndex.index_code == index_code, MarketIndex.price_date >= records[0]["price_date"]
             )
         }
+        prev = db.query(MarketIndex.close_price).filter(
+            MarketIndex.index_code == index_code, MarketIndex.price_date < records[0]["price_date"]
+        ).order_by(MarketIndex.price_date.desc()).limit(1).scalar()
+        checked = V.check_index(index_code, records, {d: v[0] for d, v in existing.items()},
+                                float(prev) if prev is not None else None, today.date())
+        keep, bad = V.split(checked)
+        warned, fetched = sum(c.status == V.WARNING for c in keep), len(records)
+        records = [c.record for c in keep]
         new = [r for r in records if r["price_date"] not in existing]
         if dry_run:
-            return CollectResult(ok=True, saved=len(new), fetched=len(records), source=source)
+            return CollectResult(ok=True, saved=len(new), fetched=fetched, source=source, quarantined=len(bad), warned=warned)
+        quarantine.record("market_index", checked, {"index_code": index_code})
+        if bad:
+            print(f"[market_index {index_code}] 격리 {len(bad)}건(저장하지 않음)")
+        if not records:
+            return CollectResult(ok=True, saved=0, fetched=fetched, source=source, quarantined=len(bad), warned=warned)
 
         stmt = pg_insert(MarketIndex).values([{**r, "index_code": index_code} for r in records])
         stmt = stmt.on_conflict_do_update(
@@ -433,7 +511,7 @@ def fetch_and_save_market_index(index_code: str, days: int = 7, dry_run: bool = 
         )
         db.execute(stmt)
         db.commit()
-        return CollectResult(ok=True, saved=len(new), fetched=len(records), source=source)
+        return CollectResult(ok=True, saved=len(new), fetched=fetched, source=source, quarantined=len(bad), warned=warned)
     except Exception as e:
         db.rollback()
         return CollectResult(ok=False, fetched=len(records), error=_safe_error(e))
@@ -453,7 +531,7 @@ def fetch_and_save_exchange_rate(pair_code: str, days: int = 180, dry_run: bool 
     end_date = today.strftime("%Y-%m-%d")
 
     try:
-        df = fdr.DataReader(pair_code, start_date, end_date)
+        df = _read_fdr(fdr.DataReader, pair_code, start_date, end_date)
     except Exception as e:
         return CollectResult(ok=False, error=_safe_error(e))
 
@@ -480,9 +558,20 @@ def fetch_and_save_exchange_rate(pair_code: str, days: int = 180, dry_run: bool 
                 ExchangeRate.pair_code == pair_code, ExchangeRate.price_date >= records[0]["price_date"]
             )
         }
+        prev = db.query(ExchangeRate.close_price).filter(
+            ExchangeRate.pair_code == pair_code, ExchangeRate.price_date < records[0]["price_date"]
+        ).order_by(ExchangeRate.price_date.desc()).limit(1).scalar()
+        checked = V.check_fx(pair_code, records, {d: v[0] for d, v in existing.items()},
+                             float(prev) if prev is not None else None, today.date())
+        keep, bad = V.split(checked)
+        warned, fetched = sum(c.status == V.WARNING for c in keep), len(records)
+        records = [c.record for c in keep]
         new = [r for r in records if r["price_date"] not in existing]
         if dry_run:
-            return CollectResult(ok=True, saved=len(new), fetched=len(records))
+            return CollectResult(ok=True, saved=len(new), fetched=fetched, quarantined=len(bad), warned=warned)
+        quarantine.record("exchange_rate", checked, {"pair_code": pair_code})
+        if not records:
+            return CollectResult(ok=True, saved=0, fetched=fetched, quarantined=len(bad), warned=warned)
 
         stmt = pg_insert(ExchangeRate).values([{**r, "pair_code": pair_code} for r in records])
         stmt = stmt.on_conflict_do_update(
@@ -491,7 +580,7 @@ def fetch_and_save_exchange_rate(pair_code: str, days: int = 180, dry_run: bool 
         )
         db.execute(stmt)
         db.commit()
-        return CollectResult(ok=True, saved=len(new), fetched=len(records))
+        return CollectResult(ok=True, saved=len(new), fetched=fetched, quarantined=len(bad), warned=warned)
     except Exception as e:
         db.rollback()
         return CollectResult(ok=False, fetched=len(records), error=_safe_error(e))
@@ -504,7 +593,8 @@ def backfill_company_market(dry_run: bool = False) -> tuple[int, int]:
 
     이미 값이 같으면 건드리지 않는다. 목록에 없는 종목은 그대로 둔다. (갱신 건수, 목록에 없어 못 채운 건수)를 돌려준다.
     """
-    listing = fdr.StockListing("KRX")
+    listing = http_retry.call_with_retry(lambda: http_retry.with_timeout(lambda: fdr.StockListing("KRX")),
+                                         label="FDR StockListing")
     market_by_ticker = dict(zip(listing["Code"], listing["Market"]))
 
     db = SessionLocal()
@@ -556,6 +646,16 @@ def _etf_news_candidates(etf_name: str, display: int) -> tuple[list[dict], int]:
     return related[: display * NEWS_OVERFETCH], len(merged) - len(related)
 
 
+def _prefer_relevant(items: list[dict], display: int, company: Company, listed_names: list[str]) -> list[dict]:
+    """그 종목 기사(is_relevant_news)를 먼저, 모자라면 나머지로 채워 display건을 남긴다. 각 묶음 안의 순서(최신순)는 그대로다.
+    앞에서부터 자르면 다른 회사 기사가 많은 이름(SK, LG)은 받아 온 관련 기사가 잘려 나간다(2026-11-02 실제 응답)."""
+    def relevant(it: dict) -> bool:
+        return is_relevant_news(company.name, company.ticker, company.asset_type, _clean_text(it["title"]),
+                                _clean_text(it["description"]), listed_names)
+
+    return sorted(items, key=lambda it: not relevant(it))[:display]
+
+
 # 네이버 뉴스 검색 API로 뉴스 수집 후 DB 저장 함수
 def fetch_and_save_news(
     company_name: str, display: int = 10, dry_run: bool = False, ticker: str | None = None, etf: bool = False
@@ -581,15 +681,9 @@ def fetch_and_save_news(
         print(f"오류 발생: {msg}")
         return CollectResult(ok=False, error=msg)
 
-    # 비금융 도메인 기사를 제외하고, 요청한 건수만큼만 남긴다.
-    items, skipped = [], 0
-    for it in candidates:
-        if len(items) >= display:
-            break
-        if _is_non_financial_item(it):
-            skipped += 1
-        else:
-            items.append(it)
+    # 비금융 도메인 기사를 제외한다. 요청한 건수로 자르는 일은 관련성을 본 뒤에 한다(아래 _prefer_relevant).
+    items = [it for it in candidates if not _is_non_financial_item(it)]
+    skipped = len(candidates) - len(items)
     if etf:
         print(f"ETF 이름이 나오지 않아 제외한 기사 {unrelated}건")
 
@@ -614,7 +708,9 @@ def fetch_and_save_news(
                     return CollectResult(ok=False, fetched=len(items), error=msg)
                 company = get_or_create_company(db, ticker=resolved, name=company_name)
 
-        to_insert = []
+        listed_names = [n for (n,) in db.query(Company.name)]
+        items = _prefer_relevant(items, display, company, listed_names)
+        candidates = []
         for item in items:
             url = item.get("link") or item.get("originallink")
 
@@ -627,16 +723,28 @@ def fetch_and_save_news(
             if exists:
                 continue
 
-            to_insert.append(
-                News(
-                    company_id=company.id,
-                    title=_clean_text(item["title"]),
-                    content=_clean_text(item["description"]),
-                    source=urlparse(item.get("originallink") or url).netloc,
-                    url=url,
-                    published_at=parsedate_to_datetime(item["pubDate"]),
-                )
+            try:
+                published = parsedate_to_datetime(item.get("pubDate") or "")
+            except (TypeError, ValueError):
+                published = None
+            candidates.append({
+                "title": _clean_text(item.get("title") or ""), "content": _clean_text(item.get("description") or ""),
+                "source": urlparse(item.get("originallink") or url or "").netloc, "url": url, "published_at": published,
+            })
+
+        # 2026-11-08(36차): 저장 전 검증(제목·url·발행 시각·종목 연결). 한 기사의 문제로 나머지를 버리지 않는다
+        checked = V.check_news(company.ticker, candidates)
+        keep, bad = V.split(checked)
+        warned = sum(c.status == V.WARNING for c in keep)
+        to_insert = [
+            News(
+                company_id=company.id, title=c.record["title"], content=c.record["content"], source=c.record["source"],
+                url=c.record["url"], published_at=c.record["published_at"],
+                is_relevant=is_relevant_news(company.name, company.ticker, company.asset_type, c.record["title"],
+                                             c.record["content"], listed_names),
             )
+            for c in keep
+        ]
 
         if dry_run:
             print(
@@ -644,14 +752,17 @@ def fetch_and_save_news(
                 f"(검토 {len(items)}건 중, 비금융 도메인 제외 {skipped}건)"
             )
             return CollectResult(
-                ok=True, saved=len(to_insert), fetched=len(items), records=to_insert, skipped=skipped
+                ok=True, saved=len(to_insert), fetched=len(items), records=to_insert, skipped=skipped,
+                quarantined=len(bad), warned=warned,
             )
 
+        quarantine.record("news", checked, {"ticker": company.ticker})
         for record in to_insert:
             db.add(record)
         db.commit()
-        print(f"DB 저장 완료: 신규 {len(to_insert)}건 데이터 추가됨 (비금융 도메인 제외 {skipped}건)")
-        return CollectResult(ok=True, saved=len(to_insert), fetched=len(items), skipped=skipped)
+        print(f"DB 저장 완료: 신규 {len(to_insert)}건 데이터 추가됨 (비금융 도메인 제외 {skipped}건"
+              + (f", 격리 {len(bad)}건" if bad else "") + ")")
+        return CollectResult(ok=True, saved=len(to_insert), fetched=len(items), skipped=skipped, quarantined=len(bad), warned=warned)
     except Exception as e:
         db.rollback()
         msg = _safe_error(e)
@@ -687,44 +798,50 @@ def fetch_and_save_disclosures(
         print(f"[{company_name}] DART 공시 수집 중... (corp_code={corp_code})")
         items = fetch_dart_disclosures(corp_code, days=days)
 
-        to_insert = []
+        candidates = []
         for item in items:
             # 임원/주요주주 개인 명의 공시는 제외하고, 회사 명의 공시만 저장
             if item.get("flr_nm") != item.get("corp_name"):
                 continue
 
-            source_url = f"https://dart.fss.or.kr/dsaf001/main.do?rcptNo={item['rcept_no']}"
+            source_url = f"https://dart.fss.or.kr/dsaf001/main.do?rcptNo={item.get('rcept_no')}"
 
-            # 중복 저장 방지 (source_url 기준)
+            # 중복 저장 방지 (source_url 기준). 정정 공시는 접수번호가 달라 원본과 별개 행으로 저장된다(원본을 덮어쓰지 않는다)
             exists = db.query(Disclosure).filter(Disclosure.source_url == source_url).first()
             if exists:
                 continue
+            candidates.append(item)
 
-            disclosed_at = datetime.strptime(item["rcept_dt"], "%Y%m%d").replace(tzinfo=KST)
-
-            to_insert.append(
-                Disclosure(
-                    company_id=company.id,
-                    title=item["report_nm"].strip(),
-                    disclosure_type=item["report_nm"].strip()[:50],
-                    content=None,
-                    source_url=source_url,
-                    disclosed_at=disclosed_at,
-                )
+        # 2026-11-08(36차): 저장 전 검증(접수번호·접수일·제목·종목 연결). 접수번호 날짜와 접수일 차이는 경고만 남긴다
+        checked = V.check_disclosures(company.ticker, candidates)
+        keep, bad = V.split(checked)
+        warned = sum(c.status == V.WARNING for c in keep)
+        to_insert = [
+            Disclosure(
+                company_id=company.id,
+                title=c.record["report_nm"].strip(),
+                disclosure_type=c.record["report_nm"].strip()[:50],
+                content=None,
+                source_url=f"https://dart.fss.or.kr/dsaf001/main.do?rcptNo={c.record['rcept_no']}",
+                disclosed_at=datetime.strptime(c.record["rcept_dt"], "%Y%m%d").replace(tzinfo=KST),
             )
+            for c in keep
+        ]
 
         if dry_run:
             print(
                 f"[dry-run] 신규 저장 예정 {len(to_insert)}건 "
                 f"(전체 조회 {len(items)}건 중, 회사 명의만 필터링)"
             )
-            return CollectResult(ok=True, saved=len(to_insert), fetched=len(items), records=to_insert)
+            return CollectResult(ok=True, saved=len(to_insert), fetched=len(items), records=to_insert,
+                                 quarantined=len(bad), warned=warned)
 
+        quarantine.record("disclosure", checked, {"ticker": company.ticker})
         for record in to_insert:
             db.add(record)
         db.commit()
-        print(f"DB 저장 완료: 신규 {len(to_insert)}건 데이터 추가됨")
-        return CollectResult(ok=True, saved=len(to_insert), fetched=len(items))
+        print(f"DB 저장 완료: 신규 {len(to_insert)}건 데이터 추가됨" + (f"(격리 {len(bad)}건)" if bad else ""))
+        return CollectResult(ok=True, saved=len(to_insert), fetched=len(items), quarantined=len(bad), warned=warned)
     except Exception as e:
         db.rollback()
         msg = _safe_error(e)

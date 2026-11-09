@@ -229,7 +229,7 @@ class TestOtherQuestionsUntouched:
 
     @pytest.mark.parametrize(
         "q",
-        ["삼성전자 최근 뉴스 알려줘", "삼성전자 공시 알려줘", "삼성전자 뉴스랑 주가 움직임 같이 알려줘", "PER이 뭐야?",
+        ["삼성전자 최근 뉴스 알려줘", "삼성전자 공시 알려줘", "삼성전자 뉴스랑 주가 움직임 같이 알려줘", "투자를 처음 시작하려면 뭐부터 해야 해?",
          "삼성전자 왜 올랐어?", "KODEX 200 최근 흐름 알려줘"],
     )
     def test_non_gate_questions_go_through_existing_path(self, env, monkeypatch, q):
@@ -259,7 +259,7 @@ class TestResearchRoute:
         r = client.post("/api/research", json={"question": "삼성전자 공시 이후 주가 반응은?"})
         assert r.status_code == 200, r.text
         body = r.json()
-        assert set(body) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer"}
+        assert set(body) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer", "locale", "translation_status"}
         assert body["used_tools"] == ["event_reaction_tool"] and body["report_id"] == 99
         assert body["sources"][0]["type"] == "disclosure" and body["sources"][0]["url"]
         assert ("※ " + DISCLAIMER) in body["answer"]
@@ -299,6 +299,7 @@ class TestDevDb:
             ("069500", "KODEX 200", ["KODEX 200", "KODEX200", "코덱스200", "코덱스 200"]),
         ],
     )
+    @pytest.mark.needs_collected_data
     def test_news_events_mention_the_company_in_the_title(self, dev_db, ticker, name, forms):
         """뉴스 사건은 제목에 종목 이름이 들어 있는 기사만이다(공시는 거르지 않는다). API도 같다."""
         for event_type in ("news", "all"):
@@ -318,6 +319,7 @@ class TestDevDb:
         company = dev_db.query(Company).filter(Company.name == registered).first()
         assert company is not None and alias in _name_forms(company) and company.name in _name_forms(company)
 
+    @pytest.mark.needs_collected_data
     def test_keyword_filters_titles(self, dev_db):
         from app.tools.event_reaction_tool import event_reaction_tool
 
@@ -337,6 +339,7 @@ class TestDevDb:
         r = event_reaction_tool("KODEX 200", "disclosure", 5)
         assert r["found"] is False and "대상 사건이 없습니다" in r["message"]
 
+    @pytest.mark.needs_collected_data
     def test_full_answer_with_real_tool_and_fake_llm(self, dev_db, monkeypatch):
         monkeypatch.setattr(
             agent.ollama, "chat",

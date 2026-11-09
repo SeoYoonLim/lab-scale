@@ -1,5 +1,8 @@
 # lab-scale — AI 투자 리서치 에이전트
 
+[![CI (main)](https://github.com/SeoYoonLim/lab-scale/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SeoYoonLim/lab-scale/actions/workflows/ci.yml)
+[![CI (feature/backend)](https://github.com/SeoYoonLim/lab-scale/actions/workflows/ci.yml/badge.svg?branch=feature%2Fbackend)](https://github.com/SeoYoonLim/lab-scale/actions/workflows/ci.yml?query=branch%3Afeature%2Fbackend)
+
 한국 상장사(시가총액 상위 300종목)에 대해 "삼성전자 오늘 왜 올랐어? 주가랑 뉴스 같이 확인해줘" 같은 자연어 질문을 받으면,
 로컬 LLM이 필요한 조회(주가·뉴스·공시·의미 검색)를 스스로 골라 실행하고 그 결과로 답변과 근거 링크를 돌려주는 리서치 서비스입니다.
 2인 팀 프로젝트로, 백엔드/데이터/에이전트와 프론트엔드를 나눠서 진행하고 있습니다.
@@ -7,7 +10,7 @@
 ## 지금 상태 요약 (2026-10-14 기준)
 
 **한 줄 요약:** 백엔드(API + 에이전트 + 데이터 수집·일괄 갱신 + 로그인 + 관심종목/모의투자 + 포트폴리오 AI 진단과 이력 + 환율 영향 분석 +
-시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응)는 동작하고, 빠른 테스트 **2074개**가 통과합니다(`pytest`, 순수 로직 1864 + 개발 DB 통합 210).
+시장 관심 종목 탐색 + ETF + 뉴스·공시 이후 주가 반응 + 오늘의 개인화 브리핑(API·채팅))는 동작하고, 빠른 테스트 **4356개**가 통과합니다(`pytest`, 순수 로직 3859 + 개발 DB 통합 497. KODEX 수집 데이터가 DB에 없으면 그중 수집 데이터 대조 3개가 사유와 함께 skip, 2026-10-31).
 실제 Ollama를 부르는 slow 테스트 61개는 기본에서 빠지고 `pytest -m slow`로 따로 돌립니다. 백엔드 작업 브랜치는 `feature/backend`(원격 push 완료)이고
 아직 main에 병합하지 않았습니다. 프론트엔드는 서윤님이 `feature/frontend`에서 React + Vite + zod로 진행 중이며, 2026-10-14에 실제 백엔드 응답을
 프론트의 zod 스키마로 검증했을 때 불일치가 없었습니다(프론트 테스트 20개·빌드·lint 통과). 남은 큰 일은 화면 연동과 아래 "알려진 한계"입니다.
@@ -147,7 +150,20 @@
 | --- | --- | --- | --- |
 | POST | `/api/auth/signup` | 공개 | 회원가입(아이디 3~20자 `[a-z0-9_]`, 대문자는 소문자로 정규화 / 비밀번호 8~128자) → 201 + 토큰. 중복이면 409 |
 | POST | `/api/auth/login` | 공개 | 로그인 → 200 + 토큰. 실패는 아이디 없음/비밀번호 틀림 모두 같은 401 |
-| GET | `/api/auth/me` | 필요 | 토큰의 사용자 `{id, username}` |
+| GET | `/api/auth/me` | 필요 | 토큰의 사용자 `{id, username, email, email_verified}`(이메일 두 필드는 2026-10-30 추가) |
+| POST | `/api/auth/logout` | 필요 | 이 사용자의 모든 토큰 폐기(전체 기기 로그아웃) → 200 `{"ok": true}` (2026-10-29) |
+| POST | `/api/auth/change-password` | 필요 | 현재 비밀번호 확인 후 변경, 기존 토큰 전부 폐기 → 200 + 새 토큰. 현재 비밀번호 오류는 422 (2026-10-29) |
+| PUT | `/api/auth/email` | 필요 | 계정 복구(2026-10-30): 이메일 등록·변경(**현재 비밀번호 필수**, 이전 인증 주소로 변경 알림) → 인증 메일(바꾸면 인증 초기화, 중복 409, 사용자당 시간당 5통) |
+| POST | `/api/auth/resend-verification` | 필요 | 인증 메일 재발송(이전 링크 무효) |
+| POST | `/api/auth/verify-email` | 공개 | 메일 링크 fragment의 토큰으로 이메일 인증(1회용, 24시간). 틀리거나 만료·사용한 토큰은 같은 400 |
+| POST | `/api/auth/find-username` | 공개 | **인증된** 이메일로 아이디를 메일 발송. 응답에 아이디 없음, 이메일 존재와 상관없이 같은 200 |
+| POST | `/api/auth/forgot-password` | 공개 | **인증된** 이메일로 재설정 링크(30분, 1회용) 발송. 같은 200 |
+| POST | `/api/auth/reset-password` | 공개 | 토큰 + 새 비밀번호 → 해시 교체, 기존 JWT 전부 폐기, 로그인 잠금 해제. 토큰 오류 400, 규칙 위반 422. 상세 [backend/API.md](backend/API.md) "계정 복구" |
+| GET | `/api/auth/oauth/providers` | 공개 | 소셜 로그인(2026-10-30): 키가 설정된 공급자(구글·네이버) 목록, 키 값은 내보내지 않음 |
+| GET | `/api/auth/oauth/{provider}/login`, `/callback` | 공개 | 브라우저 이동용. 서명된 state + HttpOnly 쿠키(로그인 CSRF 방지), 구글 PKCE. 성공은 프론트 `/oauth/callback#code=`(60초 1회용), 실패는 `/login?error=oauth_denied\|oauth_failed\|oauth_unavailable` |
+| POST | `/api/auth/oauth/exchange` | 공개 | 1회용 코드 → 로그인과 같은 응답. 연결 규칙·환경변수·콘솔 설정은 [backend/API.md](backend/API.md) "소셜 로그인" |
+| DELETE | `/api/auth/me` | 필요 | 회원 탈퇴(2026-10-30): 모든 데이터 삭제. 비밀번호 계정은 현재 비밀번호, 소셜 계정은 인증 이메일 확인 링크(202) 또는 10분 안 로그인 + 아이디 |
+| POST | `/api/auth/delete-account/confirm` | 공개 | 소셜 계정의 탈퇴 확인 링크 토큰으로 확정. 보안 통제 전체는 [backend/SECURITY.md](backend/SECURITY.md) |
 | POST | `/api/research` | 필요 | 질문 → AI 답변 + 근거 + 리포트 저장. `previous_report_id`로 내 직전 리포트를 이어서 후속 질문 |
 | GET | `/api/research` | 필요 | 내 리포트 목록(최신순, `limit`/`offset` 페이지네이션, `total` 포함) |
 | GET | `/api/research/{report_id}` | 필요 | 내 리포트 한 건(전체 답변, sources, tool 사용 이력). 남의 리포트는 404 |
@@ -159,6 +175,8 @@
 | GET | `/api/portfolio` | 필요 | 내 모의투자 잔고 + 보유 종목(평가손익 포함). 첫 호출 시 계좌 자동 생성(초기 잔고 1,000만원) |
 | POST | `/api/portfolio/orders` | 필요 | 모의투자 매수/매도 주문(현재가로 즉시 체결) |
 | GET | `/api/portfolio/trades` | 필요 | 내 체결 내역(최신순, `limit` 기본 50·최대 200, `offset`, `ticker` 필터, `total` 포함) |
+| POST | `/api/backtest` | 필요 | 백테스트(2026-10-29): 1~5종목, `buy_and_hold`·`sma_cross`·`dca`, 최대 5년. **t일 종가까지로 신호, t+1일 종가로 체결**(룩어헤드 방지), 정수 주식·가정 비용(수수료·매도세 요청값), 총수익률·CAGR·MDD·연환산 변동성·Sharpe 유사(무위험 0)·코스피 대비. LLM 없음, 저장 안 함, 사용자당 분당 10회. 데이터가 30거래일 미만이면 400. [backend/API.md](backend/API.md) |
+| GET | `/api/portfolio/performance` | 필요 | 모의투자 성과(2026-10-29): 체결 내역을 재생한 거래일 종가 기준 자산 곡선(최대 400점)과 누적·기간 수익률, MDD, 일간 변동성, 승률, 종목별 기여도, 현금 비중, 코스피 대비 초과수익. `period` = `1m`/`3m`/`6m`/`all`. **LLM 없이 코드가 DB 값으로 계산**, 읽기 전용. 장 마감 전 오늘 행 제외, 수수료·세금 미반영. 필드·정의식은 [backend/API.md](backend/API.md) |
 | POST | `/api/portfolio/reset` | 필요 | 내 모의투자 초기화(보유·체결 내역 삭제 + 잔고 1,000만원 복구). 본문 `{"confirm": true}`가 아니면 400. 관심종목·리서치는 유지 |
 | POST | `/api/portfolio/diagnosis` | 필요 | 내 포트폴리오 AI 진단. 비중·집중도(허핀달)·시장별 비중·손익·20거래일 수익률과 규칙 플래그는 코드가 계산하고, llama3.1:8b가 설명만 생성(검증 실패/Ollama 장애 시 규칙 기반 문장으로 폴백, `source`로 구분). 보유 종목이 없으면 400. 결과는 사용자당 최근 50건 저장하고 응답에 `diagnosis_id`·`created_at` 추가(저장 실패 시 null, 진단은 정상) |
 | GET | `/api/portfolio/diagnosis/history` | 필요 | 내 진단 이력(최신순, `limit` 기본 20·최대 100, `offset`, `total` 포함). 항목: id·created_at·source·total_asset·holdings_count·flags(코드만)·summary_preview(앞 80자) |
@@ -167,8 +185,12 @@
 | DELETE | `/api/portfolio/diagnosis/{id}` | 필요 | 내 진단 한 건 삭제(204). 남의 것/없는 것은 404 |
 | GET | `/api/disclaimer` | 공개 | 서비스 면책 문구 `{"text": "..."}`. 같은 문구가 `POST /api/research`·`GET /api/research/{id}` 응답의 `disclaimer` 필드에도 있음(목록에는 없음) |
 | GET | `/api/status` | 공개 | 데이터 기준일: 소스별 최신 날짜, 지수 `stale`(2영업일 이상 뒤처지면 true), 마지막 `refresh_data` 결과(`last_refresh`, 없으면 null). `is_realtime`은 항상 false |
+| GET | `/api/health` | 공개 | 서비스 상태: DB 연결, 마이그레이션 head 일치, Ollama 연결·모델 설치/로딩, 마지막 시세 날짜·stale. 검사마다 2초 상한·병렬, 실패해도 200 + `status: "degraded"` 와 사유(주소·버전 미노출) |
 | GET | `/api/stocks/{ticker}/price-history` | 공개 | 주가 추이 차트용 일별 시세(종가·거래량·등락률·시가·고가·저가, 날짜 오름차순). 쿼리 `days`는 1~90(기본 90)이고 달력 일이 아니라 **최근 N거래일**. 주식은 2026-06-26부터, ETF는 2026-07-16부터 데이터가 있어 90개가 안 될 수 있으니 `count`로 확인(에러 아님). 주가가 없으면 200에 `items=[]` |
+| GET | `/api/portfolio/exposure` | 필요 | 포트폴리오 실질 노출(2026-10-30): 보유 개별 종목 + 보유 ETF 구성종목을 합쳐 **기업별 실질 비중**(직접·ETF 경유 합산)과 겹침 목록, 분해하지 않은 ETF(구성종목 없음·레버리지/인버스), 기타 비중, 플래그(실질 40% 이상, ETF 경유로 10%p 이상 커짐). `limit` 1~50(밖은 422). 보유가 없으면 200 + `message`. LLM 없음, DB만 읽기(쿼리 3개 고정, 중앙값 약 23ms), 저장 안 함. 업종별 노출은 `company.sector`가 비어 있어 없음. [backend/API.md](backend/API.md) |
+| GET | `/api/etf/{ticker}/holdings` | 공개 | ETF 구성종목·비중(2026-10-30): 운용사(삼성 KODEX·미래에셋 TIGER) 공시 PDF를 수집해 저장한 값. 기준일·비중 합계·상위 `limit`개(1~50, 밖은 422)·`stale`·`data_warnings`(합계가 기대값에서 5%p 넘게 벗어남). 데이터가 없는 ETF는 404가 아니라 200 + `items=[]` + `message`, ETF가 아닌 종목은 404. LLM 없음. 수집은 수동(`python -m scripts.collect_etf_holdings`). [backend/API.md](backend/API.md) |
 | GET | `/api/stocks/{ticker}/event-reactions` | 공개 | 뉴스·공시 이후 주가 반응. 기준 종가 대비 1/5/20거래일 수익률, 시장 지수 대비 초과수익률, 거래량 비율, 같은 구간의 다른 사건 수를 코드로 계산(LLM 없음). ETF는 뉴스만. 쿼리 `event_type`(disclosure/news/all)·`limit`(1~30, 유형별)·`since_days`(기본 60, 최대 120). 시간적 선후관계일 뿐 인과가 아니라는 고정 `disclaimer` 포함 |
+| GET | `/api/briefing` | 필요 | 오늘의 개인화 브리핑: 보유종목(모의투자)·관심종목 기준으로 코스피/코스닥/환율 요약, 종목별 최신 종가·1일/5거래일 등락률·거래량 배수(직전 20거래일 평균 대비)·최근 7일 뉴스·공시, 규칙 기반 flag(등락 3%·7%, 거래량 2배, 신규 공시, 비중 40%)와 상위 5개 highlights, 포트폴리오 요약(평가금액·비중·손익·전일 대비). **LLM 없이 코드가 DB 값으로 계산**하고 문장은 관찰 사실만 쓴다. 읽기 전용(계좌를 만들지 않음). `news_limit` 1~5. 장 마감(15:30) 전에는 오늘 행을 쓰지 않는다. 응답 필드는 [backend/API.md](backend/API.md) |
 | GET | `/api/discovery/trending` | 공개 | 급등/급락/거래량 급증 종목(FR-13, 질문 없이 바로 호출, `category`/`limit` 쿼리). 기본은 주식만, `asset_type=etf`로 ETF |
 
 "인증 필요"인 API는 **`Authorization: Bearer <access_token>` 헤더**가 있어야 하고, 없거나 만료·변조됐으면 401입니다
@@ -176,7 +198,8 @@
 프론트가 할 일(토큰 저장, 401 처리 등)은 [backend/API.md](backend/API.md)의 "인증" 절에 정리돼 있습니다.
 
 프론트에서 특히 챙길 것: POST는 로컬 LLM이라 **2~25초**(로딩 상태와 60초 이상 타임아웃) / 에러 `detail`은 404·502·503에서는 문자열, 422에서는 배열
-/ `report_id`는 저장 실패 시 null / 허용 origin은 `localhost:5173`, `localhost:3000` 두 개뿐(다른 포트면 알려주세요).
+/ `report_id`는 저장 실패 시 null / 허용 origin은 기본 `localhost:5173`, `127.0.0.1:5173`(`CORS_ALLOW_ORIGINS`로 변경, 2026-10-28에 3000은 기본에서 빠짐) / 요청이 많으면 429(`Retry-After`, 아래 "운영 설정").
+목록 API 4개(`/api/research`, `/api/portfolio/trades`, `/api/portfolio/diagnosis/history`, `/api/companies`)는 `sort`/`order` 정렬을 지원하고, 앞의 셋은 응답에 `has_next`·`total_pages`를, `/api/companies`는 `offset`과 `X-Total-Count` 헤더를, `/api/research`는 `q` 검색을 더했습니다(2026-10-28, 모두 선택 사항이라 기존 호출은 그대로 동작, 경계값 표는 `backend/API.md`의 "목록 API 공통 규칙").
 단 **뉴스·공시 이후 주가 반응 질문은 LLM 호출이 없어 즉시(0.1초 안팎) 응답**합니다(`EVENT_REACTION_LLM_INTERPRETATION` 기본 꺼짐, 아래 "사건 이후 주가 반응" 절).
 
 ### DB 스키마 개요
@@ -228,6 +251,7 @@ PostgreSQL 16 + pgvector. **스키마의 기준은 Alembic 마이그레이션**(
    ETF를 별도 테이블로 나누지 않고 주식과 같은 `company` 한 행으로 다룬다(`stock_price`/`news`/관심종목/모의매매가 그대로 동작). 기존 300종목은 모두 `stock`이고,
    ETF는 `market`/`sector`가 NULL이다(KRX ETF 목록에 시장 구분이 없다).
 10. `data_refresh_log` 테이블 추가(2026-10-14, 데이터 일괄 갱신 기록, 마이그레이션 `c5d8f3a07b14`). 실행마다 6단계를 한 행씩 기록하고 예외 메시지는 저장하지 않는다.
+11. `news.is_relevant` 컬럼 추가(2026-11-01, 그 종목 기사가 아닌 뉴스 표시, 마이그레이션 `a9d3f6c12b47`, 행은 지우지 않는다. `python -m scripts.mark_news_relevance`).
 
 `db/schema.sql`은 갱신하지 않고 상단에 "최초 설계 스냅샷이며 기준은 Alembic"이라는 안내만 달았습니다.
 
@@ -277,6 +301,47 @@ LLM 해석은 기본으로 꺼져 있어서(`EVENT_REACTION_LLM_INTERPRETATION`,
 - **한계**: 인과가 아니라 시간 순서일 뿐이고, 공시 시각을 모르며, 뉴스는 최근 위주라 표본이 적다(최근 사건은 5·20거래일 값이 없다). 해석은
   대부분 비고(검증이 되풀이·막연한 문장을 지운다) 판단 근거는 코드 섹션이다. 뉴스 관련도 필터는 제목 기준이라 제목에 종목 이름이 없는 관련 기사는 빠진다. 게이트는 낱말 규칙이라 어순이 다른 표현은 놓칠 수 있다.
 
+### 전망·후속 결론 질문 (2026-11-03)
+
+"SK하이닉스 일주일 안에 오를까?", "지금 사도 될까?"와 이어지는 "그래서 결론이 뭐야?", "니 생각에 오를거 같냐", "하락 위험은 어떤데?"는
+**LLM을 부르지 않고 코드가 계산하고 문장도 코드가 만든다**(`backend/app/outlook.py`, 0.1초 안팎, Ollama가 꺼져 있어도 답한다).
+
+- 의도 우선순위: 채팅 브리핑 > 전망·후속 결론 > 사건 반응 > 용어 사전 > 기간·단순 시세 > 일반 도구. 주문 문장("10주 사줘")은 이 경로가 아니다.
+- 기간: 1주일(기본, 5거래일)·1개월(20)·3개월(60). 후속 질문은 직전 리포트(`previous_report_id`)의 종목과 답변에 적힌 기간을 이어받는다.
+- 지표: 기간 수익률(기준 종가 날짜 명시), 이동평균 위치·교차(백테스트 계산 재사용), RSI(14), MACD(12,26,9), 거래량 비율, 변동성, 최고·최저 종가 대비
+  (조회 기간 명시, 수익률과 구분), 지수 대비, 원/달러 환율. 규칙으로 상승·하락·중립을 나누고 맨 앞에 `상승 우위/하락 우위/중립/판단 유보`를 쓴다.
+  시세가 5영업일 넘게 늦거나 거래일이 빠졌으면 판단 유보다. 예측·목표가·확률·매수 권유는 쓰지 않는다.
+- 근거 뉴스: 제목에 그 종목 이름이 있는 기사만, 기간별 발행일 필터, 중복 제목 하나(`app.news_relevance.evidence_news`, 채팅 뉴스 도구·RAG도 같은 함수).
+- 규칙·계산식 전체는 `backend/API.md`의 "전망·후속 결론 질문"과 "근거 뉴스 정합성", 측정은 `backend/evals/reports/forecast_20261103.md`.
+- 2차(2026-11-03 저녁): 판정은 **묶음당 1표**(학습 구간 신호 상관으로 묶은 6묶음: 단기 흐름·중기 추세·교차·RSI·MACD·거래량).
+  전 종목·전 기간 백테스트(`backend/scripts/backtest_outlook.py`, 결과 `backend/app/data/outlook_backtest.json`)에서 검증 구간(2026-01-02~)의
+  라벨별 이후 상승 비율은 세 기간 모두 전체 평균과 유의한 차이가 없었고, 답변에 그 사실을 한 줄로 그대로 쓴다. 이 기능은 규칙 기반 방향성 신호
+  분석이지 예측 모델이 아니다. 업종(업종 ETF 구성종목 기반)·기초지수 간접 뉴스는 직접 관련 뉴스와 다른 섹션이고, DART 분기 실적은 참고 섹션이다
+  (`python -m scripts.refresh_data --only fx --earnings`, 기본 꺼짐). 주문 실행 문장은 고정 안내로 답한다. 측정은 `backend/evals/reports/forecast_round2_20261103.md`.
+- 3차(2026-11-04): **결론 먼저**. 맨 앞은 제목 줄("SK하이닉스(000660) · 향후 5거래일")과 국면 한 줄("현재는 단기 반등 시도, 추세 전환은 미확인"),
+  그다음 종합 판단 2~3문장, 상승 근거, 하락 위험, 앞으로 확인할 가격, 과거 검증, 그 아래 상세 근거(지표·뉴스·실적·시장·판정 규칙·면책·출처).
+  국면은 20·60거래일 수익률과 5·20·60일선 위치로 정하는 코드 규칙이다. 교차와 이동평균 배열은 같은 사실이라 1표다. 후속 답("니 판단은",
+  "하락 위험은", "확률은")은 보고서를 다시 찍지 않고 6줄 이하로 바로 답한다. 최고·최저 종가는 "분석 기간 기준"과 "52주 기준"을 조회 기간과 함께
+  따로 보이고, 지수 데이터가 늦으면 그 날짜를 밝힌다. 실적은 분기(3개월) 값, 4분기 = 연간 - 3분기 누적이다(`python -m scripts.check_earnings`).
+  측정은 `backend/evals/reports/forecast_round3_20261104.md`.
+- 4차(2026-11-04): **현재 판단 먼저**. 후속 결론 질문("그래서 오르냐 내리냐?", "굳이 하나만 고르면?", "어느 쪽이 더 강해?",
+  "살 만하다는 거야?")에 "현재 판단: 중립(굳이 고르면 상승 쪽)"처럼 상승·하락·중립·판단 유보를 먼저 답하고, 묶음 비중("5개 묶음 중
+  상승 2·하락 0·중립 3", 절반 미만이면 "약한 상승 우위")과 과거 검증의 표본·95% 구간(유의하지 않으면 "방향 예측력은 확인되지 않았습니다")을
+  함께 쓴다. 판단은 묶음 판정과 국면이 같은 방향일 때만 상승·하락이다. 실적은 정기보고서가 아직 없는 분기를 거래소 잠정실적 공정공시
+  (`disclosure.content`, `backend/app/preliminary.py`, 점검 `python -m scripts.check_preliminary`)로 채우고 출처(잠정·확정)와 발표일을 쓴다.
+  시세가 늦으면 미수집·수집 실패·휴장일 추정·종목만 누락을 구분하고 답변 생성 시각과 시세 기준일을 따로 쓴다. 측정은
+  `backend/evals/reports/forecast_round4_20261104.md`.
+- 5차(2026-11-04 저녁): **방향을 첫 문장에**. 분석 기간의 방향은 묶음 판정 그대로(상승 쪽·하락 쪽·중립·판단 유보)이고, 국면(추세)은 따로
+  보인다(4차처럼 국면이 다르다고 중립으로 바꾸지 않는다). 제목 줄에 "방향: 상승 쪽(신뢰도 낮음)", 첫 문장 "상승 쪽입니다. 다만 신호가 약하고 …
+  신뢰도는 낮습니다." 신뢰도는 과거 검증 유의성·약한 우위·시세 지연으로 정하며 지금은 모두 낮음이다. 후속 답은 질문 종류별 길이(한 줄 1줄,
+  고르기 2줄, 판단 4줄, 이유 5줄)이고 "왜?"·"한 줄로"도 코드가 답한다. 시세 문구는 "1영업일 이전 데이터"·"N영업일 지연"이다. 측정은
+  `backend/evals/reports/forecast_round5_20261104.md`.
+- 6차(2026-11-04 밤): **간결 전망과 상세 리서치**. "오를 것 같아?", "다음 주 전망 알려줘" 같은 질문은 8줄 이하 간결 답(방향 → 상승 근거 →
+  하락 위험 → 과거 검증 → 국면·기준일·경고), "자세히 분석해줘", "기술적 지표까지", "뉴스와 공시까지 모두 반영" 같은 요청은 13개 섹션 리포트이고,
+  두 모드는 같은 계산·방향·근거를 쓴다. 근거는 묶음 판정과 같은 원천이다(상승 근거 = 상승 쪽 묶음, 중립 묶음은 "엇갈린 묶음",
+  20·60거래일 수익률은 "추세 참고"). 공시 날짜는 DART 접수번호 날짜, 뉴스는 한국 시간 발행일이다(이전에는 UTC로 잘라 하루 이른 날짜).
+  측정은 `backend/evals/reports/forecast_round6_20261104.md`.
+
 ### 데이터 현황 (2026-10-14 17:43 `refresh_data` 실행 직후, 수집은 수동)
 
 종목 300 · 주가는 2026-10-14까지 갱신(주식·ETF 모두, 이번 실행에서 900행 추가) · 지수 코스피/코스닥 각 133행(3/30~10/14, 갱신 때 합 12행 추가, 소스 `fdr:KS11`/`fdr:KQ11`) ·
@@ -296,6 +361,10 @@ LLM 해석은 기본으로 꺼져 있어서(`EVENT_REACTION_LLM_INTERPRETATION`,
 ETF는 주식과 같은 `company` 행이지만(`asset_type='etf'`) 리서치·진단에서 아래처럼 다르게 다룬다. 주식만 나오는 질문·포트폴리오는 이전과 같다.
 상세와 고정 문구 원문은 `backend/API.md`("ETF 질문 처리 규칙", 진단 "플래그 규칙").
 
+- **구성종목·편입 비중**(2026-10-30, `app/etf_holdings*.py`, `GET /api/etf/{ticker}/holdings`, 상세와 한계는 `backend/API.md`): 출처는 삼성 KODEX·미래에셋 TIGER 홈페이지의
+  공시 PDF(로그인 없음). KRX 정보데이터시스템·pykrx는 로그인이 필요하고 네이버 금융은 robots.txt가 전부 금지라 쓰지 않았다. ETF 50개 중 KODEX 23 + TIGER 15 = 38개만 대상이고
+  RISE·ACE·SOL·HANARO·PLUS·TIME 12개는 대상이 아니다. 채팅은 수집 데이터가 있는 ETF만 **LLM 없이 코드 템플릿**(기준일·상위 10개·합계·출처 안내·면책)으로 답하고, 없는 ETF는
+  전과 같은 "제공하지 않음"을 유지한다. 삼성 사이트가 2026-10-29~30에 429(Cloudflare 확인 화면)를 돌려줘 우회하지 않고 미뤘다가, **2026-10-31 차단이 풀려 KODEX 23개도 수집했다**(개발 DB 기준 TIGER 15 + KODEX 23).
 - **리서치**(`app/agent.py`, `app/etf.py`): 질문에 ETF가 있으면 가격 흐름(`stock_tool`, 기간을 말하지 않으면 20거래일)과 뉴스(`news_tool`)를
   함께 보고, 답변의 가격(`## 주가 동향`)과 뉴스(`## 관련 뉴스`, 기사 제목 인용) 섹션은 서버가 조회 결과로 쓰고, 뉴스 기사 속 수치는 모델에 넘기지 않으며(가린 사본), 답변을 주가 조회 결과와 문장 단위로 대조해 맞지 않는 문장(다른 종목의 수치, 결과에 없는 계산값, 반대 방향 서술, 출처 없는 추종지수·구성종목 설명)을 서버가 지운다. 두 종목 이상 비교 질문에는 서버가 계산한 비교 문장을 붙인다. 최종 답변에 ETF 규칙
   (회사처럼 서술 금지, 근거 없는 구성종목·추종지수·보수 단정 금지)을 추가하고, 레버리지·인버스 ETF에는 구조 설명 고정 문구를 붙인다.
@@ -456,7 +525,7 @@ PRD 비기능 요구(일반 API P95 500ms 이내)는 만족합니다. 조회 API
 
 ```
 브라우저(React + Vite, 서윤님 담당, feature/frontend)
-        │  HTTP/JSON  (CORS: localhost:5173, localhost:3000)
+        │  HTTP/JSON  (CORS: CORS_ALLOW_ORIGINS, 기본 localhost:5173·127.0.0.1:5173)
         ▼
 FastAPI  ──  POST /api/research ─▶ 에이전트(app/agent.py)
 (backend/app)                        │  Ollama llama3.1:8b, tool calling + few-shot
@@ -479,6 +548,9 @@ FastAPI  ──  POST /api/research ─▶ 에이전트(app/agent.py)
 ```
 
 - **백엔드:** FastAPI, SQLAlchemy 2, Alembic. 질문/답변/tool 호출 이력은 매 요청마다 DB에 저장되고 `GET /api/research`로 다시 볼 수 있습니다.
+- **모델 설정(2026-11-01):** 채팅 모델은 `OLLAMA_CHAT_MODEL`(기본 `llama3.1:8b`, 되돌리려면 이 값을 지운다), `OLLAMA_KEEP_ALIVE`(기본 `30m`, 빈 값이면 서버 기본값), `OLLAMA_THINK`(생각 모드가 있는 모델만, `false` 권장), `OLLAMA_WARMUP`(`0`이면 시작 시 미리 적재하지 않음). 백엔드 시작 시 채팅 모델과 `bge-m3`를 백그라운드에서 한 번씩 호출한다(실패 무시, 테스트·CI에서는 돌지 않음). 후보 비교는 `backend/evals/reports/model_comparison_20261101.md`: qwen3:8b, qwen2.5:7b-instruct 모두 조건을 못 채워 기본 모델을 유지했다.
+- **근거 우선 설명형 답변(2026-11-02):** `EXPLAIN_EVIDENCE_FIRST=1`이면 설명형·원인형 질문을 코드가 조회하고 모델은 번호 붙은 근거만 바꿔 말한다. 사전 조건 미달로 기본은 끔이다(`backend/evals/reports/evidence_recollect_20261102.md`).
+- **뉴스 정렬(2026-11-02):** 채팅 뉴스 도구·브리핑·RAG(종목 지정)는 제목에 회사 이름이 있는 기사를 먼저 보여 준다(`app/news_relevance.title_mentions`). 근거: `backend/evals/reports/news_quality_20261102.md`.
 - **모델:** 답변·tool 선택은 `llama3.1:8b`, 임베딩은 `bge-m3`(1024차원, HNSW 인덱스). 모두 로컬 Ollama에서 돌아갑니다.
 - **데이터 소스:** 주가와 시장 지수(코스피 KS11, 코스닥 KQ11)는 FinanceDataReader, 뉴스는 네이버 검색 API, 공시는 DART OpenAPI(목록 + 원문).
 - **프론트엔드:** React + Vite + TypeScript(+ react-query, zod), `feature/frontend` 브랜치(원격에 push됨, `feature/backend`에는 코드가 없음).
@@ -503,6 +575,10 @@ NAVER_CLIENT_ID=...       # 뉴스 수집에만 필요
 NAVER_CLIENT_SECRET=...   # 뉴스 수집에만 필요
 DART_API_KEY=...          # 공시 수집에만 필요
 JWT_SECRET=...            # 필수. 로그인 토큰 서명 키(32자 이상)
+# 선택(계정 복구 메일, 2026-10-30): SMTP_HOST, SMTP_PORT(기본 587, STARTTLS), SMTP_USER, SMTP_PASSWORD, MAIL_FROM, FRONTEND_BASE_URL(기본 http://localhost:5173)
+#   SMTP_HOST가 없으면 메일을 보내지 않고 backend/backups/dev_mail.log에 기록한다(개발용, 링크 원문이 들어 있으니 공유 금지)
+# 선택(소셜 로그인, 2026-10-30): GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, NAVER_LOGIN_CLIENT_ID, NAVER_LOGIN_CLIENT_SECRET(뉴스용 NAVER_CLIENT_*와 별개),
+#   OAUTH_REDIRECT_BASE(기본 http://localhost:8000). 비워 두면 그 공급자 로그인 버튼이 꺼진다
 # 선택: EVENT_REACTION_LLM_INTERPRETATION=1   사건 반응 답변에 LLM 해석(## 해석)을 붙인다. 기본은 꺼짐(생략하면 꺼짐)
 ```
 
@@ -536,6 +612,23 @@ uvicorn app.main:app --port 8000    # 개발 중에는 --reload 추가
 
 `http://localhost:8000/docs`에서 Swagger UI로 바로 호출해볼 수 있습니다.
 
+**재부팅 뒤 11434가 막혔을 때 (Windows)**: Windows가 부팅할 때 예약 포트 범위를 다시 잡으면서 11434가 들어가는 일이 있습니다(2026-10-31 실측: 11356~11455,
+`ollama serve`가 `bind: An attempt was made to access a socket in a way forbidden by its access permissions`로 실패하고 트레이 앱만 남음). DB의 호스트 포트를 5432 대신 15432로 쓰는 것과 같은 원인입니다.
+범위는 `netsh int ipv4 show excludedportrange protocol=tcp`로 확인하고, 그 밖의 포트로 띄웁니다. 시스템 설정은 바꾸지 않아도 됩니다.
+
+```powershell
+# 터미널 1: Ollama (이 터미널에서만 유효)
+$env:OLLAMA_HOST = "127.0.0.1:12434"; ollama serve
+
+# 터미널 2: 백엔드·평가·갱신 (같은 주소를 프로세스마다 지정)
+$env:OLLAMA_HOST = "http://127.0.0.1:12434"
+uvicorn app.main:app --port 8000      # 또는 python -m scripts.refresh_data, python -m evals.run_eval --mode live
+```
+
+- 백엔드는 `OLLAMA_HOST`를 그대로 따릅니다. 에이전트·진단·임베딩은 `ollama` 라이브러리의 `Client`가, `/api/health`와 평가기의 연결 확인은 `os.getenv`가 읽습니다(코드에 포트가 박혀 있지 않습니다).
+- **이미 떠 있는 8000 서버는 환경변수가 바뀌지 않으므로** 위처럼 지정해 다시 시작해야 합니다. 지정하지 않으면 11434로 접속해 LLM 답변이 실패하고 `/api/health`의 Ollama 검사가 실패합니다.
+- 프론트(5173)는 백엔드만 부르므로 바꿀 것이 없습니다. 모델은 포트와 상관없이 같은 저장소(`~/.ollama`)를 쓰므로 다시 받을 필요가 없습니다.
+
 **6. 데이터 채우기/갱신** — DB가 비어 있으면 아래 "(선택) 데이터 수집"의 개별 스크립트를 순서대로 한 번 실행하고(종목 목록 json 생성 포함),
 이후 평소에는 평일 **15:30(KST) 이후** `python -m scripts.refresh_data` 한 번으로 갱신합니다(약 14분, Ollama 필요 - 임베딩 단계).
 기준일은 `GET /api/status`로 확인합니다. 상세는 아래 "한 번에 갱신".
@@ -556,6 +649,9 @@ python -m scripts.collect_universe --report r.json   # 종목별 뉴스 + DART �
 python -m scripts.build_etf_universe 50         # 시총 상위 50개 ETF + 대표 5종 (scripts/universe_etf50.json, 커밋 대상 아님)
 python -m scripts.collect_prices --universe universe_etf50.json --days 90
 python -m scripts.collect_universe --universe universe_etf50.json   # ETF 이름이 제목·본문에 나오는 기사만 저장
+# ETF 구성종목·비중(KODEX·TIGER 공시 PDF, 수동, 하루 한 번 안팎): 429·봇 확인 화면이 나오면 그 사이트에는 더 요청하지 않고 멈춘다. 마이그레이션 f4b81d29c6e5 적용과 DB 백업 후 실행
+python -m scripts.collect_etf_holdings --dry-run                  # DB에 쓰지 않고 조회·파싱만
+python -m scripts.collect_etf_holdings --tickers 102110,069500    # 일부만(기본은 KODEX·TIGER 전체, 요청 간격 3초, 결과는 scripts/etf_holdings_report.json)
 python -m app.embeddings --apply                # 임베딩이 비어 있는 뉴스/공시에 bge-m3 임베딩 채우기 (--apply 없으면 dry-run)
 python scripts/collect_disclosure_content.py --apply   # 공시 원문 수집 (이어서 실행 가능, DART 일일 한도 약 2만 건)
 ```
@@ -570,8 +666,30 @@ python -m scripts.refresh_data --dry-run                  # 실제 호출 없이
 python -m scripts.refresh_data                            # 전 단계
 python -m scripts.refresh_data --only prices,index,fx     # 일부 단계만 (prices,index,fx,news,embed,content)
 python -m scripts.refresh_data --skip news,embed,content  # 일부 단계 제외
-python -m scripts.refresh_data --days 30 --timeout-min 30 # 조회 기간(기본 10일), 단계별 제한 시간(기본 30분)
+python -m scripts.refresh_data --days 30 --timeout-min 30 # 조회 기간 직접 지정, 단계별 제한 시간(기본 30분)
+python -m scripts.refresh_data --only news,embed --news-only --news-state backups/news_state.json  # 공시 없이 뉴스만, 끊기면 같은 명령으로 이어서
+# 네이버가 401·403·429를 돌려주면 그 자리에서 멈춘다(news 단계 failed). SK·GS·NAVER·LG 검색어는 app/collectors.py의 NEWS_QUERY_NAMES에 있다.
+# --days를 생략하면(2026-10-28부터) 마지막 시세 날짜와 최근 30일 안의 빈 평일 중 이른 날부터 오늘 + 3일(최소 10, 상한 60).
+# 예전 기본값(10일 고정)은 갱신을 2주 쉬면 공백이 남았다(10-15, 10-16). 휴장일 달력이 없어 공휴일도 빈 평일로 보여 기간이 한 달쯤 될 수 있다.
 ```
+
+**과거 시세 장기 수집 (`scripts/backfill_history.py`, 백테스트용, 2026-10-29)**: company 전 종목과 코스피·코스닥 지수를 `--years`년치(기본 3) 받아
+upsert합니다(기존 `collect_prices`와 같은 FinanceDataReader 경로·timeout·재시도, 종목 사이 0.5초). 장중(평일 09:00~15:30)에는 실행을 거부하고,
+기간 끝은 평일 15:30 전이면 어제입니다. 종목별 결과는 `backend/backups/backfill_state.json`(이어하기용)과 `scripts/backfill_history_report.json`
+(행 수·시작/끝 날짜·실패 사유·품질 점검), 실행 요약은 `data_refresh_log`(step=`backfill`, `/api/status`의 last_refresh에는 안 잡힘)에 남습니다.
+실행 전에 `backend/backups/`에 DB 백업을 만드세요.
+
+```bash
+python -m scripts.backfill_history --dry-run --limit 3      # DB에 쓰지 않고 시범
+python -m scripts.backfill_history --years 3                # 전체(350종목 약 5분 20초, 2026-10-29 실측)
+python -m scripts.backfill_history --resume                 # 중단된 곳부터(같은 기간으로 끝난 종목은 건너뜀)
+python -m scripts.backfill_history --tickers 005930,069500 --years 5 --end 2026-10-28
+```
+
+2026-10-29 실행 결과: 350종목 전부 성공, 2023-10-30~2026-10-28(729거래일, 2023-11-03 이전부터 있는 종목 323개, 나머지는 그 뒤 상장),
+새 행 221,168개(지수 포함), `stock_price` 약 +41MB. FinanceDataReader 시세는 **수정주가**입니다(에코프로 2024-04 액면분할 구간이 분할 비율로 조정됨).
+품질 점검: ±30.5% 초과 2건(KODEX 레버리지 2026-07-31 +46.8%, 삼현 2026-09-15 +33.1%), 같은 종가 5거래일 이상 16건(거래정지 구간),
+중복·역순·0 이하 0건. 이 백필로 10-15·10-16 시세 공백도 메워졌습니다.
 
 공시 원문은 `disclosure.content`에 저장되어 `rag_search_tool`이 근거 요약문으로 LLM에 보여줍니다. 임베딩 텍스트에는 일부러 넣지 않습니다
 (재본 결과 검색 적중이 떨어졌습니다. 근거는 `backend/app/embeddings.py`의 `_disclosure_text` 주석 참고).
@@ -587,20 +705,81 @@ python -m scripts.refresh_data --days 30 --timeout-min 30 # 조회 기간(기본
 `backend/`에서 실행합니다. 세 단계로 나뉩니다(마커: `integration`, `slow`).
 
 ```bash
-pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-10-18 기준 2074개 통과, 약 15초). slow는 기본 제외
-pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 1845개)
-pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(202개). DB가 꺼져 있으면 자동 skip
+pytest                                # 빠른 테스트 전체 = 1단계 + 2단계 (2026-11-02 백엔드 동결 시점 4453개, 약 2분. 왕복 마이그레이션·수집 데이터 대조는 환경에 따라 skip). slow는 기본 제외
+pytest -m "not slow and not integration"   # 1단계만: 순수 로직 + 라우터 mock (DB·Ollama 불필요, 3859개)
+pytest -m "integration and not slow"       # 2단계만: dev DB(localhost:15432)에 붙는 통합 테스트(497개). DB가 꺼져 있으면 자동 skip
 pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)를 부르는 테스트(61개, 느리고 비결정적)
 ```
 
 - **1단계(순수 로직·라우터 mock)**: 계산 함수, 라우팅 게이트, 검증기, 라우터 응답 형태. 외부 호출 없음.
-- **2단계(dev DB 통합)**: 마이그레이션이 적용된 개발 DB의 실제 응답(읽기 위주). 가입 테스트는 `pt_` 접두어 계정을 만들고 끝나면 지웁니다.
+- **2단계(dev DB 통합)**: 마이그레이션이 적용된 개발 DB의 실제 응답(읽기 위주). 가입 테스트는 `pt_`(토큰 폐기 테스트는 `captest_`) 접두어 계정을 만들고 끝나면 지웁니다.
+  마이그레이션 업그레이드/다운그레이드 왕복 테스트(`tests/test_auth_revoke_devdb.py`) 1개는 dev DB에서 하지 않고 `MIGRATION_TEST_DATABASE_URL`이 가리키는
+  **별도 서버**에 임시 DB를 만들어 돕니다(dev DB 서버를 가리키면 테스트가 거부). 이 변수가 없으면 로컬에서는 그 1개만 skip됩니다(409개 통과 + 1 skip). 예:
+  `docker run -d --name migr_check_db -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci_dummy_pw -e POSTGRES_DB=ci_db -p 25433:5432 pgvector/pgvector:pg16` 후
+  `MIGRATION_TEST_DATABASE_URL=postgresql+psycopg://ci:ci_dummy_pw@localhost:25433/ci_db pytest -m "integration and not slow"`, 끝나면 `docker rm -f migr_check_db`.
 - **3단계(slow)**: 실제 모델 호출. 질문 몇 개를 여러 번 돌려 오류 유형을 세는 측정도 여기에 있습니다(예: `tests/test_event_reaction_slow.py`는 LLM 해석을
   켠 상태로 10개 질문 x 3회). 만든 `pt_` 계정·리포트는 끝나면 지웁니다.
 
 구성과 옵션은 [backend/API.md](backend/API.md)의 "테스트 실행" 절을 참고하세요. `scripts/test_tool_calling.py`는 실제 Ollama로 에이전트를 몇 번 호출해보는
 수동 스모크 스크립트이고, `scripts/benchmark_models.py`·`scripts/benchmark_routing.py`는 tool 호출 벤치마크입니다(pytest 대상이 아닙니다).
 프론트엔드 테스트는 `lab-scale-frontend/frontend`에서 `npm test`(vitest)입니다.
+
+## CI (GitHub Actions)
+
+`.github/workflows/ci.yml` 하나에 job이 나뉘어 있고, **push(모든 브랜치)와 main 대상 PR**마다 돕니다. 같은 브랜치의 이전 실행은 새 실행이 시작되면 취소됩니다.
+(main에는 워크플로 파일이 아직 없어서 첫 번째 뱃지는 `feature/backend`가 병합된 뒤에 채워집니다.)
+
+| job | 무엇을 검사하나 | 로컬에서 같은 검사 |
+|---|---|---|
+| `backend-unit` | Python 3.13에서 `pytest -m "not slow and not integration"`(DB·Ollama 없이 통과해야 함, skip 0) | `cd backend && pytest -m "not slow and not integration"` |
+| `secret-scan` | 추적 파일과 이번 push/PR이 추가한 커밋에서 `.env` 추적, `raw_*.jsonl`·서버 로그 추적, JWT·Bearer·개인 키·비밀번호/키 대입·URL 속 비밀번호 | `bash scripts/secret_scan.sh [--history origin/main..HEAD] [--env-file backend/.env]` |
+| `frontend` | `frontend/package.json`이 있을 때만: `npm ci`, `tsc -b`, `npm run lint`, `vitest run`, `vite build` (Node 24) | `cd frontend && npm ci && npx tsc -b && npm run lint && npx vitest run && npx vite build` |
+| `backend-integration` | 빈 pgvector DB에 `alembic upgrade head` + 종목 시드만 올린 상태에서 `pytest -m "integration and not slow and not needs_collected_data"`. 마이그레이션 왕복 테스트용 서비스 컨테이너(5433)를 하나 더 띄운다 | 아래 "로컬에서 CI 통합 환경 재현" |
+| `eval-offline` | 같은 DB에서 `python -m evals.run_eval --mode offline --split all`(entity·period·routing_gate 52문항). **종목 오매칭률이 0이 아니면 실패**, 나머지 지표는 job summary 표와 아티팩트 | 아래와 같은 DB에서 `python -m evals.run_eval --mode offline --split all --out /tmp/s.json && python -m evals.ci_gate /tmp/s.json` |
+
+`secret-scan`은 값을 출력하지 않고 `파일:줄 [규칙]`만 알려주며, 허용 목록(로컬 개발 DB 기본값 `postgres:postgres@localhost`, `alembic.ini` 자리표시, 테스트·문서의 가짜 비밀번호)은
+`scripts/secret_scan.py` 머리말에 이유와 함께 있습니다. 모든 job에는 `timeout-minutes`가 있고, CI의 DB 비밀번호·JWT 값은 임시 서비스 컨테이너용 더미 값입니다(실제 `.env` 값과 다릅니다).
+
+**CI에서 제외되는 테스트(숫자로)**
+
+- `integration` 518개 중 **76개는 CI에서 제외**됩니다(`needs_collected_data` 마커). 수집된 시세·뉴스·공시·ETF 시세·환율·시장 지수(또는 인증 도입 전 옛 리포트)가 DB에 있어야 통과하는
+  테스트라서, 종목 목록만 시드한 CI의 빈 DB에서는 통과할 수 없습니다. 나머지 442개는 CI에서 실제로 돕니다. 로컬 dev DB에서는 마커가 있어도 **518개 전부** 평소처럼 돕니다(마이그레이션 왕복 1개는 `MIGRATION_TEST_DATABASE_URL`이 있을 때).
+  제외 개수는 CI 로그와 job summary에 숫자로 찍히고, 상한(`MAX_EXCLUDED=76`)을 넘으면 CI가 실패합니다(마커로 테스트를 슬그머니 늘려 빼지 못하게).
+- 분류(빈 DB 기준): **a** 스스로 데이터를 만들어 통과 66, **b** 종목 시드로 해결 199, **c** 수집 데이터 필요 98(위 제외, 95~98번째는 전망 6차의 잠정실적 공시 날짜 일치, 간결·상세 답의 방향·근거 일치 2, 공시 날짜와 접수번호 일치를 수집 데이터로 확인(2026-11-04 밤), 93~94번째는 전망 5차의 SK하이닉스 방향(국면과 분리)과 후속 답 4종의 방향 유지를 수집 데이터로 확인(2026-11-04), 84~92번째는 전망 4차의 SK하이닉스 3분기 잠정실적·출처, 후속 결론 5종의 현재 판단(24차 채점기), 실적·데이터 후속 답, 시세 상태 분류, 전 종목 잠정치 기준·누적 규칙을 수집 데이터로 확인(2026-11-04), 77~83번째는 전망 3차의 SK하이닉스 국면·결론 먼저 답변 숫자 SQL 대조·짧은 후속 답 3종·실적 4분기 SQL 대조·23차 채점기 변조 검출을 수집 데이터로 확인(2026-11-04), 72~76번째는 전망 2차의 업종 매핑·간접 뉴스 분리·실적 SQL 대조·주문/전망 경로를 수집 데이터로 확인(2026-11-03 저녁), 66~71번째는 전망·후속 결론 경로의 3턴 종목 유지·지표 SQL 대조·근거 기사·판단 유보·채점기 검산을 실제 수집 시세·뉴스로 확인(2026-11-03), 49번째는 브리핑 숫자 독립 재계산 대조, 50번째는 채팅 기간 수익률 템플릿의 DB 대조 테스트, 51번째는 성과 추적 API 숫자의 독립 재계산 대조, 52번째는 백테스트 buy_and_hold 총수익률의 DB 종가 재계산 대조(2026-10-29), 53~57번째는 ETF 구성종목 API·합계·채팅을 `etf_holding`에서 SQL로 다시 계산해 대조(2026-10-30, 해당 ETF의 수집 데이터가 없으면 사유와 함께 skip), 58번째는 포트폴리오 실질 노출 API의 삼성전자 직접+TIGER 200 경유 금액을 SQL만으로 재계산해 대조(2026-10-30)), **d** Ollama 필요 0. 2026-10-29 토큰 폐기 통합 테스트 6개, 성과 추적 통합 테스트 5개, 백테스트 통합 테스트 4개, 보안 통합 테스트 9개(IDOR·탈퇴·재해시, 마이그레이션 왕복 1 포함), 소셜 로그인 통합 테스트 15개(가짜 공급자, 마이그레이션 왕복 1 포함), 계정 복구 통합 테스트 25개(captest 계정·가짜 발송기, 마이그레이션 왕복 1 포함), 실질 노출 통합 테스트 8개(captest 가짜 종목·ETF를 만들고 지움), ETF 구성종목 통합 테스트 11개(가짜 ETF 10 + 마이그레이션 왕복 1, `captest_` 접두어로 만들고 지움)는 스스로 데이터를 만든다(a).
+- 그 밖의 skip은 조용히 통과로 보이지 않게 CI에서 **실패**로 바뀝니다(`CI_FAIL_ON_SKIP=1`, `backend/tests/ci_guard.py`).
+- `slow` 61개(실제 Ollama 호출)와 `evals` live 모드는 CI에서 돌지 않습니다: Ollama(llama3.1:8b)가 필요하고 느리며 비결정적이기 때문입니다. 로컬에서 `pytest -m slow`, `python -m evals.run_eval --mode live`.
+
+**로컬에서 CI 통합 환경 재현** (개발 DB `ai_investment_db`와 별도 컨테이너·포트를 씁니다)
+
+```bash
+docker run -d --name ci_check_db -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci_dummy_pw -e POSTGRES_DB=ci_db -p 25432:5432 pgvector/pgvector:pg16
+docker run -d --name ci_migr_db -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci_dummy_pw -e POSTGRES_DB=ci_db -p 25433:5432 pgvector/pgvector:pg16
+cd backend
+export DATABASE_URL=postgresql+psycopg://ci:ci_dummy_pw@localhost:25432/ci_db   # PowerShell: $env:DATABASE_URL="..."
+export MIGRATION_TEST_DATABASE_URL=postgresql+psycopg://ci:ci_dummy_pw@localhost:25433/ci_db   # 마이그레이션 왕복용(CI의 5433 서비스)
+python -m alembic upgrade head && python -m scripts.ci_seed
+CI_FAIL_ON_SKIP=1 pytest -m "integration and not slow and not needs_collected_data"      # 358개 통과, skip 0
+docker rm -f ci_check_db ci_migr_db
+```
+
+**저장소 관리자가 GitHub 설정에서 직접 해야 할 일:** "main 병합 전에 CI 통과 요구"는 코드로 켤 수 없고 Settings → Branches → main 보호 규칙(Require status checks to pass before merging)에서
+`backend-unit`, `secret-scan`, `backend-integration`, `eval-offline`을 필수 체크로 지정해야 합니다(체크 이름은 워크플로가 한 번 돈 뒤에 목록에 나타납니다). `frontend`는 frontend가 없는 브랜치에서는 skipped가 정상이라 필수로 지정해도 되지만(skipped는 통과로 취급됨),
+프론트가 합쳐진 뒤에 지정하는 것을 권장합니다. 이 저장소는 Actions가 켜져 있어야 합니다.
+
+## AI 평가
+
+에이전트 품질을 규칙 기반 지표(종목 오매칭률, 도구 선택 정확도, 기간 준수율, 숫자 일치율, 근거 제시율, 답변 불가 판단, 금지 표현, 응답 시간)로
+재는 도구가 [backend/evals/](backend/evals/README.md)에 있습니다. 데이터셋 80개(offline 40: DB만, live 40: 실제 Ollama)를 카테고리별
+dev 60% / holdout 40%로 나눴고, **튜닝은 dev로만, holdout은 최종 전후 비교에만** 씁니다.
+
+```bash
+cd backend
+python -m evals.run_eval                       # offline(종목 매칭·기간·라우팅 게이트), 몇 초
+python -m evals.run_eval --mode all            # + live 40문항(약 20분), captest_ 평가 계정은 끝에 삭제
+python -m evals.compare evals/results/summary_baseline_2026-10-27.json evals/results/summary_<새 결과>.json
+```
+
+기준선은 `backend/evals/results/summary_baseline_2026-10-27.json`, 지표 정의·제외 규칙·한계는 [backend/evals/README.md](backend/evals/README.md)를 보세요.
 
 ## API
 
@@ -635,15 +814,43 @@ pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)
 - "삼성전자 최근 뉴스 알려줘" — 사건 반응 경로로 새지는 않지만(`news_tool`) 기사 본문 속 수치("-7.39%")가 그대로 보입니다.
 - 시연 직전에 데이터를 갱신하지 않았다면 사건 반응의 "최근 사건"이 달라집니다.
 
+## 운영 설정과 한계 (2026-10-28 안정화)
+
+설정은 환경변수로 받고 비밀값은 코드에 두지 않는다(`backend/.env`, 예시 `backend/.env.example`). 전체 표와 레이트 리밋 한도는 [backend/API.md](backend/API.md)의 "운영 설정".
+
+- `APP_ENV`(기본 development): production이면 약한 `JWT_SECRET`(예시 문구·반복 문자)으로 기동하지 않는다. 없거나 32자 미만은 모든 모드에서 거부(기존).
+- `CORS_ALLOW_ORIGINS`(기본 `http://localhost:5173,http://127.0.0.1:5173`). credentials는 쓰지 않는다(Bearer 헤더).
+- `CORS_EXPOSE_HEADERS`(기본 `X-Total-Count`). 브라우저 JS가 읽을 수 있게 노출할 응답 헤더(`GET /api/companies`의 전체 건수).
+- 레이트 리밋(`RATE_LIMIT_*`, 기본 켜짐): 로그인 IP당 분당 10회, 같은 아이디+IP 5회 실패면 5분 잠금, 가입 IP당 시간당 10회, 주문 사용자당 분당 30회, AI 질문 사용자당 분당 6회 + 동시 1건,
+  로그아웃 사용자당 분당 10회, 비밀번호 변경 사용자당 시간당 10회 + 현재 비밀번호 연속 5회 오류면 5분 잠금(`PASSWORD_CHANGE_LOCK_*`, 2026-10-29),
+  백테스트 사용자당 분당 10회(`RATE_LIMIT_BACKTEST_PER_MIN`, 2026-10-29), 계정 복구(2026-10-30): 아이디·비밀번호 찾기 IP당 분당 5회 + 같은 이메일 시간당 3회(엔드포인트별),
+  이메일 인증·비밀번호 재설정 IP당 분당 10회, 인증 메일 사용자당 시간당 5회. 초과는 429 + `Retry-After`.
+- 보안 통제(2026-10-30, [backend/SECURITY.md](backend/SECURITY.md)): `MAX_REQUEST_BODY_BYTES`(1MB, 413), `RATE_LIMIT_PUBLIC_GET_PER_MIN`(600), `RATE_LIMIT_MAIL_PER_RECIPIENT_PER_HOUR`(10), `RATE_LIMIT_ACCOUNT_DELETE_PER_HOUR`(5), `SECURITY_HSTS`(HTTPS일 때 1). `APP_ENV=production`이면 /docs·/openapi.json도 끈다. 개발 DB 포트는 `127.0.0.1:15432`에만 연다(docker-compose). 서버 실행 시 `--no-server-header`를 붙이면 서버 종류 헤더도 숨긴다(선택).
+- 소셜 로그인(2026-10-30): `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, `NAVER_LOGIN_CLIENT_ID`/`NAVER_LOGIN_CLIENT_SECRET`, `OAUTH_REDIRECT_BASE`. 레이트 리밋 login·callback IP당 분당 20회, exchange 10회.
+- 메일(2026-10-30): `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASSWORD`/`MAIL_FROM`/`FRONTEND_BASE_URL`. `SMTP_HOST`가 없으면 `backend/backups/dev_mail.log`에 기록(개발용).
+- 토큰 폐기(2026-10-29): JWT에 `tv`(=`users.token_version`) 클레임을 넣고, 로그아웃·비밀번호 변경이 `token_version`을 올려 그 사용자의 기존 토큰을 **모든 기기에서** 무효로 한다.
+  `tv`가 없는 옛 토큰은 0으로 봐서 배포 직후에도 로그인 상태가 유지되고 첫 폐기 때 함께 무효가 된다. 비밀번호 변경은 새 토큰을 돌려줘 현재 세션을 이어 간다.
+- 외부 호출(`app/http_retry.py`): (연결, 읽기) timeout, 일시적 오류(연결·timeout·5xx·429)만 최대 2회 지수 백오프 재시도, 4xx는 바로 실패. 실시간 시세는 재시도 없이 최대 약 4초 뒤 DB 종가 폴백(기존 폴백 그대로).
+- `GET /api/health`로 DB·마이그레이션·Ollama·데이터 기준일을 확인한다. 처리되지 않은 예외는 500 `{"detail": "서버 오류가 발생했습니다."}`(상세는 서버 로그만). 요청 로그는 메서드·경로·상태·ms·user id만.
+
+**한계(막지 못하는 것)**
+- 레이트 리밋은 메모리 기반이라 서버 재시작 시 초기화되고 단일 프로세스에만 유효하다. 프록시 뒤에서는 모든 요청이 같은 IP로 보인다. 여러 IP의 분산 대입은 아이디+IP 잠금으로 막히지 않는다. 공개 조회 API에는 한도가 없다.
+- 토큰 폐기는 사용자 단위(전체 기기 로그아웃)다. 한 기기만 로그아웃할 수 없다. 폐기하지 않은 access token은 여전히 24시간 유효하고(훔친 토큰은 사용자가 로그아웃·비밀번호 변경을 할 때까지 쓸 수 있다), 리프레시 토큰은 없다.
+  DB를 백업에서 복원하거나 마이그레이션을 내렸다 올리면 `token_version`이 되돌아가 폐기한 토큰이 다시 통할 수 있으므로, 그 뒤에는 `JWT_SECRET`을 바꾸는 것이 안전하다.
+- FinanceDataReader는 timeout을 받지 않아 별도 스레드 상한(60초)으로 끊는다. 상한을 넘긴 스레드는 끝날 때까지 남는다(배치 스크립트에서만 씀).
+- HTTPS·보안 헤더·배포용 프로세스 관리는 범위 밖이다(로컬 시연 전제).
+
 ## 알려진 한계 (요약, 2026-10-14 기준)
 
 - **AI 서술에 오류가 있을 수 있습니다.** 답변은 로컬 LLM(llama3.1:8b)이 쓰므로 표현이 매번 다르고, 숫자를 잘못 옮기거나(기사 속 값을 종가로 씀) 기사 속 인과 주장을
   그대로 옮기거나 내용 없는 섹션 제목을 남기는 일이 있습니다. 수치가 중요한 부분(ETF 가격·뉴스, 진단 지표, 사건 반응)은 코드가 조회 결과로 쓰도록 바꿔 줄였지만
   일반 주식 질문의 서술은 아직 검증기가 없습니다. 항상 근거(sources)와 함께 보여주고 면책 문구(`GET /api/disclaimer`)를 붙이세요.
+- **ETF 구성종목은 일부만, 수동으로 있습니다.** KODEX·TIGER 38개만 대상입니다(개발 DB에는 2026-10-31 기준 38개 모두 수집돼 있습니다). 나머지 ETF는 "제공하지 않음"으로 답합니다. 운용사 공시를 사람이 수집해야 갱신되고, TIGER 사이트 이용약관에 복제·제공 금지 조항이 있어 외부 공개 전 운용사 허락이 필요합니다.
 - **데이터는 수동 갱신입니다.** `python -m scripts.refresh_data`를 사람이 실행해야 하고(평일 15:30 이후 권장) 스케줄러가 없습니다. 갱신 사이에는 "오늘 주가"도 마지막 갱신일 종가입니다.
 - **`stale` 판정은 공휴일을 모릅니다.** `GET /api/status`는 평일 기준으로 2영업일 이상 뒤처지면 stale입니다(휴장일 달력 없음). 기간 표현의 평일 수도 같은 근사입니다.
 - **환율 소스 제한**: FinanceDataReader가 주는 날짜까지만 있고(2026-10-14 기준 10/12, 보통 1~2일 늦음) 금리는 범위 밖입니다. 지수 소스는 FDR 폴백 체인이고 네이버 지수 페이지는 쓸 수 없습니다.
-- **보안**: 로그인 시도 횟수 제한(rate limit)이 없고, 토큰 폐기(로그아웃·비밀번호 변경 시 무효화)가 없으며(만료 24시간), refresh token이 없고, HTTPS는 배포 환경에서 처리해야 합니다(로컬은 HTTP).
+- **보안**(2026-10-29 갱신): 로그인 횟수 제한(2026-10-28)과 토큰 폐기(로그아웃·비밀번호 변경, 2026-10-29)는 들어갔지만, 폐기는 전체 기기 단위이고, 폐기하지 않은 토큰은 24시간 유효하며, refresh token이 없고,
+  레이트 리밋은 메모리 기반(단일 프로세스)이며, 비밀번호 재설정·회원 탈퇴가 없고, HTTPS는 배포 환경에서 처리해야 합니다(로컬은 HTTP).
 - **진단 첫 호출 지연**: `POST /api/portfolio/diagnosis`는 LLM 설명을 만들어 보통 4~5초이고, Ollama를 쓴 지 오래됐거나 모델이 내려가 있으면 첫 호출이 훨씬 오래 걸립니다(시연 전 예열). Ollama가 응답하지 않으면 규칙 기반 문장으로 폴백합니다(`source`로 구분).
 - **사건 이후 주가 반응은 인과가 아닙니다.** 사건 뒤의 주가는 시장 전체와 다른 사건의 영향을 함께 받고 이를 분리하지 못합니다(초과수익률과 "같은 기간 다른 사건 N건"은 참고 수치). 공시는 시각을 몰라 접수일로 계산하고, 뉴스는 최근 기사 위주로만 수집돼 **표본이 적으며**(최근 사건은 5·20거래일 값이 없음, 요약은 날짜 단위 표본과 3개 미만 경고를 표시) 달력은 종목 시세 기준(주식 6/26부터, ETF 7/16부터)입니다. LLM 해석은 기본 꺼짐입니다.
 - **그 밖**: 뉴스·공시·RAG tool에는 기간 인자가 없고, 퍼지 종목명 매칭이 다른 종목으로 잘못 연결될 수 있으며, 개념 질문에도 불필요한 tool을 호출하는 문제(no_tool)가 남아 있습니다(아래 Known Issues).
@@ -685,7 +892,12 @@ pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)
 - [x] REST API(리포트 생성/목록/조회/삭제) + 에러 처리(Ollama/DB 장애 시 502/503) + CORS
 - [x] 아이디/비밀번호 로그인(2026-10-07): `POST /api/auth/signup`, `POST /api/auth/login`, `GET /api/auth/me`.
   argon2id 비밀번호 해시 + HS256 JWT(만료 24시간). 리서치/관심종목/모의투자는 `Authorization: Bearer` 필수(없으면 401),
-  `X-Device-Id`는 폐지. 리서치 이력은 사용자별(남의 리포트 404). 로그인 시도 횟수 제한(rate limit)은 아직 없음
+  `X-Device-Id`는 폐지. 리서치 이력은 사용자별(남의 리포트 404). 로그인 시도 횟수 제한은 2026-10-28에 추가
+- [x] 보안 점검·보강(2026-10-30): 보안 헤더·no-store·413·공개 GET 레이트 리밋·메일 수신 상한·감사 로그·로그 쿼리 제거·비밀번호 정책·회원 탈퇴·답변 URL 필터, 결과는 backend/SECURITY.md
+- [x] 소셜 로그인(2026-10-30): 구글·네이버 Authorization Code(서명 state + 쿠키, 구글 PKCE·nonce), 양쪽 검증된 이메일만 자동 연결, 1회용 코드 교환, 비밀번호 없는 계정(마이그레이션 c7a2e5f81d30). 실제 키 확인과 프론트 버튼·`/oauth/callback` 화면은 아직
+- [x] 계정 복구(2026-10-30): 이메일 등록·인증, 아이디 찾기, 비밀번호 재설정(인증된 이메일만, 열거 방지, 토큰 해시 저장, 마이그레이션 b6e1d4a9c2f7). 프론트 화면 `/verify-email`, `/reset-password`는 아직 없음
+- [x] 로그아웃·비밀번호 변경·토큰 폐기(2026-10-29): `POST /api/auth/logout`, `POST /api/auth/change-password`. JWT `tv` 클레임과
+  `users.token_version`(마이그레이션 `e2a9c4f71b03`) 비교로 그 사용자의 기존 토큰을 전부 무효화. `tv` 없는 옛 토큰은 0으로 봐서 하위 호환
 - [x] 자동 테스트(pytest)와 API 문서
 - [x] 프론트엔드 연동(2026-10-08): 로그인/리서치/기록/관심종목/모의투자(체결내역·초기화·AI진단)/종목 검색/
   오늘의 관심종목/면책 문구까지 API.md 기준으로 전부 연동 완료(`feature/frontend` 브랜치), mock 전용 화면 없음.
@@ -696,8 +908,20 @@ pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)
   매수는 가중평균으로 평균단가를 다시 계산하고 매도는 평균단가를 바꾸지 않으며, 전량 매도되면 보유 레코드를 지워서
   재매수가 과거 평균단가에 영향받지 않게 함. 잔고 부족/수량 초과는 400, 가격 조회 실패(실시간+DB 폴백 둘 다 실패)는 503.
   호가 단위·장 시간 체크는 범위 밖(장외에도 체결됨, 가격은 `app/realtime_price.py` 폴백 규칙을 그대로 따름)
+  - 동시 주문 보호(2026-10-27): 주문·초기화는 계좌 행을 `SELECT ... FOR UPDATE`로 잠근 뒤 처리해서, 같은 계정의 동시 주문으로 잔고·보유가
+    어긋나거나(이중 체결) 첫 매수/첫 요청에서 중복 키 500이 나던 문제를 막았다. 계좌 생성은 `INSERT ... ON CONFLICT DO NOTHING`.
+    수정 전 코드에서 5개 시나리오가 모두 재현됐고(`tests/test_portfolio_concurrency_devdb.py`), 수정 후 통과한다.
+  - 주문 종목 엄격 매칭(2026-10-27): 주문만 유사 이름 보정(difflib)을 끈다(`resolve_company(..., allow_fuzzy=False)`). 정확한 코드/종목명,
+    공백·대소문자 차이, 등록된 별칭만 주문되고, 비슷한 이름만 있으면 404 + "정확한 종목을 찾지 못했습니다. 혹시 A, B 중 하나인가요?"(후보 최대 3개).
+    다른 경로의 보정은 그대로. 한계: 같은 계정에서 지연이 큰 주문 하나가 뒤따르는 주문을 기다리게 한다(보통 수 ms)
 - [x] 데이터 일괄 갱신: `python -m scripts.refresh_data`(6단계, 단계별 기록, `GET /api/status`로 기준일 확인). 실행은 수동이고 스케줄러는 없다(자동화 여부 논의 필요)
+- [x] 백테스트(2026-10-29): `scripts/backfill_history.py`(3년치 시세·지수 백필, 품질 점검), `app/backtest.py`(순수 엔진, 룩어헤드 방지 테스트), `POST /api/backtest`
+- [x] 모의투자 성과 추적(2026-10-29): `GET /api/portfolio/performance`(LLM 없음, 읽기 전용). 계산은 `app/performance.py`(순수), DB 조회는 `app/performance_db.py`(쿼리 5개 고정). 통합 테스트가 응답 숫자를 원시 SQL로 독립 재계산해 대조한다
+- [x] 오늘의 개인화 브리핑: `GET /api/briefing`(LLM 없음, 코드 계산, 읽기 전용). 계산은 `app/briefing.py`(순수), DB 조회는 `app/briefing_db.py`(쿼리 수 고정). 숫자는 `tests/briefing_recompute.py`가 원시 SQL로 독립 재계산해 대조한다
+- [x] 리서치 챗 3차(2026-10-28): 채팅에서 개인화 브리핑("오늘 브리핑", "내 보유종목 어때", LLM 없음), 기간 수익률·기간 최고/최저가·두 종목 비교를 코드 템플릿으로 답함, 숫자 검증기에 날짜·대상·기간 혼동 검사 추가(독립 고정 세트로 재현율 0.57→0.90). 상세는 [backend/API.md](backend/API.md)의 "3차 라운드"와 [backend/evals/README.md](backend/evals/README.md)
 - [x] ETF(2026-10-14): 종목 50개, 리서치·진단 처리 규칙과 레버리지/인버스 고정 문구(위 "ETF 처리 규칙")
+- [x] 포트폴리오 실질 노출(2026-10-30): `GET /api/portfolio/exposure`, 보유 종목 + 보유 ETF 구성종목 합산(위 표). 구성종목 데이터가 있는 ETF만 분해
+- [~] ETF 구성종목·비중(2026-10-30): 수집-저장-API-채팅 구현 완료, 수집은 TIGER 15개(2026-10-29)와 KODEX 23개(2026-10-31), RISE 등 12개는 미지원
 - [x] 뉴스·공시 이후 주가 반응(2026-10-14): `GET /api/stocks/{ticker}/event-reactions` + 리서치 에이전트 연동(코드가 수치를 쓰고 LLM 해석은 기본 꺼짐, 위 절)
 - [x] 데이터 기준일 API(`GET /api/status`), 포트폴리오 진단 이력 저장·비교(2026-10-14)
 - [ ] 아래 Known Issues (tool 선택 신뢰도)
@@ -715,7 +939,7 @@ pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)
   별칭 사전에 없는 이름에서는 같은 유형의 오연결이 남아 있을 수 있다. 근본 대책은 별칭 확충이나 퍼지 보정 축소이며 아직 하지 않았다.
 - **기간 표현 처리의 남은 한계 (2026-10-01 기간 파서 도입 이후에도 남은 부분)**: `period_parser`가 지원하지 않는 표현("일주일", "3분기",
   "N일 전"처럼 시점을 가리키는 표현 등)은 여전히 LLM 추론에 의존해 부정확할 수 있다. `news_tool`/`disclosure_tool`/`rag_search_tool`은
-  여전히 기간 인자 자체가 없어 "지난주 뉴스"도 그냥 최신 N건이다. `stock_tool`/`market_tool`의 `period_days` 상한(60)은 그대로라
+  여전히 기간 인자 자체가 없어 "지난주 뉴스"도 그냥 최신 N건이다. (2026-10-31: `stock_tool`/`market_tool`은 이제 60으로 자르지 않는다.) 당시에는 `period_days` 상한(60)이 그대로라
   "올해"/"작년"처럼 큰 범위는 여전히 조용히 60으로 잘린다. 평일 수는 공휴일을 고려하지 않는 근사치다(KRX 휴장일 캘린더 없음). 자세한
   지원 범위는 `app/period_parser.py` 모듈 docstring, 해결 경위는 아래 "해결된 이슈 기록" 참고.
 - **데이터는 수동 갱신이다**: `python -m scripts.refresh_data`(평일 15:30 이후 권장)로 한 번에 갱신하고, 기준일은 `GET /api/status`로 확인한다. 자동 스케줄러는 없다.
@@ -845,7 +1069,7 @@ pytest -m slow                             # 3단계: 실제 Ollama(llama3.1:8b)
   - `period_days`는 `stock_tool`/`market_tool` 모두 달력 일수가 아니라 "최근 N개 거래일 행"으로 쓰이므로(두 tool 다 날짜로 필터링하지
     않고 `LIMIT period_days`), 파서는 날짜 범위를 구한 뒤 그 범위의 평일(월~금) 수를 세어 돌려준다(`_business_days_between`). KRX
     공휴일 캘린더가 없어 완전히 정확하지는 않지만(공휴일도 평일로 센다), 기존 LLM 추측(3개월→3일 오류 등)보다 근거가 분명하고 일관된
-    근사치다. 60을 넘는 값("올해"≈196 거래일, "작년"≈261 거래일)은 두 tool의 `to_int(..., hi=60)`이 이전과 똑같이 조용히 60으로 자른다
+    근사치다. 60을 넘는 값("올해"≈196 거래일, "작년"≈261 거래일)은 당시 두 tool의 `to_int(..., hi=60)`이 이전과 똑같이 조용히 60으로 잘랐다(2026-10-31에 없앴다)
     - 이 모듈이 그 제한 자체를 바꾸지는 않는다.
   - "지지난달"(그 이전 달)이 "지난달"의 부분 문자열이거나 "재작년"이 "작년"의 부분 문자열인 것처럼, 다른 뜻인데 겹치는 표현은
     `(?<!지)지난\s?달`류의 부정 후방탐색(negative lookbehind)으로 제외했다. "N년 전"처럼 기간(범위)이 아니라 특정 시점을 가리키는

@@ -1,0 +1,39 @@
+{
+ "version": "q4-2026-11-08",
+ "sha256": "64e2af7e61ba40ecd684dfbf761945487ae1f5daa974c0d6d9c6e644126ab04c",
+ "cases": 275,
+ "by_kind": {
+  "product": 142,
+  "judge": 102,
+  "live": 31
+ },
+ "by_area": {
+  "entity": 33,
+  "routing": 42,
+  "numbers": 61,
+  "freshness": 35,
+  "language": 28,
+  "safety": 35,
+  "fallback": 14,
+  "evidence": 27
+ },
+ "note": "문항(evals/quality_cases.jsonl)을 추가·수정·삭제하면 version을 올리고 sha256을 다시 계산한다: python -c \"from evals.run_quality import dataset_sha256; print(dataset_sha256())\". 기준선(quality_baseline.json)의 dataset_version도 같이 맞춘다.",
+ "changelog": [
+  {
+   "version": "q1-2026-11-07",
+   "change": "첫 버전"
+  },
+  {
+   "version": "q2-2026-11-07",
+   "change": "35차: live 19문항 추가(lv_13~lv_31: 매수 판단·전망·목표가·보장·현재가·전일 대비·시장·거래량 상위/급증), 제품 수정 전에 고정. 기간 최고·최저 정답을 한 정의(기간 안 거래일, 비교 기준일 제외)로 엄격화(jv_num_26 설명만 수정)"
+  },
+  {
+   "version": "q3-2026-11-07",
+   "change": "35차 결정론 제품 경로 30문항 추가(rt_23~32 라우팅, rs_01~08 확정 요청 안내, qf_01~05 기준일·지연 4개 언어, td_01~04 표기 정리·반복, tf_01~03 번역 실패 폴백). live 문항은 q2와 같다"
+  },
+  {
+   "version": "q4-2026-11-08",
+   "change": "35차 live 판정기 오탐 수정에 맞춘 판정기 검증 11문항 추가(jv_num_32~35: 중국어·일본어 '종가 최고' 어순, 비교 기준일 종가를 최저가로 쓴 답은 오답; jv_ev_15~19: 질문 예시 따옴표·없다고 밝힌 검색어는 인용이 아님, '…이라고 보도'·'추가 정보는 없습니다'는 여전히 인용; jv_ev_20~21: 실제 제목 안의 따옴표 조각은 인용이 아님, 같은 줄의 제목에 없는 따옴표 문구는 인용). 기존 문항·기대값 변경 없음. live 근거에 indirect_news(업종 기사) 포함"
+  }
+ ]
+}

@@ -459,7 +459,7 @@ class FakeLLM:
 
         monkeypatch.setattr(agent, "_first_call", fake_first_call)
         monkeypatch.setattr(agent, "_run_tool", fake_run_tool)
-        monkeypatch.setattr(agent, "_repair_company_args", lambda calls, q, prev=None: {})
+        monkeypatch.setattr(agent, "_repair_company_args", lambda calls, q, prev=None, prev_company=None: {})
         monkeypatch.setattr(agent.ollama, "chat", fake_chat)
 
 
@@ -472,13 +472,19 @@ class TestAnswerPath:
     def test_role_prefix_is_stripped_from_a_no_tool_answer(self, monkeypatch):
         """tool 없이 바로 답한 경로에서도 같은 접두어가 나온 적이 있다(dev DB 리포트 225 'PER이 뭐야?')."""
         FakeLLM(monkeypatch, None, final="assistant\n\n주가수익비율(PER)은 ...")
-        response, records = agent._answer("PER이 뭐야?", "m")
+        # 개념 질문("PER이 뭐야?", "PER이 높으면 좋아?")은 용어 사전으로 답한다(tests/test_glossary.py). LLM 경로를 타는 일반 질문으로 본다.
+        response, records = agent._answer("투자를 처음 시작하려면 뭐부터 해야 해?", "m")
         assert response == {"answer": "주가수익비율(PER)은 ...", "used_tools": [], "sources": []}
         assert records == []
 
     def test_normal_answer_is_unchanged(self, monkeypatch):
+        # 2026-10-27부터 답변 숫자는 도구 결과로 검증한다(app/answer_guard). 근거가 있는 답변은 그대로 나간다.
+        # "삼성전자 주가 알려줘" 같은 단순 시세 질문은 LLM 없이 코드가 답하므로(test_answer_guard.py), 흐름 질문으로 본다.
         FakeLLM(monkeypatch, [stock_call()], final="삼성전자의 종가는 263,000원입니다.")
-        assert agent._answer("삼성전자 주가 알려줘", "m")[0]["answer"] == "삼성전자의 종가는 263,000원입니다."
+        monkeypatch.setattr(agent, "_run_tool", lambda name, args: {
+            "found": True, "company_name": "삼성전자",
+            "prices": [{"price_date": "2026-10-14", "close_price": 263000.0, "change_pct": 0.4, "volume": 100}]})
+        assert agent._answer("삼성전자 주가 흐름 알려줘", "m")[0]["answer"] == "삼성전자의 종가는 263,000원입니다."
 
     def test_trend_question_runs_stock_tool_with_twenty_days(self, monkeypatch):
         llm = FakeLLM(monkeypatch, [stock_call(period_days=1)])
@@ -495,10 +501,19 @@ class TestAnswerPath:
         assert records[0]["result"]["period_days_corrected_via"] == "period_parser"
 
     def test_unparsed_period_keeps_the_llm_guess(self, monkeypatch):
+        # "며칠"은 parse_period가 값으로 바꾸지 못한다("한 달"은 2026-10-27부터 인식한다: 아래 테스트)
         llm = FakeLLM(monkeypatch, [stock_call(period_days=30, ticker="SK하이닉스")])
-        _, records = agent._answer("SK하이닉스 지난 한 달 주가 어땠어?", "m")
+        _, records = agent._answer("SK하이닉스 며칠간 주가 어땠어?", "m")
         assert llm.ran[0][1]["period_days"] == 30
         assert "period_days_corrected_via" not in records[0]["result"]
+
+    def test_native_period_overrides_the_llm_guess(self, monkeypatch):
+        from app.period_parser import parse_period
+
+        llm = FakeLLM(monkeypatch, [stock_call(period_days=30, ticker="SK하이닉스")])
+        _, records = agent._answer("SK하이닉스 지난 한 달 주가 어땠어?", "m")
+        assert llm.ran[0][1]["period_days"] == parse_period("한 달").period_days
+        assert records[0]["result"]["period_days_corrected_via"] == "period_parser"
 
     def test_button_question_runs_all_three_tools_and_builds_sources(self, monkeypatch):
         llm = FakeLLM(monkeypatch, [stock_call(period_days=1)])
@@ -588,7 +603,7 @@ class TestResearchRoute:
         assert r.status_code == 200
         body = r.json()
         # 응답 필드는 그대로다
-        assert set(body) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer"}
+        assert set(body) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer", "locale", "translation_status"}
         assert body["answer"] == "## 주가 동향\n삼성전자는 ..."
         assert body["used_tools"] == ["stock_tool", "news_tool", "disclosure_tool"]
         assert len(body["sources"]) == 2 and body["report_id"] == 99
@@ -598,7 +613,7 @@ class TestResearchRoute:
 
     def test_no_tool_answer_response(self, monkeypatch, client):
         FakeLLM(monkeypatch, None, final="assistant\n\nPER은 주가수익비율입니다.")
-        body = client.post("/api/research", json={"question": "PER이 뭐야?"}).json()
+        body = client.post("/api/research", json={"question": "투자를 처음 시작하려면 뭐부터 해야 해?"}).json()
         assert body["answer"] == "PER은 주가수익비율입니다." and body["used_tools"] == [] and body["sources"] == []
 
     def test_cause_question_response(self, monkeypatch, client):
@@ -607,7 +622,7 @@ class TestResearchRoute:
         r = client.post("/api/research", json={"question": "카카오는 왜 떨어졌어?"})
         assert r.status_code == 200
         body = r.json()
-        assert set(body) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer"}
+        assert set(body) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer", "locale", "translation_status"}
         assert body["used_tools"] == ["news_tool", "stock_tool"]
         assert [s["type"] for s in body["sources"]] == ["news"]
         assert self.saved[0]["tools"] == ["news_tool", "stock_tool"]

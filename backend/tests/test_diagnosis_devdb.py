@@ -83,6 +83,7 @@ class TestDiagnosisDevDB:
             assert by_ticker[t]["return_20d_pct"] == _expected_20d(t)
         assert {f["code"] for f in body["flags"]} == {"FEW_HOLDINGS", "CASH_HIGH"}
 
+    @pytest.mark.needs_collected_data
     def test_strengths_and_risks_pair_each_company_with_its_own_numbers(self, signup, fixed_price_and_llm):
         """LLM 설명(source=llm)이어도 강점·위험 문장은 코드가 만든다: 종목 문장의 숫자가 그 종목의 실제 값과 같다."""
         user = signup()

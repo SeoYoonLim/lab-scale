@@ -5,6 +5,8 @@
 - losers: 최근 거래일 등락률 하위 N (급락주)
 - volume_surge: 당일 거래량이 최근 window_days 거래일(당일 제외) 평균 거래량의 VOLUME_SURGE_MIN_RATIO배
   이상인 종목(거래량 급증), 배수(volume_ratio) 내림차순
+- volume_top(2026-11-07): 최근 거래일 거래량(주) 내림차순(거래량 상위). 급증(평균 대비 배수)과 다르다: 대형주는 평소에도 거래량이 많다
+market(2026-11-07): "KOSPI"/"KOSDAQ"이면 company.market이 그 시장인 종목만. 없으면 전체(기존과 같음).
 
 market_tool/fx_tool과 같은 원칙으로 복잡한 예측/ML 없이 순수 집계·정렬만 한다(실용성 우선).
 
@@ -21,7 +23,10 @@ from sqlalchemy import func
 from app.models import Company, StockPrice
 from app.tools.company_resolver import to_int
 
-CATEGORIES = ("gainers", "losers", "volume_surge")
+CATEGORIES = ("gainers", "losers", "volume_surge")  # LLM 도구(discovery_tool) enum과 같다
+# 코드 답(app.market_ranking)만 쓰는 분류. LLM 도구 스펙은 바꾸지 않는다(도구 선택이 흔들리지 않게).
+CODE_CATEGORIES = CATEGORIES + ("volume_top",)
+MARKETS = ("KOSPI", "KOSDAQ")
 ASSET_TYPES = ("stock", "etf")
 # "거래량 급증"으로 인정하는 최소 배수(당일 거래량 / 직전 window_days 평균 거래량).
 VOLUME_SURGE_MIN_RATIO = 2.0
@@ -45,10 +50,16 @@ def rank_volume_surge(items: list[dict], limit: int, min_ratio: float = VOLUME_S
     return sorted(ranked, key=lambda i: i["volume_ratio"], reverse=True)[:limit]
 
 
-_RANKERS = {"gainers": rank_gainers, "losers": rank_losers, "volume_surge": rank_volume_surge}
+def rank_volume_top(items: list[dict], limit: int) -> list[dict]:
+    """거래량 상위 N(최근 거래일 거래량 내림차순). 거래량이 없는 종목은 제외."""
+    ranked = [i for i in items if i["volume"] is not None]
+    return sorted(ranked, key=lambda i: (i["volume"], i["ticker"]), reverse=True)[:limit]
 
 
-def get_trending(db, category: str, limit: int = 10, window_days: int = 20, asset_type: str = "stock") -> dict:
+_RANKERS = {"gainers": rank_gainers, "losers": rank_losers, "volume_surge": rank_volume_surge, "volume_top": rank_volume_top}
+
+
+def get_trending(db, category: str, limit: int = 10, window_days: int = 20, asset_type: str = "stock", market: str | None = None) -> dict:
     """category별 상위 N 종목을 돌려준다. stock_price에 데이터가 아직 없으면 found=False.
 
     asset_type('stock'|'etf')에 해당하는 종목만 대상으로 한다(기본 stock이라 ETF가 섞이지 않는다). 최신 거래일과 평균 거래량의
@@ -57,7 +68,7 @@ def get_trending(db, category: str, limit: int = 10, window_days: int = 20, asse
 
     category가 CATEGORIES에 없으면 예외 대신 found=False 응답을 돌려준다(LLM이 잘못된 값을 넣을 수 있어서,
     다른 tool들의 "종목을 찾지 못했습니다" 패턴과 같은 처리)."""
-    if category not in CATEGORIES:
+    if category not in CODE_CATEGORIES:
         return {
             "category": category,
             "found": False,
@@ -70,6 +81,9 @@ def get_trending(db, category: str, limit: int = 10, window_days: int = 20, asse
             "found": False,
             "message": f"알 수 없는 asset_type입니다. {', '.join(ASSET_TYPES)} 중 하나를 지정해주세요.",
         }
+
+    if market is not None and market not in MARKETS:
+        return {"category": category, "found": False, "message": f"알 수 없는 market입니다. {', '.join(MARKETS)} 중 하나를 지정해주세요."}
 
     limit = to_int(limit, default=10, hi=50)
     window_days = to_int(window_days, default=20, lo=5, hi=60)
@@ -113,6 +127,8 @@ def get_trending(db, category: str, limit: int = 10, window_days: int = 20, asse
             if volume is not None:
                 volumes_by_company[company_id].append(volume)
 
+    if market is not None:
+        latest_rows = [(sp, c) for sp, c in latest_rows if c.market == market]
     items = []
     for sp, company in latest_rows:
         vols = volumes_by_company.get(company.id, [])
@@ -140,5 +156,6 @@ def get_trending(db, category: str, limit: int = 10, window_days: int = 20, asse
         "found": True,
         "price_date": latest_date.isoformat(),
         "window_days": len(prior_dates),
+        **({"market": market} if market else {}),
         "items": _RANKERS[category](items, limit),
     }

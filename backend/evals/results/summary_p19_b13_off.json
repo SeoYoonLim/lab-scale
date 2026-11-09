@@ -1,0 +1,420 @@
+{
+  "git_commit": "d1c3a6534b3311be7955afc221110cd3afb36552",
+  "git_dirty": true,
+  "date": "2026-11-02T18:56:24",
+  "model": "llama3.1:8b",
+  "think": null,
+  "keep_alive": "30m",
+  "args": {
+    "mode": "all",
+    "split": "holdout",
+    "repeats": 1,
+    "only": null,
+    "ids": null,
+    "batch": "13",
+    "exclude_batch": null,
+    "model": null,
+    "keep_tool_results": true,
+    "limit": null,
+    "out": "evals/results/summary_p19_b13_off.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 2,
+    "live": 28,
+    "records": 30
+  },
+  "live": {
+    "ran": true,
+    "repeats": 1,
+    "eval_user": "captest_0eabf6327adf",
+    "deleted_reports": 28,
+    "etf_data_available": {},
+    "elapsed_s": 154.2
+  },
+  "etf_data_available": {},
+  "etf_branches": {},
+  "elapsed_s": 159.3,
+  "metrics": {
+    "entity_default_accuracy": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 0,
+        "holdout_unseen": 2,
+        "all": 2
+      }
+    },
+    "entity_default_wrong_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 0,
+        "holdout_unseen": 2,
+        "all": 2
+      }
+    },
+    "entity_default_miss_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 0,
+        "holdout_unseen": 2,
+        "all": 2
+      }
+    },
+    "entity_default_ambiguous_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 0,
+        "holdout_unseen": 2,
+        "all": 2
+      }
+    },
+    "entity_strict_accuracy": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 0,
+        "holdout_unseen": 2,
+        "all": 2
+      }
+    },
+    "entity_strict_wrong_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 0,
+        "holdout_unseen": 2,
+        "all": 2
+      }
+    },
+    "entity_strict_miss_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 0,
+        "holdout_unseen": 2,
+        "all": 2
+      }
+    },
+    "entity_strict_ambiguous_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 0,
+        "holdout_unseen": 2,
+        "all": 2
+      }
+    },
+    "live_company_accuracy": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 24,
+        "holdout_seen": 0,
+        "holdout_unseen": 24,
+        "all": 24
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 24,
+        "holdout_seen": 0,
+        "holdout_unseen": 24,
+        "all": 24
+      }
+    },
+    "number_match_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 65,
+        "holdout_seen": 0,
+        "holdout_unseen": 65,
+        "all": 65
+      }
+    },
+    "number_full_support_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "source_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 17,
+        "holdout_seen": 0,
+        "holdout_unseen": 17,
+        "all": 17
+      }
+    },
+    "refusal_accuracy": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 0,
+        "holdout_unseen": 2,
+        "all": 2
+      }
+    },
+    "period_label_violation_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 1,
+        "holdout_seen": 0,
+        "holdout_unseen": 1,
+        "all": 1
+      }
+    },
+    "must_contain_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 27,
+        "holdout_seen": 0,
+        "holdout_unseen": 27,
+        "all": 27
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 28,
+        "holdout_seen": 0,
+        "holdout_unseen": 28,
+        "all": 28
+      }
+    },
+    "code_answer_rate": {
+      "dev": null,
+      "holdout": 0.2143,
+      "holdout_seen": null,
+      "holdout_unseen": 0.2143,
+      "all": 0.2143,
+      "n": {
+        "dev": 0,
+        "holdout": 28,
+        "holdout_seen": 0,
+        "holdout_unseen": 28,
+        "all": 28
+      }
+    },
+    "loop_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 28,
+        "holdout_seen": 0,
+        "holdout_unseen": 28,
+        "all": 28
+      }
+    },
+    "stability_answer_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "guard_replacement_rate": {
+      "dev": null,
+      "holdout": 0.1,
+      "holdout_seen": null,
+      "holdout_unseen": 0.1,
+      "all": 0.1,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "narrative_drop_rate": {
+      "dev": null,
+      "holdout": 0.1111,
+      "holdout_seen": null,
+      "holdout_unseen": 0.1111,
+      "all": 0.1111,
+      "n": {
+        "dev": 0,
+        "holdout": 18,
+        "holdout_seen": 0,
+        "holdout_unseen": 18,
+        "all": 18
+      }
+    },
+    "foreign_strip_rate": {
+      "dev": null,
+      "holdout": 0.1,
+      "holdout_seen": null,
+      "holdout_unseen": 0.1,
+      "all": 0.1,
+      "n": {
+        "dev": 0,
+        "holdout": 20,
+        "holdout_seen": 0,
+        "holdout_unseen": 20,
+        "all": 20
+      }
+    },
+    "fallback_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 28,
+        "holdout_seen": 0,
+        "holdout_unseen": 28,
+        "all": 28
+      }
+    },
+    "error_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 28,
+        "holdout_seen": 0,
+        "holdout_unseen": 28,
+        "all": 28
+      }
+    },
+    "latency_p50_s": {
+      "dev": null,
+      "holdout": 6.585,
+      "holdout_seen": null,
+      "holdout_unseen": 6.585,
+      "all": 6.585,
+      "n": {
+        "dev": 0,
+        "holdout": 28,
+        "holdout_seen": 0,
+        "holdout_unseen": 28,
+        "all": 28
+      }
+    },
+    "latency_p95_s": {
+      "dev": null,
+      "holdout": 11.5605,
+      "holdout_seen": null,
+      "holdout_unseen": 11.5605,
+      "all": 11.5605,
+      "n": {
+        "dev": 0,
+        "holdout": 28,
+        "holdout_seen": 0,
+        "holdout_unseen": 28,
+        "all": 28
+      }
+    }
+  },
+  "failures": []
+}

@@ -1,5 +1,5 @@
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import BigInteger, Column, ForeignKey, Index, Integer, String, TIMESTAMP, Text, func
+from sqlalchemy import BigInteger, Boolean, Column, ForeignKey, Index, Integer, String, TIMESTAMP, Text, func
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
@@ -26,6 +26,8 @@ class News(Base):
     url = Column(Text)
     published_at = Column(TIMESTAMP(timezone=True))
     embedding = Column(Vector(1024))
+    # 그 종목 기사인지(app/news_relevance). NULL = 미판정(기존처럼 사용), False = 근거에서 뺀다(행은 지우지 않는다)
+    is_relevant = Column(Boolean)
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
 
     company = relationship("Company", back_populates="news")

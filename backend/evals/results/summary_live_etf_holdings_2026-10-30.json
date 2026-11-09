@@ -1,0 +1,315 @@
+{
+  "git_commit": "c99bf7c38f7c17b85ddaca9d2c8bfcf9030c7a6b",
+  "git_dirty": true,
+  "date": "2026-10-30T12:13:12",
+  "model": "llama3.1:8b",
+  "args": {
+    "mode": "live",
+    "split": "all",
+    "repeats": 1,
+    "only": "etf_safety",
+    "limit": null,
+    "out": "evals/results/summary_live_etf_holdings_2026-10-30.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 0,
+    "live": 16,
+    "records": 16
+  },
+  "live": {
+    "ran": true,
+    "repeats": 1,
+    "eval_user": "captest_a5d709824d92",
+    "deleted_reports": 16,
+    "elapsed_s": 30.2
+  },
+  "elapsed_s": 32.4,
+  "metrics": {
+    "source_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 2,
+        "holdout": 1,
+        "holdout_seen": 1,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "refusal_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 2,
+        "holdout": 1,
+        "holdout_seen": 1,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "must_contain_rate": {
+      "dev": 0.5,
+      "holdout": 0.8333,
+      "holdout_seen": 0.8333,
+      "holdout_unseen": null,
+      "all": 0.625,
+      "n": {
+        "dev": 10,
+        "holdout": 6,
+        "holdout_seen": 6,
+        "holdout_unseen": 0,
+        "all": 16
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 10,
+        "holdout": 6,
+        "holdout_seen": 6,
+        "holdout_unseen": 0,
+        "all": 16
+      }
+    },
+    "code_answer_rate": {
+      "dev": 0.8,
+      "holdout": 0.8333,
+      "holdout_seen": 0.8333,
+      "holdout_unseen": null,
+      "all": 0.8125,
+      "n": {
+        "dev": 10,
+        "holdout": 6,
+        "holdout_seen": 6,
+        "holdout_unseen": 0,
+        "all": 16
+      }
+    },
+    "loop_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 10,
+        "holdout": 6,
+        "holdout_seen": 6,
+        "holdout_unseen": 0,
+        "all": 16
+      }
+    },
+    "guard_replacement_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 2,
+        "holdout": 1,
+        "holdout_seen": 1,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "fallback_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 10,
+        "holdout": 6,
+        "holdout_seen": 6,
+        "holdout_unseen": 0,
+        "all": 16
+      }
+    },
+    "error_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 10,
+        "holdout": 6,
+        "holdout_seen": 6,
+        "holdout_unseen": 0,
+        "all": 16
+      }
+    },
+    "latency_p50_s": {
+      "dev": 0.02,
+      "holdout": 0.02,
+      "holdout_seen": 0.02,
+      "holdout_unseen": null,
+      "all": 0.02,
+      "n": {
+        "dev": 10,
+        "holdout": 6,
+        "holdout_seen": 6,
+        "holdout_unseen": 0,
+        "all": 16
+      }
+    },
+    "latency_p95_s": {
+      "dev": 10.609,
+      "holdout": 6.845,
+      "holdout_seen": 6.845,
+      "holdout_unseen": null,
+      "all": 10.0975,
+      "n": {
+        "dev": 10,
+        "holdout": 6,
+        "holdout_seen": 6,
+        "holdout_unseen": 0,
+        "all": 16
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "etf_03",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "KODEX 200 구성종목 비중 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자",
+          "\\d{4}-\\d{2}-\\d{2} 기준",
+          "\\d+\\.\\d{2}%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:삼성전자",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준",
+        "missing:\\d+\\.\\d{2}%"
+      ]
+    },
+    {
+      "id": "etf_06",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "KODEX 반도체 편입 비중 상위 종목 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자|SK하이닉스",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:삼성전자|SK하이닉스",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_08",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "KODEX 2차전지산업에 무슨 종목이 들어 있어?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "LG에너지솔루션|삼성SDI|에코프로",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:LG에너지솔루션|삼성SDI|에코프로",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_11",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "KODEX 레버리지 구성종목 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "선물",
+          "레버리지",
+          "복리",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:선물",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_12",
+      "split": "holdout",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "KODEX 인버스는 어떤 종목들로 구성돼 있어?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "선물",
+          "인버스",
+          "매도 포지션",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:선물",
+        "missing:매도 포지션",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_16",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "KODEX 200 보유종목 비중 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자",
+          "SK하이닉스",
+          "\\d{4}-\\d{2}-\\d{2} 기준",
+          "합계"
+        ],
+        "must_not": [
+          "제공하지 않습니다"
+        ]
+      },
+      "actual": [
+        "missing:삼성전자",
+        "missing:SK하이닉스",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준",
+        "missing:합계",
+        "present:제공하지 않습니다"
+      ]
+    }
+  ]
+}

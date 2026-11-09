@@ -7,9 +7,11 @@ ETF 답변에서 LLM이 쓸 수 있는 수치는 주가 조회(stock_tool) 결�
 """
 
 import re
+import unicodedata
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from app.company_aliases import ETF_BRANDS, ETF_BRANDS_NO_HANGUL_AFTER, ETF_FORMER_BRANDS
+from app.display_dates import kst_day
 from app.korean import josa
 
 # ---------- 브랜드 표기 ----------
@@ -119,6 +121,37 @@ def leverage_notice(name: str, kind: str) -> str:
     )
 
 
+# ---------- 구성종목·비중 질문 ----------
+# 구성종목(PDF)·편입 비중은 2026-10-29부터 삼성 KODEX·미래에셋 TIGER ETF만 운용사 공시를 수집한다(app/etf_holdings.py). 그 밖의 ETF에는
+# 데이터가 없다. 모델은 이런 질문에 가격·뉴스만 답하거나(평가 기준선 etf_03/04) 아는 대로 종목을 늘어놓을 수 있어서, 이런 질문은 코드가
+# 답한다: 수집한 데이터가 있으면 템플릿(app/etf_holdings.holdings_answer), 없으면 아래 "제공하지 않음 + 확인 경로"(app/agent.py).
+# ETF 이름 속 낱말("TIGER 반도체TOP10")에 걸리지 않게 이름을 가린 뒤 본다.
+_CONSTITUENT_RE = re.compile(
+    r"(?:구성|편입|보유|상위|담긴|담겨\s*있는|포함된|들어\s*있는|들어간)\s*(?:\d+\s*개\s*)?종목"
+    r"|종목\s*(?:구성|비중|구성비|리스트|목록)"
+    r"|구성\s*(?:비중|내역|현황|비율)|편입\s*비중|보유\s*비중"
+    r"|(?:어떤|무슨|무엇|뭔)\s*종목.{0,12}(?:들어|담|포함|구성|편입)"
+    r"|종목(?:들)?(?:이|을)?\s*(?:뭐뭐|다\s*)?(?:들어|담겨|포함)"
+)
+
+
+def asks_constituents(question: str) -> bool:
+    """ETF의 구성종목·편입 비중·상위 보유종목을 묻는 질문이면 True. ETF가 질문에 있는지는 호출측이 본다."""
+    return bool(_CONSTITUENT_RE.search(mask_etf_names(question or "")))
+
+
+def constituents_answer(names: list[str]) -> str:
+    """구성종목·비중 데이터가 없는 ETF의 고정 답(구성종목을 지어내지 않는다). 레버리지/인버스 ETF면 고정 설명을 덧붙인다."""
+    joined = ", ".join(names)
+    parts = [
+        f"{joined}의 구성종목과 편입 비중 데이터는 이 서비스에서 제공하지 않습니다(보유한 ETF 데이터는 가격·거래량과 관련 뉴스입니다). "
+        "구성종목과 비중은 수시로 바뀌므로, 정확한 내용은 운용사 공식 홈페이지의 상품 페이지(구성종목/PDF 내역)나 "
+        "한국거래소·금융투자협회 공시에서 확인해주세요."
+    ]
+    parts += [leverage_notice(n, kind) for n in names if (kind := leverage_kind(n))]
+    return "\n\n".join(parts)
+
+
 # ---------- ETF 답변 규칙(최종 답변 단계, ETF 질문에만) ----------
 
 ETF_ANSWER_RULES = (
@@ -140,7 +173,8 @@ def _squash(s: str) -> str:
 
 
 def _norm(s: str) -> str:
-    return re.sub(r"\s+", " ", s or "").strip().casefold()
+    # NFKC: 전각 영문·숫자("ＴＩＧＥＲ")를 반각으로(2026-11-03)
+    return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", s or "")).strip().casefold()
 
 
 # 이름 바로 뒤에 붙어도 같은 이름으로 보는 한글(조사 첫 글자). "KODEX 200은", "KODEX 레버리지가", "코덱스200에서"
@@ -518,7 +552,7 @@ def compose_etf_answer(llm_answer: str, price_results: list[dict], news_results:
         if not isinstance(r, dict) or not r.get("found"):
             continue
         for n in r.get("news", [])[:MAX_ETF_NEWS_LINES]:
-            meta = ", ".join(x for x in (n.get("source"), (n.get("published_at") or "")[:10]) if x)
+            meta = ", ".join(x for x in (n.get("source"), kst_day(n.get("published_at"))) if x)  # 39차: 한국 날짜
             lines.append(f"- {n.get('title')}" + (f" ({meta})" if meta else ""))
     if lines:
         parts.append("## 관련 뉴스\n" + "\n".join(lines))

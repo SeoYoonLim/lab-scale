@@ -1,0 +1,1766 @@
+{
+  "git_commit": "f2be743ab34654c49b9d91aa461c16935c52ad79",
+  "git_dirty": false,
+  "date": "2026-10-31T13:19:40",
+  "model": "llama3.1:8b",
+  "args": {
+    "mode": "live",
+    "split": "dev",
+    "repeats": 3,
+    "only": null,
+    "limit": null,
+    "out": "C:\\project\\lab-scale\\backend\\evals\\results\\summary_baseline_r6_2026-10-31.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 0,
+    "live": 81,
+    "records": 243
+  },
+  "live": {
+    "ran": true,
+    "repeats": 3,
+    "eval_user": "captest_41f64a75bf9f",
+    "deleted_reports": 243,
+    "elapsed_s": 656.5
+  },
+  "elapsed_s": 661.8,
+  "metrics": {
+    "tool_selection_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 54,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 54
+      }
+    },
+    "live_company_accuracy": {
+      "dev": 0.9649,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.9649,
+      "n": {
+        "dev": 171,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 171
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 171,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 171
+      }
+    },
+    "live_period_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 12,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 12
+      }
+    },
+    "number_match_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 567,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 567
+      }
+    },
+    "number_full_support_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 101,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 101
+      }
+    },
+    "source_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 32,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 32
+      }
+    },
+    "refusal_accuracy": {
+      "dev": 0.875,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.875,
+      "n": {
+        "dev": 24,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 24
+      }
+    },
+    "period_label_violation_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 9,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 9
+      }
+    },
+    "must_contain_rate": {
+      "dev": 0.4444,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.4444,
+      "n": {
+        "dev": 108,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 108
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 243,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 243
+      }
+    },
+    "data_date_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 6
+      }
+    },
+    "briefing_link_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 6
+      }
+    },
+    "number_attachment_rate": {
+      "dev": 0.9333,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.9333,
+      "n": {
+        "dev": 15,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 15
+      }
+    },
+    "code_answer_rate": {
+      "dev": 0.5679,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.5679,
+      "n": {
+        "dev": 243,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 243
+      }
+    },
+    "loop_rate": {
+      "dev": 0.0041,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0041,
+      "n": {
+        "dev": 243,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 243
+      }
+    },
+    "stability_answer_rate": {
+      "dev": 0.9524,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.9524,
+      "n": {
+        "dev": 21,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 21
+      }
+    },
+    "guard_replacement_rate": {
+      "dev": 0.0638,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0638,
+      "n": {
+        "dev": 94,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 94
+      }
+    },
+    "fallback_rate": {
+      "dev": 0.0041,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0041,
+      "n": {
+        "dev": 243,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 243
+      }
+    },
+    "error_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 243,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 243
+      }
+    },
+    "latency_p50_s": {
+      "dev": 0.03,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.03,
+      "n": {
+        "dev": 243,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 243
+      }
+    },
+    "latency_p95_s": {
+      "dev": 9.747,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 9.747,
+      "n": {
+        "dev": 243,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 243
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "hist_11",
+      "split": "dev",
+      "category": "period_history",
+      "run": 0,
+      "question": "현대차와 기아 비교해줘",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "현대차",
+          "기아"
+        ],
+        "must_not": null
+      },
+      "actual": []
+    },
+    {
+      "id": "hist_11",
+      "split": "dev",
+      "category": "period_history",
+      "run": 2,
+      "question": "현대차와 기아 비교해줘",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "현대차",
+          "기아"
+        ],
+        "must_not": null
+      },
+      "actual": []
+    },
+    {
+      "id": "stab_07",
+      "split": "dev",
+      "category": "stability",
+      "run": 2,
+      "question": "삼성전자에 투자할 때 고려해야 할 위험 요인을 전반적으로 정리해줘",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "삼성전자"
+        ],
+        "must_not": null
+      },
+      "actual": []
+    },
+    {
+      "id": "stab_10",
+      "split": "dev",
+      "category": "stability",
+      "run": 0,
+      "question": "현대차와 기아의 사업 구조 차이와 각각의 위험 요인을 설명해줘",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "현대차",
+          "기아"
+        ],
+        "must_not": null
+      },
+      "actual": []
+    },
+    {
+      "id": "stab_10",
+      "split": "dev",
+      "category": "stability",
+      "run": 1,
+      "question": "현대차와 기아의 사업 구조 차이와 각각의 위험 요인을 설명해줘",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "현대차",
+          "기아"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "현대차"
+      ]
+    },
+    {
+      "id": "stab_10",
+      "split": "dev",
+      "category": "stability",
+      "run": 2,
+      "question": "현대차와 기아의 사업 구조 차이와 각각의 위험 요인을 설명해줘",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "현대차",
+          "기아"
+        ],
+        "must_not": null
+      },
+      "actual": []
+    },
+    {
+      "id": "ref_08",
+      "split": "dev",
+      "category": "refusal",
+      "run": 0,
+      "question": "현대차 2026년 3월 15일 종가 알려줘",
+      "check": "partial",
+      "expected": "없는 구간 명시 + 있는 구간 값(근거 있음)",
+      "actual": {
+        "refusal_phrase": false,
+        "matched": 3,
+        "unmatched": [],
+        "answer": "현대차 2026년 3월 15일 종가는 조회 결과에 명시된 2026년 10월 30일 종가보다 이전으로 278,500원이며, 이는 2026년 10월 16일 종가 314,000원 대비 10거래일간 -11.31%입니다."
+      }
+    },
+    {
+      "id": "ref_08",
+      "split": "dev",
+      "category": "refusal",
+      "run": 1,
+      "question": "현대차 2026년 3월 15일 종가 알려줘",
+      "check": "partial",
+      "expected": "없는 구간 명시 + 있는 구간 값(근거 있음)",
+      "actual": {
+        "refusal_phrase": false,
+        "matched": 11,
+        "unmatched": [],
+        "answer": "## 주가 동향\n현대차의 2026년 10월 30일 종가는 278,500원으로, 2026년 10월 16일 종가 314,000원 대비 10거래일간 -11.31%입니다. \n\n## 원인 분석\n이 기간 종가 최고는 324,500원(2026년 10월 19일), 최저는 278,500원(2026년 10월 30일)입니다. \n\n## 뉴스·공시 근거\n최신 뉴스나 공시 내용을 "
+      }
+    },
+    {
+      "id": "ref_08",
+      "split": "dev",
+      "category": "refusal",
+      "run": 2,
+      "question": "현대차 2026년 3월 15일 종가 알려줘",
+      "check": "partial",
+      "expected": "없는 구간 명시 + 있는 구간 값(근거 있음)",
+      "actual": {
+        "refusal_phrase": false,
+        "matched": 3,
+        "unmatched": [],
+        "answer": "## 주가 동향\n현대차의 2026-10-30 종가가 278,500원으로, 2026-10-16 종가 314,000원 대비 10거래일간 -11.31%입니다."
+      }
+    },
+    {
+      "id": "hist_10",
+      "split": "dev",
+      "category": "period_history",
+      "run": 0,
+      "question": "현대차와 기아 2025년 수익률 비교해줘",
+      "check": "attachment",
+      "expected": "숫자를 맞는 종목에 붙임",
+      "actual": [
+        "기아: 5000"
+      ]
+    },
+    {
+      "id": "stab_05",
+      "split": "dev",
+      "category": "stability",
+      "run": 0,
+      "question": "TIGER 미국S&P500은 어떤 구조의 상품이고 환율 위험은 어떻게 봐야 하는지 자세히 설명해줘",
+      "check": "answered",
+      "expected": "timeout·fallback 없이 정상 답변",
+      "actual": "length"
+    },
+    {
+      "id": "etf_01",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "KODEX 레버리지 장기 보유해도 괜찮아?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "복리|장기\\s*보유|손실|위험"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:복리|장기\\s*보유|손실|위험"
+      ]
+    },
+    {
+      "id": "etf_03",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "KODEX 200 구성종목 비중 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자",
+          "\\d{4}-\\d{2}-\\d{2} 기준",
+          "\\d+\\.\\d{2}%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:삼성전자",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준",
+        "missing:\\d+\\.\\d{2}%"
+      ]
+    },
+    {
+      "id": "etf_03",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "KODEX 200 구성종목 비중 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자",
+          "\\d{4}-\\d{2}-\\d{2} 기준",
+          "\\d+\\.\\d{2}%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:삼성전자",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준",
+        "missing:\\d+\\.\\d{2}%"
+      ]
+    },
+    {
+      "id": "etf_03",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 2,
+      "question": "KODEX 200 구성종목 비중 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자",
+          "\\d{4}-\\d{2}-\\d{2} 기준",
+          "\\d+\\.\\d{2}%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:삼성전자",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준",
+        "missing:\\d+\\.\\d{2}%"
+      ]
+    },
+    {
+      "id": "etf_06",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "KODEX 반도체 편입 비중 상위 종목 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자|SK하이닉스",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:삼성전자|SK하이닉스",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_06",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "KODEX 반도체 편입 비중 상위 종목 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자|SK하이닉스",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:삼성전자|SK하이닉스",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_06",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 2,
+      "question": "KODEX 반도체 편입 비중 상위 종목 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자|SK하이닉스",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:삼성전자|SK하이닉스",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_08",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "KODEX 2차전지산업에 무슨 종목이 들어 있어?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "LG에너지솔루션|삼성SDI|에코프로",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:LG에너지솔루션|삼성SDI|에코프로",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_08",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "KODEX 2차전지산업에 무슨 종목이 들어 있어?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "LG에너지솔루션|삼성SDI|에코프로",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:LG에너지솔루션|삼성SDI|에코프로",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_08",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 2,
+      "question": "KODEX 2차전지산업에 무슨 종목이 들어 있어?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "LG에너지솔루션|삼성SDI|에코프로",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:LG에너지솔루션|삼성SDI|에코프로",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_11",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "KODEX 레버리지 구성종목 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "선물",
+          "레버리지",
+          "복리",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:선물",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_11",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "KODEX 레버리지 구성종목 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "선물",
+          "레버리지",
+          "복리",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:선물",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_11",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 2,
+      "question": "KODEX 레버리지 구성종목 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "선물",
+          "레버리지",
+          "복리",
+          "\\d{4}-\\d{2}-\\d{2} 기준"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:선물",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준"
+      ]
+    },
+    {
+      "id": "etf_16",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "KODEX 200 보유종목 비중 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자",
+          "SK하이닉스",
+          "\\d{4}-\\d{2}-\\d{2} 기준",
+          "합계"
+        ],
+        "must_not": [
+          "제공하지 않습니다"
+        ]
+      },
+      "actual": [
+        "missing:삼성전자",
+        "missing:SK하이닉스",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준",
+        "missing:합계",
+        "present:제공하지 않습니다"
+      ]
+    },
+    {
+      "id": "etf_16",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "KODEX 200 보유종목 비중 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자",
+          "SK하이닉스",
+          "\\d{4}-\\d{2}-\\d{2} 기준",
+          "합계"
+        ],
+        "must_not": [
+          "제공하지 않습니다"
+        ]
+      },
+      "actual": [
+        "missing:삼성전자",
+        "missing:SK하이닉스",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준",
+        "missing:합계",
+        "present:제공하지 않습니다"
+      ]
+    },
+    {
+      "id": "etf_16",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 2,
+      "question": "KODEX 200 보유종목 비중 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자",
+          "SK하이닉스",
+          "\\d{4}-\\d{2}-\\d{2} 기준",
+          "합계"
+        ],
+        "must_not": [
+          "제공하지 않습니다"
+        ]
+      },
+      "actual": [
+        "missing:삼성전자",
+        "missing:SK하이닉스",
+        "missing:\\d{4}-\\d{2}-\\d{2} 기준",
+        "missing:합계",
+        "present:제공하지 않습니다"
+      ]
+    },
+    {
+      "id": "hist_01",
+      "split": "dev",
+      "category": "period_history",
+      "run": 0,
+      "question": "삼성전자 2025년 3월 4일 종가 얼마야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2025-03-04",
+          "54,500원"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2025-03-04",
+        "missing:54,500원"
+      ]
+    },
+    {
+      "id": "hist_01",
+      "split": "dev",
+      "category": "period_history",
+      "run": 1,
+      "question": "삼성전자 2025년 3월 4일 종가 얼마야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2025-03-04",
+          "54,500원"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2025-03-04",
+        "missing:54,500원"
+      ]
+    },
+    {
+      "id": "hist_01",
+      "split": "dev",
+      "category": "period_history",
+      "run": 2,
+      "question": "삼성전자 2025년 3월 4일 종가 얼마야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2025-03-04",
+          "54,500원"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2025-03-04",
+        "missing:54,500원"
+      ]
+    },
+    {
+      "id": "hist_02",
+      "split": "dev",
+      "category": "period_history",
+      "run": 0,
+      "question": "SK하이닉스 2025년 5월 3일 종가 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "휴장",
+          "2025-05-02",
+          "186,000원"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:휴장",
+        "missing:2025-05-02",
+        "missing:186,000원"
+      ]
+    },
+    {
+      "id": "hist_02",
+      "split": "dev",
+      "category": "period_history",
+      "run": 1,
+      "question": "SK하이닉스 2025년 5월 3일 종가 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "휴장",
+          "2025-05-02",
+          "186,000원"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:휴장",
+        "missing:2025-05-02",
+        "missing:186,000원"
+      ]
+    },
+    {
+      "id": "hist_02",
+      "split": "dev",
+      "category": "period_history",
+      "run": 2,
+      "question": "SK하이닉스 2025년 5월 3일 종가 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "휴장",
+          "2025-05-02",
+          "186,000원"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:휴장",
+        "missing:2025-05-02",
+        "missing:186,000원"
+      ]
+    },
+    {
+      "id": "hist_03",
+      "split": "dev",
+      "category": "period_history",
+      "run": 0,
+      "question": "NAVER 2025-10-06 종가 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "휴장",
+          "2025-10-02",
+          "253,000원"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:휴장",
+        "missing:2025-10-02",
+        "missing:253,000원"
+      ]
+    },
+    {
+      "id": "hist_03",
+      "split": "dev",
+      "category": "period_history",
+      "run": 1,
+      "question": "NAVER 2025-10-06 종가 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "휴장",
+          "2025-10-02",
+          "253,000원"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:휴장",
+        "missing:2025-10-02",
+        "missing:253,000원"
+      ]
+    },
+    {
+      "id": "hist_03",
+      "split": "dev",
+      "category": "period_history",
+      "run": 2,
+      "question": "NAVER 2025-10-06 종가 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "휴장",
+          "2025-10-02",
+          "253,000원"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:휴장",
+        "missing:2025-10-02",
+        "missing:253,000원"
+      ]
+    },
+    {
+      "id": "hist_04",
+      "split": "dev",
+      "category": "period_history",
+      "run": 0,
+      "question": "LG화학 2년 전 주가 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "20(?:24|25)-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:20(?:24|25)-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원"
+      ]
+    },
+    {
+      "id": "hist_04",
+      "split": "dev",
+      "category": "period_history",
+      "run": 1,
+      "question": "LG화학 2년 전 주가 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "20(?:24|25)-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:20(?:24|25)-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원"
+      ]
+    },
+    {
+      "id": "hist_04",
+      "split": "dev",
+      "category": "period_history",
+      "run": 2,
+      "question": "LG화학 2년 전 주가 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "20(?:24|25)-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:20(?:24|25)-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원"
+      ]
+    },
+    {
+      "id": "hist_05",
+      "split": "dev",
+      "category": "period_history",
+      "run": 0,
+      "question": "현대차 작년 같은 달 수익률 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2025-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원",
+          "[+\\-]\\d+\\.\\d{2}%"
+        ],
+        "must_not": [
+          "2026-\\d{2}-\\d{2}"
+        ]
+      },
+      "actual": [
+        "missing:2025-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원",
+        "present:2026-\\d{2}-\\d{2}"
+      ]
+    },
+    {
+      "id": "hist_05",
+      "split": "dev",
+      "category": "period_history",
+      "run": 1,
+      "question": "현대차 작년 같은 달 수익률 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2025-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원",
+          "[+\\-]\\d+\\.\\d{2}%"
+        ],
+        "must_not": [
+          "2026-\\d{2}-\\d{2}"
+        ]
+      },
+      "actual": [
+        "missing:2025-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원"
+      ]
+    },
+    {
+      "id": "hist_05",
+      "split": "dev",
+      "category": "period_history",
+      "run": 2,
+      "question": "현대차 작년 같은 달 수익률 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2025-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원",
+          "[+\\-]\\d+\\.\\d{2}%"
+        ],
+        "must_not": [
+          "2026-\\d{2}-\\d{2}"
+        ]
+      },
+      "actual": [
+        "missing:2025-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원"
+      ]
+    },
+    {
+      "id": "hist_06",
+      "split": "dev",
+      "category": "period_history",
+      "run": 0,
+      "question": "셀트리온 연초 대비 수익률은?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2025-12-\\d{2}[^.\\n]{0,12}[\\d,]+원",
+          "[+\\-]\\d+\\.\\d{2}%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2025-12-\\d{2}[^.\\n]{0,12}[\\d,]+원"
+      ]
+    },
+    {
+      "id": "hist_06",
+      "split": "dev",
+      "category": "period_history",
+      "run": 1,
+      "question": "셀트리온 연초 대비 수익률은?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2025-12-\\d{2}[^.\\n]{0,12}[\\d,]+원",
+          "[+\\-]\\d+\\.\\d{2}%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2025-12-\\d{2}[^.\\n]{0,12}[\\d,]+원",
+        "missing:[+\\-]\\d+\\.\\d{2}%"
+      ]
+    },
+    {
+      "id": "hist_06",
+      "split": "dev",
+      "category": "period_history",
+      "run": 2,
+      "question": "셀트리온 연초 대비 수익률은?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2025-12-\\d{2}[^.\\n]{0,12}[\\d,]+원",
+          "[+\\-]\\d+\\.\\d{2}%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2025-12-\\d{2}[^.\\n]{0,12}[\\d,]+원"
+      ]
+    },
+    {
+      "id": "hist_07",
+      "split": "dev",
+      "category": "period_history",
+      "run": 0,
+      "question": "카카오 2025년 3분기 수익률 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2025-09-30",
+          "59,600원",
+          "2025-06-30",
+          "60,000원",
+          "\\-0\\.67%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2025-09-30",
+        "missing:59,600원",
+        "missing:2025-06-30",
+        "missing:60,000원",
+        "missing:\\-0\\.67%"
+      ]
+    },
+    {
+      "id": "hist_07",
+      "split": "dev",
+      "category": "period_history",
+      "run": 1,
+      "question": "카카오 2025년 3분기 수익률 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2025-09-30",
+          "59,600원",
+          "2025-06-30",
+          "60,000원",
+          "\\-0\\.67%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2025-09-30",
+        "missing:59,600원",
+        "missing:2025-06-30",
+        "missing:60,000원",
+        "missing:\\-0\\.67%"
+      ]
+    },
+    {
+      "id": "hist_07",
+      "split": "dev",
+      "category": "period_history",
+      "run": 2,
+      "question": "카카오 2025년 3분기 수익률 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2025-09-30",
+          "59,600원",
+          "2025-06-30",
+          "60,000원",
+          "\\-0\\.67%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2025-09-30",
+        "missing:59,600원",
+        "missing:2025-06-30",
+        "missing:60,000원",
+        "missing:\\-0\\.67%"
+      ]
+    },
+    {
+      "id": "hist_09",
+      "split": "dev",
+      "category": "period_history",
+      "run": 0,
+      "question": "기아 2025년 전체 등락률은?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2025-12-30",
+          "121,800원",
+          "2024-12-30",
+          "100,700원",
+          "\\+20\\.95%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2025-12-30",
+        "missing:121,800원",
+        "missing:2024-12-30",
+        "missing:100,700원",
+        "missing:\\+20\\.95%"
+      ]
+    },
+    {
+      "id": "hist_09",
+      "split": "dev",
+      "category": "period_history",
+      "run": 1,
+      "question": "기아 2025년 전체 등락률은?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2025-12-30",
+          "121,800원",
+          "2024-12-30",
+          "100,700원",
+          "\\+20\\.95%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2025-12-30",
+        "missing:121,800원",
+        "missing:2024-12-30",
+        "missing:100,700원",
+        "missing:\\+20\\.95%"
+      ]
+    },
+    {
+      "id": "hist_09",
+      "split": "dev",
+      "category": "period_history",
+      "run": 2,
+      "question": "기아 2025년 전체 등락률은?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2025-12-30",
+          "121,800원",
+          "2024-12-30",
+          "100,700원",
+          "\\+20\\.95%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2025-12-30",
+        "missing:121,800원",
+        "missing:2024-12-30",
+        "missing:100,700원",
+        "missing:\\+20\\.95%"
+      ]
+    },
+    {
+      "id": "hist_10",
+      "split": "dev",
+      "category": "period_history",
+      "run": 0,
+      "question": "현대차와 기아 2025년 수익률 비교해줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "\\+39\\.86%",
+          "\\+20\\.95%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:\\+39\\.86%",
+        "missing:\\+20\\.95%"
+      ]
+    },
+    {
+      "id": "hist_10",
+      "split": "dev",
+      "category": "period_history",
+      "run": 1,
+      "question": "현대차와 기아 2025년 수익률 비교해줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "\\+39\\.86%",
+          "\\+20\\.95%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:\\+39\\.86%",
+        "missing:\\+20\\.95%"
+      ]
+    },
+    {
+      "id": "hist_10",
+      "split": "dev",
+      "category": "period_history",
+      "run": 2,
+      "question": "현대차와 기아 2025년 수익률 비교해줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "\\+39\\.86%",
+          "\\+20\\.95%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:\\+39\\.86%",
+        "missing:\\+20\\.95%"
+      ]
+    },
+    {
+      "id": "hist_11",
+      "split": "dev",
+      "category": "period_history",
+      "run": 0,
+      "question": "현대차와 기아 비교해줘",
+      "check": "contain",
+      "expected": {
+        "must": null,
+        "must_not": [
+          "찾지 못했습니다"
+        ]
+      },
+      "actual": [
+        "present:찾지 못했습니다"
+      ]
+    },
+    {
+      "id": "hist_11",
+      "split": "dev",
+      "category": "period_history",
+      "run": 2,
+      "question": "현대차와 기아 비교해줘",
+      "check": "contain",
+      "expected": {
+        "must": null,
+        "must_not": [
+          "찾지 못했습니다"
+        ]
+      },
+      "actual": [
+        "present:찾지 못했습니다"
+      ]
+    },
+    {
+      "id": "ref_05",
+      "split": "dev",
+      "category": "refusal",
+      "run": 0,
+      "question": "SK하이닉스 2025년 1월 거래량은?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "5,179,243주",
+          "11,871,995주",
+          "2025-01-31"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:5,179,243주",
+        "missing:11,871,995주",
+        "missing:2025-01-31"
+      ]
+    },
+    {
+      "id": "ref_05",
+      "split": "dev",
+      "category": "refusal",
+      "run": 1,
+      "question": "SK하이닉스 2025년 1월 거래량은?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "5,179,243주",
+          "11,871,995주",
+          "2025-01-31"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:5,179,243주",
+        "missing:11,871,995주",
+        "missing:2025-01-31"
+      ]
+    },
+    {
+      "id": "ref_05",
+      "split": "dev",
+      "category": "refusal",
+      "run": 2,
+      "question": "SK하이닉스 2025년 1월 거래량은?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "5,179,243주",
+          "11,871,995주",
+          "2025-01-31"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:5,179,243주",
+        "missing:11,871,995주",
+        "missing:2025-01-31"
+      ]
+    },
+    {
+      "id": "ref_08",
+      "split": "dev",
+      "category": "refusal",
+      "run": 0,
+      "question": "현대차 2026년 3월 15일 종가 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "휴장",
+          "2026-03-13",
+          "517,000원"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:휴장",
+        "missing:2026-03-13",
+        "missing:517,000원"
+      ]
+    },
+    {
+      "id": "ref_08",
+      "split": "dev",
+      "category": "refusal",
+      "run": 1,
+      "question": "현대차 2026년 3월 15일 종가 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "휴장",
+          "2026-03-13",
+          "517,000원"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:휴장",
+        "missing:2026-03-13",
+        "missing:517,000원"
+      ]
+    },
+    {
+      "id": "ref_08",
+      "split": "dev",
+      "category": "refusal",
+      "run": 2,
+      "question": "현대차 2026년 3월 15일 종가 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "휴장",
+          "2026-03-13",
+          "517,000원"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:휴장",
+        "missing:2026-03-13",
+        "missing:517,000원"
+      ]
+    },
+    {
+      "id": "ref_10",
+      "split": "dev",
+      "category": "refusal",
+      "run": 0,
+      "question": "카카오 3년 전 주가 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "20(?:23|24)-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원"
+        ],
+        "must_not": [
+          "없습니다"
+        ]
+      },
+      "actual": [
+        "missing:20(?:23|24)-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원",
+        "present:없습니다"
+      ]
+    },
+    {
+      "id": "ref_10",
+      "split": "dev",
+      "category": "refusal",
+      "run": 1,
+      "question": "카카오 3년 전 주가 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "20(?:23|24)-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원"
+        ],
+        "must_not": [
+          "없습니다"
+        ]
+      },
+      "actual": [
+        "missing:20(?:23|24)-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원",
+        "present:없습니다"
+      ]
+    },
+    {
+      "id": "ref_10",
+      "split": "dev",
+      "category": "refusal",
+      "run": 2,
+      "question": "카카오 3년 전 주가 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "20(?:23|24)-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원"
+        ],
+        "must_not": [
+          "없습니다"
+        ]
+      },
+      "actual": [
+        "missing:20(?:23|24)-\\d{2}-\\d{2}[^.\\n]{0,12}[\\d,]+원"
+      ]
+    },
+    {
+      "id": "ref_11",
+      "split": "dev",
+      "category": "refusal",
+      "run": 0,
+      "question": "LG전자 2026년 6월 주가 흐름 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2026-06-30",
+          "203,000원",
+          "2026-05-29",
+          "293,000원",
+          "\\-30\\.72%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2026-06-30",
+        "missing:203,000원",
+        "missing:2026-05-29",
+        "missing:293,000원",
+        "missing:\\-30\\.72%"
+      ]
+    },
+    {
+      "id": "ref_11",
+      "split": "dev",
+      "category": "refusal",
+      "run": 1,
+      "question": "LG전자 2026년 6월 주가 흐름 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2026-06-30",
+          "203,000원",
+          "2026-05-29",
+          "293,000원",
+          "\\-30\\.72%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2026-06-30",
+        "missing:203,000원",
+        "missing:2026-05-29",
+        "missing:293,000원",
+        "missing:\\-30\\.72%"
+      ]
+    },
+    {
+      "id": "ref_11",
+      "split": "dev",
+      "category": "refusal",
+      "run": 2,
+      "question": "LG전자 2026년 6월 주가 흐름 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2026-06-30",
+          "203,000원",
+          "2026-05-29",
+          "293,000원",
+          "\\-30\\.72%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2026-06-30",
+        "missing:203,000원",
+        "missing:2026-05-29",
+        "missing:293,000원",
+        "missing:\\-30\\.72%"
+      ]
+    },
+    {
+      "id": "ref_13",
+      "split": "dev",
+      "category": "refusal",
+      "run": 0,
+      "question": "기아 2024년 등락률 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2024-12-30",
+          "100,700원",
+          "2023-12-28",
+          "100,000원",
+          "\\+0\\.70%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2024-12-30",
+        "missing:100,700원",
+        "missing:2023-12-28",
+        "missing:100,000원",
+        "missing:\\+0\\.70%"
+      ]
+    },
+    {
+      "id": "ref_13",
+      "split": "dev",
+      "category": "refusal",
+      "run": 1,
+      "question": "기아 2024년 등락률 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2024-12-30",
+          "100,700원",
+          "2023-12-28",
+          "100,000원",
+          "\\+0\\.70%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2024-12-30",
+        "missing:100,700원",
+        "missing:2023-12-28",
+        "missing:100,000원",
+        "missing:\\+0\\.70%"
+      ]
+    },
+    {
+      "id": "ref_13",
+      "split": "dev",
+      "category": "refusal",
+      "run": 2,
+      "question": "기아 2024년 등락률 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2024-12-30",
+          "100,700원",
+          "2023-12-28",
+          "100,000원",
+          "\\+0\\.70%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2024-12-30",
+        "missing:100,700원",
+        "missing:2023-12-28",
+        "missing:100,000원",
+        "missing:\\+0\\.70%"
+      ]
+    }
+  ]
+}

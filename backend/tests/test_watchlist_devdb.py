@@ -24,6 +24,7 @@ def watch_db(dev_db):
 
 @pytest.mark.integration
 class TestWatchlistDevDB:
+    @pytest.mark.needs_collected_data
     def test_add_then_list_then_remove(self, watch_db):
         company = resolve_company(watch_db, "삼성전자").company
 
@@ -41,6 +42,7 @@ class TestWatchlistDevDB:
         assert remove_item(watch_db, TEST_DEVICE, company.id) is True
         assert list_items(watch_db, TEST_DEVICE) == []
 
+    @pytest.mark.needs_collected_data
     def test_added_item_equals_the_list_item(self, watch_db):
         """POST 응답에 쓰는 added_item이 GET 목록의 같은 항목과 완전히 같은 값(최근 종가 포함)인지 확인한다."""
         company = resolve_company(watch_db, "삼성전자").company

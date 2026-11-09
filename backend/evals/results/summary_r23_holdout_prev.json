@@ -1,0 +1,1548 @@
+{
+  "git_commit": "a02a4f3183b9dbc73486fe676140572dbbe70216",
+  "git_dirty": true,
+  "date": "2026-11-04T10:37:58",
+  "model": "llama3.1:8b",
+  "think": null,
+  "keep_alive": "30m",
+  "args": {
+    "mode": "live",
+    "split": "holdout",
+    "repeats": 1,
+    "only": null,
+    "ids": null,
+    "batch": null,
+    "exclude_batch": "18",
+    "model": null,
+    "keep_tool_results": false,
+    "limit": null,
+    "out": "evals/results/summary_r23_holdout_prev.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 0,
+    "live": 245,
+    "records": 245
+  },
+  "live": {
+    "ran": true,
+    "repeats": 1,
+    "eval_user": "captest_d8417442136c",
+    "deleted_reports": 255,
+    "etf_data_available": {
+      "114800": true
+    },
+    "elapsed_s": 659.0
+  },
+  "etf_data_available": {
+    "114800": true
+  },
+  "etf_branches": {
+    "with_data": {
+      "ids": [
+        "etf_12"
+      ],
+      "passed": 1,
+      "runs": 1
+    }
+  },
+  "elapsed_s": 664.1,
+  "metrics": {
+    "tool_selection_accuracy": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 15,
+        "holdout_seen": 15,
+        "holdout_unseen": 0,
+        "all": 15
+      }
+    },
+    "live_company_accuracy": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 184,
+        "holdout_seen": 184,
+        "holdout_unseen": 0,
+        "all": 184
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 184,
+        "holdout_seen": 184,
+        "holdout_unseen": 0,
+        "all": 184
+      }
+    },
+    "number_match_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 474,
+        "holdout_seen": 474,
+        "holdout_unseen": 0,
+        "all": 474
+      }
+    },
+    "number_full_support_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 109,
+        "holdout_seen": 109,
+        "holdout_unseen": 0,
+        "all": 109
+      }
+    },
+    "source_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 112,
+        "holdout_seen": 112,
+        "holdout_unseen": 0,
+        "all": 112
+      }
+    },
+    "refusal_accuracy": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 18,
+        "holdout_seen": 18,
+        "holdout_unseen": 0,
+        "all": 18
+      }
+    },
+    "period_label_violation_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 6,
+        "holdout_seen": 6,
+        "holdout_unseen": 0,
+        "all": 6
+      }
+    },
+    "must_contain_rate": {
+      "dev": null,
+      "holdout": 0.9932,
+      "holdout_seen": 0.9932,
+      "holdout_unseen": null,
+      "all": 0.9932,
+      "n": {
+        "dev": 0,
+        "holdout": 148,
+        "holdout_seen": 148,
+        "holdout_unseen": 0,
+        "all": 148
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 245,
+        "holdout_seen": 245,
+        "holdout_unseen": 0,
+        "all": 245
+      }
+    },
+    "data_date_rate": {
+      "dev": null,
+      "holdout": 0.5,
+      "holdout_seen": 0.5,
+      "holdout_unseen": null,
+      "all": 0.5,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 2,
+        "holdout_unseen": 0,
+        "all": 2
+      }
+    },
+    "briefing_link_accuracy": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 4,
+        "holdout_seen": 4,
+        "holdout_unseen": 0,
+        "all": 4
+      }
+    },
+    "number_attachment_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 5,
+        "holdout_unseen": 0,
+        "all": 5
+      }
+    },
+    "code_answer_rate": {
+      "dev": null,
+      "holdout": 0.5878,
+      "holdout_seen": 0.5878,
+      "holdout_unseen": null,
+      "all": 0.5878,
+      "n": {
+        "dev": 0,
+        "holdout": 245,
+        "holdout_seen": 245,
+        "holdout_unseen": 0,
+        "all": 245
+      }
+    },
+    "loop_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 245,
+        "holdout_seen": 245,
+        "holdout_unseen": 0,
+        "all": 245
+      }
+    },
+    "stability_answer_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 84,
+        "holdout_seen": 84,
+        "holdout_unseen": 0,
+        "all": 84
+      }
+    },
+    "guard_replacement_rate": {
+      "dev": null,
+      "holdout": 0.125,
+      "holdout_seen": 0.125,
+      "holdout_unseen": null,
+      "all": 0.125,
+      "n": {
+        "dev": 0,
+        "holdout": 96,
+        "holdout_seen": 96,
+        "holdout_unseen": 0,
+        "all": 96
+      }
+    },
+    "narrative_drop_rate": {
+      "dev": null,
+      "holdout": 0.0833,
+      "holdout_seen": 0.0833,
+      "holdout_unseen": null,
+      "all": 0.0833,
+      "n": {
+        "dev": 0,
+        "holdout": 84,
+        "holdout_seen": 84,
+        "holdout_unseen": 0,
+        "all": 84
+      }
+    },
+    "foreign_strip_rate": {
+      "dev": null,
+      "holdout": 0.0417,
+      "holdout_seen": 0.0417,
+      "holdout_unseen": null,
+      "all": 0.0417,
+      "n": {
+        "dev": 0,
+        "holdout": 96,
+        "holdout_seen": 96,
+        "holdout_unseen": 0,
+        "all": 96
+      }
+    },
+    "fallback_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 245,
+        "holdout_seen": 245,
+        "holdout_unseen": 0,
+        "all": 245
+      }
+    },
+    "forecast_structure_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 33,
+        "holdout_seen": 33,
+        "holdout_unseen": 0,
+        "all": 33
+      }
+    },
+    "followup_keep_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 8,
+        "holdout_seen": 8,
+        "holdout_unseen": 0,
+        "all": 8
+      }
+    },
+    "forecast_number_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 33,
+        "holdout_seen": 33,
+        "holdout_unseen": 0,
+        "all": 33
+      }
+    },
+    "forecast_evidence_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 33,
+        "holdout_seen": 33,
+        "holdout_unseen": 0,
+        "all": 33
+      }
+    },
+    "forecast_assertion_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 41,
+        "holdout_seen": 41,
+        "holdout_unseen": 0,
+        "all": 41
+      }
+    },
+    "forecast_group_rate": {
+      "dev": null,
+      "holdout": 0.8049,
+      "holdout_seen": 0.8049,
+      "holdout_unseen": null,
+      "all": 0.8049,
+      "n": {
+        "dev": 0,
+        "holdout": 41,
+        "holdout_seen": 41,
+        "holdout_unseen": 0,
+        "all": 41
+      }
+    },
+    "backtest_line_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 10,
+        "holdout_seen": 10,
+        "holdout_unseen": 0,
+        "all": 10
+      }
+    },
+    "indirect_section_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 4,
+        "holdout_seen": 4,
+        "holdout_unseen": 0,
+        "all": 4
+      }
+    },
+    "earnings_number_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 3,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "error_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 245,
+        "holdout_seen": 245,
+        "holdout_unseen": 0,
+        "all": 245
+      }
+    },
+    "latency_p50_s": {
+      "dev": null,
+      "holdout": 0.04,
+      "holdout_seen": 0.04,
+      "holdout_unseen": null,
+      "all": 0.04,
+      "n": {
+        "dev": 0,
+        "holdout": 245,
+        "holdout_seen": 245,
+        "holdout_unseen": 0,
+        "all": 245
+      }
+    },
+    "latency_p95_s": {
+      "dev": null,
+      "holdout": 10.44,
+      "holdout_seen": 10.44,
+      "holdout_unseen": null,
+      "all": 10.44,
+      "n": {
+        "dev": 0,
+        "holdout": 245,
+        "holdout_seen": 245,
+        "holdout_unseen": 0,
+        "all": 245
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "fresh_04",
+      "split": "holdout",
+      "category": "freshness",
+      "run": 0,
+      "question": "LG화학 지금 주가 어때?",
+      "check": "data_date",
+      "expected": "마지막 데이터 날짜(2026-11-03) 명시 + 오래됐으면 알림",
+      "actual": "## 주가 동향\n\nLG화학은 최근 1일간 주가가 -1.04% 하락하였습니다. 거래량은 244,050주입니다."
+    },
+    {
+      "id": "b14_15",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "하락 위험은 어떤데?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "변동성",
+          "최고 종가 대비"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:변동성",
+        "missing:최고 종가 대비"
+      ]
+    },
+    {
+      "id": "b14_01",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "삼성전자 다음 주에 오를까?",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "삼성전자",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "삼성전자",
+          "ticker": "005930",
+          "period": "1주일",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "b14_02",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "현대차 앞으로 한 달 주가 전망 어때?",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "현대차",
+        "period": "1개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "현대차",
+          "ticker": "005380",
+          "period": "1개월",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "b14_03",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "LG에너지솔루션 3개월 뒤에는 어떨 것 같아?",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "LG에너지솔루션",
+        "period": "3개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "LG에너지솔루션",
+          "ticker": "373220",
+          "period": "3개월",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "b14_04",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "카카오 주가 오를지 내릴지 분석해줘",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "카카오",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "카카오",
+          "ticker": "035720",
+          "period": "1주일",
+          "label": "하락 우위"
+        }
+      }
+    },
+    {
+      "id": "b14_05",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "셀트리온 향후 석 달 방향 어떻게 봐?",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "셀트리온",
+        "period": "3개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "셀트리온",
+          "ticker": "068270",
+          "period": "3개월",
+          "label": "상승 우위"
+        }
+      }
+    },
+    {
+      "id": "b14_06",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "TIGER 미국S&P500 한 달 전망 알려줘",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "TIGER 미국S&P500",
+        "period": "1개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "TIGER 미국S&P500",
+          "ticker": "360750",
+          "period": "1개월",
+          "label": "하락 우위"
+        }
+      }
+    },
+    {
+      "id": "b14_07",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "KODEX 레버리지 이번 주에 오를까?",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "KODEX 레버리지",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "KODEX 레버리지",
+          "ticker": "122630",
+          "period": "1주일",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "b14_08",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "기아 일주일 안에 떨어질까?",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "기아",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "기아",
+          "ticker": "000270",
+          "period": "1주일",
+          "label": "하락 우위"
+        }
+      }
+    },
+    {
+      "id": "b14_09",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "삼성SDI 지금 매수해도 될까?",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "삼성SDI",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "삼성SDI",
+          "ticker": "006400",
+          "period": "1주일",
+          "label": "하락 우위"
+        }
+      }
+    },
+    {
+      "id": "b14_10",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "한화에어로스페이스 이번 주에 매수하는 게 위험할까?",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "한화에어로스페이스",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "한화에어로스페이스",
+          "ticker": "012450",
+          "period": "1주일",
+          "label": "하락 우위"
+        }
+      }
+    },
+    {
+      "id": "b14_11",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "그래서 결론이 뭐야?",
+      "check": "followup",
+      "expected": {
+        "company": "SK하이닉스",
+        "period": "1주일"
+      },
+      "actual": {
+        "marker": {},
+        "answer": "SK하이닉스(000660) · 향후 5거래일 · 현재는 단기 반등 시도, 추세 전환은 미확인 (기준일 2026-11-03 종가)\n\n지금 데이터로는 1주일 뒤 방향을 믿을 만하게 판단할 수 없습니다. 과거 검증에서 이런 신호 조합(상승 우위)은 방향을 전체 평균보다 잘 맞히지 못했습니다("
+      }
+    },
+    {
+      "id": "b14_11",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "그래서 결론이 뭐야?",
+      "check": "groups",
+      "expected": "묶음당 1표 판정과 개별 지표 표시",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "b14_12",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "올라 아니면 내려?",
+      "check": "followup",
+      "expected": {
+        "company": "LG화학",
+        "period": "1개월"
+      },
+      "actual": {
+        "marker": {},
+        "answer": "LG화학(051910) · 향후 20거래일 · 현재는 하락 추세 지속 (기준일 2026-11-03 종가)\n\n지금 데이터로는 1개월 뒤 방향을 믿을 만하게 판단할 수 없습니다. 과거 검증에서 이런 신호 조합(하락 우위)은 방향을 전체 평균보다 잘 맞히지 못했습니다(상승 비율 48.0% v"
+      }
+    },
+    {
+      "id": "b14_12",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "올라 아니면 내려?",
+      "check": "groups",
+      "expected": "묶음당 1표 판정과 개별 지표 표시",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "b14_13",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "네 판단으로는 상승이야 하락이야?",
+      "check": "followup",
+      "expected": {
+        "company": "삼성바이오로직스",
+        "period": "3개월"
+      },
+      "actual": {
+        "marker": {},
+        "answer": "삼성바이오로직스(207940) · 향후 60거래일 · 현재는 횡보, 방향 불분명 (기준일 2026-11-03 종가)\n\n지금 데이터로는 3개월 뒤 방향을 믿을 만하게 판단할 수 없습니다. 과거 검증에서 이런 신호 조합(상승 우위)은 방향을 전체 평균보다 잘 맞히지 못했습니다(상승 비율 4"
+      }
+    },
+    {
+      "id": "b14_13",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "네 판단으로는 상승이야 하락이야?",
+      "check": "groups",
+      "expected": "묶음당 1표 판정과 개별 지표 표시",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "b14_14",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "니 생각에 오를거 같냐 내릴거 같냐",
+      "check": "followup",
+      "expected": {
+        "company": "KODEX 200",
+        "period": "1주일"
+      },
+      "actual": {
+        "marker": {},
+        "answer": "KODEX 200(069500) · 향후 5거래일 · 현재는 단기 반등 시도, 추세 전환은 미확인 (기준일 2026-11-03 종가)\n\n지금 데이터로는 1주일 뒤 방향을 믿을 만하게 판단할 수 없습니다. 과거 검증에서 이런 신호 조합(중립)은 방향을 전체 평균보다 잘 맞히지 못했습니다("
+      }
+    },
+    {
+      "id": "b14_14",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "니 생각에 오를거 같냐 내릴거 같냐",
+      "check": "groups",
+      "expected": "묶음당 1표 판정과 개별 지표 표시",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "b14_15",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "하락 위험은 어떤데?",
+      "check": "followup",
+      "expected": {
+        "company": "HMM",
+        "period": "1주일"
+      },
+      "actual": {
+        "marker": {},
+        "answer": "HMM(011200) · 향후 5거래일 · 현재는 상승 추세 지속 (기준일 2026-11-03 종가)\n\n- 하락 위험: 지금 계산한 지표에서는 하락 쪽 근거가 보이지 않습니다.\n- 확인할 가격대: 20일선 22,622원(종가가 위), 분석 기간 최저 종가 20,850원(2026-10-0"
+      }
+    },
+    {
+      "id": "b14_15",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "하락 위험은 어떤데?",
+      "check": "groups",
+      "expected": "묶음당 1표 판정과 개별 지표 표시",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "b14_16",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "방금 분석한 결과에서 하락 가능성은 얼마나 돼?",
+      "check": "followup",
+      "expected": {
+        "company": "삼성물산",
+        "period": "1개월"
+      },
+      "actual": {
+        "marker": {},
+        "answer": "삼성물산(028260) · 향후 20거래일 · 현재는 횡보, 방향 불분명 (기준일 2026-11-03 종가)\n\n검증된 상승·하락 확률은 없습니다.\n\n- 과거 빈도: 검증 구간(2026-01-02~2026-10-02)에서 지금과 같은 신호 상태(중립)였던 날의 20거래일 뒤 상승 비율은 "
+      }
+    },
+    {
+      "id": "b14_16",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "방금 분석한 결과에서 하락 가능성은 얼마나 돼?",
+      "check": "groups",
+      "expected": "묶음당 1표 판정과 개별 지표 표시",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "b14_17",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "아니 니 생각에 오를거 같냐 내릴거 같냐",
+      "check": "followup",
+      "expected": {
+        "company": "POSCO홀딩스",
+        "period": "1주일"
+      },
+      "actual": {
+        "marker": {},
+        "answer": "POSCO홀딩스(005490) · 향후 5거래일 · 현재는 하락 추세 지속 (기준일 2026-11-03 종가)\n\n지금 데이터로는 1주일 뒤 방향을 믿을 만하게 판단할 수 없습니다. 과거 검증에서 이런 신호 조합(하락 우위)은 방향을 전체 평균보다 잘 맞히지 못했습니다(상승 비율 48.2"
+      }
+    },
+    {
+      "id": "b14_17",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "아니 니 생각에 오를거 같냐 내릴거 같냐",
+      "check": "groups",
+      "expected": "묶음당 1표 판정과 개별 지표 표시",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "b14_18",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "그럼 어떻게 해야 돼?",
+      "check": "followup",
+      "expected": {
+        "company": "에코프로비엠",
+        "period": "1주일"
+      },
+      "actual": {
+        "marker": {},
+        "answer": "에코프로비엠(247540) · 향후 5거래일 · 현재는 하락 추세 지속 (기준일 2026-11-03 종가)\n\n지금 데이터로는 1주일 뒤 방향을 믿을 만하게 판단할 수 없습니다. 과거 검증에서 이런 신호 조합(하락 우위)은 방향을 전체 평균보다 잘 맞히지 못했습니다(상승 비율 48.2% "
+      }
+    },
+    {
+      "id": "b14_18",
+      "split": "holdout",
+      "category": "forecast_followup",
+      "run": 0,
+      "question": "그럼 어떻게 해야 돼?",
+      "check": "groups",
+      "expected": "묶음당 1표 판정과 개별 지표 표시",
+      "actual": [
+        "묶음 줄 없음"
+      ]
+    },
+    {
+      "id": "b16_01",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "현대모비스 다음 주 주가 전망",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "현대모비스",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "현대모비스",
+          "ticker": "012330",
+          "period": "1주일",
+          "label": "상승 우위"
+        }
+      }
+    },
+    {
+      "id": "b16_02",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "LG전자 한 달 뒤 오를까?",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "LG전자",
+        "period": "1개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "LG전자",
+          "ticker": "066570",
+          "period": "1개월",
+          "label": "하락 우위"
+        }
+      }
+    },
+    {
+      "id": "b16_03",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "KB금융 3개월 전망 어때?",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "KB금융",
+        "period": "3개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "KB금융",
+          "ticker": "105560",
+          "period": "3개월",
+          "label": "하락 우위"
+        }
+      }
+    },
+    {
+      "id": "b16_04",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "셀트리온 일주일 안에 오를지 분석해줘",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "셀트리온",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "셀트리온",
+          "ticker": "068270",
+          "period": "1주일",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "b16_05",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "SK텔레콤 앞으로 한 달 방향은?",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "SK텔레콤",
+        "period": "1개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "SK텔레콤",
+          "ticker": "017670",
+          "period": "1개월",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "b16_06",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "KODEX 200 3개월 뒤 어떨 것 같아",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "KODEX 200",
+        "period": "3개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "KODEX 200",
+          "ticker": "069500",
+          "period": "3개월",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "b16_07",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "TIGER 미국S&P500 다음 주 오를까",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "TIGER 미국S&P500",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "TIGER 미국S&P500",
+          "ticker": "360750",
+          "period": "1주일",
+          "label": "하락 우위"
+        }
+      }
+    },
+    {
+      "id": "b16_08",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "한국전력 지금 사도 될까?",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "한국전력",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "한국전력",
+          "ticker": "015760",
+          "period": "1주일",
+          "label": "상승 우위"
+        }
+      }
+    },
+    {
+      "id": "b16_09",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "HD현대중공업 석 달 전망 알려줘",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "HD현대중공업",
+        "period": "3개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "HD현대중공업",
+          "ticker": "329180",
+          "period": "3개월",
+          "label": "하락 우위"
+        }
+      }
+    },
+    {
+      "id": "b16_10",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "크래프톤 이번 주 하락할까?",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "크래프톤",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "크래프톤",
+          "ticker": "259960",
+          "period": "1주일",
+          "label": "상승 우위"
+        }
+      }
+    },
+    {
+      "id": "b16_11",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "SK하닉 다음 주 전망",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "SK하이닉스",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "SK하이닉스",
+          "ticker": "000660",
+          "period": "1주일",
+          "label": "상승 우위"
+        }
+      }
+    },
+    {
+      "id": "b16_12",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "엘지엔솔 한 달 안에 오를까",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "LG에너지솔루션",
+        "period": "1개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "LG에너지솔루션",
+          "ticker": "373220",
+          "period": "1개월",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "b16_13",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "삼바 주가 앞으로 어떻게 될까",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "삼성바이오로직스",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "삼성바이오로직스",
+          "ticker": "207940",
+          "period": "1주일",
+          "label": "상승 우위"
+        }
+      }
+    },
+    {
+      "id": "b16_14",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "TIGER미국나스닥100 전망 알려줘",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "TIGER 미국나스닥100",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "TIGER 미국나스닥100",
+          "ticker": "133690",
+          "period": "1주일",
+          "label": "하락 우위"
+        }
+      }
+    },
+    {
+      "id": "b16_15",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "KODEX레버리지 이번 주 오를까",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "KODEX 레버리지",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "KODEX 레버리지",
+          "ticker": "122630",
+          "period": "1주일",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "b16_16",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "현차 지금 사도 될까",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "현대차",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "현대차",
+          "ticker": "005380",
+          "period": "1주일",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "b16_17",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "SK하이닉스 한 달 전망 분석해줘",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "SK하이닉스",
+        "period": "1개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "SK하이닉스",
+          "ticker": "000660",
+          "period": "1개월",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "b16_18",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "삼성SDI 다음 주 오를까?",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "삼성SDI",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "삼성SDI",
+          "ticker": "006400",
+          "period": "1주일",
+          "label": "하락 우위"
+        }
+      }
+    },
+    {
+      "id": "b16_19",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "TIGER 미국나스닥100 한 달 전망",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "TIGER 미국나스닥100",
+        "period": "1개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "TIGER 미국나스닥100",
+          "ticker": "133690",
+          "period": "1개월",
+          "label": "하락 우위"
+        }
+      }
+    },
+    {
+      "id": "b16_20",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "KODEX 미국S&P500 3개월 전망",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "KODEX 미국S&P500",
+        "period": "3개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "KODEX 미국S&P500",
+          "ticker": "379800",
+          "period": "3개월",
+          "label": "하락 우위"
+        }
+      }
+    },
+    {
+      "id": "b16_25",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "삼성전자 3개월 뒤 전망 분석해줘",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "삼성전자",
+        "period": "3개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "삼성전자",
+          "ticker": "005930",
+          "period": "3개월",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "b16_26",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "NAVER 한 달 전망 알려줘",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "NAVER",
+        "period": "1개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "NAVER",
+          "ticker": "035420",
+          "period": "1개월",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "b16_27",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "기아 다음 주 오를까?",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "기아",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "기아",
+          "ticker": "000270",
+          "period": "1주일",
+          "label": "하락 우위"
+        }
+      }
+    }
+  ]
+}

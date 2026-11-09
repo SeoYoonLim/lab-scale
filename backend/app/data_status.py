@@ -10,24 +10,54 @@ from app.models import Company, DataRefreshLog, Disclosure, ExchangeRate, Market
 
 KST = ZoneInfo("Asia/Seoul")
 
-# 최근 거래일보다 이만큼(영업일) 이상 뒤처지면 stale. 주말은 세지 않는다(공휴일은 모르므로 평일 기준).
+# 최근 거래일보다 이만큼(영업일) 이상 뒤처지면 stale. 2026-11-08(36차)부터 영업일은 KRX 거래일 달력(app.krx_calendar) 기준이다
+# (주말·휴장일을 세지 않는다). 달력 범위 밖·미확정 평일은 거래일일 수 있는 날로 센다(지연을 작게 잡지 않는 쪽).
+# 환율·뉴스·공시처럼 KRX 휴장과 무관한 데이터는 아래 평일 함수(last_weekday·weekdays_behind)를 쓴다.
 STALE_BUSINESS_DAYS = 2
 # refresh_data.py의 단계 수. 한 번의 실행을 구분하려고 최근 행을 이만큼만 읽는다.
 MAX_STEPS_PER_RUN = 6
+# last_refresh가 보는 단계(scripts/refresh_data.STEP_ORDER와 같다, 테스트가 확인). 다른 스크립트가 남긴 행
+# (예: scripts/backfill_history.py의 'backfill')은 "마지막 갱신 실행"으로 읽지 않는다.
+REFRESH_STEPS = ("prices", "index", "fx", "news", "embed", "content")
 
 NOTE = "주가는 종가 기준이며, 실시간 시세는 별도 엔드포인트로 제공됩니다."
 
 
 def last_business_day(today: date) -> date:
-    """today 이하의 가장 최근 평일(주말이면 직전 금요일)."""
+    """today 이하의 가장 최근 KRX 거래일(주말·휴장일이면 그 앞 거래일). app.krx_calendar.last_trading_day."""
+    from app.krx_calendar import last_trading_day
+
+    return last_trading_day(today)
+
+
+def business_days_behind(latest: date, reference: date) -> int:
+    """latest가 reference보다 몇 KRX 거래일 뒤처졌는지(휴장일은 세지 않는다). latest >= reference이면 0.
+    달력으로 확인할 수 없는 평일은 센다(app.krx_calendar.lag().unknown으로 따로 알 수 있다)."""
+    from app.krx_calendar import lag
+
+    return lag(latest, reference).days
+
+
+def is_stale(latest: date | None, today: date) -> bool:
+    """latest(데이터 최신 날짜)가 최근 거래일(KRX 달력) 대비 2영업일 이상 뒤처지면 True. 데이터가 없으면 True."""
+    if latest is None:
+        return True
+    return business_days_behind(latest, last_business_day(today)) >= STALE_BUSINESS_DAYS
+
+
+# ---------- 평일 기준(KRX 휴장과 무관한 데이터: 환율·뉴스·공시) ----------
+
+
+def last_weekday(today: date) -> date:
+    """today 이하의 가장 최근 평일(주말이면 직전 금요일). 36차 전의 last_business_day."""
     d = today
     while d.weekday() >= 5:
         d -= timedelta(days=1)
     return d
 
 
-def business_days_behind(latest: date, reference: date) -> int:
-    """latest가 reference보다 몇 영업일(평일) 뒤처졌는지. latest >= reference이면 0."""
+def weekdays_behind(latest: date, reference: date) -> int:
+    """latest가 reference보다 몇 평일 뒤처졌는지(공휴일도 센다). 36차 전의 business_days_behind."""
     if latest >= reference:
         return 0
     count, d = 0, latest
@@ -36,13 +66,6 @@ def business_days_behind(latest: date, reference: date) -> int:
         if d.weekday() < 5:
             count += 1
     return count
-
-
-def is_stale(latest: date | None, today: date) -> bool:
-    """latest(데이터 최신 날짜)가 최근 거래일(평일 기준) 대비 2영업일 이상 뒤처지면 True. 데이터가 없으면 True."""
-    if latest is None:
-        return True
-    return business_days_behind(latest, last_business_day(today)) >= STALE_BUSINESS_DAYS
 
 
 def _kst_date(ts: datetime | None) -> date | None:
@@ -54,11 +77,14 @@ def _kst_date(ts: datetime | None) -> date | None:
 def summarize_last_run(rows: list) -> dict | None:
     """최근 행(id 내림차순)에서 마지막 실행 한 번 분을 골라 요약한다. 기록이 없으면 None.
 
-    같은 step이 다시 나오면 그 앞은 이전 실행이다.
+    같은 step이 다시 나오면 그 앞은 이전 실행이다. 2026-11-07부터 행에 run_id가 있으면 같은 run_id끼리만 한 실행이다.
+    부분 성공(partial) 단계는 예전(일부 실패는 경고만 남긴 success)처럼 ok에 영향을 주지 않는다. 응답 필드는 그대로다
+    (부분 성공은 python -m scripts.refresh_data --status에서 본다).
     """
     run, seen = [], set()
+    first_run = getattr(rows[0], "run_id", None) if rows else None
     for r in rows:
-        if r.step in seen:
+        if r.step in seen or getattr(r, "run_id", None) != first_run:
             break
         seen.add(r.step)
         run.append(r)
@@ -91,7 +117,10 @@ def build_status(db: Session, now: datetime | None = None) -> dict:
     news_latest = _kst_date(db.execute(select(func.max(News.published_at))).scalar())
     disclosure_latest = _kst_date(db.execute(select(func.max(Disclosure.disclosed_at))).scalar())
     recent = db.execute(
-        select(DataRefreshLog).order_by(DataRefreshLog.id.desc()).limit(MAX_STEPS_PER_RUN)
+        select(DataRefreshLog)
+        .where(DataRefreshLog.step.in_(REFRESH_STEPS))
+        .order_by(DataRefreshLog.id.desc())
+        .limit(MAX_STEPS_PER_RUN)
     ).scalars().all()
 
     return {

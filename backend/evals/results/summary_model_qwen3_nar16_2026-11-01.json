@@ -1,0 +1,326 @@
+{
+  "git_commit": "30ed9edd29d9f6a80b1650ce89b872d0b30fcaf9",
+  "git_dirty": true,
+  "date": "2026-11-01T18:24:07",
+  "model": "qwen3:8b",
+  "think": false,
+  "keep_alive": "30m",
+  "args": {
+    "mode": "live",
+    "split": "all",
+    "repeats": 1,
+    "only": null,
+    "ids": "nar_01,nar_03,nar_05,nar_06,nar_08,nar_10,nar_11,nar_13,nar_15,nar_16,nar_18,nar_20,nar_21,nar_23,nar_25,nar_26",
+    "batch": null,
+    "exclude_batch": null,
+    "model": "qwen3:8b",
+    "keep_tool_results": true,
+    "limit": null,
+    "out": "evals/results/summary_model_qwen3_nar16_2026-11-01.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 0,
+    "live": 16,
+    "records": 16
+  },
+  "live": {
+    "ran": true,
+    "repeats": 1,
+    "eval_user": "captest_43a9ea681dde",
+    "deleted_reports": 16,
+    "etf_data_available": {},
+    "elapsed_s": 195.4
+  },
+  "etf_data_available": {},
+  "etf_branches": {},
+  "elapsed_s": 200.5,
+  "metrics": {
+    "live_company_accuracy": {
+      "dev": 0.8125,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.8125,
+      "n": {
+        "dev": 16,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 16
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 16,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 16
+      }
+    },
+    "number_match_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 49,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 49
+      }
+    },
+    "number_full_support_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 8,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 8
+      }
+    },
+    "source_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 13,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 13
+      }
+    },
+    "must_contain_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 1,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 1
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 16,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 16
+      }
+    },
+    "code_answer_rate": {
+      "dev": 0.1875,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.1875,
+      "n": {
+        "dev": 16,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 16
+      }
+    },
+    "loop_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 16,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 16
+      }
+    },
+    "stability_answer_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 16,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 16
+      }
+    },
+    "guard_replacement_rate": {
+      "dev": 0.0769,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0769,
+      "n": {
+        "dev": 13,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 13
+      }
+    },
+    "narrative_drop_rate": {
+      "dev": 0.0833,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0833,
+      "n": {
+        "dev": 12,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 12
+      }
+    },
+    "foreign_strip_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 13,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 13
+      }
+    },
+    "fallback_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 16,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 16
+      }
+    },
+    "error_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 16,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 16
+      }
+    },
+    "latency_p50_s": {
+      "dev": 15.115,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 15.115,
+      "n": {
+        "dev": 16,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 16
+      }
+    },
+    "latency_p95_s": {
+      "dev": 26.485,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 26.485,
+      "n": {
+        "dev": 16,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 16
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "nar_08",
+      "split": "dev",
+      "category": "narrative",
+      "run": 0,
+      "question": "고려아연 투자 위험 요인을 정리해줘",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "고려아연"
+        ],
+        "must_not": null
+      },
+      "actual": []
+    },
+    {
+      "id": "nar_11",
+      "split": "dev",
+      "category": "narrative",
+      "run": 0,
+      "question": "셀트리온 실적과 사업 구조를 요약해줘",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "셀트리온"
+        ],
+        "must_not": null
+      },
+      "actual": []
+    },
+    {
+      "id": "nar_20",
+      "split": "dev",
+      "category": "narrative",
+      "run": 0,
+      "question": "태성은 어떤 사업을 하는 회사야?",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "태성"
+        ],
+        "must_not": null
+      },
+      "actual": []
+    }
+  ]
+}

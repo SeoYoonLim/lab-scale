@@ -1,0 +1,447 @@
+{
+  "git_commit": "b78235e5a0defde0c6c6d40deefece4de59d12f0",
+  "git_dirty": false,
+  "date": "2026-11-04T16:03:29",
+  "model": "llama3.1:8b",
+  "think": null,
+  "keep_alive": "30m",
+  "args": {
+    "mode": "live",
+    "split": "all",
+    "repeats": 1,
+    "only": null,
+    "ids": "b18_05,b16_25,b16_26,b16_27,dev17_01,dev19_01",
+    "batch": null,
+    "exclude_batch": null,
+    "model": null,
+    "keep_tool_results": false,
+    "limit": null,
+    "out": "evals/results/summary_r23_earnings_recollect.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 0,
+    "live": 6,
+    "records": 6
+  },
+  "live": {
+    "ran": true,
+    "repeats": 1,
+    "eval_user": "captest_953c767721e4",
+    "deleted_reports": 6,
+    "etf_data_available": {},
+    "elapsed_s": 5.9
+  },
+  "etf_data_available": {},
+  "etf_branches": {},
+  "elapsed_s": 11.2,
+  "metrics": {
+    "live_company_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 2,
+        "holdout": 4,
+        "holdout_seen": 3,
+        "holdout_unseen": 1,
+        "all": 6
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 2,
+        "holdout": 4,
+        "holdout_seen": 3,
+        "holdout_unseen": 1,
+        "all": 6
+      }
+    },
+    "source_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 2,
+        "holdout": 4,
+        "holdout_seen": 3,
+        "holdout_unseen": 1,
+        "all": 6
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 2,
+        "holdout": 4,
+        "holdout_seen": 3,
+        "holdout_unseen": 1,
+        "all": 6
+      }
+    },
+    "code_answer_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 2,
+        "holdout": 4,
+        "holdout_seen": 3,
+        "holdout_unseen": 1,
+        "all": 6
+      }
+    },
+    "loop_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 2,
+        "holdout": 4,
+        "holdout_seen": 3,
+        "holdout_unseen": 1,
+        "all": 6
+      }
+    },
+    "fallback_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 2,
+        "holdout": 4,
+        "holdout_seen": 3,
+        "holdout_unseen": 1,
+        "all": 6
+      }
+    },
+    "forecast_structure_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 1,
+        "holdout": 3,
+        "holdout_seen": 3,
+        "holdout_unseen": 0,
+        "all": 4
+      }
+    },
+    "forecast_number_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 2,
+        "holdout": 4,
+        "holdout_seen": 3,
+        "holdout_unseen": 1,
+        "all": 6
+      }
+    },
+    "forecast_evidence_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 2,
+        "holdout": 4,
+        "holdout_seen": 3,
+        "holdout_unseen": 1,
+        "all": 6
+      }
+    },
+    "forecast_assertion_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 2,
+        "holdout": 4,
+        "holdout_seen": 3,
+        "holdout_unseen": 1,
+        "all": 6
+      }
+    },
+    "forecast_group_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 1,
+        "holdout": 3,
+        "holdout_seen": 3,
+        "holdout_unseen": 0,
+        "all": 4
+      }
+    },
+    "backtest_line_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 2,
+        "holdout": 1,
+        "holdout_seen": 0,
+        "holdout_unseen": 1,
+        "all": 3
+      }
+    },
+    "indirect_section_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 1,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 1
+      }
+    },
+    "earnings_number_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 2,
+        "holdout": 4,
+        "holdout_seen": 3,
+        "holdout_unseen": 1,
+        "all": 6
+      }
+    },
+    "conclusion_first_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 1,
+        "holdout": 1,
+        "holdout_seen": 0,
+        "holdout_unseen": 1,
+        "all": 2
+      }
+    },
+    "regime_match_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 1,
+        "holdout": 1,
+        "holdout_seen": 0,
+        "holdout_unseen": 1,
+        "all": 2
+      }
+    },
+    "no_double_vote_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 1,
+        "holdout": 1,
+        "holdout_seen": 0,
+        "holdout_unseen": 1,
+        "all": 2
+      }
+    },
+    "number_window_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 1,
+        "holdout": 1,
+        "holdout_seen": 0,
+        "holdout_unseen": 1,
+        "all": 2
+      }
+    },
+    "error_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 2,
+        "holdout": 4,
+        "holdout_seen": 3,
+        "holdout_unseen": 1,
+        "all": 6
+      }
+    },
+    "latency_p50_s": {
+      "dev": 0.06,
+      "holdout": 0.075,
+      "holdout_seen": 0.09,
+      "holdout_unseen": 0.06,
+      "all": 0.06,
+      "n": {
+        "dev": 2,
+        "holdout": 4,
+        "holdout_seen": 3,
+        "holdout_unseen": 1,
+        "all": 6
+      }
+    },
+    "latency_p95_s": {
+      "dev": 0.06,
+      "holdout": 4.374,
+      "holdout_seen": 4.626,
+      "holdout_unseen": 0.06,
+      "all": 3.87,
+      "n": {
+        "dev": 2,
+        "holdout": 4,
+        "holdout_seen": 3,
+        "holdout_unseen": 1,
+        "all": 6
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "b16_25",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "삼성전자 3개월 뒤 전망 분석해줘",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "삼성전자",
+        "period": "3개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "삼성전자",
+          "ticker": "005930",
+          "period": "3개월",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "b16_26",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "NAVER 한 달 전망 알려줘",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "NAVER",
+        "period": "1개월"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 13,
+        "marker": {
+          "name": "NAVER",
+          "ticker": "035420",
+          "period": "1개월",
+          "label": "중립"
+        }
+      }
+    },
+    {
+      "id": "b16_27",
+      "split": "holdout",
+      "category": "forecast",
+      "run": 0,
+      "question": "기아 다음 주 오를까?",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "기아",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "기아",
+          "ticker": "000270",
+          "period": "1주일",
+          "label": "하락 우위"
+        }
+      }
+    },
+    {
+      "id": "dev17_01",
+      "split": "dev",
+      "category": "forecast",
+      "run": 0,
+      "question": "SK하이닉스 일주일 안에 오를지 내릴지 분석해줘",
+      "check": "forecast",
+      "expected": {
+        "label_first": true,
+        "indicators>=5": true,
+        "company": "SK하이닉스",
+        "period": "1주일"
+      },
+      "actual": {
+        "label_first": false,
+        "indicators": 15,
+        "marker": {
+          "name": "SK하이닉스",
+          "ticker": "000660",
+          "period": "1주일",
+          "label": "상승 우위"
+        }
+      }
+    }
+  ]
+}

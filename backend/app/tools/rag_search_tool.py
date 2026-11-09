@@ -1,14 +1,24 @@
 import ollama
+
+_LIBRARY_EMBED = ollama.embed  # 테스트가 ollama.embed를 바꿔 두면 그 함수를 쓴다
+# 질문 임베딩(사용자 요청 경로) 상한. 넘기면 예외 -> agent._run_tool이 found=False 결과로 바꾼다(재시도 없음).
+EMBED_TIMEOUT_S = 10
 from sqlalchemy import Text, cast, func
 
 from app.db.session import SessionLocal
+from app.display_dates import kst_iso
 from app.embeddings import EMBEDDING_MODEL
+from app.llm_settings import embed_options
 from app.models import Company, Disclosure, News
+from app.news_relevance import evidence_news
 from app.tools.company_resolver import not_found_response, resolve_company, to_int
 
 
 def _embed_query(query: str) -> list[float]:
-    response = ollama.embed(model=EMBEDDING_MODEL, input=[query])
+    if ollama.embed is _LIBRARY_EMBED:
+        response = ollama.Client(timeout=EMBED_TIMEOUT_S).embed(model=EMBEDDING_MODEL, input=[query], **embed_options())
+    else:
+        response = ollama.embed(model=EMBEDDING_MODEL, input=[query], **embed_options())
     return response["embeddings"][0]
 
 
@@ -23,6 +33,8 @@ def _top_unique(db, model, url_attr, query_vector, company, limit):
     key = func.coalesce(url_attr, cast(model.id, Text))
 
     base = db.query(model.id.label("id"), distance).filter(model.embedding.isnot(None))
+    if model is News:
+        base = base.filter(News.is_relevant.isnot(False))
     if company is not None:
         base = base.filter(model.company_id == company.id)
     best_per_doc = base.distinct(key).order_by(key, distance).subquery()
@@ -99,7 +111,7 @@ def rag_search_tool(query: str, company_name: str | None = None, limit: int = 5)
                     "title": row.title,
                     "content_snippet": (row.content or "")[:200],
                     "url": row.url,
-                    "published_at": row.published_at.isoformat() if row.published_at else None,
+                    "published_at": kst_iso(row.published_at),  # 39차: KST 문자열
                     "score": round(1 - distance, 4),
                 }
             )
@@ -111,13 +123,22 @@ def rag_search_tool(query: str, company_name: str | None = None, limit: int = 5)
                     "title": row.title,
                     "content_snippet": (row.content or "")[:200],
                     "source_url": row.source_url,
-                    "disclosed_at": row.disclosed_at.isoformat() if row.disclosed_at else None,
+                    "disclosed_at": kst_iso(row.disclosed_at),  # 39차: KST 문자열
                     "score": round(1 - distance, 4),
                 }
             )
 
         # news/disclosure를 각각 top-k로 뽑은 뒤 합쳤으니, 최종 유사도 기준으로 다시 정렬해서 자른다.
         results.sort(key=lambda r: r["score"], reverse=True)
+        if company is not None:
+            # 뉴스 도구와 같은 근거 후처리(app.news_relevance.evidence_news): 제목에 이 종목 이름이 없는 뉴스와 같은 기사의 중복은 뺀다.
+            # 공시는 그 회사(company_id)의 문서라 그대로 둔다. 2026-11-03 전에는 제목 불일치 뉴스를 뒤로 보내기만 했다.
+            others = ([n for (n,) in db.query(Company.name).filter(Company.asset_type == "etf", Company.id != company.id)]
+                      if company.asset_type == "etf" else [])
+            news = evidence_news(company.name, company.asset_type, [r for r in results if r["type"] == "news"],
+                                 other_etf_names=others)
+            kept = {id(r) for r in news}
+            results = [r for r in results if r["type"] != "news" or id(r) in kept]
         results = results[:limit]
 
         response_company = company.name if company is not None else None

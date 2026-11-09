@@ -1,4 +1,8 @@
 .env
+.env.*
+!.env.example
+*.log
+*.dump
 __pycache__/
 *.pyc
 .vscode/
@@ -8,3 +12,4 @@ backend/backups/
 backend/scripts/universe_top*.json
 backend/scripts/universe_etf*.json
 backend/scripts/*_report.json
+backend/logs/

@@ -1,0 +1,210 @@
+{
+  "git_commit": "a02a4f3183b9dbc73486fe676140572dbbe70216",
+  "git_dirty": true,
+  "date": "2026-11-04T10:26:31",
+  "model": "llama3.1:8b",
+  "think": null,
+  "keep_alive": "30m",
+  "args": {
+    "mode": "live",
+    "split": "all",
+    "repeats": 5,
+    "only": null,
+    "ids": "b18_16",
+    "batch": null,
+    "exclude_batch": null,
+    "model": null,
+    "keep_tool_results": false,
+    "limit": null,
+    "out": "evals/results/summary_b18_16_fix_rep5.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 0,
+    "live": 1,
+    "records": 5
+  },
+  "live": {
+    "ran": true,
+    "repeats": 5,
+    "eval_user": "captest_227a644f56d7",
+    "deleted_reports": 15,
+    "etf_data_available": {},
+    "elapsed_s": 5.7
+  },
+  "etf_data_available": {},
+  "etf_branches": {},
+  "elapsed_s": 10.9,
+  "metrics": {
+    "live_company_accuracy": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "code_answer_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "loop_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "fallback_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "forecast_assertion_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "short_followup_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "number_window_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "error_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "latency_p50_s": {
+      "dev": null,
+      "holdout": 0.03,
+      "holdout_seen": null,
+      "holdout_unseen": 0.03,
+      "all": 0.03,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "latency_p95_s": {
+      "dev": null,
+      "holdout": 0.03,
+      "holdout_seen": null,
+      "holdout_unseen": 0.03,
+      "all": 0.03,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    }
+  },
+  "failures": []
+}

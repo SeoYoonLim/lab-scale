@@ -13,7 +13,10 @@
   (구분자 공백 유무 둘 다 인식한다 - 실제 질문에 "이번 달"처럼 띄어 쓰는 경우가 있었다,
   `scripts/benchmark_routing.py`의 `market_ho` 참고).
 - **수량 표현**: 아라비아 숫자 + 단위(일/주/개월/년). 예: "3일", "2주간", "3개월 동안", "1년".
-  한글 숫자("삼개월")나 숫자 없는 표현("일주일", "한 달")은 인식하지 않는다.
+- **고유어 수량 표현**(2026-10-27 추가): "한 달"·"두 달"·"석 달"(한/두/세/석/네/넉/다섯/여섯 + 달), "한 주"·"두 주",
+  "일주일", "반년"(6개월), "열흘"(10일), "보름"(15일). "N개월"과 같은 방식으로 범위를 만든다("한 달" = "1개월").
+  "한 달러", "신한 주가"처럼 다른 말의 일부는 제외한다. "하루"는 "하루 만에"처럼 기간이 아닌 경우가 많아 인식하지 않는다.
+  한자어 숫자("삼개월")는 인식하지 않는다.
 - 질문에 인식 가능한 표현이 여러 개 있으면 **질문에서 가장 먼저 등장한 것 하나만** 쓴다(뒤에 나온 표현은 무시).
 - "N일 전"처럼 **특정 시점**을 가리키는 표현(기간이 아니라 점)은 일부러 인식하지 않는다(숫자+단위 바로 뒤에 "전"이
   오면 제외). "재작년"(작년의 부분 문자열), "지지난달"/"지지난주"도 다른 뜻이라 제외한다.
@@ -22,6 +25,11 @@
   "KODEX 200 3개월"의 "3개월"처럼 이름 뒤의 진짜 기간 표현은 남긴다). 주식 질문은 바뀌지 않는다.
 - **상한**: 비현실적으로 큰 숫자(예: "2024년"의 "2024")는 기간 수량이 아니라 연도 등 다른 의미일 가능성이 높아
   인식하지 않는다(일 3650/주 520/개월 120/년 50까지만).
+- **달력 표현은 수량·고정 표현이 아니다**(2026-10-31): "올해 1분기", "작년 3월", "작년 이맘때", "24년 3월"은 이 함수가 일부("올해", "24년")만
+  읽으면 다른 기간이 되므로 None을 돌려준다. 값은 app.period_scope.requested_period가 이 모듈의 정규식으로 계산한다
+  (호출측은 parse_period가 None이어야 "최근 창"이 아니라 날짜로 조회해야 할 기간임을 안다).
+- **두 자리 연도**: "24년 3월"처럼 뒤에 월·분기·반기가 오면 언제나 20YY년이다. 숫자만 있는 "24년"은 20~올해 연도(YY)이면 연도이고
+  ("최근 24년", "24년간"은 수량), 그 밖은 수량이다("5년", "30년"). 올해를 넘는 "27년 3월"은 미래 연도로 보고(19YY로 고치지 않는다) 데이터 없음 안내로 간다.
 
 ## period_days 계산
 
@@ -29,8 +37,7 @@
 날짜로 필터링하지 않고 `ORDER BY price_date DESC LIMIT period_days`로 가장 최근 N행을 가져온다). 그래서 이 모듈은
 날짜 범위를 구한 뒤, 그 범위의 **평일(월~금) 수**를 세서 돌려준다(`_business_days_between`). 공휴일은 고려하지
 않는 근사치다(KRX 휴장일 캘린더가 없음) - "거래일 수"의 정확한 값이 아니라 기존 LLM 추측보다 훨씬 믿을 만한
-근사치를 제공하는 것이 목표다. 상한 60(두 tool의 `to_int(..., hi=60)`)을 넘는 값(예: "올해", "작년")은 이전처럼
-조용히 60으로 잘린다 - 이 모듈이 그 제한 자체를 바꾸지는 않는다.
+근사치를 제공하는 것이 목표다. stock_tool·market_tool은 2026-10-31부터 긴 기간을 자르지 않는다(stock_tool이 LLM에 넘기는 행만 최근 60개).
 """
 
 import calendar
@@ -59,7 +66,9 @@ def _today(now: datetime | None = None) -> date:
 
 
 def _business_days_between(start: date, end: date) -> int:
-    """start~end(포함) 사이의 평일(월~금) 수. 공휴일은 고려하지 않는 근사치다."""
+    """start~end(포함) 사이의 평일(월~금) 수. 공휴일은 고려하지 않는 근사치다.
+    2026-11-08(36차): KRX 거래일 달력이 생겼지만 이 값(stock_tool이 읽을 최근 행 수)은 바꾸지 않았다. 최신성 판정이 아니라 기존 기간 분석의
+    의미이고, 고정 평가 문항(evals/dataset.jsonl per_*)의 기대값이 이 정의다. 휴장일이 낀 기간은 휴장일 수만큼 앞 거래일이 더 들어간다(알려진 한계)."""
     if start > end:
         start, end = end, start
     total_days = (end - start).days + 1
@@ -116,11 +125,49 @@ _FIXED_PATTERNS: list[tuple[re.Pattern, "callable"]] = [
 ]
 
 
+# --- 달력 표현(app.period_scope.requested_period와 함께 쓴다) --------------------
+
+YEAR_WORD = r"(재작년|작년|지난해|올해|금년)"
+# 연도 앞부분. 그룹 1: 네 자리 또는 두 자리 연도, 그룹 2: 올해·작년 같은 말
+YEAR_PREFIX = r"(?:(?<![\d.,])((?:19|20)?\d{2})\s*년\s*|" + YEAR_WORD + r"\s*)?"
+WORD_MONTH_RE = re.compile(YEAR_WORD + r"\s*(\d{1,2})\s*월(?:\s*(\d{1,2})\s*일)?")
+QUARTER_RE = re.compile(YEAR_PREFIX + r"([1-4])\s*분기")
+HALF_RE = re.compile(YEAR_PREFIX + r"([상하])반기")
+SAME_MONTH_RE = re.compile(r"(?:작년|지난해)\s*(?:같은\s*달|동월)")
+SAME_TIME_RE = re.compile(r"작년\s*이맘때")
+# "24년 3월", "24년 3월 15일"
+SHORT_YEAR_MONTH_RE = re.compile(r"(?<![\d.,])(\d{2})\s*년\s*(\d{1,2})\s*월(?:\s*(\d{1,2})\s*일)?")
+# 숫자만 있는 "24년". 수량("최근 24년", "24년간", "24년 동안", "24년 전")이면 제외한다
+_SHORT_YEAR_RE = re.compile(r"(?<![\d.,])(?<!최근\s)(?<!지난\s)(?<!과거\s)(\d{2})\s*년(?!\s*(?:간|동안|째|치|전(?!체)))")
+_COMPOUND_RES = (WORD_MONTH_RE, QUARTER_RE, HALF_RE, SAME_MONTH_RE, SAME_TIME_RE, SHORT_YEAR_MONTH_RE)
+
+
+def full_year(text: str) -> int:
+    """두 자리 연도는 언제나 20YY다("24" -> 2024, "27" -> 2027, "95" -> 2095). 19YY로 고치지 않는다(보유 시세보다 앞서 어차피 답이 없다)."""
+    return int(text) if len(text) == 4 else 2000 + int(text)
+
+
+def short_year_spans(question: str, today: date) -> list[tuple[int, int, int]]:
+    """숫자만 있는 두 자리 연도("24년 주가")의 (시작, 끝, 연도). 20~올해 연도일 때만이다("5년", "30년"은 수량)."""
+    out = []
+    for m in _SHORT_YEAR_RE.finditer(question):
+        if 20 <= int(m.group(1)) <= today.year % 100:
+            out.append((m.start(), m.end(), full_year(m.group(1))))
+    return out
+
+
+def calendar_spans(question: str, today: date) -> list[tuple[int, int]]:
+    """수량·고정 표현으로 읽으면 안 되는 달력 표현의 위치."""
+    spans = [m.span() for pattern in _COMPOUND_RES for m in pattern.finditer(question)]
+    return spans + [s[:2] for s in short_year_spans(question, today)]
+
+
 # --- 수량 표현 ---------------------------------------------------------------
 
 _MAX_QUANTITY = {"일": 3650, "주": 520, "개월": 120, "년": 50}
 # 숫자+단위 바로 뒤에 "전"이 오면("10년 전") 기간(범위)이 아니라 특정 시점을 가리키는 표현이라 제외한다.
-_QUANTITY_RE = re.compile(r"(\d+)\s?(일|주|개월|년)(?!\s?전)")
+# "월" 바로 뒤의 숫자도 제외한다: "2026년 3월 15일"의 "15일"은 15일간이 아니라 날짜다(최근 10거래일로 답하던 ref_08, 2026-10-31).
+_QUANTITY_RE = re.compile(r"(?<!\d)(?<!월)(?<!월\s)(\d+)\s?(일|주|개월|년)(?!\s?전)")
 
 
 def _days_in_month(year: int, month: int) -> int:
@@ -157,16 +204,38 @@ def _quantity_range(today: date, n: int, unit: str) -> tuple[date, date] | None:
     return start, today
 
 
+# 고유어 수량 표현: (정규식, 수량 함수, 단위). 앞이 한글이면("신한 주가"의 '한') 수량이 아니다.
+_NATIVE_NUM = {"한": 1, "두": 2, "세": 3, "석": 3, "네": 4, "넉": 4, "다섯": 5, "여섯": 6}
+_NATIVE_PATTERNS: list[tuple[re.Pattern, "callable", str]] = [
+    (re.compile(r"(?<![가-힣])(한|두|세|석|네|넉|다섯|여섯)\s?달(?!러)"), lambda m: _NATIVE_NUM[m.group(1)], "개월"),
+    (re.compile(r"(?<![가-힣])(한|두|세|네)\s?주(?![가식주])"), lambda m: _NATIVE_NUM[m.group(1)], "주"),
+    (re.compile(r"일주일"), lambda m: 1, "주"),
+    (re.compile(r"반\s?년"), lambda m: 6, "개월"),
+    (re.compile(r"열흘"), lambda m: 10, "일"),
+    (re.compile(r"보름"), lambda m: 15, "일"),
+]
+
+
 def _candidates(question: str, today: date) -> list[tuple[int, str, tuple[date, date]]]:
     found = []
+    taken = calendar_spans(question, today)
+
+    def free(m: re.Match) -> bool:
+        return all(m.end() <= a or m.start() >= b for a, b in taken)
+
     for pattern, to_range in _FIXED_PATTERNS:
         m = pattern.search(question)
-        if m:
+        if m and free(m):
             found.append((m.start(), m.group(), to_range(today)))
     for m in _QUANTITY_RE.finditer(question):
         rng = _quantity_range(today, int(m.group(1)), m.group(2))
-        if rng is not None:
+        if rng is not None and free(m):
             found.append((m.start(), m.group(), rng))
+    for pattern, quantity, unit in _NATIVE_PATTERNS:
+        for m in pattern.finditer(question):
+            rng = _quantity_range(today, quantity(m), unit)
+            if rng is not None:
+                found.append((m.start(), m.group(), rng))
     return found
 
 
@@ -207,7 +276,7 @@ def mentions_period(question: str) -> bool:
     나와도 이전처럼 LLM이 추론한 값을 그대로 쓸 뿐이라 안전한 쪽이다. 6자리 종목코드("005930")는 숫자로 치지 않는다."""
     if not question:
         return False
-    if parse_period(question) is not None:
+    if parse_period(question) is not None or calendar_spans(question, _today()):
         return True
     # ETF 이름 속 숫자("KODEX 200", "TIGER 미국S&P500")는 기간을 말한 것이 아니다
     text = mask_etf_names(question)

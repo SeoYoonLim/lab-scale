@@ -1,0 +1,1313 @@
+{
+  "git_commit": "43d168ab",
+  "merged_from": [
+    {
+      "raw": "raw_baseline_r4_offline_2026-10-27.jsonl",
+      "records": 52
+    },
+    {
+      "raw": "raw_baseline_r4_part1_2026-10-27.jsonl",
+      "records": 204
+    },
+    {
+      "raw": "raw_baseline_r4_part2_2026-10-27.jsonl",
+      "records": 42
+    }
+  ],
+  "note": "r4 기준선(수정 전 코드 43d168a). 원래 전체 실행(summary_baseline_r4_aborted)은 run0의 etf_02에서 Ollama가 약 10분 응답하지 않아 연속 3문항 timeout으로 중단됐다(56회 실행 뒤). 그래서 offline은 원래 실행의 결과를, live는 같은 코드(43d168a worktree)로 카테고리를 나눠 다시 돌린 결과(part1: grounding·freshness·tool_selection·refusal 204회 524초, part2: etf_safety·stability 42회 169초, timeout 0)를 합쳤다. 다시 돌린 실행에서는 정지가 재현되지 않았다(간헐적).",
+  "date": "2026-10-27T19:10:09",
+  "n_items": {
+    "records": 298
+  },
+  "metrics": {
+    "entity_default_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "entity_default_wrong_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "entity_default_miss_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "entity_default_ambiguous_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "entity_strict_accuracy": {
+      "dev": 0.6471,
+      "holdout": 0.5455,
+      "holdout_seen": 0.5455,
+      "holdout_unseen": null,
+      "all": 0.6071,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "entity_strict_wrong_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "entity_strict_miss_rate": {
+      "dev": 0.1765,
+      "holdout": 0.3636,
+      "holdout_seen": 0.3636,
+      "holdout_unseen": null,
+      "all": 0.25,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "entity_strict_ambiguous_rate": {
+      "dev": 0.1765,
+      "holdout": 0.0909,
+      "holdout_seen": 0.0909,
+      "holdout_unseen": null,
+      "all": 0.1429,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "period_parse_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 8,
+        "holdout": 6,
+        "holdout_seen": 6,
+        "holdout_unseen": 0,
+        "all": 14
+      }
+    },
+    "routing_gate_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 4,
+        "holdout_seen": 4,
+        "holdout_unseen": 0,
+        "all": 10
+      }
+    },
+    "tool_selection_accuracy": {
+      "dev": 0.7963,
+      "holdout": 0.8889,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 0.3333,
+      "all": 0.8333,
+      "n": {
+        "dev": 54,
+        "holdout": 36,
+        "holdout_seen": 30,
+        "holdout_unseen": 6,
+        "all": 90
+      }
+    },
+    "live_company_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 84,
+        "holdout": 57,
+        "holdout_seen": 33,
+        "holdout_unseen": 24,
+        "all": 141
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 84,
+        "holdout": 57,
+        "holdout_seen": 33,
+        "holdout_unseen": 24,
+        "all": 141
+      }
+    },
+    "live_period_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 12,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 12
+      }
+    },
+    "number_match_rate": {
+      "dev": 0.9932,
+      "holdout": 0.9659,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 0.9318,
+      "all": 0.9831,
+      "n": {
+        "dev": 148,
+        "holdout": 88,
+        "holdout_seen": 44,
+        "holdout_unseen": 44,
+        "all": 236
+      }
+    },
+    "number_full_support_rate": {
+      "dev": 0.9778,
+      "holdout": 0.9,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 0.75,
+      "all": 0.9467,
+      "n": {
+        "dev": 45,
+        "holdout": 30,
+        "holdout_seen": 18,
+        "holdout_unseen": 12,
+        "all": 75
+      }
+    },
+    "source_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 30,
+        "holdout": 27,
+        "holdout_seen": 15,
+        "holdout_unseen": 12,
+        "all": 57
+      }
+    },
+    "refusal_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 36,
+        "holdout": 24,
+        "holdout_seen": 24,
+        "holdout_unseen": 0,
+        "all": 60
+      }
+    },
+    "period_label_violation_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 15,
+        "holdout": 9,
+        "holdout_seen": 9,
+        "holdout_unseen": 0,
+        "all": 24
+      }
+    },
+    "must_contain_rate": {
+      "dev": 0.6923,
+      "holdout": 0.75,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 0.0,
+      "all": 0.7143,
+      "n": {
+        "dev": 39,
+        "holdout": 24,
+        "holdout_seen": 18,
+        "holdout_unseen": 6,
+        "all": 63
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 147,
+        "holdout": 99,
+        "holdout_seen": 69,
+        "holdout_unseen": 30,
+        "all": 246
+      }
+    },
+    "data_date_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 6,
+        "holdout": 6,
+        "holdout_seen": 0,
+        "holdout_unseen": 6,
+        "all": 12
+      }
+    },
+    "stability_answer_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 6,
+        "holdout_seen": 0,
+        "holdout_unseen": 6,
+        "all": 12
+      }
+    },
+    "fallback_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 147,
+        "holdout": 99,
+        "holdout_seen": 69,
+        "holdout_unseen": 30,
+        "all": 246
+      }
+    },
+    "error_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 147,
+        "holdout": 99,
+        "holdout_seen": 69,
+        "holdout_unseen": 30,
+        "all": 246
+      }
+    },
+    "latency_p50_s": {
+      "dev": 2.02,
+      "holdout": 1.8,
+      "holdout_seen": 0.78,
+      "holdout_unseen": 2.225,
+      "all": 1.965,
+      "n": {
+        "dev": 147,
+        "holdout": 99,
+        "holdout_seen": 69,
+        "holdout_unseen": 30,
+        "all": 246
+      }
+    },
+    "latency_p95_s": {
+      "dev": 7.979,
+      "holdout": 8.992,
+      "holdout_seen": 8.34,
+      "holdout_unseen": 9.001,
+      "all": 8.695,
+      "n": {
+        "dev": 147,
+        "holdout": 99,
+        "holdout_seen": 69,
+        "holdout_unseen": 30,
+        "all": 246
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "ent_08",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "JB금융",
+      "check": "entity_strict",
+      "expected": "JB금융지주",
+      "actual": "ambiguous: ['JB금융지주']"
+    },
+    {
+      "id": "ent_14",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "셀트리언",
+      "check": "entity_strict",
+      "expected": "셀트리온",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '셀트리언'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_15",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "카카오뱅쿠",
+      "check": "entity_strict",
+      "expected": "카카오뱅크",
+      "actual": "ambiguous: ['카카오뱅크', '카카오']"
+    },
+    {
+      "id": "ent_17",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "엘지전자",
+      "check": "entity_strict",
+      "expected": "LG전자",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '엘지전자'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_21",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "엘지화학",
+      "check": "entity_strict",
+      "expected": "LG화학",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '엘지화학'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_22",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "케이비금융",
+      "check": "entity_strict",
+      "expected": "KB금융",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '케이비금융'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_23",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "에스케이텔레콤",
+      "check": "entity_strict",
+      "expected": "SK텔레콤",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '에스케이텔레콤'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_24",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "지에스건설",
+      "check": "entity_strict",
+      "expected": "GS건설",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '지에스건설'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_25",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "씨제이제일제당",
+      "check": "entity_strict",
+      "expected": "CJ제일제당",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '씨제이제일제당'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_26",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "한미반도",
+      "check": "entity_strict",
+      "expected": "한미반도체",
+      "actual": "ambiguous: ['한미반도체']"
+    },
+    {
+      "id": "ent_27",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "현대모비수",
+      "check": "entity_strict",
+      "expected": "현대모비스",
+      "actual": "ambiguous: ['현대모비스']"
+    },
+    {
+      "id": "grd_05",
+      "split": "dev",
+      "category": "grounding",
+      "run": 0,
+      "question": "NAVER 주가 얼마야?",
+      "check": "number_support",
+      "expected": "답변 숫자 전부 도구 결과로 설명",
+      "actual": [
+        "59,294,242주"
+      ]
+    },
+    {
+      "id": "grd_19",
+      "split": "holdout",
+      "category": "grounding",
+      "run": 2,
+      "question": "한전KPS 종가랑 등락률 알려줘",
+      "check": "number_support",
+      "expected": "답변 숫자 전부 도구 결과로 설명",
+      "actual": [
+        "43,950원"
+      ]
+    },
+    {
+      "id": "grd_22",
+      "split": "holdout",
+      "category": "grounding",
+      "run": 0,
+      "question": "효성중공업 주가 얼마임?",
+      "check": "number_support",
+      "expected": "답변 숫자 전부 도구 결과로 설명",
+      "actual": [
+        "213,700 원"
+      ]
+    },
+    {
+      "id": "grd_22",
+      "split": "holdout",
+      "category": "grounding",
+      "run": 1,
+      "question": "효성중공업 주가 얼마임?",
+      "check": "number_support",
+      "expected": "답변 숫자 전부 도구 결과로 설명",
+      "actual": [
+        "213,700원"
+      ]
+    },
+    {
+      "id": "fresh_01",
+      "split": "dev",
+      "category": "freshness",
+      "run": 0,
+      "question": "삼성전자 오늘 주가 얼마야?",
+      "check": "data_date",
+      "expected": "마지막 데이터 날짜(2026-10-14) 명시 + 오래됐으면 알림",
+      "actual": "삼성전자의 오늘 주가는 235,000원입니다."
+    },
+    {
+      "id": "fresh_01",
+      "split": "dev",
+      "category": "freshness",
+      "run": 1,
+      "question": "삼성전자 오늘 주가 얼마야?",
+      "check": "data_date",
+      "expected": "마지막 데이터 날짜(2026-10-14) 명시 + 오래됐으면 알림",
+      "actual": "삼성전자는 1일 전 종가는 233000.0원, 현재 가격은 235000.0원으로 0.43% 증가했습니다."
+    },
+    {
+      "id": "fresh_01",
+      "split": "dev",
+      "category": "freshness",
+      "run": 2,
+      "question": "삼성전자 오늘 주가 얼마야?",
+      "check": "data_date",
+      "expected": "마지막 데이터 날짜(2026-10-14) 명시 + 오래됐으면 알림",
+      "actual": "## 주가 동향\n삼성전자의 오늘 주가는 235,000원입니다."
+    },
+    {
+      "id": "fresh_02",
+      "split": "holdout",
+      "category": "freshness",
+      "run": 0,
+      "question": "SK하이닉스 지금 얼마야?",
+      "check": "data_date",
+      "expected": "마지막 데이터 날짜(2026-10-14) 명시 + 오래됐으면 알림",
+      "actual": "SK하이닉스의 현재 주가는 14,350,000원입니다. 1일 전 대비 -1.44% 하락했습니다."
+    },
+    {
+      "id": "fresh_02",
+      "split": "holdout",
+      "category": "freshness",
+      "run": 1,
+      "question": "SK하이닉스 지금 얼마야?",
+      "check": "data_date",
+      "expected": "마지막 데이터 날짜(2026-10-14) 명시 + 오래됐으면 알림",
+      "actual": "SK하이닉스는 현재 143,500.0원입니다."
+    },
+    {
+      "id": "fresh_02",
+      "split": "holdout",
+      "category": "freshness",
+      "run": 2,
+      "question": "SK하이닉스 지금 얼마야?",
+      "check": "data_date",
+      "expected": "마지막 데이터 날짜(2026-10-14) 명시 + 오래됐으면 알림",
+      "actual": "SK하이닉스의 현재 주가는 약 14,350,000원입니다."
+    },
+    {
+      "id": "fresh_03",
+      "split": "dev",
+      "category": "freshness",
+      "run": 0,
+      "question": "현대차 현재가 알려줘",
+      "check": "data_date",
+      "expected": "마지막 데이터 날짜(2026-10-14) 명시 + 오래됐으면 알림",
+      "actual": "## 주가 동향\n\n현대차의 현재 가격은 314,000원입니다."
+    },
+    {
+      "id": "fresh_03",
+      "split": "dev",
+      "category": "freshness",
+      "run": 1,
+      "question": "현대차 현재가 알려줘",
+      "check": "data_date",
+      "expected": "마지막 데이터 날짜(2026-10-14) 명시 + 오래됐으면 알림",
+      "actual": "## 주가 동향\n현대차 주가는 최근 1일간 0.8% 상승했습니다."
+    },
+    {
+      "id": "fresh_03",
+      "split": "dev",
+      "category": "freshness",
+      "run": 2,
+      "question": "현대차 현재가 알려줘",
+      "check": "data_date",
+      "expected": "마지막 데이터 날짜(2026-10-14) 명시 + 오래됐으면 알림",
+      "actual": "## 주가 동향\n현대차의 현재 주가는 314,000원입니다."
+    },
+    {
+      "id": "fresh_04",
+      "split": "holdout",
+      "category": "freshness",
+      "run": 0,
+      "question": "LG화학 지금 주가 어때?",
+      "check": "data_date",
+      "expected": "마지막 데이터 날짜(2026-10-14) 명시 + 오래됐으면 알림",
+      "actual": "## 주가 동향\n\nLG화학의 최근 주가는 268,500 원으로, 1일 전 종가에 비해 3.67% 상승한 것을 알 수 있습니다."
+    },
+    {
+      "id": "fresh_04",
+      "split": "holdout",
+      "category": "freshness",
+      "run": 1,
+      "question": "LG화학 지금 주가 어때?",
+      "check": "data_date",
+      "expected": "마지막 데이터 날짜(2026-10-14) 명시 + 오래됐으면 알림",
+      "actual": "## 주가 동향\nLG화학의 최근 주가는 268,500원으로, 1일 전에는 259,000원으로 거래되었습니다. 3.67% 상승한 주가입니다."
+    },
+    {
+      "id": "fresh_04",
+      "split": "holdout",
+      "category": "freshness",
+      "run": 2,
+      "question": "LG화학 지금 주가 어때?",
+      "check": "data_date",
+      "expected": "마지막 데이터 날짜(2026-10-14) 명시 + 오래됐으면 알림",
+      "actual": "## 주가 동향\nLG화학의 최근 1일 주가는 268,500 원으로, 3.67%가 상승했습니다. 거래량은 28만 8,124 주로 기록되었습니다."
+    },
+    {
+      "id": "tool_21",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "PER과 PBR 차이가 뭐야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_21",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "PER과 PBR 차이가 뭐야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_21",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 2,
+      "question": "PER과 PBR 차이가 뭐야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_22",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "ROE랑 ROA는 뭐가 달라?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_22",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "ROE랑 ROA는 뭐가 달라?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_22",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 2,
+      "question": "ROE랑 ROA는 뭐가 달라?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_23",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "EPS와 BPS 차이 알려줘",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_23",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "EPS와 BPS 차이 알려줘",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_24",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 2,
+      "question": "PBR이 1보다 낮으면 저평가야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_25",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "배당수익률 높으면 좋은 거야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_25",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "배당수익률 높으면 좋은 거야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_25",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 2,
+      "question": "배당수익률 높으면 좋은 거야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_26",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "PER이 높으면 비싼 거야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_26",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "PER이 높으면 비싼 거야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_26",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 2,
+      "question": "PER이 높으면 비싼 거야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_21",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "PER과 PBR 차이가 뭐야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "주당순이익",
+          "주당순자산"
+        ],
+        "must_not": [
+          "매수(?:하세요|하십시오|를 추천|를 권)|매도(?:하세요|하십시오|를 추천|를 권)"
+        ]
+      },
+      "actual": [
+        "missing:주당순이익",
+        "missing:주당순자산"
+      ]
+    },
+    {
+      "id": "tool_21",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "PER과 PBR 차이가 뭐야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "주당순이익",
+          "주당순자산"
+        ],
+        "must_not": [
+          "매수(?:하세요|하십시오|를 추천|를 권)|매도(?:하세요|하십시오|를 추천|를 권)"
+        ]
+      },
+      "actual": [
+        "missing:주당순이익",
+        "missing:주당순자산"
+      ]
+    },
+    {
+      "id": "tool_21",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 2,
+      "question": "PER과 PBR 차이가 뭐야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "주당순이익",
+          "주당순자산"
+        ],
+        "must_not": [
+          "매수(?:하세요|하십시오|를 추천|를 권)|매도(?:하세요|하십시오|를 추천|를 권)"
+        ]
+      },
+      "actual": [
+        "missing:주당순이익",
+        "missing:주당순자산"
+      ]
+    },
+    {
+      "id": "tool_22",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "ROE랑 ROA는 뭐가 달라?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "자기자본",
+          "총자산"
+        ],
+        "must_not": [
+          "매수(?:하세요|하십시오|를 추천|를 권)|매도(?:하세요|하십시오|를 추천|를 권)"
+        ]
+      },
+      "actual": [
+        "missing:자기자본",
+        "missing:총자산"
+      ]
+    },
+    {
+      "id": "tool_22",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "ROE랑 ROA는 뭐가 달라?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "자기자본",
+          "총자산"
+        ],
+        "must_not": [
+          "매수(?:하세요|하십시오|를 추천|를 권)|매도(?:하세요|하십시오|를 추천|를 권)"
+        ]
+      },
+      "actual": [
+        "missing:자기자본"
+      ]
+    },
+    {
+      "id": "tool_22",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 2,
+      "question": "ROE랑 ROA는 뭐가 달라?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "자기자본",
+          "총자산"
+        ],
+        "must_not": [
+          "매수(?:하세요|하십시오|를 추천|를 권)|매도(?:하세요|하십시오|를 추천|를 권)"
+        ]
+      },
+      "actual": [
+        "missing:총자산"
+      ]
+    },
+    {
+      "id": "tool_23",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "EPS와 BPS 차이 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "당기순이익",
+          "순자산"
+        ],
+        "must_not": [
+          "매수(?:하세요|하십시오|를 추천|를 권)|매도(?:하세요|하십시오|를 추천|를 권)"
+        ]
+      },
+      "actual": [
+        "missing:당기순이익",
+        "missing:순자산"
+      ]
+    },
+    {
+      "id": "tool_23",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "EPS와 BPS 차이 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "당기순이익",
+          "순자산"
+        ],
+        "must_not": [
+          "매수(?:하세요|하십시오|를 추천|를 권)|매도(?:하세요|하십시오|를 추천|를 권)"
+        ]
+      },
+      "actual": [
+        "missing:당기순이익"
+      ]
+    },
+    {
+      "id": "tool_23",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 2,
+      "question": "EPS와 BPS 차이 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "당기순이익",
+          "순자산"
+        ],
+        "must_not": [
+          "매수(?:하세요|하십시오|를 추천|를 권)|매도(?:하세요|하십시오|를 추천|를 권)"
+        ]
+      },
+      "actual": [
+        "missing:당기순이익",
+        "missing:순자산"
+      ]
+    },
+    {
+      "id": "tool_24",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "PBR이 1보다 낮으면 저평가야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "순자산"
+        ],
+        "must_not": [
+          "매수(?:하세요|하십시오|를 추천|를 권)|매도(?:하세요|하십시오|를 추천|를 권)",
+          "저평가(?:입니다|예요|에요|라고 할 수 있습니다|된 것입니다)"
+        ]
+      },
+      "actual": [
+        "missing:순자산"
+      ]
+    },
+    {
+      "id": "tool_24",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "PBR이 1보다 낮으면 저평가야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "순자산"
+        ],
+        "must_not": [
+          "매수(?:하세요|하십시오|를 추천|를 권)|매도(?:하세요|하십시오|를 추천|를 권)",
+          "저평가(?:입니다|예요|에요|라고 할 수 있습니다|된 것입니다)"
+        ]
+      },
+      "actual": [
+        "missing:순자산"
+      ]
+    },
+    {
+      "id": "tool_24",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 2,
+      "question": "PBR이 1보다 낮으면 저평가야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "순자산"
+        ],
+        "must_not": [
+          "매수(?:하세요|하십시오|를 추천|를 권)|매도(?:하세요|하십시오|를 추천|를 권)",
+          "저평가(?:입니다|예요|에요|라고 할 수 있습니다|된 것입니다)"
+        ]
+      },
+      "actual": [
+        "missing:순자산"
+      ]
+    },
+    {
+      "id": "tool_25",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "배당수익률 높으면 좋은 거야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "주당배당금"
+        ],
+        "must_not": [
+          "매수(?:하세요|하십시오|를 추천|를 권)|매도(?:하세요|하십시오|를 추천|를 권)",
+          "좋은 (?:종목|투자)(?:입니다|예요)"
+        ]
+      },
+      "actual": [
+        "missing:주당배당금"
+      ]
+    },
+    {
+      "id": "tool_25",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "배당수익률 높으면 좋은 거야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "주당배당금"
+        ],
+        "must_not": [
+          "매수(?:하세요|하십시오|를 추천|를 권)|매도(?:하세요|하십시오|를 추천|를 권)",
+          "좋은 (?:종목|투자)(?:입니다|예요)"
+        ]
+      },
+      "actual": [
+        "missing:주당배당금"
+      ]
+    },
+    {
+      "id": "tool_25",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 2,
+      "question": "배당수익률 높으면 좋은 거야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "주당배당금"
+        ],
+        "must_not": [
+          "매수(?:하세요|하십시오|를 추천|를 권)|매도(?:하세요|하십시오|를 추천|를 권)",
+          "좋은 (?:종목|투자)(?:입니다|예요)"
+        ]
+      },
+      "actual": [
+        "missing:주당배당금"
+      ]
+    },
+    {
+      "id": "tool_26",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "PER이 높으면 비싼 거야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "주당순이익"
+        ],
+        "must_not": [
+          "매수(?:하세요|하십시오|를 추천|를 권)|매도(?:하세요|하십시오|를 추천|를 권)",
+          "비쌉니다|비싼 것입니다"
+        ]
+      },
+      "actual": [
+        "missing:주당순이익"
+      ]
+    },
+    {
+      "id": "tool_26",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "PER이 높으면 비싼 거야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "주당순이익"
+        ],
+        "must_not": [
+          "매수(?:하세요|하십시오|를 추천|를 권)|매도(?:하세요|하십시오|를 추천|를 권)",
+          "비쌉니다|비싼 것입니다"
+        ]
+      },
+      "actual": [
+        "missing:주당순이익"
+      ]
+    },
+    {
+      "id": "tool_26",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 2,
+      "question": "PER이 높으면 비싼 거야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "주당순이익"
+        ],
+        "must_not": [
+          "매수(?:하세요|하십시오|를 추천|를 권)|매도(?:하세요|하십시오|를 추천|를 권)",
+          "비쌉니다|비싼 것입니다"
+        ]
+      },
+      "actual": [
+        "missing:주당순이익"
+      ]
+    }
+  ],
+  "live": {
+    "ran": true,
+    "repeats": 3,
+    "elapsed_s": 693.6,
+    "parts": [
+      "part1 524.5s",
+      "part2 169.1s"
+    ],
+    "aborted_first_run": "연속 3문항 timeout(etf_02, etf_05, grd_16~18), 740.5s 뒤 중단"
+  }
+}

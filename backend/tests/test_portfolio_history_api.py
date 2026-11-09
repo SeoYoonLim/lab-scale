@@ -49,28 +49,32 @@ class TestTrades:
     def test_defaults_and_envelope(self, monkeypatch, no_db):
         seen = {}
 
-        def fake(db, key, limit, offset, company_id=None):
-            seen.update(key=key, limit=limit, offset=offset, company_id=company_id)
+        def fake(db, key, limit, offset, company_id=None, sort="executed_at", order="desc"):
+            seen.update(key=key, limit=limit, offset=offset, company_id=company_id, sort=sort, order=order)
             return {"total": 1, "limit": limit, "offset": offset, "items": [TRADE]}
 
         monkeypatch.setattr(portfolio_api, "list_trades", fake)
         r = client.get("/api/portfolio/trades")
         assert r.status_code == 200
-        assert r.json() == {"total": 1, "limit": 50, "offset": 0, "items": [TRADE]}
-        assert seen == {"key": OWNER_KEY, "limit": 50, "offset": 0, "company_id": None}
+        assert r.json() == {"total": 1, "limit": 50, "offset": 0, "has_next": False, "total_pages": 1, "items": [TRADE]}
+        assert seen == {
+            "key": OWNER_KEY, "limit": 50, "offset": 0, "company_id": None, "sort": "executed_at", "order": "desc",
+        }
 
     def test_empty_is_200(self, monkeypatch, no_db):
         monkeypatch.setattr(
             portfolio_api, "list_trades",
-            lambda db, key, limit, offset, company_id=None: {"total": 0, "limit": limit, "offset": offset, "items": []},
+            lambda db, key, limit, offset, company_id=None, sort=None, order=None: {"total": 0, "limit": limit, "offset": offset, "items": []},
         )
         r = client.get("/api/portfolio/trades")
-        assert r.status_code == 200 and r.json() == {"total": 0, "limit": 50, "offset": 0, "items": []}
+        assert r.status_code == 200 and r.json() == {
+            "total": 0, "limit": 50, "offset": 0, "has_next": False, "total_pages": 0, "items": [],
+        }
 
     def test_limit_boundaries_accepted(self, monkeypatch, no_db):
         monkeypatch.setattr(
             portfolio_api, "list_trades",
-            lambda db, key, limit, offset, company_id=None: {"total": 0, "limit": limit, "offset": offset, "items": []},
+            lambda db, key, limit, offset, company_id=None, sort=None, order=None: {"total": 0, "limit": limit, "offset": offset, "items": []},
         )
         assert client.get("/api/portfolio/trades?limit=1").json()["limit"] == 1
         assert client.get("/api/portfolio/trades?limit=200&offset=10").json()["limit"] == 200
@@ -84,7 +88,7 @@ class TestTrades:
         seen = {}
         monkeypatch.setattr(portfolio_api, "resolve_company", lambda db, t: Resolution(company=COMPANY))
 
-        def fake(db, key, limit, offset, company_id=None):
+        def fake(db, key, limit, offset, company_id=None, sort="executed_at", order="desc"):
             seen["company_id"] = company_id
             return {"total": 0, "limit": limit, "offset": offset, "items": []}
 

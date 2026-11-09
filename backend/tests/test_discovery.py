@@ -83,6 +83,7 @@ class TestGetTrendingValidation:
 @pytest.mark.integration
 class TestGetTrendingDevDB:
     @pytest.mark.parametrize("category", ["gainers", "losers", "volume_surge"])
+    @pytest.mark.needs_collected_data
     def test_real_data_shape_and_order(self, dev_db, category):
         from sqlalchemy import text
 
@@ -112,6 +113,7 @@ class TestGetTrendingDevDB:
             assert ratios == sorted(ratios, reverse=True)
             assert all(r >= VOLUME_SURGE_MIN_RATIO for r in ratios)
 
+    @pytest.mark.needs_collected_data
     def test_latest_date_matches_max_stock_price_date(self, dev_db):
         from sqlalchemy import text
 

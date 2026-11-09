@@ -23,7 +23,7 @@ PRICE = 1000.0
 LLM_OK = {"summary": "현금 비중을 확인했습니다.", "suggestions": ["종목별 뉴스를 점검"]}
 BASE = "/api/portfolio/diagnosis"
 BODY_KEYS = {"generated_at", "source", "model", "metrics", "holdings", "flags", "summary", "strengths", "risks",
-             "suggestions", "notes", "disclaimer"}
+             "suggestions", "notes", "disclaimer", "look_through"}  # look_through: ETF 실질 노출 스냅샷(2026-11-06 추가, 기존 필드는 그대로)
 
 
 @pytest.fixture(autouse=True)
@@ -224,7 +224,9 @@ class TestListAndDetail:
 
     def test_empty_history(self, signup):
         user = signup()
-        assert _get(user, "/history").json() == {"total": 0, "limit": 20, "offset": 0, "items": []}
+        assert _get(user, "/history").json() == {
+            "total": 0, "limit": 20, "offset": 0, "has_next": False, "total_pages": 0, "items": [],
+        }
 
     def test_history_is_not_taken_as_an_id(self, signup):
         assert _get(signup(), "/history").status_code == 200

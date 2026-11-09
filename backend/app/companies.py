@@ -55,10 +55,21 @@ def _latest_prices(db, company_ids: list[int]) -> dict[int, StockPrice]:
     return {row.company_id: row for row in rows}
 
 
-def search_companies(db, q: str | None, limit: int, asset_type: str | None = None) -> list[dict]:
-    """종목명/티커 부분 일치 검색(대소문자/공백 무시, 별칭 반영) + 최근 종가·등락률. q가 없으면 상위 limit개.
+COMPANY_SORT_KEYS = {
+    "id": lambda c: c.id,
+    "name": lambda c: c.name,
+    "ticker": lambda c: c.ticker,
+}
 
-    asset_type('stock'|'etf')을 주면 그 유형만, 생략하면 전체(주식 + ETF)를 대상으로 한다."""
+
+def search_companies_page(
+    db, q: str | None, limit: int, asset_type: str | None = None, offset: int = 0, sort: str = "id", order: str = "asc"
+) -> tuple[int, list[dict]]:
+    """종목명/티커 부분 일치 검색(대소문자/공백 무시, 별칭 반영) + 최근 종가·등락률. q가 없으면 전체.
+    (조건에 맞는 전체 건수, offset부터 limit개)를 돌려준다. 건수는 limit/offset과 무관하다.
+
+    asset_type('stock'|'etf')을 주면 그 유형만, 생략하면 전체(주식 + ETF)를 대상으로 한다.
+    sort는 id(기본, 수집 순서) | name | ticker. 같은 값은 id가 방향을 따라 정한다."""
     query = db.query(Company)
     if asset_type is not None:
         query = query.filter(Company.asset_type == asset_type)
@@ -68,7 +79,9 @@ def search_companies(db, q: str | None, limit: int, asset_type: str | None = Non
     if targets is not None:
         companies = [c for c in companies if _matches(c, targets)]
 
-    companies = companies[:limit]
+    total = len(companies)
+    key = COMPANY_SORT_KEYS[sort]
+    companies = sorted(companies, key=lambda c: (key(c), c.id), reverse=order == "desc")[offset : offset + limit]
     prices = _latest_prices(db, [c.id for c in companies])
 
     out = []
@@ -85,4 +98,9 @@ def search_companies(db, q: str | None, limit: int, asset_type: str | None = Non
                 "change_pct": float(p.change_pct) if (p and p.change_pct is not None) else None,
             }
         )
-    return out
+    return total, out
+
+
+def search_companies(db, q: str | None, limit: int, asset_type: str | None = None) -> list[dict]:
+    """search_companies_page의 첫 페이지(기본 정렬)만. 건수가 필요 없는 호출용."""
+    return search_companies_page(db, q, limit, asset_type)[1]

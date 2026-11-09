@@ -36,7 +36,8 @@ class TestSignupLoginMe:
         assert body["token_type"] == "bearer"
 
         me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {body['access_token']}"})
-        assert me.status_code == 200 and me.json() == {"id": user["id"], "username": raw_name.lower()}
+        # 2026-10-30: 이메일 상태 필드가 추가됐고 기존 필드는 그대로다(이메일 없이 가입하면 null/false)
+        assert me.status_code == 200 and me.json() == {"id": user["id"], "username": raw_name.lower(), "email": None, "email_verified": False}
 
     def test_duplicate_username_case_insensitive_is_409(self, signup):
         user = signup()
@@ -107,6 +108,7 @@ class TestReportIsolation:
         assert la["total"] == 2 and {i["report_id"] for i in la["items"]} == a_ids
         assert lb["total"] == 1 and [i["report_id"] for i in lb["items"]] == [b_id]
 
+    @pytest.mark.needs_collected_data
     def test_legacy_reports_without_owner_are_hidden(self, signup, dev_db):
         user = signup()
         legacy = dev_db.execute(text("SELECT id FROM research_report WHERE user_id IS NULL LIMIT 1")).scalar()

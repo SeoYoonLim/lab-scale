@@ -9,6 +9,8 @@
 변경을 2,292개 입력으로, market_tool 키워드 게이트를 44개 비시장 질문으로 검증한 것과 같은 방식이다."""
 
 import copy
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -42,7 +44,9 @@ class TestApplyPeriodOverride:
         assert overridden == {0: 1}
         assert calls[0]["function"]["arguments"]["period_days"] == 5  # 지난주 = 평일 5일
 
-    def test_recognized_period_overrides_market_tool_period_days(self):
+    def test_recognized_period_overrides_market_tool_period_days(self, monkeypatch):
+        real_parse = agent.parse_period
+        monkeypatch.setattr(agent, "parse_period", lambda q: real_parse(q, now=datetime(2026, 10, 31, 12, 0, tzinfo=ZoneInfo("Asia/Seoul"))))
         calls = [market_call(period_days=5)]
         overridden = agent._apply_period_override(calls, "삼성전자 지난달 코스피 대비 어때?")
         assert overridden == {0: 5}
@@ -75,10 +79,21 @@ class TestApplyPeriodOverride:
         assert calls[0]["function"]["arguments"] == {"ticker": "삼성전자", "period_days": 1}
 
 
+def _no_db(monkeypatch):
+    """_answer()가 부르는 DB 조회 도우미를 가짜로 바꾼다. 이 테스트들은 기간 덮어쓰기만 보는 순수 테스트인데, 종목 보정
+    (_repair_company_args)이 DB를 직접 조회해서 개발 DB가 켜져 있을 때만 통과했다(CI의 DB 없는 환경에서 처음 드러남)."""
+    monkeypatch.setattr(agent, "_question_companies", lambda q: [])
+    monkeypatch.setattr(agent, "_event_subject", lambda q, previous=None: None)
+    monkeypatch.setattr(agent, "_repair_company_args", lambda *a, **k: {})
+    monkeypatch.setattr(agent, "_question_subjects", lambda q, calls: [])
+    monkeypatch.setattr(agent, "_unresolved_company_answer", lambda *a, **k: None)
+
+
 class TestAnswerAppliesPeriodOverride:
     """_answer()의 실행 경로에서 실제로 period_days가 덮어써지는지(LLM이 추론한 값보다 우선하는지) 확인한다."""
 
     def _run(self, monkeypatch, question, llm_period_days=999):
+        _no_db(monkeypatch)
         seen = {}
 
         def fake_first_call(model, messages, tools=None):
@@ -104,6 +119,7 @@ class TestAnswerAppliesPeriodOverride:
         assert args["period_days"] == 7
 
     def test_correction_metadata_is_attached_to_the_tool_result(self, monkeypatch):
+        _no_db(monkeypatch)
         captured = {}
 
         def fake_first_call(model, messages, tools=None):

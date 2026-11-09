@@ -53,7 +53,9 @@ def _counts(dev_db, owner_key):
 class TestTrades:
     def test_empty_is_200_with_zero_total(self, signup):
         user = signup()
-        assert _trades(user) == {"total": 0, "limit": 50, "offset": 0, "items": []}
+        assert _trades(user) == {
+            "total": 0, "limit": 50, "offset": 0, "has_next": False, "total_pages": 0, "items": [],
+        }
 
     def test_fields_and_amount_after_real_orders(self, signup):
         user = signup()
@@ -104,7 +106,9 @@ class TestTrades:
         assert (page1["total"], page1["limit"], page1["offset"]) == (5, 2, 0)
         assert [i["id"] for i in page1["items"] + page2["items"] + page3["items"]] == expected
         assert len(page3["items"]) == 1
-        assert _trades(user, "?limit=2&offset=99") == {"total": 5, "limit": 2, "offset": 99, "items": []}
+        assert _trades(user, "?limit=2&offset=99") == {
+            "total": 5, "limit": 2, "offset": 99, "has_next": False, "total_pages": 3, "items": [],
+        }
 
         only_hynix = _trades(user, "?ticker=000660")
         assert only_hynix["total"] == 2 and {i["ticker"] for i in only_hynix["items"]} == {"000660"}
@@ -168,7 +172,9 @@ class TestReset:
         assert client.get("/api/portfolio", headers=user["headers"]).json() == body
 
         assert _counts(dev_db, key) == {"holdings": 0, "trades": 0, "cash": INITIAL_BALANCE}
-        assert _trades(user) == {"total": 0, "limit": 50, "offset": 0, "items": []}
+        assert _trades(user) == {
+            "total": 0, "limit": 50, "offset": 0, "has_next": False, "total_pages": 0, "items": [],
+        }
         # 초기화 뒤에도 정상적으로 다시 거래할 수 있다(전량 매도 후 재매수처럼 평균단가가 새로 시작)
         assert _order(user, "005930", "buy", 1)["holding"] == {"quantity": 1, "avg_price": 1000.0}
 

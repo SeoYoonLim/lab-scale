@@ -1,0 +1,706 @@
+{
+  "git_commit": "2ddb368739b8d4c744e422587f6a35a3de81ef3b",
+  "git_dirty": false,
+  "date": "2026-10-31T14:37:30",
+  "model": "llama3.1:8b",
+  "args": {
+    "mode": "live",
+    "split": "dev",
+    "repeats": 3,
+    "only": null,
+    "ids": null,
+    "limit": null,
+    "out": "C:\\project\\lab-scale\\backend\\evals\\results\\summary_baseline_r7_2026-10-31.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 0,
+    "live": 93,
+    "records": 279
+  },
+  "live": {
+    "ran": true,
+    "repeats": 3,
+    "eval_user": "captest_843b594ddfb6",
+    "deleted_reports": 279,
+    "etf_data_available": {
+      "069500": false,
+      "091160": false,
+      "122630": false,
+      "305720": false
+    },
+    "elapsed_s": 511.1
+  },
+  "etf_data_available": {
+    "069500": false,
+    "091160": false,
+    "122630": false,
+    "305720": false
+  },
+  "etf_branches": {
+    "without_data": {
+      "ids": [
+        "etf_03",
+        "etf_06",
+        "etf_08",
+        "etf_11",
+        "etf_16"
+      ],
+      "passed": 15,
+      "runs": 15
+    }
+  },
+  "elapsed_s": 516.2,
+  "metrics": {
+    "tool_selection_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 57,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 57
+      }
+    },
+    "live_company_accuracy": {
+      "dev": 0.9853,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.9853,
+      "n": {
+        "dev": 204,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 204
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 204,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 204
+      }
+    },
+    "live_period_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 12,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 12
+      }
+    },
+    "number_match_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 901,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 901
+      }
+    },
+    "number_full_support_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 143,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 143
+      }
+    },
+    "source_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 38,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 38
+      }
+    },
+    "refusal_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 45,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 45
+      }
+    },
+    "period_label_violation_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 3,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "must_contain_rate": {
+      "dev": 0.9167,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.9167,
+      "n": {
+        "dev": 144,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 144
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 279,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 279
+      }
+    },
+    "data_date_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 6
+      }
+    },
+    "briefing_link_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 6
+      }
+    },
+    "number_attachment_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 18,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 18
+      }
+    },
+    "code_answer_rate": {
+      "dev": 0.7419,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.7419,
+      "n": {
+        "dev": 279,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 279
+      }
+    },
+    "loop_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 279,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 279
+      }
+    },
+    "stability_answer_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 24,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 24
+      }
+    },
+    "guard_replacement_rate": {
+      "dev": 0.1061,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.1061,
+      "n": {
+        "dev": 66,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 66
+      }
+    },
+    "fallback_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 279,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 279
+      }
+    },
+    "error_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 279,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 279
+      }
+    },
+    "latency_p50_s": {
+      "dev": 0.03,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.03,
+      "n": {
+        "dev": 279,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 279
+      }
+    },
+    "latency_p95_s": {
+      "dev": 10.406,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 10.406,
+      "n": {
+        "dev": 279,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 279
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "stab_07",
+      "split": "dev",
+      "category": "stability",
+      "run": 1,
+      "question": "삼성전자에 투자할 때 고려해야 할 위험 요인을 전반적으로 정리해줘",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "삼성전자"
+        ],
+        "must_not": null
+      },
+      "actual": []
+    },
+    {
+      "id": "stab_11",
+      "split": "dev",
+      "category": "stability",
+      "run": 0,
+      "question": "삼성전자와 SK하이닉스에 투자할 때 고려할 위험 요인을 정리해줘",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "삼성전자",
+          "SK하이닉스"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "삼성전자"
+      ]
+    },
+    {
+      "id": "stab_11",
+      "split": "dev",
+      "category": "stability",
+      "run": 1,
+      "question": "삼성전자와 SK하이닉스에 투자할 때 고려할 위험 요인을 정리해줘",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "삼성전자",
+          "SK하이닉스"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "삼성전자"
+      ]
+    },
+    {
+      "id": "hist_23",
+      "split": "dev",
+      "category": "period_history",
+      "run": 0,
+      "question": "삼성전자 올해 1분기 수익률 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2026-03-31",
+          "167,200원",
+          "2025-12-30",
+          "119,900원",
+          "\\+39\\.45%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2026-03-31",
+        "missing:167,200원",
+        "missing:\\+39\\.45%"
+      ]
+    },
+    {
+      "id": "hist_23",
+      "split": "dev",
+      "category": "period_history",
+      "run": 1,
+      "question": "삼성전자 올해 1분기 수익률 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2026-03-31",
+          "167,200원",
+          "2025-12-30",
+          "119,900원",
+          "\\+39\\.45%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2026-03-31",
+        "missing:167,200원",
+        "missing:\\+39\\.45%"
+      ]
+    },
+    {
+      "id": "hist_23",
+      "split": "dev",
+      "category": "period_history",
+      "run": 2,
+      "question": "삼성전자 올해 1분기 수익률 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2026-03-31",
+          "167,200원",
+          "2025-12-30",
+          "119,900원",
+          "\\+39\\.45%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2026-03-31",
+        "missing:167,200원",
+        "missing:\\+39\\.45%"
+      ]
+    },
+    {
+      "id": "hist_24",
+      "split": "dev",
+      "category": "period_history",
+      "run": 0,
+      "question": "SK하이닉스 올해 3월 수익률은?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2026-03-31",
+          "807,000원",
+          "2026-02-27",
+          "1,061,000원",
+          "\\-23\\.94%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2026-03-31",
+        "missing:807,000원",
+        "missing:2026-02-27",
+        "missing:1,061,000원",
+        "missing:\\-23\\.94%"
+      ]
+    },
+    {
+      "id": "hist_24",
+      "split": "dev",
+      "category": "period_history",
+      "run": 1,
+      "question": "SK하이닉스 올해 3월 수익률은?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2026-03-31",
+          "807,000원",
+          "2026-02-27",
+          "1,061,000원",
+          "\\-23\\.94%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2026-03-31",
+        "missing:807,000원",
+        "missing:2026-02-27",
+        "missing:1,061,000원",
+        "missing:\\-23\\.94%"
+      ]
+    },
+    {
+      "id": "hist_24",
+      "split": "dev",
+      "category": "period_history",
+      "run": 2,
+      "question": "SK하이닉스 올해 3월 수익률은?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2026-03-31",
+          "807,000원",
+          "2026-02-27",
+          "1,061,000원",
+          "\\-23\\.94%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2026-03-31",
+        "missing:807,000원",
+        "missing:2026-02-27",
+        "missing:1,061,000원",
+        "missing:\\-23\\.94%"
+      ]
+    },
+    {
+      "id": "hist_25",
+      "split": "dev",
+      "category": "period_history",
+      "run": 0,
+      "question": "현대차 24년 3월 주가 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2024-03-29",
+          "233,000원",
+          "2024-02-29",
+          "250,500원",
+          "\\-6\\.99%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2024-03-29",
+        "missing:233,000원",
+        "missing:2024-02-29",
+        "missing:250,500원",
+        "missing:\\-6\\.99%"
+      ]
+    },
+    {
+      "id": "hist_25",
+      "split": "dev",
+      "category": "period_history",
+      "run": 1,
+      "question": "현대차 24년 3월 주가 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2024-03-29",
+          "233,000원",
+          "2024-02-29",
+          "250,500원",
+          "\\-6\\.99%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2024-03-29",
+        "missing:233,000원",
+        "missing:2024-02-29",
+        "missing:250,500원",
+        "missing:\\-6\\.99%"
+      ]
+    },
+    {
+      "id": "hist_25",
+      "split": "dev",
+      "category": "period_history",
+      "run": 2,
+      "question": "현대차 24년 3월 주가 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2024-03-29",
+          "233,000원",
+          "2024-02-29",
+          "250,500원",
+          "\\-6\\.99%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2024-03-29",
+        "missing:233,000원",
+        "missing:2024-02-29",
+        "missing:250,500원",
+        "missing:\\-6\\.99%"
+      ]
+    },
+    {
+      "id": "hist_28",
+      "split": "dev",
+      "category": "period_history",
+      "run": 0,
+      "question": "2024년 코스피 대비 삼성전자 수익률 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2023-12-28",
+          "2024-12-30",
+          "\\-32\\.23%",
+          "\\-9\\.63%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2023-12-28",
+        "missing:2024-12-30",
+        "missing:\\-32\\.23%",
+        "missing:\\-9\\.63%"
+      ]
+    },
+    {
+      "id": "hist_28",
+      "split": "dev",
+      "category": "period_history",
+      "run": 1,
+      "question": "2024년 코스피 대비 삼성전자 수익률 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2023-12-28",
+          "2024-12-30",
+          "\\-32\\.23%",
+          "\\-9\\.63%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2023-12-28",
+        "missing:2024-12-30",
+        "missing:\\-32\\.23%",
+        "missing:\\-9\\.63%"
+      ]
+    },
+    {
+      "id": "hist_28",
+      "split": "dev",
+      "category": "period_history",
+      "run": 2,
+      "question": "2024년 코스피 대비 삼성전자 수익률 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2023-12-28",
+          "2024-12-30",
+          "\\-32\\.23%",
+          "\\-9\\.63%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2023-12-28",
+        "missing:2024-12-30",
+        "missing:\\-32\\.23%",
+        "missing:\\-9\\.63%"
+      ]
+    }
+  ]
+}

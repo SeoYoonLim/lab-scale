@@ -192,8 +192,12 @@ def fake_agent(monkeypatch):
 
     monkeypatch.setattr(agent, "_first_call", first_call)
     monkeypatch.setattr(agent, "_run_tool", run_tool)
+    # 2026-11-09(40차): 이 픽스처는 ETF 질문의 LLM 경로를 본다. "…위험해?"처럼 전망 질문으로도 분류되는 질문은 전망 코드 경로
+    # (app.outlook, 실제 DB 시세로 LLM 없이 답함)가 먼저 실행돼, 시세가 있는 개발 DB에서는 LLM을 부르지 않아 messages가 None이었다
+    # (시세가 없는 CI DB에서는 전망이 계산되지 않아 LLM 경로로 넘어가 통과). 전망 경로는 tests/test_outlook*.py가 따로 본다.
+    monkeypatch.setattr(agent, "_answer_forecast", lambda question, previous=None: None)
     monkeypatch.setattr(agent.ollama, "chat", chat)
-    monkeypatch.setattr(agent, "_repair_company_args", lambda calls, q, prev=None: {})
+    monkeypatch.setattr(agent, "_repair_company_args", lambda calls, q, prev=None, prev_company=None: {})
     monkeypatch.setattr(agent, "_market_comparison_available", lambda c: False)
     monkeypatch.setattr(agent, "_question_subjects", lambda q, calls: state["subjects"])
     monkeypatch.setattr(
@@ -281,7 +285,7 @@ class TestAgentEtfPath:
 
     def test_stock_no_tool_answer_is_unchanged(self, fake_agent):
         fake_agent.update(first=[], subjects=[], final="x")
-        resp, records = agent._answer("PER이 뭐야?", "m")
+        resp, records = agent._answer("투자를 처음 시작하려면 뭐부터 해야 해?", "m")  # 개념 질문은 용어 사전 경로
         assert resp["answer"] == "개념 설명입니다." and records == []
 
 
@@ -609,3 +613,24 @@ class TestFinalProbeResidue:
     def test_extreme_with_price_from_result_is_kept(self):
         text = "TIGER 200의 이 기간 종가 최고는 113,360원입니다."
         assert check_etf_answer(text, {"TIGER 200": self.TIGER200}) == (text, [])
+
+
+# ---------- 가드가 답변을 바꿔도 레버리지 설명은 남는다 (etf_05, 2026-11-02) ----------
+
+
+def test_guard_replacement_keeps_leverage_notice(monkeypatch):
+    from app import agent
+
+    agent._reset_llm_state()
+    price = {"found": True, "company_name": "KODEX 레버리지", "summary": "KODEX 레버리지의 종가는 100원입니다.", "prices": []}
+    records = [{"tool_name": "stock_tool", "arguments": {"ticker": "KODEX 레버리지"}, "result": price}]
+
+    def replaced(answer, recs, question):
+        agent._meta()["answer_guard"] = {"replaced": True}
+        return "코드 요약"
+
+    monkeypatch.setattr(agent, "_guard", replaced)
+    monkeypatch.setattr(agent, "_company_names", lambda: ["KODEX 레버리지"])
+    out = agent._guard_etf_aware("틀린 답", records, "사도 돼?", [("KODEX 레버리지", "etf")])
+    assert "복리" in out and "100원" in out and "틀린 답" not in out
+    assert agent._guard_etf_aware("틀린 답", records, "사도 돼?", None) == "코드 요약"

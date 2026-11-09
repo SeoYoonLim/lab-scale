@@ -1,0 +1,500 @@
+{
+  "git_commit": "70a73db07baaf98ffb1dc830cba505d6ec407907",
+  "git_dirty": false,
+  "date": "2026-11-01T16:45:12",
+  "model": "llama3.1:8b",
+  "args": {
+    "mode": "live",
+    "split": "dev",
+    "repeats": 3,
+    "only": null,
+    "ids": null,
+    "limit": null,
+    "out": "evals/results/summary_baseline_r9_2026-11-01.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 0,
+    "live": 124,
+    "records": 372
+  },
+  "live": {
+    "ran": true,
+    "repeats": 3,
+    "eval_user": "captest_7ab896ac1f3e",
+    "deleted_reports": 372,
+    "etf_data_available": {
+      "069500": true,
+      "091160": true,
+      "122630": true,
+      "305720": true
+    },
+    "elapsed_s": 1171.2
+  },
+  "etf_data_available": {
+    "069500": true,
+    "091160": true,
+    "122630": true,
+    "305720": true
+  },
+  "etf_branches": {
+    "with_data": {
+      "ids": [
+        "etf_03",
+        "etf_06",
+        "etf_08",
+        "etf_11",
+        "etf_16"
+      ],
+      "passed": 15,
+      "runs": 15
+    }
+  },
+  "elapsed_s": 1176.4,
+  "metrics": {
+    "tool_selection_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 57,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 57
+      }
+    },
+    "live_company_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 297,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 297
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 297,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 297
+      }
+    },
+    "live_period_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 12,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 12
+      }
+    },
+    "number_match_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 1118,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 1118
+      }
+    },
+    "number_full_support_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 203,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 203
+      }
+    },
+    "source_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 131,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 131
+      }
+    },
+    "refusal_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 30,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 30
+      }
+    },
+    "period_label_violation_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 3,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "must_contain_rate": {
+      "dev": 0.963,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.963,
+      "n": {
+        "dev": 162,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 162
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 372,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 372
+      }
+    },
+    "data_date_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 6
+      }
+    },
+    "briefing_link_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 6
+      }
+    },
+    "number_attachment_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 18,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 18
+      }
+    },
+    "code_answer_rate": {
+      "dev": 0.6048,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.6048,
+      "n": {
+        "dev": 372,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 372
+      }
+    },
+    "loop_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 372,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 372
+      }
+    },
+    "stability_answer_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 117,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 117
+      }
+    },
+    "guard_replacement_rate": {
+      "dev": 0.0638,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0638,
+      "n": {
+        "dev": 141,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 141
+      }
+    },
+    "narrative_drop_rate": {
+      "dev": 0.0833,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0833,
+      "n": {
+        "dev": 132,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 132
+      }
+    },
+    "fallback_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 372,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 372
+      }
+    },
+    "error_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 372,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 372
+      }
+    },
+    "latency_p50_s": {
+      "dev": 0.03,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.03,
+      "n": {
+        "dev": 372,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 372
+      }
+    },
+    "latency_p95_s": {
+      "dev": 11.608,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 11.608,
+      "n": {
+        "dev": 372,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 372
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "rel_01",
+      "split": "dev",
+      "category": "news_relevance",
+      "run": 0,
+      "question": "태성 최근 뉴스 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": null,
+        "must_not": [
+          "이태성",
+          "태성무역",
+          "태성자산운용"
+        ]
+      },
+      "actual": [
+        "present:이태성"
+      ]
+    },
+    {
+      "id": "rel_01",
+      "split": "dev",
+      "category": "news_relevance",
+      "run": 1,
+      "question": "태성 최근 뉴스 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": null,
+        "must_not": [
+          "이태성",
+          "태성무역",
+          "태성자산운용"
+        ]
+      },
+      "actual": [
+        "present:이태성",
+        "present:태성무역"
+      ]
+    },
+    {
+      "id": "rel_01",
+      "split": "dev",
+      "category": "news_relevance",
+      "run": 2,
+      "question": "태성 최근 뉴스 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": null,
+        "must_not": [
+          "이태성",
+          "태성무역",
+          "태성자산운용"
+        ]
+      },
+      "actual": [
+        "present:이태성",
+        "present:태성무역"
+      ]
+    },
+    {
+      "id": "rel_06",
+      "split": "dev",
+      "category": "news_relevance",
+      "run": 0,
+      "question": "스피어 최근 뉴스 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": null,
+        "must_not": [
+          "유스피어",
+          "크로노스피어",
+          "웍스피어",
+          "알바몬"
+        ]
+      },
+      "actual": [
+        "present:유스피어"
+      ]
+    },
+    {
+      "id": "rel_06",
+      "split": "dev",
+      "category": "news_relevance",
+      "run": 1,
+      "question": "스피어 최근 뉴스 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": null,
+        "must_not": [
+          "유스피어",
+          "크로노스피어",
+          "웍스피어",
+          "알바몬"
+        ]
+      },
+      "actual": [
+        "present:유스피어"
+      ]
+    },
+    {
+      "id": "rel_06",
+      "split": "dev",
+      "category": "news_relevance",
+      "run": 2,
+      "question": "스피어 최근 뉴스 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": null,
+        "must_not": [
+          "유스피어",
+          "크로노스피어",
+          "웍스피어",
+          "알바몬"
+        ]
+      },
+      "actual": [
+        "present:유스피어"
+      ]
+    }
+  ]
+}
