@@ -12,6 +12,7 @@ import os
 import re
 
 from app.answer_guard import _SENTENCE_SPLIT_RE, extract_numbers, is_supported, support_values
+from app.display_dates import kst_day
 
 MAX_ITEMS = 5
 MAX_ITEMS_EACH = 3
@@ -89,7 +90,7 @@ def wanted_tools(question: str, cause: bool) -> list[str]:
 
 
 def _item(company: str | None, title: str, content: str, when, source: str | None, kind: str) -> dict:
-    return {"company": company, "title": title or "", "content": (content or "")[:SNIPPET_CHARS], "date": str(when or "")[:10], "source": source or "", "kind": kind}
+    return {"company": company, "title": title or "", "content": (content or "")[:SNIPPET_CHARS], "date": kst_day(when), "source": source or "", "kind": kind}
 
 
 def collect_items(records: list[dict], names: list[str]) -> list[dict]:

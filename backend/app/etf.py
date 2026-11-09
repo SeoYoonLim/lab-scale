@@ -11,6 +11,7 @@ import unicodedata
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from app.company_aliases import ETF_BRANDS, ETF_BRANDS_NO_HANGUL_AFTER, ETF_FORMER_BRANDS
+from app.display_dates import kst_day
 from app.korean import josa
 
 # ---------- 브랜드 표기 ----------
@@ -551,7 +552,7 @@ def compose_etf_answer(llm_answer: str, price_results: list[dict], news_results:
         if not isinstance(r, dict) or not r.get("found"):
             continue
         for n in r.get("news", [])[:MAX_ETF_NEWS_LINES]:
-            meta = ", ".join(x for x in (n.get("source"), (n.get("published_at") or "")[:10]) if x)
+            meta = ", ".join(x for x in (n.get("source"), kst_day(n.get("published_at"))) if x)  # 39차: 한국 날짜
             lines.append(f"- {n.get('title')}" + (f" ({meta})" if meta else ""))
     if lines:
         parts.append("## 관련 뉴스\n" + "\n".join(lines))

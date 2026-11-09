@@ -141,6 +141,9 @@ def compute(holdings: list[HoldingIn], etfs: dict[str, EtfIn], cash: float | Non
         return co
 
     stock_amount = etf_amount = via_amount = nested_amount = residual_amount = undecomposed_amount = unlinked_amount = 0.0
+    # 2026-11-09(39차): ETF별 잔여를 부호별로 따로 모은다. 순합계(residual_amount)로만 계산하면 비중 합계가 100%를 넘는 ETF와
+    # 모자란 ETF를 같이 보유할 때 서로 상쇄돼 미확인 노출·초과분이 실제보다 작게 나왔다.
+    under_residual = over_residual = 0.0
     etf_rows: list[dict] = []
     for h, value in priced:
         if h.asset_type != "etf":
@@ -190,6 +193,10 @@ def compute(holdings: list[HoldingIn], etfs: dict[str, EtfIn], cash: float | Non
         via_amount += allocated
         nested_amount += nested
         residual_amount += residual
+        if residual > 0:
+            under_residual += residual
+        else:
+            over_residual -= residual
         row.update(status=STATUS_DECOMPOSED, reason_code=None, allocated_amount=allocated, nested_etf_amount=nested, residual_amount=residual,
                    constituents=_preview(cons, h.ticker, value))
         for n in row["nested_etfs"]:
@@ -248,7 +255,7 @@ def compute(holdings: list[HoldingIn], etfs: dict[str, EtfIn], cash: float | Non
         for k in ("eval_amount", "allocated_amount", "nested_etf_amount", "residual_amount"):
             row[k] = _r(row[k])
 
-    unidentified = undecomposed_amount + nested_amount + max(residual_amount, 0.0)
+    unidentified = undecomposed_amount + nested_amount + under_residual
     limit = max(1, min(limit, MAX_LIMIT))
     companies_amount = stock_amount + via_amount
     return {
@@ -267,7 +274,8 @@ def compute(holdings: list[HoldingIn], etfs: dict[str, EtfIn], cash: float | Non
             "linked_via_amount": _r(via_amount - unlinked_amount), "unlinked_via_amount": _r(unlinked_amount),
             "nested_etf_amount": _r(nested_amount), "residual_amount": _r(residual_amount), "undecomposed_etf_amount": _r(undecomposed_amount),
             "unidentified_amount": _r(unidentified), "unidentified_weight_pct": _pct(unidentified, total_asset),
-            "over_allocated_amount": _r(max(0.0, -residual_amount)),  # 2026-11-08(37차): max(-0.0, 0.0)은 -0.0이라 화면에 "-0원"이 나왔다
+            # 2026-11-08(37차): max(-0.0, 0.0)은 -0.0이라 화면에 "-0원"이 나왔다. 39차: 순합계가 아니라 초과한 ETF들의 초과분 합
+            "over_allocated_amount": _r(max(0.0, over_residual)),
             "cash_weight_pct": _pct(cash, total_asset), "companies_weight_pct": _pct(companies_amount, total_asset),
             "holding_count": len(holdings), "priced_holding_count": len(priced), "unpriced_count": len(unpriced),
             "company_count": len(items),

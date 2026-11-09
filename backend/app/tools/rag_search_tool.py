@@ -6,6 +6,7 @@ EMBED_TIMEOUT_S = 10
 from sqlalchemy import Text, cast, func
 
 from app.db.session import SessionLocal
+from app.display_dates import kst_iso
 from app.embeddings import EMBEDDING_MODEL
 from app.llm_settings import embed_options
 from app.models import Company, Disclosure, News
@@ -110,7 +111,7 @@ def rag_search_tool(query: str, company_name: str | None = None, limit: int = 5)
                     "title": row.title,
                     "content_snippet": (row.content or "")[:200],
                     "url": row.url,
-                    "published_at": row.published_at.isoformat() if row.published_at else None,
+                    "published_at": kst_iso(row.published_at),  # 39차: KST 문자열
                     "score": round(1 - distance, 4),
                 }
             )
@@ -122,7 +123,7 @@ def rag_search_tool(query: str, company_name: str | None = None, limit: int = 5)
                     "title": row.title,
                     "content_snippet": (row.content or "")[:200],
                     "source_url": row.source_url,
-                    "disclosed_at": row.disclosed_at.isoformat() if row.disclosed_at else None,
+                    "disclosed_at": kst_iso(row.disclosed_at),  # 39차: KST 문자열
                     "score": round(1 - distance, 4),
                 }
             )

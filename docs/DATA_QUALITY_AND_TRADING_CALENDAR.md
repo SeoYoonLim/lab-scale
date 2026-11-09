@@ -90,6 +90,9 @@ python -m scripts.quarantine prune --keep-days 180 --dry-run   # 끝난 기록·
 ```
 
 **기존 정상 데이터 보호**: `reprocess`는 같은 키의 데이터가 이미 있으면 넣지 않고 `kept_existing`으로 닫는다. 어떤 명령도 기존 행을 갱신하지 않는다.
+**동시 실행 방지(2026-11-09, 39차)**: `reprocess --apply`는 데이터 갱신(`scripts/refresh_data`)과 같은 advisory lock을 잡는다. 갱신이나 다른 재처리가 실행 중이면
+아무것도 넣지 않고 "실행 중이라 재처리하지 않았습니다"를 출력하며 종료 코드 2다. 뉴스·공시 표는 URL 유니크 제약이 없어 "있는지 확인 → 넣기" 사이에
+다른 실행이 같은 URL을 넣으면 중복 행이 생길 수 있었기 때문이다(시세·지수·환율·ETF 구성은 유니크 제약이 막는다). `--apply` 없는 계획 보기는 락을 잡지 않는다.
 `conflicts_existing`(기존 값과 크게 다름)은 기존 값이 그대로 있는 한 재검증해도 격리로 남는다. 새 값이 맞다고 판단되면(예: 액면분할로 과거
 수정주가가 바뀜) 운영자가 기존 행을 확인·정리한 뒤 `revalidate` -> `reprocess --apply` 하거나, 해당 기간을 `scripts/backfill_history.py`로 다시 받는다.
 

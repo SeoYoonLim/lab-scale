@@ -10,6 +10,7 @@
     python -m scripts.quarantine prune [--keep-days 180] [--include-open] [--dry-run]
 
 reprocess는 --apply 없이 실행하면 무엇을 할지만 출력한다. 기존 정상 데이터는 어떤 명령도 덮어쓰지 않는다.
+reprocess --apply는 데이터 갱신과 같은 락을 잡는다: 갱신이나 다른 재처리가 실행 중이면 아무것도 하지 않고 종료 코드 2(2026-11-09).
 종료 코드: 0 성공, 1 대상 없음·처리 실패, 2 인자 오류.
 """
 
@@ -102,12 +103,27 @@ def main(argv: list[str] | None = None, session_factory=None) -> int:
                 print(f"{i}: {Q.revalidate(db, i)}")
             return 0
         if args.cmd == "reprocess":
-            bad = 0
-            for i in args.ids:
-                r = Q.reprocess(db, i, apply=args.apply)
-                bad += r.startswith(("failed", "not_found"))
-                print(f"{i}: {r}" + ("" if args.apply else " (계획만: --apply로 실행)"))
-            return 1 if bad else 0
+            # 2026-11-09(39차): --apply는 데이터 갱신(scripts/refresh_data)과 같은 advisory lock을 잡는다. 뉴스·공시는 DB 유니크 제약이
+            # 없어 "있는지 확인 → 넣기" 사이에 갱신 실행이나 다른 재처리가 같은 URL을 넣으면 중복 행이 생길 수 있었다.
+            lock = None
+            if args.apply:
+                from app import refresh_runs
+
+                try:
+                    lock = refresh_runs.acquire_lock()
+                except refresh_runs.LockBusy:
+                    print("데이터 갱신(또는 다른 재처리)이 실행 중이라 재처리하지 않았습니다. 끝난 뒤 다시 실행하세요.")
+                    return 2
+            try:
+                bad = 0
+                for i in args.ids:
+                    r = Q.reprocess(db, i, apply=args.apply)
+                    bad += r.startswith(("failed", "not_found"))
+                    print(f"{i}: {r}" + ("" if args.apply else " (계획만: --apply로 실행)"))
+                return 1 if bad else 0
+            finally:
+                if lock is not None:
+                    lock.release()
         if args.cmd in ("hold", "discard"):
             r = (Q.hold if args.cmd == "hold" else Q.discard)(db, args.id, args.note)
             print(f"{args.id}: {r}")

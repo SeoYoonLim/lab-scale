@@ -4729,3 +4729,16 @@ AI 답변 품질 평가(2026-11-07, 개발자용, API 아님): `cd backend && py
 - **고친 것**: AI 답의 번역 실패 요약과 코드 요약에서 뉴스·공시 날짜를 UTC 문자열 앞 10자로 써서 하루 이르게 나오던 것(공시는 KST 자정 = UTC 전날 15:00로 저장)을
   한국 날짜로 고쳤다(`app/display_dates.kst_day`). 오프셋 없는 값·날짜만 있는 값은 그대로 둔다.
 - **매칭**: 관심종목·종목 조회는 기본 모드(음차·약칭·오타·유사 보정), 주문·백테스트는 엄격 모드(`allow_fuzzy=False`, 코드·정확명·공백/대소문자·등록 별칭·ETF 브랜드 표기만)다. 바꾸지 않았다.
+
+## 종합 진단 결과 수정 (2026-11-09, 39차)
+
+응답 필드 추가·삭제는 없다. 값이 바뀐 것:
+
+- **AI 답변의 뉴스·공시 날짜**: `news_tool`·`disclosure_tool`·`rag_search_tool` 결과의 `published_at`·`disclosed_at`을 UTC 문자열에서 같은 순간의 KST 문자열(`+09:00`)로
+  바꿨다(`app/display_dates.kst_iso`). 이전에는 LLM이 UTC 날짜를 보고 답을 썼고, ETF 답의 `## 관련 뉴스` 날짜와 근거 우선 답변 날짜가 문자열 앞 10자를 써서
+  한국 시간 00:00~09:00 기사와 모든 공시(KST 자정 저장)가 하루 이르게 나왔다. 답변 날짜 검증기도 도구 결과의 날짜를 보므로 이제 한국 날짜를 기준으로 본다.
+  예전에 저장된 도구 기록(UTC 문자열)이 들어와도 화면용 날짜는 `kst_day`가 한국 날짜로 바꾼다.
+- **`GET /api/portfolio/exposure?view=look_through`의 `summary.unidentified_amount`·`unidentified_weight_pct`·`over_allocated_amount`**: ETF별 잔여를 부호째 더한
+  순합계로 계산해, 비중 합계가 100%를 넘는 ETF와 못 미치는 ETF를 같이 보유하면 서로 상쇄돼 작게(0까지) 나왔다. 이제 미달 ETF들의 잔여 합, 초과 ETF들의 초과분 합이다.
+  `residual_amount`는 예전처럼 순합계(음수 가능)다. ETF 하나만 보유했거나 모두 같은 쪽이면 값이 같다. 진단에 저장된 예전 스냅샷은 바꾸지 않는다.
+- **`python -m scripts.quarantine reprocess --apply`**: 데이터 갱신과 같은 advisory lock을 잡는다(실행 중이면 종료 코드 2).

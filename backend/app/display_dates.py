@@ -15,6 +15,14 @@ from zoneinfo import ZoneInfo
 KST = ZoneInfo("Asia/Seoul")
 
 
+def kst_iso(value: datetime | None) -> str | None:
+    """도구 결과에 넣을 시각 문자열(2026-11-09, 39차). 같은 순간을 KST(+09:00)로 쓴다: LLM·검증기·앞 10자를 쓰는 코드가 모두 한국 날짜를 본다.
+    오프셋 없는 값은 시간대를 붙이지 않고 그대로 쓴다(DB 컬럼은 모두 timestamptz라 실제로는 오지 않는다)."""
+    if value is None:
+        return None
+    return value.astimezone(KST).isoformat() if value.tzinfo else value.isoformat()
+
+
 def kst_day(value) -> str:
     """화면에 쓸 날짜 문자열. 값이 없으면 ""."""
     if value is None or value == "":

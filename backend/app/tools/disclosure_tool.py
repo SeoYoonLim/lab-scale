@@ -1,4 +1,5 @@
 from app.db.session import SessionLocal
+from app.display_dates import kst_iso
 from app.korean import josa
 from app.models import Disclosure
 from app.tools.company_resolver import not_found_response, resolve_company, to_int
@@ -50,7 +51,7 @@ def disclosure_tool(company_name: str, limit: int = 5) -> dict:
                 "company_name": company.name,
                 "title": row.title,
                 "disclosure_type": row.disclosure_type,
-                "disclosed_at": row.disclosed_at.isoformat() if row.disclosed_at else None,
+                "disclosed_at": kst_iso(row.disclosed_at),  # 39차: KST 문자열(공시는 한국 자정 = 그날 날짜)
                 "source_url": row.source_url,
             }
             for row in rows

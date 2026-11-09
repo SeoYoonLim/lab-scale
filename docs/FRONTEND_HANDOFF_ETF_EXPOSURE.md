@@ -84,9 +84,9 @@ ETF는 여러 기업 주식을 담은 상품이라, ETF를 사면 그 안의 기
 | `linked_via_amount`, `unlinked_via_amount` | 그중 종목 목록과 연결된 구성종목 / 연결되지 않은 구성종목(해외 주식·채권·CP·스왑 등) |
 | `companies_amount`, `companies_weight_pct` | 기업 노출 합계(직접 + 간접)와 총자산 대비 비중 |
 | `nested_etf_amount` | ETF 안의 다른 ETF 몫(분해 안 함) |
-| `residual_amount`, `over_allocated_amount` | 구성 비중 밖 잔여(음수 가능), 비중 합계가 100%를 넘어 생긴 초과분 |
+| `residual_amount`, `over_allocated_amount` | 구성 비중 밖 잔여의 순합계(음수 가능), 비중 합계가 100%를 넘은 ETF들의 초과분 합(2026-11-09 39차: ETF별로 따로 더한다) |
 | `undecomposed_etf_amount` | 분해하지 않은 ETF(레버리지·인버스, 데이터 없음, 비중 오류) 평가액 |
-| `unidentified_amount`, `unidentified_weight_pct` | 미확인 노출과 총자산 대비 비중 |
+| `unidentified_amount`, `unidentified_weight_pct` | 미확인 노출(분해 못 한 ETF + 중첩 ETF + 비중 합계가 100%에 못 미친 ETF들의 잔여 합)과 총자산 대비 비중. 39차 전에는 잔여를 순합계로 써서 100% 초과 ETF와 미달 ETF를 같이 보유하면 서로 상쇄돼 작게 나왔다 |
 | `cash_weight_pct` | 현금 비중 |
 | `holding_count`, `priced_holding_count`, `unpriced_count`, `company_count` | 보유 수, 평가한 수, 평가 못 한 수, 기업 수 |
 | `direct_top1_weight_pct` | 직접 보유 주식 중 가장 큰 비중 |

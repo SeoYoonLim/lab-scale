@@ -1,4 +1,5 @@
 from app.db.session import SessionLocal
+from app.display_dates import kst_iso
 from app.korean import josa
 from app.models import Company, News
 from app.news_relevance import evidence_news
@@ -60,7 +61,7 @@ def news_tool(company_name: str, limit: int = 5) -> dict:
                 "company_name": company.name,
                 "title": row.title,
                 "source": row.source,
-                "published_at": row.published_at.isoformat() if row.published_at else None,
+                "published_at": kst_iso(row.published_at),  # 39차: KST 문자열(앞 10자 = 한국 날짜)
                 "url": row.url,
                 "content": row.content,
             }
