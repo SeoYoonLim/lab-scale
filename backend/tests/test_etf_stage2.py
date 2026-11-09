@@ -192,6 +192,10 @@ def fake_agent(monkeypatch):
 
     monkeypatch.setattr(agent, "_first_call", first_call)
     monkeypatch.setattr(agent, "_run_tool", run_tool)
+    # 2026-11-09(40차): 이 픽스처는 ETF 질문의 LLM 경로를 본다. "…위험해?"처럼 전망 질문으로도 분류되는 질문은 전망 코드 경로
+    # (app.outlook, 실제 DB 시세로 LLM 없이 답함)가 먼저 실행돼, 시세가 있는 개발 DB에서는 LLM을 부르지 않아 messages가 None이었다
+    # (시세가 없는 CI DB에서는 전망이 계산되지 않아 LLM 경로로 넘어가 통과). 전망 경로는 tests/test_outlook*.py가 따로 본다.
+    monkeypatch.setattr(agent, "_answer_forecast", lambda question, previous=None: None)
     monkeypatch.setattr(agent.ollama, "chat", chat)
     monkeypatch.setattr(agent, "_repair_company_args", lambda calls, q, prev=None, prev_company=None: {})
     monkeypatch.setattr(agent, "_market_comparison_available", lambda c: False)

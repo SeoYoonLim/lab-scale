@@ -111,6 +111,7 @@ def place_order(db, device_id: str, company: Company, side: str, quantity: int) 
         raise PriceUnavailable(f"'{company.name}'의 가격을 구하지 못해 주문을 체결할 수 없습니다.")
     price = price_data["current_price"]
     company_id, ticker, company_name = company.id, company.ticker, company.name
+    asset_type = company.asset_type  # 40차: 종목 마스터 값(NOT NULL, stock|etf CHECK). 보유·체결 내역과 같은 기준
 
     try:
         account = _lock_account(db, device_id)
@@ -167,6 +168,7 @@ def place_order(db, device_id: str, company: Company, side: str, quantity: int) 
     return {
         "ticker": ticker,
         "company_name": company_name,
+        "asset_type": asset_type,
         "side": side,
         "quantity": quantity,
         "price": price,

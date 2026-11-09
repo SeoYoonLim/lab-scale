@@ -69,7 +69,7 @@ def setup(monkeypatch):
     account = SimpleNamespace(cash_balance=Decimal("10000000"))
     monkeypatch.setattr(portfolio, "get_realtime_price_data", lambda db, c: {"current_price": 10000.0})
     monkeypatch.setattr(portfolio, "_lock_account", lambda db, key: account)
-    company = SimpleNamespace(id=1, ticker="005930", name="삼성전자")
+    company = SimpleNamespace(id=1, ticker="005930", name="삼성전자", asset_type="stock")
     return account, company
 
 

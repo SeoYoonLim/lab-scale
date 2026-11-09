@@ -2177,6 +2177,7 @@ curl -X POST http://localhost:8000/api/portfolio/orders \
 ```
 
 `holding`은 이 주문 체결 뒤의 보유 상태다. **매도로 전량 청산됐으면 `null`.**
+`asset_type`(`"stock"` \| `"etf"`, 2026-11-09 40차 추가)은 주문한 종목의 자산 유형으로 보유·체결 내역의 `asset_type`과 같은 종목 마스터 값이다(위 예시에는 생략, 실제로는 `"asset_type": "stock"`). 값이 없으면 주식으로 가정하지 않고 `null`이지만, 종목 마스터가 NOT NULL이라 실제로는 항상 있다.
 
 #### 종목 엄격 매칭 (2026-10-27)
 
@@ -4742,3 +4743,13 @@ AI 답변 품질 평가(2026-11-07, 개발자용, API 아님): `cd backend && py
   순합계로 계산해, 비중 합계가 100%를 넘는 ETF와 못 미치는 ETF를 같이 보유하면 서로 상쇄돼 작게(0까지) 나왔다. 이제 미달 ETF들의 잔여 합, 초과 ETF들의 초과분 합이다.
   `residual_amount`는 예전처럼 순합계(음수 가능)다. ETF 하나만 보유했거나 모두 같은 쪽이면 값이 같다. 진단에 저장된 예전 스냅샷은 바꾸지 않는다.
 - **`python -m scripts.quarantine reprocess --apply`**: 데이터 갱신과 같은 advisory lock을 잡는다(실행 중이면 종료 코드 2).
+
+## 잔여 품질 개선 (2026-11-09, 40차)
+
+- **`POST /api/portfolio/orders` 응답에 `asset_type`**(`stock` | `etf`, 하위 호환 추가). 위 주문 절 참고. 다른 필드 값은 그대로다.
+- **시장 상황 답(리서치 "지금 시장 상황 어때?")**: 상승·하락·보합 집계에 등락률이 비어 있는 종목이 있으면 "등락률 미확인 N종목", 등록된 주식 중
+  그날 시세가 없는 종목이 있으면 "그날 시세가 없는 N종목은 집계에서 뺐습니다"를 덧붙인다(전체 = 상승 + 하락 + 보합 + 등락률 미확인).
+  둘 다 0이면 문장은 예전과 같다. API 응답 필드가 아니라 답 문장과 도구 기록(`breadth.change_missing_count`·`no_price_count`)만 바뀐다.
+- **`python -m scripts.collect_universe`**(뉴스·공시 수동 수집)가 데이터 갱신과 같은 advisory lock을 잡는다. 실행 중이면 수집하지 않고 종료 코드 2.
+  `--dry-run`은 락을 잡지 않는다. `scripts/refresh_data`는 락을 잡은 채 이 스크립트의 `main()`을 직접 부르므로 그대로다.
+- 뉴스·공시 DB 유니크 제약은 넣지 않았다(이유는 `docs/DATA_QUALITY_AND_TRADING_CALENDAR.md` "중복 방지 구조").

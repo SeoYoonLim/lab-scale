@@ -231,5 +231,29 @@ def main():
         sys.exit(BLOCKED_EXIT_CODE)
 
 
+LOCK_BUSY_EXIT_CODE = 2
+
+
+def run_cli() -> None:
+    """명령줄 진입점(2026-11-09, 40차): DB에 쓰는 실행은 데이터 갱신(scripts/refresh_data)과 같은 advisory lock을 잡는다.
+    뉴스·공시는 DB 유니크 제약 없이 "있는지 확인 → 넣기"로 중복을 막으므로, 직접 실행한 수집이 정기 갱신이나 격리 재처리와 겹치면
+    같은 기사·공시가 두 번 들어갈 수 있었다. refresh_data는 락을 잡은 채 main()을 직접 부르므로 이 함수를 거치지 않는다.
+    --dry-run은 쓰지 않으므로 락을 잡지 않는다."""
+    if "--dry-run" in sys.argv[1:]:
+        main()
+        return
+    from app import refresh_runs
+
+    try:
+        lock = refresh_runs.acquire_lock()
+    except refresh_runs.LockBusy:
+        print("데이터 갱신(또는 다른 수집·재처리)이 실행 중이라 수집하지 않았습니다. 끝난 뒤 다시 실행하세요.")
+        sys.exit(LOCK_BUSY_EXIT_CODE)
+    try:
+        main()
+    finally:
+        lock.release()
+
+
 if __name__ == "__main__":
-    main()
+    run_cli()

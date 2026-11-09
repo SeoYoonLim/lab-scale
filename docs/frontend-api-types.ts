@@ -774,6 +774,7 @@ export interface OrderRequest {
 export interface OrderResponse {
   ticker: string;
   company_name: string;
+  asset_type?: "stock" | "etf" | null;
   side: "buy" | "sell";
   quantity: number;
   price: number;

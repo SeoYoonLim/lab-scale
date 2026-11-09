@@ -72,6 +72,9 @@ class HoldingAfterOrder(BaseModel):
 class OrderResponse(BaseModel):
     ticker: str
     company_name: str
+    # 2026-11-09(40차, 하위 호환 추가): 주문한 종목의 자산 유형. 보유(holdings[].asset_type)·체결 내역(items[].asset_type)과 같은
+    # 종목 마스터 값이다. 값이 없으면 주식으로 가정하지 않고 null(종목 마스터가 NOT NULL이라 실제로는 항상 있다)
+    asset_type: Literal["stock", "etf"] | None = Field(None, description="stock | etf (종목 마스터 company.asset_type)")
     side: Literal["buy", "sell"]
     quantity: int
     price: float

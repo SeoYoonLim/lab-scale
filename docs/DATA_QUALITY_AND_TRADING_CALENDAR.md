@@ -206,3 +206,27 @@ ETF 구성의 격리는 실패로 세지 않는다(`etf_holdings_outcome`: 격�
   (거래일 수로 바꾸면 평가 문항 10개의 기대값이 바뀐다: 별도 결정 필요).
 - 저장 전 검증은 이번 작업 이후 수집분부터다. 이미 저장된 데이터는 기존 품질 SQL(`data_monitor`)로만 본다.
 - `backfill_history.py`·`collect_etf_holdings.py` 등 수집 함수를 거치는 스크립트는 같은 검증을 받지만, 표에 직접 쓰는 일회성 스크립트는 받지 않는다.
+
+## 뉴스·공시 중복 방지 구조 (2026-11-09, 40차 점검)
+
+뉴스·공시 표에는 DB 유니크 제약이 없다. 중복은 아래 세 겹으로 막고, 40차에 남아 있던 구멍(직접 실행한 수집이 락을 잡지 않음)을 막았다.
+
+| 저장 경로 | 락 | 중복 판정 |
+|---|---|---|
+| `scripts/refresh_data`의 `news` 단계(→ `collect_universe.main()`) | 갱신 advisory lock | 뉴스 `(company_id, url)`, 공시 `source_url`(접수번호)가 DB에 있으면 저장 안 함 |
+| `python -m scripts.collect_universe` 직접 실행 | **40차부터 같은 락**(실행 중이면 종료 코드 2, `--dry-run`은 락 없음) | 같음 |
+| `python -m scripts.quarantine reprocess --apply` | 같은 락(39차) | 같은 키가 있으면 `kept_existing` |
+| 한 번의 수집 응답 안의 중복 | - | 검증기(`check_news`·`check_disclosures`)가 같은 url·같은 접수번호는 첫 건만 받고 나머지는 `duplicate_same`으로 격리 |
+
+그 밖에 뉴스·공시를 넣는 경로는 없다(`collect_disclosure_content`·`mark_news_relevance`는 기존 행의 본문·관련도만 고친다).
+
+**DB 유니크 제약을 넣지 않은 이유**
+
+- 뉴스의 키는 URL 단독이 아니라 `(company_id, url)`이다. 여러 종목이 함께 나오는 기사를 종목마다 저장하는 설계라, 같은 url이 여러 종목에 있는 뉴스가
+  2,518건이다(2026-11-09). URL 전역 유니크는 이 행들을 거부하게 된다.
+- 공시 키 `source_url`은 DART 접수번호로 만든 URL이다. 정정 공시는 접수번호가 달라 별도 행으로 보존된다(덮어쓰거나 합치지 않음). 접수번호 형식이 아닌 URL·빈 URL은 0건이다.
+- 현재 중복은 뉴스 `(company_id, url)` 0건, 공시 `source_url` 0건이다. 모든 쓰기 경로가 한 락으로 직렬화돼 "확인 → 넣기" 사이에 끼어들 실행이 없다.
+- 제약을 넣으면 수집기가 충돌을 처리하도록(그대로 두면 한 건만 충돌해도 그 종목의 배치 전체가 롤백된다) `INSERT … ON CONFLICT DO NOTHING`으로 바꾸고, 임시 PostgreSQL에서
+  마이그레이션 왕복·동시 삽입을 검증해야 한다. 지금 구조로 충분하다고 보고 다음에 수집기를 고칠 때 함께 검토한다.
+  넣는다면 뉴스는 `UNIQUE (company_id, url) WHERE url IS NOT NULL`, 공시는 `UNIQUE (source_url) WHERE source_url IS NOT NULL`이 기존 동작과 같은 의미다.
+- URL 정규화(쿼리 파라미터 제거 등)는 하지 않는다. 네이버 기사 URL의 `sid` 같은 파라미터를 지우면 서로 다른 기사가 합쳐질 수 있어, 지금처럼 문자열 그대로 비교한다.

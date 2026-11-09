@@ -40,9 +40,14 @@ def compute(db) -> dict:
     d = db.execute(text("SELECT max(p.price_date) FROM stock_price p JOIN company c ON c.id = p.company_id WHERE c.asset_type = 'stock'")).scalar()
     if d is not None:
         row = db.execute(text("SELECT count(*) FILTER (WHERE p.change_pct > 0), count(*) FILTER (WHERE p.change_pct < 0), "
-                              "count(*) FILTER (WHERE p.change_pct = 0), count(*) FROM stock_price p JOIN company c ON c.id = p.company_id "
+                              "count(*) FILTER (WHERE p.change_pct = 0), count(*) FILTER (WHERE p.change_pct IS NULL), count(*), "
+                              "(SELECT count(*) FROM company WHERE asset_type = 'stock') "
+                              "FROM stock_price p JOIN company c ON c.id = p.company_id "
                               "WHERE c.asset_type = 'stock' AND p.price_date = :d"), {"d": d}).first()
-        out["breadth"] = {"date": d, "up": row[0], "down": row[1], "flat": row[2], "total": row[3]}
+        # 2026-11-09(40차): total = up + down + flat + change_missing_count(그날 시세는 있지만 등락률이 비어 있는 종목).
+        # no_price_count는 등록된 주식 중 그날 시세 행이 없는 종목(total에 들지 않는다). 결측을 상승·하락·보합에 넣지 않는다
+        out["breadth"] = {"date": d, "up": row[0], "down": row[1], "flat": row[2], "total": row[4],
+                          "change_missing_count": row[3], "no_price_count": max(0, row[5] - row[4])}
     return out
 
 
@@ -58,8 +63,12 @@ def answer(data: dict, now: datetime) -> str:
         lines.append(f"- {_NAMES[code]}: {v['date'].isoformat()} 종가 {v['close']:,.2f}" + (f" ({', '.join(parts)})" if parts else ""))
     b = data.get("breadth")
     if b and b["total"]:
+        missing = b.get("change_missing_count") or 0
+        no_price = b.get("no_price_count") or 0
         lines.append(f"- 같은 날 주식 {b['total']}종목(수집 대상) 중 상승 {b['up']}, 하락 {b['down']}, 보합 {b['flat']}종목"
-                     f"({b['date'].isoformat()} 종가 기준)")
+                     + (f", 등락률 미확인 {missing}종목" if missing else "")
+                     + f"({b['date'].isoformat()} 종가 기준)"
+                     + (f". 그날 시세가 없는 {no_price}종목은 집계에서 뺐습니다" if no_price else ""))
     lines += ["", f"- {quote_freshness.line(min(dates), now)}",
               "- 지난 시세를 정리한 것이며 앞으로의 방향을 예측하거나 매매를 권유하는 것이 아닙니다. 종목과 시장을 비교하려면 "
               "\"삼성전자 최근 한 달 코스피 대비 어때?\"처럼 물어보세요."]

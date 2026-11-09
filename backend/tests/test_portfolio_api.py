@@ -27,7 +27,7 @@ PORTFOLIO = {
 }
 
 ORDER_RESULT = {
-    "ticker": "005930", "company_name": "삼성전자", "side": "buy", "quantity": 5, "price": 270000.0,
+    "ticker": "005930", "company_name": "삼성전자", "asset_type": "stock", "side": "buy", "quantity": 5, "price": 270000.0,
     "executed_at": "2026-10-01T00:00:00+00:00", "cash_balance": 8_650_000.0,
     "holding": {"quantity": 5, "avg_price": 270000.0},
 }
