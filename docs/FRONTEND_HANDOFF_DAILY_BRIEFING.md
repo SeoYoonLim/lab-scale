@@ -99,7 +99,7 @@ Content-Type: application/json
 | `summary_source` | `llm`(AI 요약, 숫자 검증 통과) / `code`(코드 요약) |
 | `section_status` | 영역별 `ok` / `partial` / `no_data` / `empty` |
 | `tickers[]` | 브리핑에 쓴 종목 `{ticker, name, scope: holding\|watchlist}`(보유와 겹치는 관심 종목은 holding으로 한 번만) |
-| `sources[]` | 근거 `{kind: news\|disclosure\|indirect_news\|market_news, ticker, title, url, date}` |
+| `sources[]` | 근거 `{kind: news\|disclosure\|indirect_news\|market_news, ticker, title, url, date}`. `date`는 오프셋 있는 ISO 시각: `news`·`disclosure`·`market_news`는 +09:00, `indirect_news`는 +00:00(UTC). 공시는 날짜만 아는 값(`T00:00:00+09:00`)이다(2026-11-09 38차 확인, 값은 그대로) |
 | `content` | 화면에 그릴 브리핑(아래) |
 | `original_content` | `locale`이 ko-KR이 아닐 때만: 같은 계산 결과의 한국어 브리핑. "한국어 원문 보기"용 |
 | `date_group` | 표시용 날짜 그룹 |

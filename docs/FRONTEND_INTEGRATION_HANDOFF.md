@@ -12,6 +12,7 @@ TypeScript 타입 전체는 OpenAPI에서 자동 생성한 **`docs/frontend-api-
 4. **숫자는 계산하지 말고 그대로 쓴다.** 금액은 원(number), `*_pct`는 퍼센트 값(-3.48 = -3.48%), 날짜는 `YYYY-MM-DD`, 시각은 오프셋이 붙은 ISO 8601.
 5. **시세는 종가 기준이고 늦을 수 있다.** 각 응답의 `stale`·`*_lag_business_days`·`stale_notice`·`market_data_status`를 화면에 보여 준다(7절).
 6. **상태(`status`)가 있는 응답은 200이어도 "계산 못 함"일 수 있다.** 오류(4xx)와 상태값을 구분해 화면을 나눈다(8절).
+7. **번역 상태·실제 언어·시각 필드 의미·종목 매칭 규칙은 15절**(2026-11-09, 38차). AI 질문 응답에 `locale`·`translation_status`가 더해졌다(하위 호환).
 
 ## 1. 프로젝트 구조
 
@@ -47,10 +48,12 @@ TypeScript 타입 전체는 OpenAPI에서 자동 생성한 **`docs/frontend-api-
   거래량 배수(`volume_ratio`)는 배수(2.5 = 2.5배). 숫자를 문자열로 주는 필드는 종목코드(`ticker`, `code`)뿐이다(앞자리 0 보존).
 - **날짜·시각**: 날짜는 `"2026-11-03"`. 시각은 `"2026-11-08T19:40:55.65+09:00"`(새로 계산한 `generated_at` 등, KST) 또는
   `"2026-11-08T10:40:55.08+00:00"`(저장 시각 `created_at`·`executed_at`·`added_at`, UTC). 둘 다 `new Date()`로 정확히 읽히므로 화면에서 사용자 시간대로 바꿔 보여 준다.
-  기록 목록은 사용자 시간대 기준 `local_date`·`local_time`·`date_group`도 준다.
+  기록 목록은 사용자 시간대 기준 `local_date`·`local_time`·`date_group`도 준다. 오프셋 없는 시각 문자열은 내보내지 않는다.
+  **필드별 시간대·의미(거래일인지 생성 시각인지)는 15-3절 표**를 본다.
 - **언어(`locale`)**: `ko-KR`(기본)·`en-US`·`ja-JP`·`zh-CN`. 요청 `locale` > 계정 설정(`/api/auth/preferences`) > `ko-KR`.
   GET에서 지원하지 않는 값(예: `fr-FR`)은 오류 없이 `ko-KR`로 처리하고 응답의 `locale`이 실제 언어다. 계정 설정 저장(PUT)만 422.
   구조는 언어와 관계없이 같고 문장 필드만 바뀐다. 종목명·기사/공시 제목은 원문이다.
+  응답에 `locale`이 없는 API(`GET /api/briefing`, 진단, 면책 문구 등)와 번역 실패 표시 방법은 **15-2절 표**를 본다.
 - **레이트 리밋(429)**: 응답 헤더 `Retry-After`(초). 기본값: 모든 `GET /api/*` IP당 분당 600, AI 질문 사용자당 분당 6·동시 1, 주문 분당 30,
   일일 브리핑 생성 분당 3, 백테스트 분당 10, 로그인 IP당 분당 10, 가입 IP당 시간당 10.
 
@@ -175,7 +178,7 @@ AI 질문은 LLM이 느리거나 실패해도 대개 **200 + 대체 답**(코드
 | 노출 ETF | `etfs[].status` | `decomposed`, `not_decomposed`(구성 데이터 없음·미지원 운용사·비중 이상) | `not_decomposed`면 "구성 정보 없음" 배지, 금액은 `summary.undecomposed_etf_amount` |
 | 일일 브리핑 | `section_status.*` | `ok`, `partial`, `no_data`, `empty` | 섹션별 빈 상태 |
 | 일일 브리핑 | `summary_source` | `llm`(숫자 검증 통과한 AI 요약), `code`(코드 요약: LLM 실패·끔) | `content.summary.note` 표시 |
-| AI 답변(다국어) | `GET /api/research/{id}?view=record`의 `translation_status` | `localized`(언어별 템플릿), `translated`, `fallback_summary`(번역 검증 실패: 그 언어 안내 + 데이터 요약), `fallback_original`(2026-11-07 이전 기록) | `fallback_summary`면 "원문(한국어) 보기"로 `original_answer`. **POST 응답에는 이 값이 없다(11절)** |
+| AI 답변(다국어) | `POST /api/research`와 `GET /api/research/{id}?view=record`의 `translation_status` | `null`(ko-KR 답: 번역 안 함), `localized`(언어별 템플릿), `translated`, `fallback_summary`(번역 검증 실패: 그 언어 안내 + 데이터 요약), `fallback_original`(2026-11-07 이전 기록, 기록 조회에서만) | `fallback_summary`면 "원문(한국어) 보기"로 `view=record`의 `original_answer`(15-1절) |
 
 ## 9. 페이지네이션·검색·정렬
 
@@ -276,11 +279,14 @@ AI 질문은 LLM이 느리거나 실패해도 대개 **200 + 대체 답**(코드
 {
  "answer": "삼성전자: close KRW 222,000 on 2026-11-03. Daily change -3.48%, volume 13,338,444 shares.\n\nData as of: 2026-11-03 close (a stored closing price, not a real-time quote). The last price (2026-11-03) is 3 business days behind the expected trading day (2026-11-06), so it is not the latest price. ...",
  "used_tools": ["stock_tool"], "sources": [], "report_id": 40030, "previous_report_id": null,
- "disclaimer": "This service provides simulated trading and AI research ..."
+ "disclaimer": "This service provides simulated trading and AI research ...",
+ "locale": "en-US", "translation_status": "localized"
 }
 ```
 
-- 응답 키는 이 6개로 고정이다(백엔드 테스트가 고정). `answer`는 마크다운 문단(줄바꿈 `\n\n`)이다.
+- 응답 키는 이 8개로 고정이다(백엔드 테스트가 고정). `answer`는 마크다운 문단(줄바꿈 `\n\n`)이다.
+- `locale`·`translation_status`는 38차(2026-11-09)에 더한 하위 호환 필드다. `locale`은 **실제로 답한 언어**(지원하지 않는 값을 보냈으면 `ko-KR`),
+  `translation_status`는 ko-KR 답이면 `null`이다. 처리 흐름은 15-1절. 기존 Zod 스키마(`z.object`)는 모르는 키를 버리므로 그대로 동작한다.
 - 목표주가·확정 수익·"무조건 오르냐" 같은 요청은 거절 안내 + 대신 볼 수 있는 질문 + 참고 시세로 답한다(35차).
 - 후속 질문은 `previous_report_id`로 잇는다(본인 리포트만, 남의 id는 404).
 
@@ -329,18 +335,111 @@ export interface PagePaged<T> extends Paged<T> { page: number; size: number }   
 - `backend/tests/test_api_contract_round37_devdb.py`(개발 DB·CI DB, 가짜 종목만): 새 사용자 빈 상태, 없는 종목·시세 없는 종목·엄격 주문,
   오래된 시세(`older_price`·`stale`), 구성 없는 ETF·오래된 구성, `history_unavailable`, 영어·미지원 언어, 휴장일 다음 날·달력 범위 밖 답,
   번역 실패 폴백 기록, 브리핑 생성·재조회·사용자 분리·생성 오류, 페이지네이션 경계, 금액·%·날짜 형식.
+- 38차 `backend/tests/test_api_contract_round38.py`(DB 없음): 한국어·영어 답, 번역 성공·LLM 실패·검증 실패·일부 청크 실패, 응답·저장 번역 상태 일치,
+  미지원 locale·별칭, 번역 실패 요약의 값·날짜, 시각 컬럼 전부 timestamptz, UTC·KST 직렬화, naive 값 보존, 생성 시각 대 거래일, 매칭 정책, 타입·문서.
+- 38차 `backend/tests/test_api_contract_round38_devdb.py`(개발 DB·CI DB, 가짜 종목만): 번역 성공 POST = 기록 상세, 미지원 locale 기록,
+  관심종목 음차 보정 → 등록 종목명·코드 반환 → 같은 입력 주문 404 → 종목코드 주문 200, ETF 주문·관심종목 `asset_type`.
 
 ## 14. 프런트 담당자가 확인할 미해결 사항
 
-1. **번역 상태가 POST 응답에 없다**: `POST /api/research`는 키 6개로 고정돼 있어 `translation_status`를 주지 않는다. "원문 보기"가 필요하면
-   `GET /api/research/{report_id}?view=record`를 한 번 더 부르거나, 응답 `answer`가 `※`로 시작하는지로 판단한다.
-   POST 응답에 선택 필드(`locale`, `translation_status`)를 더하는 것은 하위 호환 변경이라 가능하다. 원하면 백엔드에 요청(고정 테스트 5곳을 같이 바꿈).
-2. **시각 오프셋이 섞여 있다**(UTC 저장 시각 / KST 계산 시각). 둘 다 ISO 8601이라 `Date`로 읽으면 같지만, 문자열을 잘라 쓰지 말 것.
-3. **미지원 언어는 조용히 한국어**: GET에 `locale=fr-FR`을 보내도 200이다. 응답 `locale`을 보고 표시한다.
-4. **관심종목은 유사 이름을 받는다**(주문은 엄격). 추가 응답의 `company_name`을 꼭 보여 준다.
+1. ~~번역 상태가 POST 응답에 없다~~ → **38차에 해결**: `POST /api/research`가 `locale`·`translation_status`를 준다(15-1절).
+2. **시각 오프셋이 섞여 있다**(UTC 저장 시각 / KST 계산 시각). 38차에 값은 바꾸지 않고 필드별 의미를 15-3절에 고정했다(바꾸면 기존 화면의
+   문자열 비교가 깨질 수 있어서). 둘 다 ISO 8601이라 `Date`로 읽으면 같지만, 문자열을 잘라 쓰지 말 것.
+3. **미지원 언어는 조용히 한국어**: GET에 `locale=fr-FR`을 보내도 200이다. 응답 `locale`을 보고 표시한다(리서치 POST도 38차부터 `locale`을 준다).
+   `locale` 필드가 없는 API는 15-2절 표.
+4. **관심종목은 유사 이름을 받는다**(주문은 엄격). 추가 응답의 `company_name`을 꼭 보여 준다(15-4절).
 5. **포트폴리오·주문의 현재가**는 장중에 네이버 실시간 시세(비공식)를 먼저 쓰고, 실패하거나 장 마감 뒤면 DB 종가(`is_realtime: false`)다.
    주문 체결가도 같은 값이다.
 6. **기간 질문의 조회 범위는 평일 근사**(7절). 휴장일이 낀 기간의 AI 답은 휴장일 수만큼 이른 날부터 계산될 수 있다.
 7. **거래일 달력은 2026-12-31까지**. 2027년 일정은 KRX 공지 뒤 백엔드가 갱신해야 한다(그전까지 답에 "확인할 수 없는 날" 문장).
 8. **OpenAPI(`/docs`)는 개발 환경에서만** 켜진다. 타입은 `docs/frontend-api-types.ts`를 쓴다.
 9. **새 사용자의 첫 `GET /api/portfolio`가 모의투자 계좌를 만든다**(초기 잔고 10,000,000원). 성과 API는 그전에는 `no_account`다.
+
+## 15. 번역·언어·시각·종목 매칭 계약(38차, 2026-11-09)
+
+37차 미해결 사항을 코드와 대조해 정리했다. 바뀐 응답은 `POST /api/research`에 필드 2개를 더한 것뿐이다(하위 호환). 나머지는 기존 값 그대로이고 의미를 여기에 고정한다.
+
+### 15-1. AI 답변 번역 상태
+
+`POST /api/research` 응답과 `GET /api/research/{id}?view=record`는 같은 이름·같은 값의 `locale`·`translation_status`를 준다(백엔드 통합 테스트가 확인).
+기본 상세(`view` 없음)와 목록에는 이 필드가 없다(예전 응답 그대로).
+
+| `translation_status` | 언제 | `answer` 내용 | 화면 처리 |
+|---|---|---|---|
+| `null` | `locale`이 `ko-KR`(요청·계정 설정이 한국어, 또는 지원하지 않는 언어를 요청) | 한국어 답 | 그대로 |
+| `localized` | 코드가 그 언어로 바로 쓴 답(고정 안내·용어 사전·전망 간결/후속·주가 흐름·단순 시세 템플릿) | 그 언어 | 그대로 |
+| `translated` | 검증된 한국어 답을 보호 번역(숫자·날짜·종목명·제목은 코드가 원문 값으로 되돌림)하고 검증 통과 | 그 언어 + 끝에 "번역문" 안내 줄 | 그대로 |
+| `fallback_summary` | 번역을 검증하지 못함: LLM 연결 실패·시간 초과와 검증 실패(숫자·자리표시자·한글 남음)를 **구분하지 않는다** | 그 언어 안내(`※`로 시작) + 도구 결과 데이터 요약 + 면책. 한국어 해설은 넣지 않는다 | 안내 배지 + "원문(한국어) 보기" 버튼 → `view=record`의 `original_answer` |
+| `fallback_original` | 2026-11-07 이전에 저장된 기록의 번역 실패(새 답에는 나오지 않음, 기록 조회에서만) | 안내 + 한국어 원문 | 그대로(원문이 이미 들어 있음) |
+
+- **일부만 번역되는 답은 없다**: 답이 여러 덩어리로 나뉘어 번역될 때 하나라도 실패하면 답 전체가 `fallback_summary`다(언어가 섞이지 않는다).
+- 번역 성공·실패·확인 불가를 따로 나누는 값은 없다. 성공 = `localized`·`translated`, 실패(확인 불가 포함) = `fallback_summary`.
+- `fallback_summary`인데 `report_id`가 `null`이면(저장 실패) 원문을 다시 볼 방법이 없다. 버튼을 숨긴다.
+- 숫자·가격·날짜 값은 언어와 관계없이 같다. 금액 표기만 언어에 맞춘다(`1조 2,000억원` → `KRW 1.2 trillion`).
+- 후속 질문(`previous_report_id`)의 맥락은 번역 전 한국어 답이다. 프런트가 따로 할 일은 없다.
+
+### 15-2. 언어(`locale`) 결정과 API별 fallback
+
+지원 언어는 `ko-KR`·`en-US`·`ja-JP`·`zh-CN` 4개다(`GET /api/auth/preferences`의 `supported_locales`). 결정 순서: 요청 `locale`(비어 있지 않으면 그것만 본다)
+> 계정 설정 > `ko-KR`. 별칭(`ja`, `en_us`, `zh-Hans`)은 표준 코드로 바꾼다. **지원하지 않는 값(`fr-FR`, `zh-TW`)은 오류 없이 `ko-KR`**이고 계정 설정으로 넘어가지 않는다.
+공백만 보낸 값은 보내지 않은 것과 같다(계정 설정). 계정 설정 저장(PUT)만 지원하지 않는 값을 422로 막는다.
+
+| API | 응답에 실제 언어 표시 | 문장을 만드는 방법 | 번역·문장 실패 시 |
+|---|---|---|---|
+| `POST /api/research` | `locale`, `translation_status`(38차) | 15-1절 | `fallback_summary` |
+| `GET /api/research/{id}?view=record`, `GET /api/research?view=record` | `locale`(목록·상세), `translation_status`·`original_answer`(상세) | 저장된 값 | 저장 당시 상태 |
+| `POST /api/portfolio/diagnosis` | 없음(요청한 지원 언어 아니면 한국어). 기록은 `view=record`의 `locale` | 지표 문장은 언어별 코드 템플릿, LLM 요약·제안은 보호 번역 | 요약·제안을 규칙 기반 문장으로 바꾸고 `source`가 `rule_based`, `model`이 `null`, `notes`에 번역 실패 안내 |
+| `GET /api/briefing` | 없음 | 언어별 코드 템플릿(LLM 없음) | 해당 없음(템플릿에 맞지 않는 문장은 한국어 원문 그대로) |
+| `POST /api/briefings/daily/generate`·`current`·`{id}`·`history` | `locale` | 코드 템플릿 + 검증한 LLM 요약 | `summary_source: "code"`(코드 요약) |
+| `GET /api/portfolio/exposure?view=look_through` | `locale` | 코드 템플릿 | 해당 없음 |
+| `GET /api/portfolio/exposure`(기본) | 없음 | 코드 템플릿 | 해당 없음 |
+| `GET /api/portfolio/performance?view=benchmark` | `locale` | 코드 템플릿 | 해당 없음 |
+| `GET /api/disclaimer` | 없음(`{text}`만). 공개 API라 계정 설정을 보지 않는다 | 고정 문구 | 해당 없음 |
+| 오류 `detail` | 없음 | 대부분 한국어 고정 문구(진단 400 "보유 종목 없음"만 언어별) | - |
+
+`locale` 필드가 없는 API에 지원하지 않는 값을 보냈다면 한국어로 온 것이다. 화면 언어를 정할 때는 요청한 값이 아니라 위 규칙으로 정한 값을 쓴다.
+
+### 15-3. 날짜·시각 필드의 시간대와 의미
+
+DB의 시각 컬럼은 모두 `timestamptz`(UTC로 저장), 날짜 컬럼은 `date`다. API는 **오프셋 없는 시각 문자열을 내보내지 않는다**.
+시각은 `new Date(value)`로 읽어 사용자 시간대로 보여 주면 된다. 날짜(`YYYY-MM-DD`)는 시간대가 없는 한국 거래일·기준일이다: `new Date("2026-11-06")`은
+UTC 자정으로 읽혀 미국 시간대에서 하루 이르게 보이므로 **날짜는 Date로 바꾸지 말고 문자열 그대로** 보여 준다.
+
+| 필드 | API | 형식·오프셋 | 의미 |
+|---|---|---|---|
+| `created_at` | 리서치 목록·상세, 진단 응답·이력·상세, 통합 기록 검색 | 시각, UTC `+00:00` | 저장(생성) 시각 |
+| `executed_at` | 주문 응답, 체결 내역 | 시각, UTC | 체결 시각 |
+| `added_at` | 관심종목 | 시각, UTC | 등록 시각 |
+| `collected_at` | ETF 구성종목 | 시각, UTC | 구성 데이터를 수집한 시각 |
+| `queried_at` | 실시간 시세 | 시각, UTC | 서버가 조회한 시각 |
+| `generated_at` | 진단 응답·이력 | 시각, UTC | 진단을 계산한 시각 |
+| `generated_at` | `GET /api/briefing`, 노출, 성과, 백테스트, `/api/status`, 일일 브리핑 | 시각, KST `+09:00` | 응답을 계산한(또는 브리핑을 만든) 시각 |
+| `finished_at` | `/api/status`의 마지막 갱신 | 시각, KST | 데이터 갱신 작업이 끝난 시각 |
+| `published_at`, `disclosed_at` | `GET /api/briefing`의 뉴스·공시 | 시각, KST | 기사 발행·공시 시각. **공시는 날짜만 아는 값이라 `T00:00:00+09:00`**: 시각을 표시하지 말고 KST 날짜(앞 10자)를 쓴다 |
+| `sources[].date`, `content` 안의 `published_at`·`disclosed_at` | 일일 브리핑 | 시각. `news`·`disclosure`·`market_news`는 KST, **`indirect_news`(업종·산업 간접 뉴스)는 UTC** | 기사·공시 시각(공시는 위와 같다). 저장된 브리핑은 바꾸지 않는 스냅샷이라 형식을 맞추지 않았다. 둘 다 오프셋이 있으니 `Date`로 읽고, 문자열 앞 10자를 날짜로 쓰지 않는다 |
+| `event_at` | 이벤트 반응 | 시각, KST 또는 `null` | 시각을 아는 사건. 날짜만 아는 사건은 `event_at: null` + `event_date` |
+| `as_of` | 실시간 시세 | 실시간이면 시각(네이버 체결 시각, KST), 폴백이면 **날짜** | `source`(`naver`/`fallback`)·`is_realtime`으로 구분해 형식을 고른다 |
+| `price_date`, `latest_date`, `data_date`, `valuation_date`, `latest_close_date`, `price_as_of`, `start_date`, `end_date`, `peak_date`·`trough_date`·`recovery_date`, `base_date`, `reaction_start_date`, `event_date`, `expected_date` | 시세·성과·노출·관심종목·이벤트 반응 등 | 날짜 | **한국 거래일**(종가 기준일). 생성 날짜와 다르다: 일요일에 만든 응답의 기준일은 금요일일 수 있다 |
+| `data_as_of` | 일일 브리핑 | 날짜 | 브리핑에 쓴 마지막 시세 거래일 |
+| `as_of_date`, `holdings_as_of` | ETF 구성종목, 노출 | 날짜 | 운용사가 공시한 구성 기준일 |
+| `latest_published_date` | `/api/status` | 날짜 | 가장 최근 뉴스의 KST 날짜 |
+| `local_date`, `local_time`, `date_group` | 리서치·진단 기록(`view=record`), 통합 기록 검색, 일일 브리핑 | 날짜·`HH:MM` | 요청 `timezone`(없으면 계정 설정, 그것도 없으면 `Asia/Seoul`) 기준 표시값. 같은 `created_at`도 시간대에 따라 날짜가 다르다 |
+
+- 일일 브리핑의 `local_date`는 "어느 날의 브리핑인지"(사용자 시간대 날짜)이고 `data_as_of`는 "어느 거래일 시세로 만들었는지"다. 둘은 다를 수 있다.
+- 38차 수정: AI 답변의 번역 실패 요약(`fallback_summary`)과 코드 요약(도구 결과 요약 답)의 뉴스·공시 날짜가 UTC 문자열 앞 10자를 써서 하루 이르게 나오던 것을
+  한국 날짜로 고쳤다(공시는 전부, 뉴스는 한국 시간 00:00~09:00 기사). 응답 필드 값은 바뀌지 않았다.
+
+### 15-4. 관심종목과 주문의 종목 매칭
+
+| 경로 | 해석 모드 | 받는 입력 | 받지 않는 입력 |
+|---|---|---|---|
+| `POST /api/watchlist`, `DELETE /api/watchlist/{ticker}`, `GET /api/stocks/{ticker}/*`, `GET /api/portfolio/trades?ticker=` | 기본(보정 허용) | 종목코드, 정확한 이름, 공백·대소문자 차이, 등록 별칭(`네이버`→`NAVER`), ETF 브랜드 한글 표기(`코덱스 200`), 한글 음차(`엘지전자`→`LG전자`), 앞부분 약칭(4자 이상, 하나로 정해질 때), 한 글자 오타(한글 3자 이상), 유사 이름(유사도 0.8 이상) | 후보가 여럿이거나 한 글자 차이 이웃이 있으면 정하지 않고 404 + "정확한 종목명을 지정해주세요" |
+| `POST /api/portfolio/orders`, `POST /api/backtest` | 엄격(`allow_fuzzy=False`) | 종목코드, 정확한 이름, 공백·대소문자 차이, 등록 별칭, ETF 브랜드 한글 표기 | 음차·약칭·오타·유사 이름은 **체결하지 않고** 404 + "정확한 종목을 찾지 못했습니다. 혹시 A인가요?" |
+
+- 관심종목 추가 응답의 `ticker`·`company_name`·`asset_type`이 **실제 등록된 종목**이다. 입력과 `company_name`·`ticker`가 둘 다 다르면 "`LG전자`(066570)로 등록했습니다"처럼 알려 준다.
+  응답에는 입력값이나 "보정됨" 표시가 따로 없다(입력은 프런트가 알고 있다).
+- 관심종목 삭제·주문은 사용자가 입력한 이름 대신 **목록·검색 결과의 `ticker`(종목코드)**로 보낸다. 그러면 두 모드의 차이가 화면에 드러나지 않는다.
+- 주문 404 `detail`은 후보 이름을 문장으로 준다. 후보를 버튼으로 보여 주려면 사용자가 고른 뒤 그 종목의 `ticker`로 다시 주문한다.
+- ETF와 주식은 같은 규칙이다. 주문 응답(`OrderResponse`)에는 `asset_type`이 없고 보유(`holdings[].asset_type`)·체결 내역(`items[].asset_type`)·관심종목에 있다.
+  `KODEX 200`처럼 짧은 ETF 이름은 엄격 모드에서 `KODEX 200선물인버스2X` 같은 다른 ETF로 바뀌지 않는다.
+- 오류 `detail`에는 사용자가 입력한 종목 문자열(최대 50자)이 들어갈 수 있다. 화면에는 텍스트로만 넣는다(HTML로 넣지 않는다). 비밀번호 등 `/api/auth`의 422는 입력값을 빼고 준다.

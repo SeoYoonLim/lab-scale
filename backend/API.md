@@ -748,6 +748,7 @@ client id와 secret이 **둘 다** 설정된 공급자만 나온다. 키 값(cli
 | --- | --- | --- |
 | `question` | string | 필수. 앞뒤 공백 제거 후 1자 이상, **최대 1000자**. 위반 시 422 |
 | `previous_report_id` | int 또는 null | 선택. 이어서 물을 **바로 직전 보고서**의 ID(1 이상, **내 리포트만**). 생략하거나 null이면 독립 질문. 없는 ID나 남의 리포트 ID면 404, 정수가 아니거나 1 미만이면 422 |
+| `locale` | string 또는 null | 선택(최대 20자, 2026-11-05). `ko-KR`·`en-US`·`ja-JP`·`zh-CN`(별칭 `ja`·`en_us` 등 허용). 없거나 공백이면 계정 설정, **지원하지 않는 값은 오류 없이 `ko-KR`**. 아래 "다국어" 절 |
 
 #### ETF 질문 처리 규칙 (2026-10-14, 응답 필드는 그대로)
 
@@ -881,6 +882,8 @@ client id와 secret이 **둘 다** 설정된 공급자만 나온다. 키 값(cli
 | `report_id` | int \| null | 저장된 리포트 ID. `GET /api/research/{report_id}`로 다시 조회 가능. **저장에 실패하면 null**(답변 자체는 정상 반환) |
 | `previous_report_id` | int 또는 null | 요청으로 이어받은 직전 보고서 ID. 후속 질문이 아니면 null |
 | `disclaimer` | string | 면책 문구(`GET /api/disclaimer`의 `text`와 같은 값). 답변과 함께 화면에 보여주면 된다. **2026-10-07 추가된 필드**로, 위 예시 JSON에는 생략했다 |
+| `locale` | string | **2026-11-09(38차) 추가.** 답변이 실제로 쓰인 언어(요청 `locale` > 계정 설정 > `ko-KR`, 지원하지 않는 값을 보냈으면 `"ko-KR"`). 위 예시 JSON에는 생략했다(`"locale": "ko-KR"`) |
+| `translation_status` | string \| null | **2026-11-09(38차) 추가.** `locale`이 `ko-KR`이면 `null`(번역 안 함). 그 밖에는 `"translated"` \| `"localized"` \| `"fallback_summary"`(아래 "다국어" 절). `GET /api/research/{id}?view=record`에 저장되는 값과 같다. 위 예시에는 생략했다(`"translation_status": null`) |
 
 참고: 종목이 DB에 없으면 오류가 아니라 200 응답의 `answer`에 "찾지 못했다"는 안내가 담긴다.
 
@@ -4420,7 +4423,7 @@ PUT 본문: `{"preferred_locale": "en-US", "preferred_timezone": "America/New_Yo
 
 | API | 전달 | 바뀌는 것 |
 | --- | --- | --- |
-| `POST /api/research` | 본문 `locale`(최대 20자) | `answer`, `disclaimer`. 응답 키는 그대로 |
+| `POST /api/research` | 본문 `locale`(최대 20자) | `answer`, `disclaimer`. 2026-11-09(38차)부터 응답에 `locale`(실제 언어)·`translation_status`도 있다 |
 | `POST /api/portfolio/diagnosis` | 쿼리 `locale` | `summary`·`strengths`·`risks`·`suggestions`·`notes`·`flags[].message`·`disclaimer`, 보유 없음 400의 `detail` |
 | `GET /api/portfolio/diagnosis/{id}/compare?view=record` | 쿼리 `locale` | `basis.note` |
 | `GET /api/briefing` | 쿼리 `locale` | flag `text`·`unit`, 종목 `notice`, `message`, `portfolio.message`, `stale_notice`, 시장 지표 `name`, `disclaimer` |
@@ -4449,6 +4452,8 @@ PUT 본문: `{"preferred_locale": "en-US", "preferred_timezone": "America/New_Yo
 
 리포트 저장: `content` = 사용자에게 보인 답(그 언어), `original_content` = 번역 전 한국어 답, `locale`, `translation_status`(`translated` | `localized` | `fallback_summary` | `fallback_original`). `fallback_original`은 2026-11-07 이전에 저장된 리포트에만 있다.
 **프론트**: `fallback_summary`면 해설이 빠진 요약 답이므로 "원문(한국어) 보기"로 `GET /api/research/{id}?view=record`의 `original_answer`를 보여 줄 수 있다.
+2026-11-09(38차)부터 `POST /api/research` 응답에도 `"locale"`·`"translation_status"`가 있어(ko-KR이면 `"translation_status": null`) 상세를 다시 부르지 않고 판단할 수 있다.
+번역은 덩어리 하나라도 검증에 실패하면 답 전체가 `fallback_summary`다(일부만 번역된 답은 없다). LLM 연결 실패와 검증 실패는 같은 값이다.
 같은 기록으로 후속 질문을 하면 맥락은 `original_content`(한국어)다. `GET /api/research/{id}?view=record`는 `locale`, `translation_status`, `original_answer`를 더 준다.
 목록·통합 검색 항목(`view=record`, `/api/history/search`)에는 `locale`이 있다.
 
@@ -4711,3 +4716,16 @@ AI 답변 품질 평가(2026-11-07, 개발자용, API 아님): `cd backend && py
 인증 테스트는 `tests/conftest.py`가 테스트마다 임의 `JWT_SECRET`을 주입하므로 `.env`의 실제 키를 쓰지 않는다. 라우터 테스트는
 `login_as` 픽스처로 `get_current_user`를 가짜 사용자로 바꾸고, dev DB 통합 테스트(`tests/test_auth_devdb.py`)는 실제 가입/토큰으로
 돌린 뒤 만든 사용자를 지운다(`pt_` 접두어).
+
+## 번역 상태·시간대·종목 매칭 계약 (2026-11-09, 38차)
+
+전체 정리는 `docs/FRONTEND_INTEGRATION_HANDOFF.md` 15절(번역 상태 처리 흐름, API별 locale·fallback 표, 날짜·시각 필드 표, 종목 매칭 표)이다.
+
+- **바뀐 응답**: `POST /api/research`에 `"locale"`(실제 언어)·`"translation_status"`(ko-KR이면 null) 두 키를 더했다. 기존 6개 키의 값은 그대로다.
+  기본 상세(`GET /api/research/{id}`)와 목록은 바꾸지 않았다.
+- **시각**: 값은 바꾸지 않았다. DB 시각 컬럼은 모두 `timestamptz`, 저장 시각(`created_at`·`executed_at`·`added_at`·`collected_at`·`queried_at`, 진단 `generated_at`)은
+  UTC `+00:00`, 응답 때 계산한 시각(브리핑·노출·성과·백테스트·`/api/status`의 `generated_at`, `finished_at`, 브리핑 뉴스·공시 시각, `event_at`)은 KST `+09:00`이다.
+  오프셋 없는 시각은 내보내지 않는다. 날짜(`price_date` 등)는 한국 거래일이다.
+- **고친 것**: AI 답의 번역 실패 요약과 코드 요약에서 뉴스·공시 날짜를 UTC 문자열 앞 10자로 써서 하루 이르게 나오던 것(공시는 KST 자정 = UTC 전날 15:00로 저장)을
+  한국 날짜로 고쳤다(`app/display_dates.kst_day`). 오프셋 없는 값·날짜만 있는 값은 그대로 둔다.
+- **매칭**: 관심종목·종목 조회는 기본 모드(음차·약칭·오타·유사 보정), 주문·백테스트는 엄격 모드(`allow_fuzzy=False`, 코드·정확명·공백/대소문자·등록 별칭·ETF 브랜드 표기만)다. 바꾸지 않았다.

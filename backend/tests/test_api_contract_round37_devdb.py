@@ -230,8 +230,10 @@ def test_translation_failure_returns_localized_summary_and_record_keeps_original
     monkeypatch.setattr(i18n_translate, "_chat", lambda m: (_ for _ in ()).throw(ConnectionError("simulated")))
     r = client.post("/api/research", headers=u["headers"], json={"question": f"{co.name} 어때?", "locale": "ja-JP"})
     body = r.json()
-    assert r.status_code == 200 and set(body) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer"}
+    assert r.status_code == 200 and set(body) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer", "locale", "translation_status"}
     assert korean not in body["answer"] and body["answer"].startswith("※")
+    # 38차: POST 응답에도 같은 번역 상태와 실제 언어가 온다
+    assert body["translation_status"] == "fallback_summary" and body["locale"] == "ja-JP"
     r, rec = get(f"/api/research/{body['report_id']}?view=record", u)
     assert rec["translation_status"] == "fallback_summary" and rec["locale"] == "ja-JP" and rec["original_answer"] == korean
 

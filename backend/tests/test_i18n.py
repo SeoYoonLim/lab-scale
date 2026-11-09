@@ -259,7 +259,9 @@ class TestResearchRouteLocale:
         assert r.status_code == 200
         assert calls[-1] == ({"user_id": 5} if expected is None else {"user_id": 5, "locale": expected})
         assert r.json()["disclaimer"] == (DISCLAIMER if expected is None else i18n.disclaimer(expected))
-        assert set(r.json()) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer"}
+        assert set(r.json()) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer", "locale", "translation_status"}
+        # 38차: 응답 locale은 실제로 쓴 언어(fr-FR → ko-KR), ko-KR이면 번역 상태 null(가짜 ask_question에는 meta가 없다 → null)
+        assert r.json()["locale"] == (expected or "ko-KR") and r.json()["translation_status"] is None
 
     def test_followup_of_translated_record_uses_korean_original(self, calls, monkeypatch):
         self._login("en-US")

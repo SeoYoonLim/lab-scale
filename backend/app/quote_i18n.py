@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from app import daily_briefing_text as dbt, quote_freshness
+from app.display_dates import kst_day
 from app.i18n import disclaimer, text
 
 LOCALES = ("en-US", "ja-JP", "zh-CN")
@@ -104,7 +105,8 @@ def fallback_summary(records: list[dict], locale: str, now: datetime | None = No
         for key in ("news", "disclosures", "results"):
             for it in (r.get(key) or [])[:5]:
                 t = it.get("title")
-                d = str(it.get("published_at") or it.get("disclosed_at") or it.get("rcept_dt") or "")[:10]
+                # 38차: UTC 시각의 앞 10자가 아니라 한국 날짜(공시가 하루 이르게 나오던 문제)
+                d = kst_day(it.get("published_at") or it.get("disclosed_at") or it.get("rcept_dt"))
                 if t:
                     titles.append(f"- {t}" + (f" ({d})" if d else ""))
     parts = [text("translation_fallback_summary" if (lines or titles) else "translation_fallback_empty", locale)]

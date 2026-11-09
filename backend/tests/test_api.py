@@ -67,8 +67,8 @@ class TestQuestionValidation:
     def test_question_is_stripped_before_agent(self, calls):
         r = post("  삼성전자 주가  ")
         assert r.status_code == 200
-        # 기존 필드는 그대로이고 disclaimer만 추가됐다
-        assert r.json() == {**OK_RESULT, "disclaimer": DISCLAIMER}
+        # 기존 필드는 그대로이고 disclaimer, 38차의 locale·translation_status(ko-KR이면 null)만 추가됐다
+        assert r.json() == {**OK_RESULT, "disclaimer": DISCLAIMER, "locale": "ko-KR", "translation_status": None}
         assert calls == ["삼성전자 주가"]
 
 

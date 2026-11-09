@@ -11,12 +11,15 @@ from app.api.history_params import history_window, with_dates
 from app.auth import CurrentUser
 from app.disclaimer import DISCLAIMER
 from app.history_dates import DEFAULT_TIMEZONE, MAX_TIMEZONE_LEN
-from app.i18n import MAX_LOCALE_LEN, disclaimer, is_default, resolve_locale
+from app.i18n import DEFAULT_LOCALE, MAX_LOCALE_LEN, disclaimer, is_default, resolve_locale
 from app.pagination import MAX_OFFSET, page_meta
 from app.reports import delete_report, get_report, list_reports
 
 AnalysisType = Literal["outlook", "event", "briefing", "discovery", "etf", "disclosure", "news", "price", "market", "general"]
 DateGroup = Literal["today", "yesterday", "last_7_days", "last_30_days", "older"]
+# 2026-11-09(38차): 새 답변에서 나올 수 있는 번역 상태(app.answer_i18n.localize_answer가 돌려주는 값 전부).
+# fallback_original은 2026-11-07 이전에 저장된 기록에만 있어 POST 응답에는 나오지 않는다(ReportRecordDetail은 str 그대로).
+TranslationStatus = Literal["translated", "localized", "fallback_summary"]
 
 router = APIRouter(prefix="/api", tags=["research"])
 
@@ -59,6 +62,15 @@ class ResearchResponse(BaseModel):
     # 요청에서 이어받은 직전 보고서. 후속 질문이 아니면 None.
     previous_report_id: int | None = None
     disclaimer: str = DISCLAIMER
+    # 2026-11-09(38차, 하위 호환 추가): 답변이 실제로 쓰인 언어. 요청 locale이 아니라 결정된 값이다
+    # (지원하지 않는 locale을 보냈으면 ko-KR). GET /api/research/{id}?view=record의 locale과 같은 값이 저장된다.
+    locale: str = Field(DEFAULT_LOCALE, description="답변이 실제로 쓰인 언어(요청 locale > 계정 설정 > ko-KR, 지원하지 않는 값은 ko-KR)")
+    # ko-KR 답변은 번역하지 않으므로 null. 그 밖의 언어는 기록 상세(view=record)의 translation_status와 같은 값이다.
+    translation_status: TranslationStatus | None = Field(
+        None,
+        description="ko-KR이면 null(번역 안 함). translated=보호 번역 성공, localized=코드가 그 언어로 직접 쓴 답, "
+                    "fallback_summary=번역을 검증하지 못해 해설 대신 그 언어 안내 + 데이터 요약(한국어 원문은 view=record의 original_answer)",
+    )
 
 
 class ReportDetail(BaseModel):
@@ -148,8 +160,12 @@ class ReportRecordDetail(RecordFields, ReportDetail):
     data_basis: list[DataBasis]
     timezone: str
     locale: str
-    # ko-KR이 아닌 기록만: translated(번역) | localized(그 언어 템플릿) | fallback_original(번역 검증 실패, answer는 한국어 원문)
-    translation_status: str | None = None
+    # ko-KR이 아닌 기록만: translated(번역) | localized(그 언어 템플릿) | fallback_summary(번역 검증 실패, answer는 그 언어 안내 +
+    # 데이터 요약, 2026-11-07부터) | fallback_original(2026-11-07 이전 기록의 번역 검증 실패, answer는 안내 + 한국어 원문)
+    translation_status: str | None = Field(
+        None,
+        description="ko-KR 기록이면 null. translated | localized | fallback_summary | fallback_original(2026-11-07 이전 기록만)",
+    )
     # ko-KR이 아닌 기록만: 번역 전에 검증을 거친 한국어 답변
     original_answer: str | None = None
 
@@ -193,9 +209,11 @@ def research(request: ResearchRequest, user: CurrentUser = Depends(get_current_u
             if previous.get("original_answer"):
                 previous = {**previous, "answer": previous["original_answer"]}
             result = ask_question(request.question, previous=previous, user_id=user.id, **localized)
+    # 38차: 결정된 언어와 번역 상태를 같이 준다. 번역 상태는 ask_question의 내부 meta에서만 꺼낸다(ko-KR이면 meta에 없다 → null)
+    status = (result.get("meta") or {}).get("translation_status") if localized else None
     if localized:
-        return ResearchResponse(**{**result, "disclaimer": disclaimer(locale)})
-    return ResearchResponse(**result)
+        return ResearchResponse(**{**result, "disclaimer": disclaimer(locale)}, locale=locale, translation_status=status)
+    return ResearchResponse(**result, locale=locale)
 
 
 @router.get("/research", response_model=ReportList | ReportRecordList)

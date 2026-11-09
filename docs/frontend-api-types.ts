@@ -1053,6 +1053,8 @@ export interface ResearchResponse {
   report_id?: number | null;
   previous_report_id?: number | null;
   disclaimer?: string;
+  locale?: string;
+  translation_status?: "translated" | "localized" | "fallback_summary" | null;
 }
 
 export interface ResetPasswordRequest {

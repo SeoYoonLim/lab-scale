@@ -44,7 +44,8 @@ class TestResearchResponses:
         }
         monkeypatch.setattr(research_api, "ask_question", lambda q, user_id=None: result)
         body = client.post("/api/research", json={"question": "삼성전자 주가"}).json()
-        assert body == {**result, "disclaimer": EXPECTED}
+        # 38차: 실제 언어(locale)와 번역 상태(ko-KR이면 null)가 더해졌고 기존 필드 값은 그대로다
+        assert body == {**result, "disclaimer": EXPECTED, "locale": "ko-KR", "translation_status": None}
 
     def test_detail_has_disclaimer_and_keeps_existing_fields(self, monkeypatch):
         monkeypatch.setattr(research_api, "get_report", lambda report_id, user_id: DETAIL)

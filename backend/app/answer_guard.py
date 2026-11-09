@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from datetime import date
 from itertools import combinations
 
+from app.display_dates import kst_day
+
 # ---------- 숫자 추출 (evals/metrics.py와 같은 규칙) ----------
 
 _UNIT_SCALE = {"조": 1e12, "억": 1e8, "만": 1e4, "천": 1e3}
@@ -516,8 +518,8 @@ def _price_sentence(r: dict) -> str | None:
 def _titles(items: list, key_url: str = "url", limit: int = 5) -> list[str]:
     lines = []
     for it in items[:limit]:
-        date = it.get("published_at") or it.get("rcept_dt") or it.get("disclosed_at") or ""
-        date = str(date)[:10]
+        # 38차: UTC 시각의 앞 10자가 아니라 한국 날짜(공시가 하루 이르게 나오던 문제). 코드 요약은 검증기를 다시 거치지 않는다
+        date = kst_day(it.get("published_at") or it.get("rcept_dt") or it.get("disclosed_at"))
         lines.append(f"- {it.get('title')}" + (f" ({date})" if date else ""))
     return lines
 
