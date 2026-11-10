@@ -62,6 +62,20 @@ def test_ignores_non_secrets(line):
     assert S.scan_line(line) == []
 
 
+def test_account_recovery_purpose_names_are_allowed_only_in_that_file_and_shape():
+    # 토큰 용도 이름·링크 경로(소문자 낱말/경로)는 account_recovery.py에서만 허용한다(커밋 59b232e의 오탐)
+    path = "backend/app/account_recovery.py"
+    assert S.scan_line('PURPOSE_RESET_PASSWORD = "reset_password"', path) == []
+    assert S.scan_line('LINK_PATHS = {PURPOSE_VERIFY_EMAIL: "/verify-email"}', path) == []
+    # 같은 줄이라도 다른 파일이면 그대로 걸린다
+    assert set(S.scan_line('PURPOSE_RESET_PASSWORD = "reset_password"', "backend/app/auth.py")) == {"assign-quoted", "assign-env"}
+    # 그 파일에서도 대소문자·숫자가 섞인 무작위 값은 걸린다
+    assert set(S.scan_line('RESET_TOKEN = "Xk29s8dKq1zP"', path)) == {"assign-quoted", "assign-env"}
+    assert S.scan_line("RESET_TOKEN=Xk29s8dKq1zP", path) == ["assign-env"]
+    # 다른 규칙(JWT)은 그 파일에서도 그대로 적용된다
+    assert "jwt" in S.scan_line(f'token = "{JWT}"', path)
+
+
 def test_path_allowance_only_turns_off_the_quoted_assignment_rule():
     line = 'password = "wrong-password"'
     assert S.scan_line(line, "backend/app/auth.py") == ["assign-quoted"]

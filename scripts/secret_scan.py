@@ -40,6 +40,12 @@ ALLOW_URL_CREDENTIALS = re.compile(ALLOW_URL_CREDENTIALS.pattern + r"|\bdriver:/
 # 테스트와 문서에는 가입/로그인 예시용 가짜 비밀번호 리터럴이 있다(API.md의 "correct-horse-battery", 테스트의 "wrong-password" 등).
 # 이 경로에서는 `assign-quoted` 규칙만 끈다. JWT·Bearer·개인 키·URL 비밀번호·.env 값 대조는 그대로 적용된다.
 ALLOW_PATH_RULES = {"assign-quoted": ("backend/tests/", "*.md")}
+# backend/app/account_recovery.py의 토큰 "용도 이름"(PURPOSE_RESET_PASSWORD = "reset_password")과 링크 경로("/reset-password")는
+# 이름에 password/token이 들어가 `assign-quoted`에 걸리는 오탐이다(커밋 59b232e). 이 파일에서만, 값이 소문자 낱말(snake/kebab)이나
+# 소문자 경로일 때만 허용한다. 대소문자·숫자가 섞인 무작위 값, 다른 파일, 다른 규칙(JWT·Bearer 등)은 그대로 걸린다.
+ALLOW_PATH_VALUES = {
+    "backend/app/account_recovery.py": re.compile(r"[a-z]+(?:[_-][a-z]+)*|(?:/[a-z]+(?:[_-][a-z]+)*)+"),
+}
 # docker-compose.yml의 POSTGRES_PASSWORD: postgres 와 같은 개발용 컨테이너 값.
 ALLOW_VALUES = {"postgres"}
 # 값이 이런 낱말을 포함하면 견본/더미로 본다(.env.example, 문서의 <your_key>, CI의 더미 비밀번호 등).
@@ -113,6 +119,9 @@ def scan_line(line: str, path: str = "") -> list[str]:
             if rule in ("assign-quoted", "assign-env"):
                 value = m.group(m.lastindex)
                 if _is_placeholder(value):
+                    continue
+                allowed_shape = ALLOW_PATH_VALUES.get(path)
+                if allowed_shape and allowed_shape.fullmatch(value):
                     continue
             if rule == "url-credentials" and _is_placeholder(m.group(1)):
                 continue
