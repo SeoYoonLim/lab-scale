@@ -27,18 +27,18 @@ export default function Layout() {
   return (
     <div className="app-shell">
       <a href="#main" className="skip-link">
-        본문으로 건너뛰기
+        {t('layout.skip', { fallback: '본문으로 건너뛰기' })}
       </a>
       <aside className="sidebar">
         <NavLink to={user ? '/' : '/companies'} className="sidebar-brand">
           <span className="brand-mark">AI</span>
           <span className="brand-text">
-            <span className="brand-name">투자 리서치 에이전트</span>
-            <span className="brand-tagline">AI가 찾아주는 스마트한 투자 인사이트</span>
+            <span className="brand-name">{t('layout.brand_name', { fallback: '투자 리서치 에이전트' })}</span>
+            <span className="brand-tagline">{t('layout.brand_tagline', { fallback: 'AI가 찾아주는 스마트한 투자 인사이트' })}</span>
           </span>
         </NavLink>
 
-        <nav className="sidebar-nav" aria-label="주 메뉴">
+        <nav className="sidebar-nav" aria-label={t('layout.main_menu', { fallback: '주 메뉴' })}>
           {items
             .filter((item) => !item.auth || user)
             .map((item) => (
@@ -54,7 +54,7 @@ export default function Layout() {
             <span className="sidebar-tip-icon">
               <IconBulb />
             </span>
-            <p>AI Agent가 주가·뉴스·공시를 근거로 분석해요. 결과는 투자 권유가 아니에요.</p>
+            <p>{t('layout.sidebar_tip', { fallback: 'AI Agent가 주가·뉴스·공시를 근거로 분석해요. 결과는 투자 권유가 아니에요.' })}</p>
           </div>
           {user ? (
             <div className="sidebar-user">
@@ -69,8 +69,8 @@ export default function Layout() {
             </NavLink>
           )}
           {USE_MOCK && (
-            <span className="mock-flag" title="백엔드 API 연결 전 화면 개발용 샘플 데이터예요">
-              샘플 데이터로 보는 중
+            <span className="mock-flag" title={t('layout.mock_title', { fallback: '백엔드 API 연결 전 화면 개발용 샘플 데이터예요' })}>
+              {t('layout.mock_flag', { fallback: '샘플 데이터로 보는 중' })}
             </span>
           )}
         </div>

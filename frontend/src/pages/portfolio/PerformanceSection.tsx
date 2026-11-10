@@ -167,7 +167,10 @@ function PerformanceChart({ view }: { view: PerformanceView }) {
       />
       {view.series.sampled && (
         <p className="muted small">
-          {view.series.total_points}개 거래일 중 {view.series.points.length}개만 그렸어요(첫·끝·최고·최저·최대 낙폭 지점은 남겼어요).
+          {t('performance.sampled_note', {
+            fallback: '{total}개 거래일 중 {shown}개만 그렸어요(첫·끝·최고·최저·최대 낙폭 지점은 남겼어요).',
+            vars: { total: view.series.total_points, shown: view.series.points.length },
+          })}
         </p>
       )}
     </div>

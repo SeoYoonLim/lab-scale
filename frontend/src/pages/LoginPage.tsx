@@ -3,9 +3,11 @@ import type { FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import AuthBrand from '../components/AuthBrand'
+import { useLocale } from '../i18n/useLocale'
 
 export default function LoginPage() {
   const { login, notice } = useAuth()
+  const { t } = useLocale()
   const navigate = useNavigate()
   const location = useLocation()
   const [username, setUsername] = useState('')
@@ -25,7 +27,7 @@ export default function LoginPage() {
       const nav = location.state as { from?: string; state?: unknown } | null
       navigate(nav?.from ?? '/', { replace: true, state: nav?.state ?? null })
     } catch (err) {
-      setError(err instanceof Error ? err.message : '로그인에 실패했어요.')
+      setError(err instanceof Error ? err.message : t('auth.login_failed', { fallback: '로그인에 실패했어요.' }))
     } finally {
       setPending(false)
     }
@@ -35,18 +37,18 @@ export default function LoginPage() {
     <div className="auth-page">
       <form className="card auth-card" onSubmit={handleSubmit}>
         <AuthBrand />
-        <h1 className="auth-title">로그인</h1>
+        <h1 className="auth-title">{t('nav.login', { fallback: '로그인' })}</h1>
         {notice && (
           <p className="notice order-result" role="status">
             {notice}
           </p>
         )}
         <label className="auth-field">
-          <span>아이디</span>
+          <span>{t('auth.username', { fallback: '아이디' })}</span>
           <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
         </label>
         <label className="auth-field">
-          <span>비밀번호</span>
+          <span>{t('auth.password', { fallback: '비밀번호' })}</span>
           <input
             type="password"
             value={password}
@@ -56,15 +58,15 @@ export default function LoginPage() {
         </label>
         {error && <p className="notice notice-error">{error}</p>}
         <button type="submit" className="send auth-submit" disabled={pending || !username.trim() || !password}>
-          {pending ? '로그인 중…' : '로그인'}
+          {pending ? t('auth.logging_in', { fallback: '로그인 중…' }) : t('nav.login', { fallback: '로그인' })}
         </button>
         <p className="muted small auth-switch">
-          계정이 없으신가요? <Link to="/signup">회원가입</Link>
+          {t('auth.no_account', { fallback: '계정이 없으신가요?' })} <Link to="/signup">{t('auth.signup', { fallback: '회원가입' })}</Link>
         </p>
         <p className="muted small auth-switch">
-          <Link to="/find-username">아이디 찾기</Link>
+          <Link to="/find-username">{t('auth.find_username', { fallback: '아이디 찾기' })}</Link>
           {' · '}
-          <Link to="/forgot-password">비밀번호 찾기</Link>
+          <Link to="/forgot-password">{t('auth.forgot_password', { fallback: '비밀번호 찾기' })}</Link>
         </p>
       </form>
     </div>

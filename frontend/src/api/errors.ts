@@ -1,15 +1,24 @@
 // http.ts/mock.ts 둘 다 던진다. 상태 코드가 필요한 호출부(예: 409를 "이미 있음" 안내로 보여주는 경우)가
 // 메시지 문자열 대신 err.status로 분기할 수 있게 한다.
+// 서버가 문장을 주지 않아 클라이언트가 직접 만든 오류의 종류. 화면(ErrorNotice)이 이 코드로 화면 언어에 맞는 문장을 보여준다.
+export type ClientErrorCode = 'timeout' | 'schema' | 'request_failed'
+
 export class ApiError extends Error {
   readonly status: number
   // 429(요청 한도)일 때 응답 헤더 Retry-After(초). 없으면 undefined. "n초 뒤 다시"를 화면에 보여주는 데 쓴다.
   readonly retryAfterSec?: number
+  // 클라이언트가 만든 오류(시간 초과·응답 형식 오류·본문 없는 실패)면 그 종류. 서버가 준 문장이면 undefined.
+  readonly clientCode?: ClientErrorCode
+  // 429에서 "n초 뒤 다시"를 덧붙이기 전의 서버 문장
+  readonly serverMessage?: string
 
-  constructor(message: string, status: number, retryAfterSec?: number) {
+  constructor(message: string, status: number, retryAfterSec?: number, clientCode?: ClientErrorCode, serverMessage?: string) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.retryAfterSec = retryAfterSec
+    this.clientCode = clientCode
+    this.serverMessage = serverMessage
   }
 }
 

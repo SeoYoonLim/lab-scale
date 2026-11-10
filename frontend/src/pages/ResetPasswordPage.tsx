@@ -8,6 +8,7 @@ import { ApiError } from '../api/errors'
 import { useAuth } from '../auth/useAuth'
 import AuthBrand from '../components/AuthBrand'
 import ErrorNotice from '../components/ui/ErrorNotice'
+import { useLocale } from '../i18n/useLocale'
 import { useHashToken } from '../utils/useHashToken'
 
 // 메일 링크(/reset-password#token=...)로 들어와 새 비밀번호를 정한다. 토큰은 읽자마자 주소창에서 지운다.
@@ -21,6 +22,7 @@ export default function ResetPasswordPage() {
 
 function ResetPasswordForm({ token }: { token: string | null }) {
   const { user, logout } = useAuth()
+  const { t } = useLocale()
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [localError, setLocalError] = useState<string | null>(null)
@@ -36,11 +38,16 @@ function ResetPasswordForm({ token }: { token: string | null }) {
     e.preventDefault()
     if (mutation.isPending || !token) return
     if (password.length < PASSWORD_MIN_LEN || password.length > PASSWORD_MAX_LEN) {
-      setLocalError(`비밀번호는 ${PASSWORD_MIN_LEN}~${PASSWORD_MAX_LEN}자여야 해요.`)
+      setLocalError(
+        t('auth.password_length', {
+          fallback: '비밀번호는 {min}~{max}자여야 해요.',
+          vars: { min: PASSWORD_MIN_LEN, max: PASSWORD_MAX_LEN },
+        }),
+      )
       return
     }
     if (password !== confirm) {
-      setLocalError('비밀번호 확인이 일치하지 않아요.')
+      setLocalError(t('auth.password_mismatch', { fallback: '비밀번호 확인이 일치하지 않아요.' }))
       return
     }
     setLocalError(null)
@@ -54,15 +61,15 @@ function ResetPasswordForm({ token }: { token: string | null }) {
     <div className="auth-page">
       <form className="card auth-card" onSubmit={handleSubmit}>
         <AuthBrand />
-        <h1 className="auth-title">비밀번호 재설정</h1>
+        <h1 className="auth-title">{t('auth.reset_title', { fallback: '비밀번호 재설정' })}</h1>
 
         {!token && (
           <>
             <p className="notice notice-error" role="alert">
-              링크가 올바르지 않아요. 메일의 링크를 다시 열거나, 새 링크를 받아주세요.
+              {t('auth.reset_link_invalid', { fallback: '링크가 올바르지 않아요. 메일의 링크를 다시 열거나, 새 링크를 받아주세요.' })}
             </p>
             <Link to="/forgot-password" className="link-button">
-              비밀번호 찾기
+              {t('auth.forgot_password', { fallback: '비밀번호 찾기' })}
             </Link>
           </>
         )}
@@ -73,7 +80,7 @@ function ResetPasswordForm({ token }: { token: string | null }) {
               {mutation.data.message}
             </p>
             <Link to="/login" className="send auth-submit auth-link-button">
-              로그인하기
+              {t('auth.to_login', { fallback: '로그인하기' })}
             </Link>
           </>
         )}
@@ -81,10 +88,13 @@ function ResetPasswordForm({ token }: { token: string | null }) {
         {token && !mutation.isSuccess && (
           <>
             <p className="muted small">
-              새 비밀번호를 정해주세요. {PASSWORD_MIN_LEN}~{PASSWORD_MAX_LEN}자이고, 흔한 비밀번호나 아이디·이메일이 들어간 비밀번호는 쓸 수 없어요.
+              {t('auth.reset_lead', {
+                fallback: '새 비밀번호를 정해주세요. {min}~{max}자이고, 흔한 비밀번호나 아이디·이메일이 들어간 비밀번호는 쓸 수 없어요.',
+                vars: { min: PASSWORD_MIN_LEN, max: PASSWORD_MAX_LEN },
+              })}
             </p>
             <label className="auth-field">
-              <span>새 비밀번호</span>
+              <span>{t('auth.new_password', { fallback: '새 비밀번호' })}</span>
               <input
                 type="password"
                 value={password}
@@ -93,7 +103,7 @@ function ResetPasswordForm({ token }: { token: string | null }) {
               />
             </label>
             <label className="auth-field">
-              <span>새 비밀번호 확인</span>
+              <span>{t('auth.new_password_confirm', { fallback: '새 비밀번호 확인' })}</span>
               <input
                 type="password"
                 value={confirm}
@@ -106,14 +116,14 @@ function ResetPasswordForm({ token }: { token: string | null }) {
                 {localError}
               </p>
             )}
-            {mutation.error && <ErrorNotice error={mutation.error} fallback="비밀번호를 바꾸지 못했어요." />}
+            {mutation.error && <ErrorNotice error={mutation.error} fallback={t('auth.reset_failed', { fallback: '비밀번호를 바꾸지 못했어요.' })} />}
             {linkDead ? (
               <Link to="/forgot-password" className="send auth-submit auth-link-button">
-                새 링크 받기
+                {t('auth.get_new_link', { fallback: '새 링크 받기' })}
               </Link>
             ) : (
               <button type="submit" className="send auth-submit" disabled={mutation.isPending || !password || !confirm}>
-                {mutation.isPending ? '바꾸는 중…' : '비밀번호 바꾸기'}
+                {mutation.isPending ? t('auth.changing', { fallback: '바꾸는 중…' }) : t('auth.change_password', { fallback: '비밀번호 바꾸기' })}
               </button>
             )}
           </>

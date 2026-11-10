@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
 import { queryKeys } from '../api/queryKeys'
+import { useLocale } from '../i18n/useLocale'
 import { formatDate } from '../utils/format'
 
 // GET /api/disclaimer + GET /api/status. 로그인 여부와 무관하게 앱 하단에 항상 보여준다(backend/API.md 4번 요청사항).
 export default function DisclaimerFooter() {
+  const { t, locale } = useLocale()
   // 면책 문구는 세션 중에 안 바뀌니 staleTime: Infinity로 두면 화면을 옮겨다녀도 다시 안 부른다.
   const { data } = useQuery({ queryKey: queryKeys.disclaimer, queryFn: () => api.getDisclaimer(), staleTime: Infinity })
   // 데이터 기준일은 하루 단위로 바뀌는 값이라 5분 캐시면 충분하다. 실패해도 푸터의 나머지(면책 문구)는
@@ -23,14 +25,22 @@ export default function DisclaimerFooter() {
     <footer className="app-footer muted small">
       {status && (
         <p className="data-basis">
-          <span>
-            데이터 기준일 <span className="num">{formatDate(status.sources.stock_price.latest_date)}</span> 종가
+          <span className="num">
+            {t('footer.data_basis', {
+              fallback: '데이터 기준일 {date} 종가',
+              vars: { date: formatDate(status.sources.stock_price.latest_date) },
+            })}
           </span>
-          {stale && <span className="data-basis-warn">시장 지수 데이터가 늦어지고 있어요</span>}
-          {refreshFailed && <span className="data-basis-warn">마지막 데이터 갱신에 실패한 단계가 있어요</span>}
+          {stale && <span className="data-basis-warn">{t('footer.index_stale', { fallback: '시장 지수 데이터가 늦어지고 있어요' })}</span>}
+          {refreshFailed && (
+            <span className="data-basis-warn">
+              {t('footer.refresh_failed', { fallback: '마지막 데이터 갱신에 실패한 단계가 있어요' })}
+            </span>
+          )}
         </p>
       )}
-      {data && <p>{data}</p>}
+      {/* 서버 문구는 한국어 한 가지라, 다른 언어에서는 백엔드가 준 언어별 면책 문구(리소스 system.disclaimer)를 쓴다 */}
+      {data && <p>{locale === 'ko-KR' ? data : t('system.disclaimer', { fallback: data })}</p>}
     </footer>
   )
 }

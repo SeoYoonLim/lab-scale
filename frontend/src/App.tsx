@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import RequireAuth from './components/RequireAuth'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
+import { useLocale } from './i18n/useLocale'
 import RecoveryRequestPage from './pages/RecoveryRequestPage'
 import DeleteAccountPage from './pages/DeleteAccountPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
@@ -24,6 +25,11 @@ const HoldingsTab = lazy(() => import('./pages/portfolio/HoldingsTab'))
 const PerformanceSection = lazy(() => import('./pages/portfolio/PerformanceSection'))
 const TradesSection = lazy(() => import('./pages/portfolio/TradesSection'))
 const WatchlistSection = lazy(() => import('./pages/portfolio/WatchlistSection'))
+
+function NotFoundPage() {
+  const { t } = useLocale()
+  return <div className="container page">{t('auth.not_found_page', { fallback: '페이지를 찾을 수 없어요.' })}</div>
+}
 
 export default function App() {
   return (
@@ -93,7 +99,7 @@ export default function App() {
             <Route path="trades" element={<TradesSection />} />
             <Route path="watchlist" element={<WatchlistSection />} />
           </Route>
-          <Route path="*" element={<div className="container page">페이지를 찾을 수 없어요.</div>} />
+          <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

@@ -103,9 +103,16 @@ async function toApiError(res: Response, fallback: string): Promise<ApiError> {
   if (res.status === 429) {
     const raw = res.headers?.get?.('Retry-After')
     const seconds = raw != null && /^\d+$/.test(raw) ? Number(raw) : undefined
-    return new ApiError(seconds != null ? `${message} (${seconds}초 뒤 다시 시도해주세요)` : message, 429, seconds)
+    return new ApiError(
+      seconds != null ? `${message} (${seconds}초 뒤 다시 시도해주세요)` : message,
+      429,
+      seconds,
+      message === fallback ? 'request_failed' : undefined,
+      message,
+    )
   }
-  return new ApiError(message, res.status)
+  // 서버가 문장(detail)을 주지 않아 fallback을 쓴 경우만 클라이언트가 만든 오류다
+  return new ApiError(message, res.status, undefined, message === fallback ? 'request_failed' : undefined)
 }
 
 function authHeader(): Record<string, string> {
@@ -169,12 +176,12 @@ async function request<T>(path: string, init: RequestInit = {}, options: Request
     const parsed = schema.safeParse(json)
     if (!parsed.success) {
       console.error(`API 응답이 backend/API.md와 다른 형식이에요 (${path}):`, parsed.error.issues)
-      throw new ApiError(SCHEMA_MISMATCH_MESSAGE, 502)
+      throw new ApiError(SCHEMA_MISMATCH_MESSAGE, 502, undefined, 'schema')
     }
     return parsed.data
   } catch (err) {
     // status 0: ApiError.status===401/409 같은 분기에 절대 안 걸리게, 실제 HTTP 상태와는 구분되는 값.
-    if (isAbortError(err)) throw new ApiError(TIMEOUT_MESSAGE, 0)
+    if (isAbortError(err)) throw new ApiError(TIMEOUT_MESSAGE, 0, undefined, 'timeout')
     throw err
   } finally {
     clear()
@@ -196,7 +203,7 @@ async function requestVoid(
       throw await toApiError(res, fallback)
     }
   } catch (err) {
-    if (isAbortError(err)) throw new ApiError(TIMEOUT_MESSAGE, 0)
+    if (isAbortError(err)) throw new ApiError(TIMEOUT_MESSAGE, 0, undefined, 'timeout')
     throw err
   } finally {
     clear()

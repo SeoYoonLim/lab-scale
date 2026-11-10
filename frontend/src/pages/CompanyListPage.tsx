@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import { queryKeys } from '../api/queryKeys'
 import AssetTypeBadge from '../components/AssetTypeBadge'
+import { useLocale } from '../i18n/useLocale'
 import type { AssetType } from '../types'
 import { formatPct, formatPrice, trendClass } from '../utils/format'
 import ErrorNotice from '../components/ui/ErrorNotice'
@@ -13,9 +14,14 @@ import ErrorNotice from '../components/ui/ErrorNotice'
 const SEARCH_DEBOUNCE_MS = 300
 
 type AssetTypeFilter = 'all' | AssetType
-const ASSET_TYPE_LABELS: Record<AssetTypeFilter, string> = { all: '전체', stock: '주식', etf: 'ETF' }
+const ASSET_TYPE_LABELS: Record<AssetTypeFilter, { key: string; fallback: string }> = {
+  all: { key: 'asset.all', fallback: '전체' },
+  stock: { key: 'asset.stock', fallback: '주식' },
+  etf: { key: 'asset.etf', fallback: 'ETF' },
+}
 
 export default function CompanyListPage() {
+  const { t } = useLocale()
   const [searchParams, setSearchParams] = useSearchParams()
   // ?q= 로 들어오면(공유한 링크, 종목 상세에서 뒤로가기) 검색어를 복원한다.
   const [q, setQ] = useState(() => searchParams.get('q') ?? '')
@@ -45,35 +51,35 @@ export default function CompanyListPage() {
 
   return (
     <div className="container page">
-      <h1 className="page-title">종목</h1>
+      <h1 className="page-title">{t('companies.title', { fallback: '종목' })}</h1>
 
       <input
         className="company-search"
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        placeholder="종목명 또는 종목코드로 검색 (예: 삼성전자, 코덱스200)"
-        aria-label="종목 검색"
+        placeholder={t('companies.search_placeholder', { fallback: '종목명 또는 종목코드로 검색 (예: 삼성전자, 코덱스200)' })}
+        aria-label={t('companies.search_aria', { fallback: '종목 검색' })}
       />
 
-      <div className="segmented asset-type-filter" role="group" aria-label="종목 유형">
-        {(['all', 'stock', 'etf'] as const).map((t) => (
+      <div className="segmented asset-type-filter" role="group" aria-label={t('companies.type_aria', { fallback: '종목 유형' })}>
+        {(['all', 'stock', 'etf'] as const).map((type) => (
           <button
-            key={t}
+            key={type}
             type="button"
-            className={t === assetTypeFilter ? 'seg active' : 'seg'}
-            onClick={() => setAssetTypeFilter(t)}
+            className={type === assetTypeFilter ? 'seg active' : 'seg'}
+            onClick={() => setAssetTypeFilter(type)}
           >
-            {ASSET_TYPE_LABELS[t]}
+            {t(ASSET_TYPE_LABELS[type].key, { fallback: ASSET_TYPE_LABELS[type].fallback })}
           </button>
         ))}
       </div>
 
-      {isPending && <p className="muted">불러오는 중…</p>}
+      {isPending && <p className="muted">{t('common.loading')}</p>}
       {/* 검색어를 바꾸는 중에는 이전 결과를 그대로 보여주면서(깜빡임 없이) 이 표시만 띄운다 -
           안 그러면 느린 검색일 때 이전 검색어의 결과가 새 검색어 결과처럼 잠깐 보일 수 있다. */}
-      {isFetching && !isPending && <p className="muted small">검색 중…</p>}
+      {isFetching && !isPending && <p className="muted small">{t('companies.searching', { fallback: '검색 중…' })}</p>}
       {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
-      {data && data.length === 0 && <p className="muted">검색 결과가 없어요.</p>}
+      {data && data.length === 0 && <p className="muted">{t('companies.no_results', { fallback: '검색 결과가 없어요.' })}</p>}
 
       {data && data.length > 0 && (
         <div>
@@ -91,11 +97,14 @@ export default function CompanyListPage() {
                 </div>
                 {company.latest_close != null ? (
                   <div className="company-price">
-                    <div className="num">{formatPrice(company.latest_close)}원</div>
+                    <div className="num">
+                      {formatPrice(company.latest_close)}
+                      {t('unit.won', { fallback: '원' })}
+                    </div>
                     <div className={`num ${trendClass(company.change_pct)}`}>{formatPct(company.change_pct)}</div>
                   </div>
                 ) : (
-                  <div className="company-price muted">종가 없음</div>
+                  <div className="company-price muted">{t('companies.no_close', { fallback: '종가 없음' })}</div>
                 )}
               </Link>
             ))}

@@ -6,24 +6,29 @@ import { api } from '../api'
 import { looksLikeEmail } from '../api/contracts/account'
 import AuthBrand from '../components/AuthBrand'
 import MockMailbox from '../components/MockMailbox'
+import { useLocale } from '../i18n/useLocale'
 import ErrorNotice from '../components/ui/ErrorNotice'
 
 // 아이디 찾기·비밀번호 찾기 요청(공개). 두 API 모두 이메일이 있든 없든, 인증 전이든 같은 200과 같은 문장을 돌려준다
 // (계정 존재 여부를 숨기려고). 그래서 화면도 "메일을 보냈다"고 단정하지 않고 서버가 준 문장을 그대로 보여준다.
 const COPY = {
   password: {
-    title: '비밀번호 찾기',
-    lead: '가입할 때 등록하고 인증한 이메일을 입력하면 비밀번호를 다시 정할 수 있는 링크를 보내드려요. 링크는 30분 동안만, 한 번만 쓸 수 있어요.',
-    submit: '재설정 링크 받기',
+    title: { key: 'auth.forgot_title', fallback: '비밀번호 찾기' },
+    lead: {
+      key: 'auth.forgot_lead',
+      fallback: '가입할 때 등록하고 인증한 이메일을 입력하면 비밀번호를 다시 정할 수 있는 링크를 보내드려요. 링크는 30분 동안만, 한 번만 쓸 수 있어요.',
+    },
+    submit: { key: 'auth.forgot_submit', fallback: '재설정 링크 받기' },
   },
   username: {
-    title: '아이디 찾기',
-    lead: '가입할 때 등록하고 인증한 이메일을 입력하면 아이디를 메일로 알려드려요.',
-    submit: '아이디 받기',
+    title: { key: 'auth.username_title', fallback: '아이디 찾기' },
+    lead: { key: 'auth.username_lead', fallback: '가입할 때 등록하고 인증한 이메일을 입력하면 아이디를 메일로 알려드려요.' },
+    submit: { key: 'auth.username_submit', fallback: '아이디 받기' },
   },
 } as const
 
 export default function RecoveryRequestPage({ mode }: { mode: 'password' | 'username' }) {
+  const { t } = useLocale()
   const copy = COPY[mode]
   const [email, setEmail] = useState('')
   const mutation = useMutation({
@@ -40,10 +45,10 @@ export default function RecoveryRequestPage({ mode }: { mode: 'password' | 'user
     <div className="auth-page">
       <form className="card auth-card" onSubmit={handleSubmit}>
         <AuthBrand />
-        <h1 className="auth-title">{copy.title}</h1>
-        <p className="muted small">{copy.lead}</p>
+        <h1 className="auth-title">{t(copy.title.key, { fallback: copy.title.fallback })}</h1>
+        <p className="muted small">{t(copy.lead.key, { fallback: copy.lead.fallback })}</p>
         <label className="auth-field">
-          <span>이메일</span>
+          <span>{t('auth.email', { fallback: '이메일' })}</span>
           <input
             type="email"
             value={email}
@@ -52,20 +57,24 @@ export default function RecoveryRequestPage({ mode }: { mode: 'password' | 'user
             inputMode="email"
           />
         </label>
-        {mutation.error && <ErrorNotice error={mutation.error} fallback="요청에 실패했어요. 잠시 후 다시 시도해주세요." />}
+        {mutation.error && <ErrorNotice error={mutation.error} fallback={t('auth.request_failed', { fallback: '요청에 실패했어요. 잠시 후 다시 시도해주세요.' })} />}
         {mutation.data && (
           <p className="notice order-result" role="status">
             {mutation.data.message}
           </p>
         )}
         <button type="submit" className="send auth-submit" disabled={mutation.isPending || !looksLikeEmail(email)}>
-          {mutation.isPending ? '보내는 중…' : copy.submit}
+          {mutation.isPending ? t('auth.sending', { fallback: '보내는 중…' }) : t(copy.submit.key, { fallback: copy.submit.fallback })}
         </button>
         <MockMailbox refreshKey={mutation.data} />
         <p className="muted small auth-switch">
-          <Link to="/login">로그인으로 돌아가기</Link>
+          <Link to="/login">{t('auth.back_to_login', { fallback: '로그인으로 돌아가기' })}</Link>
           {' · '}
-          {mode === 'password' ? <Link to="/find-username">아이디 찾기</Link> : <Link to="/forgot-password">비밀번호 찾기</Link>}
+          {mode === 'password' ? (
+            <Link to="/find-username">{t('auth.find_username', { fallback: '아이디 찾기' })}</Link>
+          ) : (
+            <Link to="/forgot-password">{t('auth.forgot_password', { fallback: '비밀번호 찾기' })}</Link>
+          )}
         </p>
       </form>
     </div>
