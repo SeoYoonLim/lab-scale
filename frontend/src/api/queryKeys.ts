@@ -19,6 +19,8 @@ export const queryKeys = {
     ['trending', category, assetType] as const,
   disclaimer: ['disclaimer'] as const,
   preferences: ['preferences'] as const,
+  // GET /auth/me(이메일·인증 상태). 설정 화면의 이메일 카드가 쓴다
+  me: ['me'] as const,
   // 언어(locale)가 키에 들어가는 이유: 서버가 문장(안내·경고)을 그 언어로 만들어 주므로, 설정에서 언어를 바꾸면
   // 이전 언어로 캐시된 응답이 그대로 보이지 않게 한다.
   performance: (period: PerformancePeriod, benchmark: BenchmarkCode, locale: string) => ['performance', period, benchmark, locale] as const,

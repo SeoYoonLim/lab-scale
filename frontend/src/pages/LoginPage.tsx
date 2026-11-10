@@ -5,7 +5,7 @@ import { useAuth } from '../auth/useAuth'
 import AuthBrand from '../components/AuthBrand'
 
 export default function LoginPage() {
-  const { login } = useAuth()
+  const { login, notice } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [username, setUsername] = useState('')
@@ -36,6 +36,11 @@ export default function LoginPage() {
       <form className="card auth-card" onSubmit={handleSubmit}>
         <AuthBrand />
         <h1 className="auth-title">로그인</h1>
+        {notice && (
+          <p className="notice order-result" role="status">
+            {notice}
+          </p>
+        )}
         <label className="auth-field">
           <span>아이디</span>
           <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
@@ -55,6 +60,11 @@ export default function LoginPage() {
         </button>
         <p className="muted small auth-switch">
           계정이 없으신가요? <Link to="/signup">회원가입</Link>
+        </p>
+        <p className="muted small auth-switch">
+          <Link to="/find-username">아이디 찾기</Link>
+          {' · '}
+          <Link to="/forgot-password">비밀번호 찾기</Link>
         </p>
       </form>
     </div>

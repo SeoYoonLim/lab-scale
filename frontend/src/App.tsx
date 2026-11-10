@@ -3,7 +3,11 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import RequireAuth from './components/RequireAuth'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
+import RecoveryRequestPage from './pages/RecoveryRequestPage'
+import DeleteAccountPage from './pages/DeleteAccountPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 import SignupPage from './pages/SignupPage'
+import VerifyEmailPage from './pages/VerifyEmailPage'
 import './App.css'
 
 // 화면은 처음 들어갈 때 불러온다(경로별 코드 분할). 로그인·가입·레이아웃만 첫 번들에 둔다.
@@ -28,6 +32,12 @@ export default function App() {
         {/* 로그인 화면은 사이드바 없이 단독으로 보여준다. */}
         <Route path="login" element={<LoginPage />} />
         <Route path="signup" element={<SignupPage />} />
+        {/* 계정 복구: 로그인 없이 들어온다. 메일 링크(#token=)로 오는 화면은 토큰을 읽자마자 주소창에서 지운다. */}
+        <Route path="forgot-password" element={<RecoveryRequestPage mode="password" />} />
+        <Route path="find-username" element={<RecoveryRequestPage mode="username" />} />
+        <Route path="reset-password" element={<ResetPasswordPage />} />
+        <Route path="verify-email" element={<VerifyEmailPage />} />
+        <Route path="delete-account" element={<DeleteAccountPage />} />
 
         <Route element={<Layout />}>
           {/* 종목 검색/상세는 로그인 없이도 된다(backend/API.md "인증" 참고). */}

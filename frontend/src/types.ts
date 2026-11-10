@@ -12,6 +12,9 @@ export type AssetType = 'stock' | 'etf'
 export interface User {
   id: number
   username: string
+  // GET /auth/me에만 온다(가입·로그인 응답의 user에는 없다). 이메일이 없으면 null
+  email?: string | null
+  email_verified?: boolean
 }
 
 export interface AuthResponse {

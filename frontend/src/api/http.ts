@@ -1,6 +1,8 @@
 import type { z } from 'zod'
 import { dailyBriefingHistorySchema, dailyBriefingSchema } from './contracts/briefing'
 import type { DailyBriefing, DailyBriefingHistory } from './contracts/briefing'
+import { accountDeleteResponseSchema, emailStatusSchema, messageResponseSchema } from './contracts/account'
+import type { AccountDeleteResponse, EmailStatus, MessageResponse } from './contracts/account'
 import { etfHoldingsSchema } from './contracts/etf'
 import type { EtfHoldings } from './contracts/etf'
 import { lookThroughViewSchema } from './contracts/exposure'
@@ -220,6 +222,56 @@ export const httpApi: Api = {
   logout: async () => {
     await request<{ ok: boolean }>('/auth/logout', { method: 'POST' }, { auth: true })
   },
+  setEmail: (email, currentPassword) =>
+    request<EmailStatus>(
+      '/auth/email',
+      { method: 'PUT', body: JSON.stringify({ email, current_password: currentPassword }) },
+      { auth: true, schema: emailStatusSchema },
+    ),
+  resendVerification: () =>
+    request<MessageResponse>('/auth/resend-verification', { method: 'POST' }, { auth: true, schema: messageResponseSchema }),
+  verifyEmail: (token) =>
+    request<MessageResponse>(
+      '/auth/verify-email',
+      { method: 'POST', body: JSON.stringify({ token }) },
+      { schema: messageResponseSchema },
+    ),
+  findUsername: (email) =>
+    request<MessageResponse>(
+      '/auth/find-username',
+      { method: 'POST', body: JSON.stringify({ email }) },
+      { schema: messageResponseSchema },
+    ),
+  forgotPassword: (email) =>
+    request<MessageResponse>(
+      '/auth/forgot-password',
+      { method: 'POST', body: JSON.stringify({ email }) },
+      { schema: messageResponseSchema },
+    ),
+  resetPassword: (token, newPassword) =>
+    request<MessageResponse>(
+      '/auth/reset-password',
+      { method: 'POST', body: JSON.stringify({ token, new_password: newPassword }) },
+      { schema: messageResponseSchema },
+    ),
+  changePassword: (currentPassword, newPassword) =>
+    request<AuthResponse>(
+      '/auth/change-password',
+      { method: 'POST', body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) },
+      { auth: true, schema: authResponseSchema },
+    ),
+  deleteAccount: (input) =>
+    request<AccountDeleteResponse>(
+      '/auth/me',
+      { method: 'DELETE', body: JSON.stringify(input) },
+      { auth: true, schema: accountDeleteResponseSchema },
+    ),
+  confirmDeleteAccount: (token) =>
+    request<AccountDeleteResponse>(
+      '/auth/delete-account/confirm',
+      { method: 'POST', body: JSON.stringify({ token }) },
+      { schema: accountDeleteResponseSchema },
+    ),
   getPreferences: () => request<Preferences>('/auth/preferences', {}, { auth: true, schema: preferencesSchema }),
   updatePreferences: (input) =>
     request<Preferences>(

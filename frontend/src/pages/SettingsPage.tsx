@@ -8,6 +8,9 @@ import { queryKeys } from '../api/queryKeys'
 import ErrorNotice from '../components/ui/ErrorNotice'
 import { LOCALE_NATIVE_NAMES } from '../i18n'
 import { useLocale } from '../i18n/useLocale'
+import DeleteAccountCard from './settings/DeleteAccountCard'
+import EmailCard from './settings/EmailCard'
+import PasswordCard from './settings/PasswordCard'
 
 // 브라우저가 아는 IANA 시간대 목록(자동완성용). 목록에 없는 이름은 서버가 422로 막는다.
 function knownTimezones(): string[] {
@@ -101,6 +104,9 @@ export default function SettingsPage() {
           {save.isPending ? t('common.loading') : t('common.save')}
         </button>
       </form>
+      <EmailCard />
+      <PasswordCard />
+      <DeleteAccountCard />
     </div>
   )
 }
