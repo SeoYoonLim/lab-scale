@@ -15,7 +15,8 @@ from app.price_history import build_price_history
 client = TestClient(app, raise_server_exceptions=False)
 
 ITEM_KEYS = {"date", "close", "volume", "change_pct", "open", "high", "low"}
-BODY_KEYS = {"ticker", "company_name", "asset_type", "days", "count", "price_as_of", "items"}
+BODY_KEYS = {"ticker", "company_name", "asset_type", "days", "count", "price_as_of", "available_count", "first_date",
+             "missing_trading_days", "items"}  # 41차(2026-11-10): 뒤의 셋 추가
 
 
 def row(day, close, volume=1000, pct=None, o=None, h=None, low=None):
@@ -63,6 +64,20 @@ class TestBuildPriceHistory:
         assert set(b) == BODY_KEYS and set(b["items"][0]) == ITEM_KEYS
         assert (b["ticker"], b["company_name"], b["asset_type"]) == ("069500", "KODEX 200", "etf")
 
+    def test_available_count_and_first_date_default_to_rows(self):
+        b = build_price_history(COMPANY, ROWS_DESC, 2)
+        assert b["available_count"] == 3 and b["first_date"] == date(2026, 10, 12)
+        b = build_price_history(COMPANY, ROWS_DESC, 2, available_count=733, first_date=date(2023, 10, 30))
+        assert b["count"] == 2 and b["available_count"] == 733 and b["first_date"] == date(2023, 10, 30)
+
+    def test_missing_trading_days_uses_krx_calendar(self):
+        """2026-10-12(월)~10-14(수)는 모두 거래일이라 0. 10-13이 빠지면 1. 주말·휴장일(10-09 한글날)은 결측이 아니다."""
+        assert build_price_history(COMPANY, ROWS_DESC, 90)["missing_trading_days"] == 0
+        gap = [ROWS_DESC[0], ROWS_DESC[2]]
+        assert build_price_history(COMPANY, gap, 90)["missing_trading_days"] == 1
+        over_holiday = [row(date(2026, 10, 12), 1), row(date(2026, 10, 8), 1)]  # 10-09 금 한글날, 10-10·11 주말
+        assert build_price_history(COMPANY, over_holiday, 90)["missing_trading_days"] == 0
+
     def test_does_not_mutate_input(self):
         rows = list(ROWS_DESC)
         build_price_history(COMPANY, rows, 90)
@@ -76,9 +91,9 @@ def patched(monkeypatch):
 
     def fake_rows(db, company_id, limit):
         calls.append((company_id, limit))
-        return ROWS_DESC[:limit]
+        return ROWS_DESC[:limit], len(ROWS_DESC), ROWS_DESC[-1].price_date
 
-    monkeypatch.setattr(stocks_api, "recent_price_rows", fake_rows)
+    monkeypatch.setattr(stocks_api, "history_rows", fake_rows)
     return calls
 
 
@@ -101,22 +116,32 @@ class TestRouter:
         assert patched == [(1, 90), (1, 2)]
         assert client.get("/api/stocks/005930/price-history?days=2").json()["days"] == 2
 
-    @pytest.mark.parametrize("qs", ["days=0", "days=91", "days=-1", "days=abc", "days=1.5"])
+    # 41차(2026-11-10): 상한 90 -> 365. 91은 이제 정상이고 경계 밖은 366이다.
+    @pytest.mark.parametrize("qs", ["days=0", "days=366", "days=1000", "days=-1", "days=abc", "days=1.5"])
     def test_invalid_days_is_422(self, patched, qs):
         assert client.get(f"/api/stocks/005930/price-history?{qs}").status_code == 422
         assert patched == []
 
-    @pytest.mark.parametrize("days", [1, 90])
+    @pytest.mark.parametrize("days", [1, 5, 20, 60, 90, 91, 120, 180, 365])
     def test_boundary_days_ok(self, patched, days):
-        assert client.get(f"/api/stocks/005930/price-history?days={days}").status_code == 200
+        r = client.get(f"/api/stocks/005930/price-history?days={days}")
+        assert r.status_code == 200 and r.json()["days"] == days
+        assert patched == [(1, days)]
+
+    def test_new_fields_from_query(self, patched):
+        b = client.get("/api/stocks/005930/price-history?days=2").json()
+        # 요청 days와 실제 반환 수(count)와 저장 행 전체 수(available_count)는 서로 다른 값이다
+        assert (b["days"], b["count"], b["available_count"]) == (2, 2, 3)
+        assert b["first_date"] == "2026-10-12" and b["missing_trading_days"] == 0
 
     def test_no_price_rows_is_200_with_empty_items(self, monkeypatch):
         monkeypatch.setattr(stocks_api, "resolve_company", lambda db, t: SimpleNamespace(company=COMPANY, message=None))
-        monkeypatch.setattr(stocks_api, "recent_price_rows", lambda db, cid, limit: [])
+        monkeypatch.setattr(stocks_api, "history_rows", lambda db, cid, limit: ([], 0, None))
         r = client.get("/api/stocks/005930/price-history")
         assert r.status_code == 200
         b = r.json()
         assert b["items"] == [] and b["count"] == 0 and b["price_as_of"] is None and b["days"] == 90
+        assert b["available_count"] == 0 and b["first_date"] is None and b["missing_trading_days"] == 0
 
     def test_unknown_company_is_404_with_detail(self, monkeypatch):
         monkeypatch.setattr(
@@ -172,6 +197,18 @@ class TestDevDb:
         expected = self._sql_rows(dev_db, ticker, 90)
         assert full["days"] == 90 and full["items"] == expected and full["count"] == len(expected) <= 90
         assert full["items"][-1] == one["items"][0]  # 가장 최근 거래일이 같다
+
+    @pytest.mark.parametrize("days", [120, 180, 365])
+    def test_long_ranges_match_table_and_counts(self, dev_db, days):
+        """41차: 90 초과도 같은 규칙(최근 N행, 오름차순). available_count·first_date는 SQL 집계와 같다. 시세가 없는 CI DB에서도
+        (빈 items·0·null로) 그대로 맞는다."""
+        b = client.get(f"/api/stocks/005930/price-history?days={days}").json()
+        expected = self._sql_rows(dev_db, "005930", days)
+        n, first = dev_db.execute(text("SELECT count(*), min(p.price_date) FROM stock_price p JOIN company c ON c.id = p.company_id "
+                                       "WHERE c.ticker = '005930'")).one()
+        assert b["days"] == days and b["items"] == expected and b["count"] == len(expected) == min(days, n)
+        assert b["available_count"] == n and b["first_date"] == (first.isoformat() if first else None)
+        assert b["missing_trading_days"] >= 0
 
     def test_default_is_90(self, dev_db):
         b = client.get("/api/stocks/005930/price-history").json()

@@ -99,6 +99,23 @@ def summarize_last_run(rows: list) -> dict | None:
     }
 
 
+def last_attempt(db: Session, step: str) -> dict | None:
+    """refresh_data의 그 단계(prices·index·news 등)를 마지막으로 실제 시도한 기록(skipped 제외) 한 건. 기록이 없으면 None.
+    2026-11-10(41차): 공개 시장 요약·뉴스·공시 목록이 "수집이 실패했다"와 "데이터가 원래 없다"를 구분하게 하려고 쓴다.
+    수동 수집 스크립트(collect_universe 등)는 이 기록을 남기지 않아 그보다 오래된 값일 수 있다. idx_data_refresh_log_step_id로 1행 조회."""
+    row = db.execute(
+        select(DataRefreshLog.status, DataRefreshLog.finished_at, DataRefreshLog.error_code)
+        .where(DataRefreshLog.step == step, DataRefreshLog.status != "skipped")
+        .order_by(DataRefreshLog.id.desc())
+        .limit(1)
+    ).first()
+    if row is None:
+        return None
+    return {"step": step, "status": row.status, "ok": row.status != "failed",
+            "finished_at": row.finished_at.astimezone(KST).isoformat() if row.finished_at else None,
+            "error_code": row.error_code}
+
+
 def build_status(db: Session, now: datetime | None = None) -> dict:
     now = (now or datetime.now(KST)).astimezone(KST)
     today = now.date()

@@ -62,6 +62,36 @@ export interface BenchmarkOut {
   covers_full_period: boolean;
 }
 
+export interface Breadth {
+  total: number;
+  up: number;
+  down: number;
+  flat: number;
+  change_missing: number;
+  no_price: number;
+  registered: number;
+  up_ratio_pct: number | null;
+  down_ratio_pct: number | null;
+  flat_ratio_pct: number | null;
+  date: string;
+  universe: "collected_stocks";
+  lag_business_days: number;
+  by_market: Record<string, BreadthCounts>;
+}
+
+export interface BreadthCounts {
+  total: number;
+  up: number;
+  down: number;
+  flat: number;
+  change_missing: number;
+  no_price: number;
+  registered: number;
+  up_ratio_pct: number | null;
+  down_ratio_pct: number | null;
+  flat_ratio_pct: number | null;
+}
+
 export interface BriefingHistory {
   items: app__api__daily_briefing__BriefingItem[];
   page: number;
@@ -393,11 +423,34 @@ export interface DisclaimerResponse {
   text: string;
 }
 
+export interface DisclosureFilters {
+  date_from: string | null;
+  date_to: string | null;
+  order: "asc" | "desc";
+  correction: "all" | "only" | "exclude";
+}
+
 export interface DisclosureItem {
   title: string;
   disclosure_type: string | null;
   disclosed_at: string;
   source_url: string | null;
+}
+
+export interface DisclosureListResponse {
+  ticker: string;
+  company_name: string;
+  asset_type: "stock" | "etf";
+  total: number;
+  limit: number;
+  offset: number;
+  has_next: boolean;
+  total_pages: number;
+  filters: DisclosureFilters;
+  supported: boolean;
+  message: string | null;
+  freshness: FeedFreshness;
+  items: StockDisclosureItem[];
 }
 
 export interface Drawdown {
@@ -471,6 +524,20 @@ export interface ExposureResponse {
   flags: app__api__exposure__Flag[];
   data_warnings: DataWarning[];
   disclaimer: string;
+}
+
+export interface FeedFilters {
+  date_from: string | null;
+  date_to: string | null;
+  order: "asc" | "desc";
+}
+
+export interface FeedFreshness {
+  last_collected_at: string | null;
+  collection_lag_weekdays: number | null;
+  stale: boolean;
+  company_latest_at: string | null;
+  last_collection: LastAttempt | null;
 }
 
 export interface FlagChanges {
@@ -607,6 +674,20 @@ export interface Horizon {
   reason: string | null;
 }
 
+export interface IndexQuote {
+  code: "KS11" | "KQ11";
+  name: string;
+  date: string | null;
+  close: number | null;
+  previous_date: string | null;
+  previous_close: number | null;
+  change: number | null;
+  change_pct: number | null;
+  change_unavailable_reason: "no_previous_row" | "previous_trading_day_missing" | null;
+  first_collected_at: string | null;
+  lag_business_days: number | null;
+}
+
 export interface InputOut {
   tickers: TickerOut[];
   strategy: string;
@@ -616,6 +697,20 @@ export interface InputOut {
   initial_cash: number;
   fee_rate: number;
   sell_tax_rate: number;
+}
+
+/** refresh_data 단계의 마지막 실제 시도(skipped 제외). 수동 수집 스크립트는 기록하지 않아 더 오래된 값일 수 있다. */
+export interface LastAttempt {
+  step: string;
+  status: "success" | "partial" | "failed";
+  ok: boolean;
+  finished_at: string | null;
+  error_code: string | null;
+}
+
+export interface LastCollection {
+  index: LastAttempt | null;
+  prices: LastAttempt | null;
 }
 
 export interface LastRefresh {
@@ -696,9 +791,38 @@ export interface Market {
   usd_krw: Quote | null;
 }
 
+export interface MarketFreshness {
+  status: "latest" | "delayed" | "stale" | "no_data";
+  lag_business_days: number | null;
+  calendar_unknown_days: number;
+  intraday_excluded: boolean;
+  dates_differ: boolean;
+}
+
 export interface MarketIndexStatus {
   latest_date: string | null;
   stale: boolean;
+}
+
+export interface MarketOverviewResponse {
+  as_of: string | null;
+  expected_date: string;
+  generated_at: string;
+  status: "ok" | "partial" | "no_data";
+  missing: string[];
+  freshness: MarketFreshness;
+  indices: IndexQuote[];
+  breadth: Breadth | null;
+  last_collection: LastCollection;
+  source: MarketSource;
+  unavailable: string[];
+  note: string;
+}
+
+export interface MarketSource {
+  provider: string;
+  tables: string[];
+  per_row_source_recorded: boolean;
 }
 
 export interface MaxDrawdown {
@@ -759,6 +883,20 @@ export interface NewsItem {
   source: string | null;
   published_at: string;
   url: string | null;
+}
+
+export interface NewsListResponse {
+  ticker: string;
+  company_name: string;
+  asset_type: "stock" | "etf";
+  total: number;
+  limit: number;
+  offset: number;
+  has_next: boolean;
+  total_pages: number;
+  filters: FeedFilters;
+  freshness: FeedFreshness;
+  items: StockNewsItem[];
 }
 
 export interface NewsStatus {
@@ -912,6 +1050,9 @@ export interface PriceHistoryResponse {
   days: number;
   count: number;
   price_as_of: string | null;
+  available_count: number;
+  first_date: string | null;
+  missing_trading_days: number;
   items: PriceHistoryItem[];
 }
 
@@ -1114,6 +1255,30 @@ export interface StatusResponse {
   last_refresh: LastRefresh | null;
   is_realtime: boolean;
   note: string;
+}
+
+export interface StockDisclosureItem {
+  id: number;
+  title: string;
+  disclosure_type: string | null;
+  rcept_no: string | null;
+  disclosed_date: string | null;
+  disclosed_at: string | null;
+  source_url: string | null;
+  is_correction: boolean;
+  collected_at: string | null;
+}
+
+export interface StockNewsItem {
+  id: number;
+  title: string;
+  summary: string | null;
+  source: string | null;
+  url: string | null;
+  published_at: string | null;
+  collected_at: string | null;
+  is_relevant: boolean | null;
+  related_tickers: string[];
 }
 
 export interface TickerOut {

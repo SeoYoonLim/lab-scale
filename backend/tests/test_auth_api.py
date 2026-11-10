@@ -251,6 +251,10 @@ class TestRouteCoverage:
         ("GET", "/api/stocks/{ticker}/event-reactions"),
         ("GET", "/api/stocks/{ticker}/price-history"),
         ("GET", "/api/etf/{ticker}/holdings"),
+        # 41차(2026-11-10): 사용자 데이터가 없는 공개 시장 데이터(시세·사건 반응과 같은 정책)
+        ("GET", "/api/market/overview"),
+        ("GET", "/api/stocks/{ticker}/news"),
+        ("GET", "/api/stocks/{ticker}/disclosures"),
     }
     PROTECTED_ROUTES = {
         ("GET", "/api/auth/me"),
