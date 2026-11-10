@@ -3,11 +3,13 @@ import { dailyBriefingHistorySchema, dailyBriefingSchema } from './briefing'
 import { lookThroughViewSchema } from './exposure'
 import { etfHoldingsSchema } from './etf'
 import { historySearchSchema } from './history'
+import { breadthBarSegments, changeUnavailableKey, marketOverviewSchema } from './market'
 import { performanceViewSchema } from './performance'
 import { preferencesSchema } from './preferences'
 import { reportRecordDetailSchema, reportRecordListSchema } from './research'
 import briefingFixture from './fixtures/daily-briefing.json'
 import etfFixture from './fixtures/etf-holdings.json'
+import marketFixture from './fixtures/market-overview.json'
 import lookThroughFixture from './fixtures/look-through-ok.json'
 import perfHistoryUnavailable from './fixtures/performance-history-unavailable.json'
 import perfNoTrades from './fixtures/performance-no-trades.json'
@@ -255,5 +257,41 @@ describe('스키마가 문서와 다른 모양은 막는다', () => {
     expect(parsed.content.sections.market?.indices).toEqual([])
     expect(parsed.content.sections.holdings?.items).toEqual([])
     expect(parsed.content.sections.risk).toBeNull()
+  })
+
+  it('시장 요약(market/overview): 정상 응답과 등락이 비는 경우, 데이터 없음', () => {
+    const ok = marketOverviewSchema.parse(marketFixture)
+    expect(ok.status).toBe('ok')
+    expect(ok.freshness.status).toBe('delayed')
+    expect(ok.indices.map((i) => i.code)).toEqual(['KS11', 'KQ11'])
+    expect(ok.breadth?.universe).toBe('collected_stocks')
+    // 막대는 서버가 준 비율을 그대로 쓴다(우리가 다시 계산하지 않는다)
+    const bar = breadthBarSegments(ok.breadth!)
+    expect(bar?.map((s) => s.key)).toEqual(['up', 'flat', 'down'])
+    expect(bar?.map((s) => s.pct)).toEqual([22.3, 1, 76.7])
+
+    // 수집 공백: 등락이 null이고 이유가 온다 - 0으로 바꾸지 않고, 모르는 이유는 이유 없이 "—"만
+    const gap = marketOverviewSchema.parse({
+      ...marketFixture,
+      indices: [{ ...marketFixture.indices[0], change: null, change_pct: null, change_unavailable_reason: 'previous_trading_day_missing' }, marketFixture.indices[1]],
+    })
+    expect(gap.indices[0].change_pct).toBeNull()
+    expect(changeUnavailableKey(gap.indices[0].change_unavailable_reason)?.key).toBe('market.change_gap')
+    expect(changeUnavailableKey('something_new')).toBeNull()
+
+    // 데이터가 없어도 200: 지수 값은 null, breadth는 null
+    const none = marketOverviewSchema.parse({
+      ...marketFixture,
+      status: 'no_data',
+      as_of: null,
+      missing: ['KS11', 'KQ11', 'breadth'],
+      freshness: { ...marketFixture.freshness, status: 'no_data', lag_business_days: null },
+      indices: marketFixture.indices.map((i) => ({ ...i, date: null, close: null, previous_date: null, change: null, change_pct: null, lag_business_days: null })),
+      breadth: null,
+    })
+    expect(none.status).toBe('no_data')
+    expect(none.breadth).toBeNull()
+    // 분모가 0이라 비율이 없으면 막대를 그리지 않는다
+    expect(breadthBarSegments({ ...ok.breadth!, up_ratio_pct: null })).toBeNull()
   })
 })

@@ -1,0 +1,94 @@
+{
+  "as_of": "2026-11-03",
+  "expected_date": "2026-11-10",
+  "generated_at": "2026-11-10T16:55:58.354334+09:00",
+  "status": "ok",
+  "missing": [],
+  "freshness": {
+    "status": "delayed",
+    "lag_business_days": 5,
+    "calendar_unknown_days": 0,
+    "intraday_excluded": false,
+    "dates_differ": false
+  },
+  "indices": [
+    {
+      "code": "KS11",
+      "name": "코스피",
+      "date": "2026-11-03",
+      "close": 5637.63,
+      "previous_date": "2026-11-02",
+      "previous_close": 5859.08,
+      "change": -221.45,
+      "change_pct": -3.78,
+      "change_unavailable_reason": null,
+      "first_collected_at": "2026-11-03T19:48:21.263317+09:00",
+      "lag_business_days": 5
+    },
+    {
+      "code": "KQ11",
+      "name": "코스닥",
+      "date": "2026-11-03",
+      "close": 704.79,
+      "previous_date": "2026-11-02",
+      "previous_close": 734.36,
+      "change": -29.57,
+      "change_pct": -4.03,
+      "change_unavailable_reason": null,
+      "first_collected_at": "2026-11-03T19:48:21.307255+09:00",
+      "lag_business_days": 5
+    }
+  ],
+  "breadth": {
+    "date": "2026-11-03",
+    "universe": "collected_stocks",
+    "lag_business_days": 5,
+    "total": 300,
+    "up": 67,
+    "down": 230,
+    "flat": 3,
+    "change_missing": 0,
+    "no_price": 0,
+    "registered": 300,
+    "up_ratio_pct": 22.3,
+    "down_ratio_pct": 76.7,
+    "flat_ratio_pct": 1.0,
+    "by_market": {
+      "KOSPI": {
+        "total": 219,
+        "up": 63,
+        "down": 153,
+        "flat": 3,
+        "change_missing": 0,
+        "no_price": 0,
+        "registered": 219,
+        "up_ratio_pct": 28.8,
+        "down_ratio_pct": 69.9,
+        "flat_ratio_pct": 1.4
+      }
+    }
+  },
+  "last_collection": {
+    "index": {
+      "step": "index",
+      "status": "success",
+      "ok": true,
+      "finished_at": "2026-11-03T19:48:22.059546+09:00",
+      "error_code": null
+    },
+    "prices": null
+  },
+  "source": {
+    "provider": "FinanceDataReader",
+    "tables": [
+      "market_index",
+      "stock_price"
+    ],
+    "per_row_source_recorded": false
+  },
+  "unavailable": [
+    "trading_value",
+    "market_volume"
+  ],
+  "note": "저장된 일별 종가 기준이며 실시간 시세가 아닙니다. 상승·하락 종목 수는 수집 대상 종목만 센 값입니다."
+}
