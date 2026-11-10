@@ -51,6 +51,27 @@ describe.skipIf(!enabled)('실제 백엔드 통합(httpApi + zod 검증)', () =>
     expect(none.items).toEqual([])
     expect(none.message).toBeTruthy()
     await expect(httpApi.getEtfHoldings('없는종목123')).rejects.toMatchObject({ status: 404 })
+
+    // 종목 뉴스·공시 목록(41차): 데이터가 없으면 items가 []일 뿐 오류가 아니다. 모양은 zod가 확인한다
+    const stockNews = await httpApi.getStockNews('005930', { limit: 5 })
+    expect(stockNews.items.length).toBeLessThanOrEqual(5)
+    expect(stockNews.has_next).toBe(stockNews.offset + stockNews.limit < stockNews.total)
+    await expect(httpApi.getStockNews('없는종목123')).rejects.toMatchObject({ status: 404 })
+    await expect(httpApi.getStockNews('005930', { date_from: '2026-11-05', date_to: '2026-11-01' })).rejects.toMatchObject({ status: 422 })
+    const corrections = await httpApi.getStockDisclosures('005930', { correction: 'only', limit: 5 })
+    expect(corrections.supported).toBe(true)
+    expect(corrections.items.every((d) => d.is_correction)).toBe(true)
+    // ETF는 DART 공시 수집 대상이 아니라 200 + supported=false + message
+    const etfDisclosures = await httpApi.getStockDisclosures('069500')
+    expect(etfDisclosures.supported).toBe(false)
+    expect(etfDisclosures.items).toEqual([])
+    expect(etfDisclosures.message).toBeTruthy()
+
+    // 주가 이력은 days 1~365이고 응답에 저장된 행 수(available_count)가 있다(180·365 버튼을 켜고 끄는 데 쓴다)
+    const long = await httpApi.getPriceHistory('005930', 365)
+    expect(long.count).toBeLessThanOrEqual(365)
+    expect(long.available_count).toBeGreaterThanOrEqual(long.count)
+    await expect(httpApi.getPriceHistory('005930', 366)).rejects.toMatchObject({ status: 422 })
   })
 
   it('계정: 내 정보·언어/시간대 설정(저장·초기화)·지원하지 않는 값은 422', { timeout: TIMEOUT }, async () => {

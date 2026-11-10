@@ -265,7 +265,9 @@ describe('mockApi getPriceHistory (2026-10-19 추가)', () => {
 
   it('모르는 종목은 404, 범위를 벗어난 days는 422', async () => {
     await expect(mockApi.getPriceHistory('없는종목')).rejects.toMatchObject({ status: 404 })
-    await expect(mockApi.getPriceHistory('005930', 91)).rejects.toMatchObject({ status: 422 })
+    await expect(mockApi.getPriceHistory('005930', 366)).rejects.toMatchObject({ status: 422 })
+    // 상한은 365(2026-11-10 41차)라서 91은 이제 통과한다(저장된 행이 모자라면 count가 days보다 작다)
+    expect((await mockApi.getPriceHistory('005930', 91)).days).toBe(91)
     await expect(mockApi.getPriceHistory('005930', 0)).rejects.toMatchObject({ status: 422 })
   })
 

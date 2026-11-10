@@ -9,6 +9,8 @@ import EventReactionsCard from '../components/EventReactionsCard'
 import AssetTypeBadge from '../components/AssetTypeBadge'
 import EtfHoldingsCard from '../components/EtfHoldingsCard'
 import PriceChartCard from '../components/PriceChartCard'
+import StockDisclosuresCard from '../components/StockDisclosuresCard'
+import StockNewsCard from '../components/StockNewsCard'
 import { formatDate, formatPct, formatPrice, trendClass } from '../utils/format'
 
 // backend/API.md: 서버가 종목별로 3~5초 캐싱하므로 이 주기로 폴링해도 안전하다.
@@ -184,6 +186,10 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
       {realtime && assetType === 'etf' && <EtfHoldingsCard ticker={realtime.ticker} />}
 
       {realtime && <EventReactionsCard ticker={realtime.ticker} />}
+
+      {realtime && <StockNewsCard ticker={realtime.ticker} />}
+
+      {realtime && <StockDisclosuresCard ticker={realtime.ticker} />}
 
       <div className="card research-cta">
         <div>

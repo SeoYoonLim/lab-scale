@@ -458,4 +458,7 @@ export const priceHistoryResponseSchema = z.object({
   count: z.number(),
   price_as_of: z.string().nullable(),
   items: z.array(priceHistoryItemSchema),
+  available_count: z.number().optional(),
+  first_date: z.string().nullish(),
+  missing_trading_days: z.number().optional(),
 }) satisfies z.ZodType<PriceHistoryResponse>

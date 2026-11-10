@@ -747,8 +747,8 @@ async function getPriceHistory(ticker: string, days = 90): Promise<PriceHistoryR
   await delay(250)
   const meta = findCompanyMeta(ticker)
   if (!meta) throw companyNotFound(ticker)
-  if (!Number.isInteger(days) || days < 1 || days > 90) {
-    throw new ApiError('days는 1~90 사이의 정수여야 해요.', 422)
+  if (!Number.isInteger(days) || days < 1 || days > 365) {
+    throw new ApiError('days는 1~365 사이의 정수여야 해요.', 422)
   }
 
   const series = getPriceSeries(meta.ticker)
@@ -779,6 +779,10 @@ async function getPriceHistory(ticker: string, days = 90): Promise<PriceHistoryR
     count: items.length,
     price_as_of: items.at(-1)?.date ?? null,
     items,
+    // 저장된 시세 행 전체 수(days와 무관), 가장 이른 날짜, 구간 안의 수집 누락 거래일 수(mock은 빠진 날이 없다)
+    available_count: available.length,
+    first_date: available[0]?.price_date ?? null,
+    missing_trading_days: 0,
   }
 }
 
