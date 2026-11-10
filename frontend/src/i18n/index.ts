@@ -27,6 +27,15 @@ export const LOCALE_NATIVE_NAMES: Record<Locale, string> = {
   'zh-CN': '简体中文',
 }
 
+// 기록·브리핑의 "작성 언어" 배지처럼 다른 언어의 이름을 지금 화면 언어로 보여준다(예: 일본어 화면에서 ko-KR -> 韓国語).
+export function languageName(target: Locale, uiLocale: Locale): string {
+  try {
+    return new Intl.DisplayNames([uiLocale], { type: 'language' }).of(target) ?? LOCALE_NATIVE_NAMES[target]
+  } catch {
+    return LOCALE_NATIVE_NAMES[target]
+  }
+}
+
 function lookup(messages: unknown, path: string): string | undefined {
   let node: unknown = messages
   for (const part of path.split('.')) {

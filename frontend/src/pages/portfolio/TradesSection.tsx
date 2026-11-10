@@ -5,12 +5,15 @@ import { api } from '../../api'
 import { queryKeys } from '../../api/queryKeys'
 import AssetTypeBadge from '../../components/AssetTypeBadge'
 import Pagination from '../../components/Pagination'
+import { useLocale } from '../../i18n/useLocale'
 import { formatDate, formatPrice } from '../../utils/format'
 import ErrorNotice from '../../components/ui/ErrorNotice'
 
 const TRADES_PAGE_SIZE = 20
 
 export default function TradesSection() {
+  const { t } = useLocale()
+  const won = t('unit.won', { fallback: '원' })
   const [offset, setOffset] = useState(0)
   const [tickerFilter, setTickerFilter] = useState('')
   const [appliedFilter, setAppliedFilter] = useState('')
@@ -30,39 +33,49 @@ export default function TradesSection() {
 
   return (
     <section>
-      <h2 className="section-title">체결 내역</h2>
+      <h2 className="section-title">{t('portfolio.tabs.trades', { fallback: '체결 내역' })}</h2>
       <div className="card">
         <form className="inline-form" onSubmit={handleFilterSubmit}>
           <input
             value={tickerFilter}
             onChange={(e) => setTickerFilter(e.target.value)}
-            placeholder="종목명으로 필터 (예: 삼성전자)"
-            aria-label="체결 내역 종목 필터"
+            placeholder={t('trades.filter_placeholder', { fallback: '종목명으로 필터 (예: 삼성전자)' })}
+            aria-label={t('trades.filter_aria', { fallback: '체결 내역 종목 필터' })}
           />
-          <button type="submit">필터</button>
+          <button type="submit">{t('trades.filter', { fallback: '필터' })}</button>
         </form>
 
-        {isPending && <p className="muted">불러오는 중…</p>}
+        {isPending && <p className="muted">{t('common.loading')}</p>}
         {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
-        {data && data.items.length === 0 && <p className="muted">체결 내역이 없어요.</p>}
+        {data && data.items.length === 0 && <p className="muted">{t('trades.empty', { fallback: '체결 내역이 없어요.' })}</p>}
 
         {data && data.items.length > 0 && (
           <ul className="ledger">
-            {data.items.map((t) => (
-              <li key={t.id} className="ledger-row watch-row">
+            {data.items.map((trade) => (
+              <li key={trade.id} className="ledger-row watch-row">
                 <div>
                   <div className="ledger-question">
-                    {t.company_name} <AssetTypeBadge assetType={t.asset_type} />
+                    {trade.company_name} <AssetTypeBadge assetType={trade.asset_type} />
                   </div>
                   <div className="meta muted small">
-                    <span>{t.side === 'buy' ? '매수' : '매도'}</span>
-                    <span>{t.quantity}주</span>
-                    <span>{formatPrice(t.price)}원</span>
-                    <span>{formatDate(t.executed_at)}</span>
+                    <span>
+                      {trade.side === 'buy'
+                        ? t('holdings.buy', { fallback: '매수' })
+                        : t('holdings.sell', { fallback: '매도' })}
+                    </span>
+                    <span>{t('holdings.qty_shares', { fallback: '{n}주', vars: { n: trade.quantity } })}</span>
+                    <span>
+                      {formatPrice(trade.price)}
+                      {won}
+                    </span>
+                    <span>{formatDate(trade.executed_at)}</span>
                   </div>
                 </div>
                 <div className="watch-right">
-                  <span className="num">{formatPrice(t.amount)}원</span>
+                  <span className="num">
+                    {formatPrice(trade.amount)}
+                    {won}
+                  </span>
                 </div>
               </li>
             ))}

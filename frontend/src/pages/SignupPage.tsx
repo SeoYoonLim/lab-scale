@@ -3,9 +3,11 @@ import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import AuthBrand from '../components/AuthBrand'
+import { useLocale } from '../i18n/useLocale'
 
 export default function SignupPage() {
   const { signup } = useAuth()
+  const { t } = useLocale()
   const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -21,7 +23,7 @@ export default function SignupPage() {
       await signup(username, password)
       navigate('/', { replace: true })
     } catch (err) {
-      setError(err instanceof Error ? err.message : '회원가입에 실패했어요.')
+      setError(err instanceof Error ? err.message : t('auth.signup_failed', { fallback: '회원가입에 실패했어요.' }))
     } finally {
       setPending(false)
     }
@@ -31,24 +33,24 @@ export default function SignupPage() {
     <div className="auth-page">
       <form className="card auth-card" onSubmit={handleSubmit}>
         <AuthBrand />
-        <h1 className="auth-title">회원가입</h1>
+        <h1 className="auth-title">{t('auth.signup', { fallback: '회원가입' })}</h1>
         <label className="auth-field">
-          <span>아이디</span>
+          <span>{t('auth.username', { fallback: '아이디' })}</span>
           <input
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             autoComplete="username"
-            placeholder="영문 소문자/숫자/밑줄, 3~20자"
+            placeholder={t('auth.username_placeholder', { fallback: '영문 소문자/숫자/밑줄, 3~20자' })}
           />
         </label>
         <label className="auth-field">
-          <span>비밀번호</span>
+          <span>{t('auth.password', { fallback: '비밀번호' })}</span>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="new-password"
-            placeholder="8~128자 (흔한 비밀번호·아이디가 든 비밀번호는 안 돼요)"
+            placeholder={t('auth.password_placeholder', { fallback: '8~128자 (흔한 비밀번호·아이디가 든 비밀번호는 안 돼요)' })}
           />
         </label>
         {error && <p className="notice notice-error">{error}</p>}
@@ -57,10 +59,10 @@ export default function SignupPage() {
           className="send auth-submit"
           disabled={pending || !username.trim() || password.length < 8}
         >
-          {pending ? '가입 중…' : '회원가입'}
+          {pending ? t('auth.signing_up', { fallback: '가입 중…' }) : t('auth.signup', { fallback: '회원가입' })}
         </button>
         <p className="muted small auth-switch">
-          이미 계정이 있으신가요? <Link to="/login">로그인</Link>
+          {t('auth.have_account', { fallback: '이미 계정이 있으신가요?' })} <Link to="/login">{t('nav.login', { fallback: '로그인' })}</Link>
         </p>
       </form>
     </div>

@@ -1,3 +1,6 @@
+import { translate } from '../i18n'
+import { getUiLocale } from '../i18n/uiLocale'
+
 export function formatPrice(value: number) {
   return value.toLocaleString('ko-KR')
 }
@@ -29,7 +32,7 @@ export function formatDate(value: string | null) {
 
 // ISO 8601 문자열을 한국 시간 기준 HH:MM 으로. 같은 날 여러 건 올라오는 리서치 항목 구분용.
 export function formatTime(value: string) {
-  return new Date(value).toLocaleTimeString('ko-KR', {
+  return new Date(value).toLocaleTimeString(getUiLocale(), {
     hour: '2-digit',
     minute: '2-digit',
     timeZone: 'Asia/Seoul',
@@ -60,9 +63,10 @@ export function formatTradingDate(value: string | null | undefined): string {
   return value ? value.replaceAll('-', '.') : '-'
 }
 
-// 금액(원). 숫자는 계산하지 않고 그대로 쓴다(핸드오프 0절 4번) - 모양만 잡는다. null은 0이 아니라 "—"다.
+// 금액(원). 숫자는 계산하지 않고 그대로 쓴다(핸드오프 0절 4번) - 모양만 잡는다. null은 0이 아니라 "—"다. 단위(원/KRW/ウォン/韩元)는 화면 언어를 따른다.
 export function formatWon(value: number | null | undefined): string {
-  return value == null ? '—' : `${Math.round(value).toLocaleString('ko-KR')}원`
+  if (value == null) return '—'
+  return `${Math.round(value).toLocaleString('ko-KR')}${translate(getUiLocale(), 'unit.won', { fallback: '원' })}`
 }
 
 // 퍼센트 값(-3.48 = -3.48%). null이면 "—". 부호는 상승/하락 색과 함께 읽히게 항상 붙인다.

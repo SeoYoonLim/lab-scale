@@ -22,10 +22,16 @@ describe('화면 라벨 리소스', () => {
     expect(translate('en-US', 'no.such.key')).toBe('no.such.key')
   })
 
-  it('백엔드 리소스에 없는 라벨은 영어 추가 라벨(평평한 "영역.이름" 키)에서 찾고, 한국어는 코드의 fallback을 쓴다', () => {
+  it('백엔드 리소스에 없는 라벨은 그 언어의 추가 번역(평평한 "영역.이름" 키)에서 찾고, 한국어는 코드의 fallback을 쓴다', () => {
     expect(translate('en-US', 'nav.companies', { fallback: '종목 분석' })).toBe('Stocks')
-    expect(translate('ja-JP', 'nav.companies', { fallback: '종목 분석' })).toBe('Stocks')
+    expect(translate('ja-JP', 'nav.companies', { fallback: '종목 분석' })).toBe('銘柄分析')
+    expect(translate('zh-CN', 'nav.companies', { fallback: '종목 분석' })).toBe('股票分析')
     expect(translate('ko-KR', 'nav.companies', { fallback: '종목 분석' })).toBe('종목 분석')
+  })
+
+  it('번역이 없는 키는 영어 -> 한국어 리소스 -> fallback 순으로 대신 보여준다(키 문자열이 화면에 나오지 않게)', () => {
+    expect(translate('ja-JP', 'test.only_fallback', { fallback: '한국어 원문' })).toBe('한국어 원문')
+    expect(translate('ja-JP', 'test.nothing')).toBe('test.nothing')
   })
 
   it('자리표시자를 채우고, 값이 없으면 그대로 둔다', () => {

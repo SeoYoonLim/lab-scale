@@ -10,22 +10,44 @@ export default function DiagnosisLookThrough({ snapshot }: { snapshot: LookThrou
   const { t } = useLocale()
 
   if (snapshot == null) {
-    return <p className="muted small">이 진단에는 ETF 실질 노출 기록이 없어요(실질 노출 기능이 생기기 전에 저장된 진단이에요).</p>
+    return (
+      <p className="muted small">
+        {t('diagnosis.lt_no_snapshot', {
+          fallback: '이 진단에는 ETF 실질 노출 기록이 없어요(실질 노출 기능이 생기기 전에 저장된 진단이에요).',
+        })}
+      </p>
+    )
   }
   if (snapshot.status === 'unavailable') {
-    return <Banner tone="info">실질 노출을 계산하지 못했어요. 진단의 나머지 결과는 정상이에요.</Banner>
+    return (
+      <Banner tone="info">
+        {t('diagnosis.lt_unavailable', { fallback: '실질 노출을 계산하지 못했어요. 진단의 나머지 결과는 정상이에요.' })}
+      </Banner>
+    )
   }
   if (snapshot.status !== 'ok') {
-    return <p className="muted small">보유 종목의 종가가 없거나 보유가 없어서 실질 노출을 계산하지 않았어요.</p>
+    return (
+      <p className="muted small">
+        {t('diagnosis.lt_not_ok', { fallback: '보유 종목의 종가가 없거나 보유가 없어서 실질 노출을 계산하지 않았어요.' })}
+      </p>
+    )
   }
 
   return (
     <details className="diagnosis-look-through">
       <summary>
-        {t('look_through.title')} <span className="muted small">· 진단 당시 {formatTradingDate(snapshot.valuation_date)} 종가 기준</span>
+        {t('look_through.title')}{' '}
+        <span className="muted small">
+          {t('diagnosis.lt_basis', {
+            fallback: '· 진단 당시 {date} 종가 기준',
+            vars: { date: formatTradingDate(snapshot.valuation_date) },
+          })}
+        </span>
       </summary>
       {snapshot.etf_holdings_stale && (
-        <Banner tone="warn">{t('look_through.stale_badge')}: ETF 구성종목 기준일이 오래됐어요. 현재 구성과 다를 수 있어요.</Banner>
+        <Banner tone="warn">
+          {t('look_through.stale_badge')}: {t('exposure.etf_stale_note', { fallback: 'ETF 구성종목 기준일이 오래됐어요. 현재 구성과 다를 수 있어요.' })}
+        </Banner>
       )}
       <LookThroughPanels body={snapshot} compact />
     </details>

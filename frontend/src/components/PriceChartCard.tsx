@@ -4,19 +4,14 @@ import type { KeyboardEvent, PointerEvent } from 'react'
 import { api } from '../api'
 import ErrorNotice from './ui/ErrorNotice'
 import { queryKeys } from '../api/queryKeys'
+import { useLocale } from '../i18n/useLocale'
 import { computeChart, movingAverage, nearestIndex, periodReturn, summarizeHistory } from '../utils/priceChart'
 import type { ChartLayout } from '../utils/priceChart'
 import { formatDate, formatPct, formatPrice, formatVolume, trendClass } from '../utils/format'
 
 // days는 달력 일이 아니라 "최근 N거래일"이다(backend/API.md). 데이터 시작일 때문에 실제 개수(count)가
 // 더 적을 수 있어서, 아래에서 항상 count를 기준으로 그리고 모자라면 그 사실을 알려준다.
-const RANGES = [
-  { days: 20, label: '20거래일' },
-  { days: 60, label: '60거래일' },
-  { days: 90, label: '90거래일' },
-  { days: 180, label: '180거래일' },
-  { days: 365, label: '365거래일' },
-] as const
+const RANGES = [{ days: 20 }, { days: 60 }, { days: 90 }, { days: 180 }, { days: 365 }] as const
 
 // 180·365는 저장된 시세가 그만큼 있어야 의미가 있다(available_count). 모자라면 버튼을 끄고 몇 거래일만 있는지 알려준다.
 // 20·60·90은 모자라도 그대로 눌러서 "수집 시작일 때문에 적게 보여드려요" 안내를 보게 한다.
@@ -30,11 +25,7 @@ const MOVING_AVERAGES = [
 ] as const
 
 // 기간별 수익률(N거래일 전 종가 대비). 달력 일이 아니라 거래일이다.
-const RETURN_WINDOWS = [
-  { tradingDays: 5, label: '5거래일' },
-  { tradingDays: 20, label: '20거래일' },
-  { tradingDays: 60, label: '60거래일' },
-] as const
+const RETURN_WINDOWS = [{ tradingDays: 5 }, { tradingDays: 20 }, { tradingDays: 60 }] as const
 
 const LAYOUT: ChartLayout = {
   width: 720,
@@ -47,6 +38,7 @@ const LAYOUT: ChartLayout = {
 }
 
 export default function PriceChartCard({ ticker }: { ticker: string }) {
+  const { t } = useLocale()
   const [days, setDays] = useState<number>(60)
   const [visibleMas, setVisibleMas] = useState<number[]>([])
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
@@ -112,8 +104,8 @@ export default function PriceChartCard({ ticker }: { ticker: string }) {
   return (
     <section className="card price-chart-card" aria-labelledby="price-chart-heading">
       <div className="card-head">
-        <h2 id="price-chart-heading">주가 추이</h2>
-        <div className="segmented" role="group" aria-label="조회 기간">
+        <h2 id="price-chart-heading">{t('chart.title', { fallback: '주가 추이' })}</h2>
+        <div className="segmented" role="group" aria-label={t('chart.range_aria', { fallback: '조회 기간' })}>
           {RANGES.map((range) => (
             <button
               key={range.days}
@@ -121,19 +113,23 @@ export default function PriceChartCard({ ticker }: { ticker: string }) {
               className={days === range.days ? 'seg active' : 'seg'}
               aria-pressed={days === range.days}
               disabled={unavailableRange(range.days)}
-              title={unavailableRange(range.days) ? `${available}거래일만 있어요` : undefined}
+              title={
+                unavailableRange(range.days)
+                  ? t('chart.range_only', { fallback: '{n}거래일만 있어요', vars: { n: available ?? 0 } })
+                  : undefined
+              }
               onClick={() => {
                 setDays(range.days)
                 setActiveIndex(null)
               }}
             >
-              {range.label}
+              {t('chart.range_days', { fallback: '{n}거래일', vars: { n: range.days } })}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="ma-toggles" role="group" aria-label="이동평균선">
+      <div className="ma-toggles" role="group" aria-label={t('chart.ma_aria', { fallback: '이동평균선' })}>
         {MOVING_AVERAGES.map((m) => (
           <label key={m.window} className="check-label">
             <input
@@ -144,20 +140,23 @@ export default function PriceChartCard({ ticker }: { ticker: string }) {
               }
             />
             <span className="legend-swatch" style={{ background: m.color }} aria-hidden="true" />
-            <span>{m.window}일선</span>
+            <span>{t('chart.ma_line', { fallback: '{n}일선', vars: { n: m.window } })}</span>
           </label>
         ))}
       </div>
 
       {hasDisabledRange && (
         <p className="muted small">
-          이 종목은 저장된 주가가 {available}거래일이라 {LONG_RANGE_FROM}거래일 이상은 볼 수 없어요.
+          {t('chart.long_range_unavailable', {
+            fallback: '이 종목은 저장된 주가가 {n}거래일이라 {min}거래일 이상은 볼 수 없어요.',
+            vars: { n: available ?? 0, min: LONG_RANGE_FROM },
+          })}
         </p>
       )}
-      {isPending && <p className="muted">불러오는 중…</p>}
+      {isPending && <p className="muted">{t('common.loading')}</p>}
       {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
 
-      {data && data.count === 0 && <p className="muted">아직 수집된 주가가 없어요.</p>}
+      {data && data.count === 0 && <p className="muted">{t('chart.no_data', { fallback: '아직 수집된 주가가 없어요.' })}</p>}
 
       {data && data.count > 0 && summary && (
         <div className={isPlaceholderData ? 'is-stale' : undefined} aria-busy={isPlaceholderData}>
@@ -165,12 +164,24 @@ export default function PriceChartCard({ ticker }: { ticker: string }) {
             {active ? (
               <>
                 <strong className="num">{formatDate(active.date)}</strong>
-                <span className="num">종가 {formatPrice(active.close)}원</span>
-                <span className={`num ${trendClass(active.change_pct)}`}>전일 대비 {formatPct(active.change_pct)}</span>
-                <span className="num muted">거래량 {formatVolume(active.volume)}</span>
+                <span className="num">
+                  {t('chart.close', {
+                    fallback: '종가 {price}',
+                    vars: { price: `${formatPrice(active.close)}${t('unit.won', { fallback: '원' })}` },
+                  })}
+                </span>
+                <span className={`num ${trendClass(active.change_pct)}`}>
+                  {t('chart.day_change', { fallback: '전일 대비 {pct}', vars: { pct: formatPct(active.change_pct) } })}
+                </span>
+                <span className="num muted">
+                  {t('chart.volume', { fallback: '거래량 {volume}', vars: { volume: formatVolume(active.volume) } })}
+                </span>
                 {active.open != null && active.high != null && active.low != null && (
                   <span className="num muted">
-                    시 {formatPrice(active.open)} · 고 {formatPrice(active.high)} · 저 {formatPrice(active.low)}
+                    {t('chart.ohlc', {
+                      fallback: '시 {open} · 고 {high} · 저 {low}',
+                      vars: { open: formatPrice(active.open), high: formatPrice(active.high), low: formatPrice(active.low) },
+                    })}
                   </span>
                 )}
               </>
@@ -180,10 +191,21 @@ export default function PriceChartCard({ ticker }: { ticker: string }) {
                   {formatDate(summary.first.date)} → {formatDate(summary.last.date)}
                 </strong>
                 <span className={`num ${trendClass(summary.changePct)}`}>
-                  {summary.changePct == null ? '-' : `${formatPct(summary.changePct)} (${data.count}거래일)`}
+                  {summary.changePct == null
+                    ? '-'
+                    : t('chart.period_change', {
+                        fallback: '{pct} ({n}거래일)',
+                        vars: { pct: formatPct(summary.changePct), n: data.count },
+                      })}
                 </span>
                 <span className="num muted">
-                  최고 {formatPrice(summary.high.close)}원 · 최저 {formatPrice(summary.low.close)}원
+                  {t('chart.high_low', {
+                    fallback: '최고 {high} · 최저 {low}',
+                    vars: {
+                      high: `${formatPrice(summary.high.close)}${t('unit.won', { fallback: '원' })}`,
+                      low: `${formatPrice(summary.low.close)}${t('unit.won', { fallback: '원' })}`,
+                    },
+                  })}
                 </span>
               </>
             )}
@@ -195,7 +217,10 @@ export default function PriceChartCard({ ticker }: { ticker: string }) {
             viewBox={`0 0 ${LAYOUT.width} ${LAYOUT.height}`}
             role="img"
             tabIndex={0}
-            aria-label={`${data.company_name} 최근 ${data.count}거래일 종가 추이. 왼쪽/오른쪽 화살표로 날짜를 옮길 수 있어요.`}
+            aria-label={t('chart.svg_aria', {
+              fallback: '{name} 최근 {n}거래일 종가 추이. 왼쪽/오른쪽 화살표로 날짜를 옮길 수 있어요.',
+              vars: { name: data.company_name, n: data.count },
+            })}
             onPointerMove={(e) => setActiveIndex(indexFromPointer(e))}
             onPointerDown={(e) => setActiveIndex(indexFromPointer(e))}
             onPointerLeave={() => setActiveIndex(null)}
@@ -268,29 +293,38 @@ export default function PriceChartCard({ ticker }: { ticker: string }) {
             </text>
           </svg>
 
-          <dl className="return-list" aria-label="기간별 수익률">
+          <dl className="return-list" aria-label={t('chart.returns_aria', { fallback: '기간별 수익률' })}>
             {RETURN_WINDOWS.map((w) => {
               const value = periodReturn(items, w.tradingDays)
               return (
                 <div key={w.tradingDays}>
-                  <dt className="muted small">{w.label}</dt>
+                  <dt className="muted small">{t('chart.range_days', { fallback: '{n}거래일', vars: { n: w.tradingDays } })}</dt>
                   <dd className={`num ${trendClass(value)}`}>{value == null ? '—' : formatPct(value)}</dd>
                 </div>
               )
             })}
           </dl>
           {maLines.some((m) => !m.enough) && (
-            <p className="muted small">이동평균은 그 기간만큼 거래일이 쌓여야 그려져요(지금 {data.count}거래일).</p>
+            <p className="muted small">
+              {t('chart.ma_not_enough', { fallback: '이동평균은 그 기간만큼 거래일이 쌓여야 그려져요(지금 {n}거래일).', vars: { n: data.count } })}
+            </p>
           )}
-          {maLines.length > 0 && <p className="muted small">이동평균선은 화면에서 종가로 계산한 단순이동평균이에요.</p>}
+          {maLines.length > 0 && (
+            <p className="muted small">{t('chart.ma_note', { fallback: '이동평균선은 화면에서 종가로 계산한 단순이동평균이에요.' })}</p>
+          )}
           <p className="muted small chart-note">
-            일별 종가 기준이에요(장중 시세 아님). {data.price_as_of && `${formatDate(data.price_as_of)}까지 수집돼 있어요. `}
+            {t('chart.note_daily', { fallback: '일별 종가 기준이에요(장중 시세 아님).' })}{' '}
+            {data.price_as_of &&
+              `${t('chart.note_collected_until', { fallback: '{date}까지 수집돼 있어요.', vars: { date: formatDate(data.price_as_of) } })} `}
             {shortfall &&
-              `수집 시작일 때문에 요청한 ${data.days}거래일보다 적은 ${data.count}거래일만 보여드려요. `}
-            수집 소스(FinanceDataReader)가 준 일별 종가예요. 일부 구간은 수정주가일 수 있어요.
+              `${t('chart.note_shortfall', {
+                fallback: '수집 시작일 때문에 요청한 {days}거래일보다 적은 {count}거래일만 보여드려요.',
+                vars: { days: data.days, count: data.count },
+              })} `}
+            {t('chart.note_source', { fallback: '수집 소스(FinanceDataReader)가 준 일별 종가예요. 일부 구간은 수정주가일 수 있어요.' })}
             {data.missing_trading_days != null &&
               data.missing_trading_days > 0 &&
-              ` 이 구간에 수집되지 않은 거래일이 ${data.missing_trading_days}일 있어요.`}
+              ` ${t('chart.note_missing', { fallback: '이 구간에 수집되지 않은 거래일이 {n}일 있어요.', vars: { n: data.missing_trading_days } })}`}
           </p>
         </div>
       )}

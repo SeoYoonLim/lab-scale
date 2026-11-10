@@ -58,22 +58,32 @@ export function FeedFilters({
 }
 
 // 전체 수집이 2평일 이상 멈췄을 때(stale) 목록 맨 위에 알린다. 마지막 수집 시각은 뉴스(공시) 전체의 값이다.
+// 지연 일수(collection_lag_weekdays)를 아는 경우와 모르는 경우를 문장(키)으로 나눈다 - "N평일째" 같은 한국어 단어를 변수로
+// 끼워 넣으면 다른 언어 문장에 한국어가 섞인다.
 export function FeedStaleBanner({ freshness, what }: { freshness: FeedFreshness; what: 'news' | 'disclosure' }) {
   const { t, timezone, locale } = useLocale()
   if (!freshness.stale) return null
   const at = formatDateTime(freshness.last_collected_at, timezone, locale)
   const lag = freshness.collection_lag_weekdays
-  return (
-    <Banner tone="warn">
-      {what === 'news'
+  const text =
+    what === 'news'
+      ? lag != null
         ? t('stock_feed.news_stale', {
-            fallback: '뉴스 수집이 {lag}멈춰 있어요(마지막 수집 {at}). 최근 기사가 빠져 있을 수 있어요.',
-            vars: { lag: lag != null ? `${lag}평일째 ` : '', at },
+            fallback: '뉴스 수집이 {lag}평일째 멈춰 있어요(마지막 수집 {at}). 최근 기사가 빠져 있을 수 있어요.',
+            vars: { lag, at },
           })
-        : t('stock_feed.disclosure_stale', {
-            fallback: '공시 수집이 {lag}멈춰 있어요(마지막 수집 {at}). 최근 공시가 빠져 있을 수 있어요.',
-            vars: { lag: lag != null ? `${lag}평일째 ` : '', at },
-          })}
-    </Banner>
-  )
+        : t('stock_feed.news_stale_unknown', {
+            fallback: '뉴스 수집이 멈춰 있어요(마지막 수집 {at}). 최근 기사가 빠져 있을 수 있어요.',
+            vars: { at },
+          })
+      : lag != null
+        ? t('stock_feed.disclosure_stale', {
+            fallback: '공시 수집이 {lag}평일째 멈춰 있어요(마지막 수집 {at}). 최근 공시가 빠져 있을 수 있어요.',
+            vars: { lag, at },
+          })
+        : t('stock_feed.disclosure_stale_unknown', {
+            fallback: '공시 수집이 멈춰 있어요(마지막 수집 {at}). 최근 공시가 빠져 있을 수 있어요.',
+            vars: { at },
+          })
+  return <Banner tone="warn">{text}</Banner>
 }

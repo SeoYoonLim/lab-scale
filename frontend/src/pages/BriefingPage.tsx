@@ -11,7 +11,7 @@ import Banner from '../components/ui/Banner'
 import EmptyState from '../components/ui/EmptyState'
 import ErrorNotice from '../components/ui/ErrorNotice'
 import StatusBadge from '../components/ui/StatusBadge'
-import { LOCALE_NATIVE_NAMES } from '../i18n'
+import { languageName } from '../i18n'
 import { toLocale } from '../i18n'
 import { useLocale } from '../i18n/useLocale'
 import { formatDateTime, formatTradingDate } from '../utils/format'
@@ -39,7 +39,7 @@ function BriefingDetail({ briefing, isPast, actions }: { briefing: DailyBriefing
               {t('daily_briefing.data_as_of')} <span className="num">{formatTradingDate(briefing.data_as_of)}</span>
             </span>
             <StatusBadge>{t('daily_briefing.version', { vars: { n: briefing.version } })}</StatusBadge>
-            {briefing.locale !== locale && <StatusBadge tone="accent">{t('common.written_in', { vars: { language: LOCALE_NATIVE_NAMES[toLocale(briefing.locale)] } })}</StatusBadge>}
+            {briefing.locale !== locale && <StatusBadge tone="accent">{t('common.written_in', { vars: { language: languageName(toLocale(briefing.locale), locale) } })}</StatusBadge>}
           </p>
         </div>
         <div className="briefing-actions">
@@ -126,7 +126,7 @@ function TodayTab({ onShowHistory }: { onShowHistory: () => void }) {
       {current.data === null && !current.isPending && (
         <div className="card">
           <EmptyState message={t('daily_briefing.not_generated')} action={generateControls(false)} />
-          {busy && <p className="muted small center">AI 요약까지 만드는 데 보통 5~15초 걸려요.</p>}
+          {busy && <p className="muted small center">{t('briefing.generating_note', { fallback: 'AI 요약까지 만드는 데 보통 5~15초 걸려요.' })}</p>}
         </div>
       )}
 
@@ -194,7 +194,7 @@ function HistoryTab() {
                   <StatusBadge tone={item.market_data_status === 'latest' ? 'ok' : item.market_data_status === 'delayed' ? 'warn' : 'danger'}>
                     {t(`daily_briefing.market_data_status.${item.market_data_status}`)}
                   </StatusBadge>
-                  {item.locale !== locale && <StatusBadge tone="accent">{LOCALE_NATIVE_NAMES[toLocale(item.locale)]}</StatusBadge>}
+                  {item.locale !== locale && <StatusBadge tone="accent">{languageName(toLocale(item.locale), locale)}</StatusBadge>}
                 </span>
                 <span className="muted small">
                   {item.local_date} {item.local_time} · {t('daily_briefing.version', { vars: { n: item.version } })} · {t('daily_briefing.data_as_of')}{' '}

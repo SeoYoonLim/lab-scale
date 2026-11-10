@@ -315,7 +315,7 @@ export default function LookThroughPanels({ body, compact = false }: { body: Loo
           <ul>
             {body.unpriced.map((u) => (
               <li key={u.ticker}>
-                {u.name} ({u.ticker}) · {u.quantity}주
+                {u.name} ({u.ticker}) · {t('look_through.unpriced_quantity', { fallback: '{n}주', vars: { n: u.quantity } })}
               </li>
             ))}
           </ul>

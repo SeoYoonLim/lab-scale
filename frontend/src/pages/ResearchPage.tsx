@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api'
+import { useLocale } from '../i18n/useLocale'
 import ResearchAnswerBody from '../components/ResearchAnswerBody'
 import { IconSearch, IconSend, IconSparkle } from '../components/icons'
 import DataToolCards from '../components/DataToolCards'
@@ -32,6 +33,8 @@ interface Entry {
   errorMessage?: string
 }
 
+// 추천 질문은 실제로 백엔드에 보내는 문장이다. 질문 해석(라우팅·용어 사전·전망 판정)이 한국어 규칙이라 번역하지 않는다
+// (docs/FRONTEND_HANDOFF_I18N_HISTORY.md: 질문 입력은 당분간 한국어 안내를 권장). 답변은 설정한 언어로 온다.
 const SUGGESTIONS = [
   '삼성전자 오늘 왜 올랐어? 최근 주가랑 관련 뉴스 같이 확인해줘.',
   '삼성전자 최근 3일 등락률이랑 거래량 알려줘.',
@@ -40,6 +43,7 @@ const SUGGESTIONS = [
 ]
 
 export default function ResearchPage() {
+  const { t, locale } = useLocale()
   const [entries, setEntries] = useState<Entry[]>([])
   const [input, setInput] = useState('')
   const [pending, setPending] = useState(false)
@@ -102,7 +106,7 @@ export default function ResearchPage() {
       // 저장에 실패하면(report_id: null) 이어받을 리포트가 없으니 대화 스레드를 끊는다.
       setThreadReportId(res.report_id)
     } catch (error) {
-      const message = error instanceof Error ? error.message : '답변을 가져오지 못했어요.'
+      const message = error instanceof Error ? error.message : t('research.answer_failed', { fallback: '답변을 가져오지 못했어요.' })
       setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, status: 'error', errorMessage: message } : e)))
     } finally {
       setPending(false)
@@ -127,9 +131,9 @@ export default function ResearchPage() {
       <div className="container container-wide composer-inner">
         {threadReportId != null && (
           <div className="thread-hint">
-            <span>#{threadReportId}에 이어서 대화 중이에요</span>
+            <span>{t('research.continuing', { fallback: '#{id}에 이어서 대화 중이에요', vars: { id: threadReportId } })}</span>
             <button type="button" onClick={() => setThreadReportId(null)}>
-              새 질문으로 시작
+              {t('research.new_question', { fallback: '새 질문으로 시작' })}
             </button>
           </div>
         )}
@@ -141,14 +145,22 @@ export default function ResearchPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="예: 삼성전자 최근 3일 등락률 알려줘"
+            placeholder={t('research.input_placeholder', { fallback: '예: 삼성전자 최근 3일 등락률 알려줘' })}
             rows={1}
-            aria-label="질문 입력"
+            aria-label={t('research.input_aria', { fallback: '질문 입력' })}
           />
-          <button type="submit" className="send send-icon" disabled={pending || !input.trim()} aria-label="질문 보내기">
+          <button type="submit" className="send send-icon" disabled={pending || !input.trim()} aria-label={t('research.send_aria', { fallback: '질문 보내기' })}>
             <IconSend />
           </button>
         </div>
+        {/* 한국어가 아닌 언어로 쓰는 사용자에게: 질문은 한국어가 가장 정확하다 */}
+        {locale !== 'ko-KR' && (
+          <p className="muted small question-hint">
+            {t('research.question_hint', {
+              fallback: '질문은 한국어가 가장 정확해요. 답변은 선택한 언어로 와요.',
+            })}
+          </p>
+        )}
       </div>
     </form>
   )
@@ -160,11 +172,11 @@ export default function ResearchPage() {
           {entries.length === 0 && (
             <div className="entry-empty">
               <h1>
-                안녕하세요!
+                {t('research.hello', { fallback: '안녕하세요!' })}
                 <br />
-                무엇을 분석해드릴까요?
+                {t('research.what_to_analyze', { fallback: '무엇을 분석해드릴까요?' })}
               </h1>
-              <p>종목의 주가, 뉴스, 공시를 근거로 답해드려요.</p>
+              <p>{t('research.basis_note', { fallback: '종목의 주가, 뉴스, 공시를 근거로 답해드려요.' })}</p>
               {composer}
               <ul className="suggestion-list">
                 {SUGGESTIONS.map((text) => (
@@ -190,7 +202,9 @@ export default function ResearchPage() {
                     {entry.reportId != null ? `#${entry.reportId}` : entry.status === 'pending' ? '…' : '—'}
                   </span>
                   {entry.previousReportId != null && (
-                    <span className="entry-followup">#{entry.previousReportId}에 이어서</span>
+                    <span className="entry-followup">
+                      {t('research.followup_of', { fallback: '#{id}에 이어서', vars: { id: entry.previousReportId } })}
+                    </span>
                   )}
                   <span className="num">{formatTime(entry.askedAt)}</span>
                 </div>
@@ -202,7 +216,7 @@ export default function ResearchPage() {
                   <div className="answer-card">
                     <div className="answer-head">
                       <span className="ai-badge">AI</span>
-                      <span className="answer-title">분석 결과</span>
+                      <span className="answer-title">{t('research.answer_title', { fallback: '분석 결과' })}</span>
                     </div>
                     <ResearchAnswerBody
                       answer={entry.answer ?? ''}

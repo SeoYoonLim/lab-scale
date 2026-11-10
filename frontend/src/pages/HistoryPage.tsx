@@ -15,10 +15,10 @@ import Banner from '../components/ui/Banner'
 import EmptyState from '../components/ui/EmptyState'
 import ErrorNotice from '../components/ui/ErrorNotice'
 import StatusBadge from '../components/ui/StatusBadge'
-import { LOCALE_NATIVE_NAMES, toLocale } from '../i18n'
+import { languageName, toLocale } from '../i18n'
 import { useLocale } from '../i18n/useLocale'
 import { formatPlainPct, formatWon } from '../utils/format'
-import { TOOL_LABELS } from '../utils/toolLabels'
+import { toolLabel } from '../utils/toolLabels'
 
 const PAGE_SIZE = 10
 
@@ -61,7 +61,7 @@ function ResearchRecord({ reportId }: { reportId: number }) {
               const when = describeDataBasis(b)
               return (
                 <li key={`${b.tool}-${b.ticker}-${i}`}>
-                  {[b.company_name, TOOL_LABELS[b.tool] ?? b.tool].filter(Boolean).join(' · ')}
+                  {[b.company_name, toolLabel(t, b.tool)].filter(Boolean).join(' · ')}
                   {when && <span className="muted num"> · {when}</span>}
                 </li>
               )
@@ -118,7 +118,7 @@ function HistoryCard({ item, terms, onDelete, deleting }: { item: HistoryItem; t
         </StatusBadge>
         {item.research && <StatusBadge>{t(`analysis_type.${item.research.analysis_type}`)}</StatusBadge>}
         {/* 기록의 작성 언어가 지금 화면 언어와 다르면 표시한다(핸드오프 2-6절) */}
-        {itemLocale !== locale && <StatusBadge tone="warn">{t('common.written_in', { vars: { language: LOCALE_NATIVE_NAMES[itemLocale] } })}</StatusBadge>}
+        {itemLocale !== locale && <StatusBadge tone="warn">{t('common.written_in', { vars: { language: languageName(itemLocale, locale) } })}</StatusBadge>}
         <span className="muted small num history-card-time">
           {item.local_date} {item.local_time}
         </span>
@@ -176,7 +176,7 @@ function HistoryCard({ item, terms, onDelete, deleting }: { item: HistoryItem; t
           {open ? t('common.close') : t('history.open_detail')}
         </button>
         <button type="button" className="delete-report" onClick={onDelete} disabled={deleting}>
-          삭제
+          {t('common.delete', { fallback: '삭제' })}
         </button>
       </div>
 
@@ -224,7 +224,11 @@ export default function HistoryPage() {
   })
 
   function handleDelete(item: HistoryItem) {
-    if (!confirm(item.kind === 'research' ? '이 리포트를 삭제할까요? 되돌릴 수 없어요.' : '이 진단을 삭제할까요? 되돌릴 수 없어요.')) return
+    const question =
+      item.kind === 'research'
+        ? t('history.delete_research_confirm', { fallback: '이 리포트를 삭제할까요? 되돌릴 수 없어요.' })
+        : t('diagnosis.delete_confirm', { fallback: '이 진단을 삭제할까요? 되돌릴 수 없어요.' })
+    if (!confirm(question)) return
     remove.mutate(item)
   }
 

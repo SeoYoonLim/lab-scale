@@ -3282,3 +3282,8 @@ body {
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+/* 한국어가 아닌 언어에서 입력창 아래에 보이는 질문 언어 안내 */
+.question-hint {
+  margin: 6px 4px 0;
+}

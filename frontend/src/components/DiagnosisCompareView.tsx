@@ -27,8 +27,14 @@ function MetricRow({ label, change, unit, digits = 2 }: { label: string; change:
 
 export default function DiagnosisCompareView({ compare }: { compare: DiagnosisCompareResponse }) {
   const { t } = useLocale()
+  const won = t('unit.won', { fallback: '원' })
+  const none = t('diagnosis.none', { fallback: '없음' })
   if (!compare.previous || !compare.changes) {
-    return <p className="muted">비교할 이전 진단이 없어요(첫 진단이거나 이전 진단이 이미 삭제됐어요).</p>
+    return (
+      <p className="muted">
+        {t('diagnosis.no_previous', { fallback: '비교할 이전 진단이 없어요(첫 진단이거나 이전 진단이 이미 삭제됐어요).' })}
+      </p>
+    )
   }
   const { changes, metric_changes: metrics, exposure_changes: exposure, basis } = compare
 
@@ -38,17 +44,19 @@ export default function DiagnosisCompareView({ compare }: { compare: DiagnosisCo
       {basis?.note && <Banner tone="info">{basis.note}</Banner>}
 
       <div className="meta muted small">
-        <span>{formatDate(compare.previous.created_at)} 진단</span>
+        <span>{t('diagnosis.diagnosed_on', { fallback: '{date} 진단', vars: { date: formatDate(compare.previous.created_at) } })}</span>
         <span>→</span>
-        <span>{formatDate(compare.current.created_at)} 진단</span>
+        <span>{t('diagnosis.diagnosed_on', { fallback: '{date} 진단', vars: { date: formatDate(compare.current.created_at) } })}</span>
       </div>
 
       <div className="diagnosis-block">
         <div className="muted small">{t('diagnosis.change_total_asset')}</div>
         <p className={`num ${trendClass(changes.total_asset.change_pct)}`}>
-          {formatPrice(changes.total_asset.previous)}원 → {formatPrice(changes.total_asset.current)}원 (
-          {changes.total_asset.change_amount >= 0 ? '+' : ''}
-          {formatPrice(changes.total_asset.change_amount)}원
+          {formatPrice(changes.total_asset.previous)}
+          {won} → {formatPrice(changes.total_asset.current)}
+          {won} ({changes.total_asset.change_amount >= 0 ? '+' : ''}
+          {formatPrice(changes.total_asset.change_amount)}
+          {won}
           {changes.total_asset.change_pct != null && `, ${formatPct(changes.total_asset.change_pct)}`})
         </p>
       </div>
@@ -88,7 +96,7 @@ export default function DiagnosisCompareView({ compare }: { compare: DiagnosisCo
           <div>
             <div className="muted small">{t('diagnosis.flags_added')}</div>
             <ul className="list">
-              {changes.flags.added.length === 0 && <li className="muted">없음</li>}
+              {changes.flags.added.length === 0 && <li className="muted">{none}</li>}
               {changes.flags.added.map((f, i) => (
                 <li key={i}>{f.message}</li>
               ))}
@@ -97,7 +105,7 @@ export default function DiagnosisCompareView({ compare }: { compare: DiagnosisCo
           <div>
             <div className="muted small">{t('diagnosis.flags_resolved')}</div>
             <ul className="list">
-              {changes.flags.resolved.length === 0 && <li className="muted">없음</li>}
+              {changes.flags.resolved.length === 0 && <li className="muted">{none}</li>}
               {changes.flags.resolved.map((f, i) => (
                 <li key={i}>{f.message}</li>
               ))}
@@ -108,7 +116,7 @@ export default function DiagnosisCompareView({ compare }: { compare: DiagnosisCo
 
       {changes.returns_20d.length > 0 && (
         <div className="diagnosis-block">
-          <div className="muted small">20거래일 수익률 변화</div>
+          <div className="muted small">{t('diagnosis.returns20_change', { fallback: '20거래일 수익률 변화' })}</div>
           <ul className="list">
             {changes.returns_20d.map((r) => (
               <li key={r.ticker}>
@@ -133,7 +141,9 @@ export default function DiagnosisCompareView({ compare }: { compare: DiagnosisCo
               </li>
             ))}
           </ul>
-          <p className="muted small">비교 대상 기업은 각 진단에 저장된 상위 20개끼리예요.</p>
+          <p className="muted small">
+            {t('diagnosis.exposure_compare_note', { fallback: '비교 대상 기업은 각 진단에 저장된 상위 20개끼리예요.' })}
+          </p>
         </div>
       ) : (
         <p className="muted small">{t('diagnosis.exposure_not_compared')}</p>

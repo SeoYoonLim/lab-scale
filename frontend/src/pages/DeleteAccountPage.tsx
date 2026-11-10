@@ -5,6 +5,7 @@ import { isAccountDeleted } from '../api/contracts/account'
 import { useAuth } from '../auth/useAuth'
 import AuthBrand from '../components/AuthBrand'
 import ErrorNotice from '../components/ui/ErrorNotice'
+import { useLocale } from '../i18n/useLocale'
 import { useHashToken } from '../utils/useHashToken'
 
 // 탈퇴 확인 메일 링크(/delete-account#token=...)로 들어와 탈퇴를 확정한다(소셜 계정이 인증된 이메일로 받는 링크, 30분·1회용).
@@ -18,6 +19,7 @@ export default function DeleteAccountPage() {
 
 function DeleteAccountConfirm({ token }: { token: string | null }) {
   const { user, endSession } = useAuth()
+  const { t } = useLocale()
   const mutation = useMutation({
     mutationFn: () => api.confirmDeleteAccount(token ?? ''),
     onSuccess: (res) => {
@@ -32,28 +34,30 @@ function DeleteAccountConfirm({ token }: { token: string | null }) {
     <div className="auth-page">
       <div className="card auth-card">
         <AuthBrand />
-        <h1 className="auth-title">회원 탈퇴 확인</h1>
+        <h1 className="auth-title">{t('auth.delete_confirm_title', { fallback: '회원 탈퇴 확인' })}</h1>
 
         {!token && (
           <p className="notice notice-error" role="alert">
-            링크가 올바르지 않아요. 메일의 링크를 다시 열어주세요.
+            {t('auth.verify_link_invalid', { fallback: '링크가 올바르지 않아요. 메일의 링크를 다시 열어주세요.' })}
           </p>
         )}
 
         {token && !done && (
           <>
             <p className="muted small">
-              계정과 모든 데이터(관심종목, 모의투자 계좌·보유·체결, 리서치 기록, 포트폴리오 진단)가 지워지고 되돌릴 수 없어요. 정말 탈퇴하려면 아래
-              버튼을 눌러주세요.
+              {t('auth.delete_confirm_lead', {
+                fallback:
+                  '계정과 모든 데이터(관심종목, 모의투자 계좌·보유·체결, 리서치 기록, 포트폴리오 진단)가 지워지고 되돌릴 수 없어요. 정말 탈퇴하려면 아래 버튼을 눌러주세요.',
+              })}
             </p>
-            {mutation.error && <ErrorNotice error={mutation.error} fallback="탈퇴를 확정하지 못했어요." />}
+            {mutation.error && <ErrorNotice error={mutation.error} fallback={t('auth.delete_confirm_failed', { fallback: '탈퇴를 확정하지 못했어요.' })} />}
             <button
               type="button"
               className="send auth-submit danger-button"
               onClick={() => mutation.mutate()}
               disabled={mutation.isPending}
             >
-              {mutation.isPending ? '처리 중…' : '영구히 탈퇴하기'}
+              {mutation.isPending ? t('auth.delete_processing', { fallback: '처리 중…' }) : t('settings.delete_submit', { fallback: '영구히 탈퇴하기' })}
             </button>
           </>
         )}
@@ -65,7 +69,9 @@ function DeleteAccountConfirm({ token }: { token: string | null }) {
         )}
 
         <p className="muted small auth-switch">
-          <Link to={user && !done ? '/settings' : '/login'}>{user && !done ? '설정으로 돌아가기' : '로그인 화면으로'}</Link>
+          <Link to={user && !done ? '/settings' : '/login'}>
+            {user && !done ? t('auth.back_to_settings', { fallback: '설정으로 돌아가기' }) : t('auth.to_login', { fallback: '로그인 화면으로' })}
+          </Link>
         </p>
       </div>
     </div>

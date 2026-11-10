@@ -93,7 +93,7 @@ function MarketCard({ section }: { section: MarketSection }) {
             <span className="stat-value num">{index.close != null ? index.close.toLocaleString('ko-KR') : '—'}</span>
             <span className={`num ${trendClass(index.change_pct)}`}>
               {formatSignedPct(index.change_pct)}
-              <span className="muted small"> · 5일 {formatSignedPct(index.week_change_pct)}</span>
+              <span className="muted small"> · {t('briefing.week_change', { fallback: '5일' })} {formatSignedPct(index.week_change_pct)}</span>
             </span>
             {index.date == null && <span className="muted small">{index.text}</span>}
           </div>
@@ -118,7 +118,10 @@ function HoldingCard({ item }: { item: HoldingBriefingItem }) {
       <div className="meta small">
         <span className={`num ${trendClass(item.day_change_pct)}`}>{formatSignedPct(item.day_change_pct)}</span>
         <span className="muted">
-          평가 {formatWon(item.eval_amount)} · 비중 {formatPlainPct(item.weight_pct)}
+          {t('briefing.eval_weight', {
+            fallback: '평가 {value} · 비중 {weight}',
+            vars: { value: formatWon(item.eval_amount), weight: formatPlainPct(item.weight_pct) },
+          })}
         </span>
       </div>
       {item.risk_factors.length > 0 && (

@@ -4,7 +4,7 @@ import { api } from '../api'
 import type { TranslationStatus } from '../api/contracts/common'
 import { isLocale } from '../api/contracts/common'
 import { queryKeys } from '../api/queryKeys'
-import { LOCALE_NATIVE_NAMES } from '../i18n'
+import { languageName } from '../i18n'
 import { useLocale } from '../i18n/useLocale'
 import AnswerSections from './AnswerSections'
 import Banner from './ui/Banner'
@@ -43,7 +43,7 @@ export default function ResearchAnswerBody({
   })
   const original = originalAnswer ?? record.data?.original_answer ?? null
 
-  const writtenIn = locale && isLocale(locale) && locale !== 'ko-KR' ? LOCALE_NATIVE_NAMES[locale] : null
+  const writtenIn = locale && isLocale(locale) && locale !== 'ko-KR' ? languageName(locale, uiLocale) : null
   // 원문이 있을 수 있는 상태(번역·요약 대체)이고, 다시 볼 방법(report_id 또는 이미 아는 원문)이 있을 때만 버튼을 보인다.
   // fallback_summary인데 report_id가 null(저장 실패)이면 원문을 다시 볼 방법이 없어 버튼을 숨긴다.
   const canShowOriginal =
