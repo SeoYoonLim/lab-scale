@@ -19,7 +19,7 @@ Authorization: Bearer <access_token>
 | 구분 | 엔드포인트 |
 | --- | --- |
 | **인증 필요** | `/api/auth/me`(GET/DELETE), `/api/auth/logout`(POST), `/api/auth/change-password`(POST), `/api/auth/email`(PUT), `/api/auth/resend-verification`(POST), `/api/briefing`(GET), `/api/research`(POST/GET), `/api/research/{report_id}`(GET/DELETE), `/api/watchlist`(GET/POST), `/api/watchlist/{ticker}`(DELETE), `/api/portfolio`(GET), `/api/portfolio/orders`(POST), `/api/portfolio/trades`(GET), `/api/portfolio/performance`(GET), `/api/backtest`(POST), `/api/portfolio/reset`(POST), `/api/portfolio/diagnosis`(POST), `/api/portfolio/diagnosis/history`(GET), `/api/portfolio/diagnosis/{id}`(GET/DELETE), `/api/portfolio/diagnosis/{id}/compare`(GET), `/api/history/search`(GET), `/api/auth/preferences`(GET/PUT), `/api/portfolio/exposure`(GET), `/api/briefings/daily/generate`(POST), `/api/briefings/daily/current`(GET), `/api/briefings/daily/history`(GET), `/api/briefings/daily/{id}`(GET) |
-| 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/auth/delete-account/confirm`(POST), `/api/auth/oauth/providers`(GET), `/api/auth/oauth/{provider}/login`·`/callback`(GET, 브라우저 이동), `/api/auth/oauth/exchange`(POST), `/api/auth/verify-email`, `/api/auth/find-username`, `/api/auth/forgot-password`, `/api/auth/reset-password`(모두 POST), `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status`, `/api/health`, `/api/stocks/{ticker}/event-reactions`, `/api/stocks/{ticker}/price-history`, `/api/etf/{ticker}/holdings` |
+| 공개 | `/api/auth/signup`, `/api/auth/login`, `/api/auth/delete-account/confirm`(POST), `/api/auth/oauth/providers`(GET), `/api/auth/oauth/{provider}/login`·`/callback`(GET, 브라우저 이동), `/api/auth/oauth/exchange`(POST), `/api/auth/verify-email`, `/api/auth/find-username`, `/api/auth/forgot-password`, `/api/auth/reset-password`(모두 POST), `/api/disclaimer`, `/api/stocks/{ticker}/realtime-price`, `/api/companies`, `/api/discovery/trending`, `/api/status`, `/api/health`, `/api/stocks/{ticker}/event-reactions`, `/api/stocks/{ticker}/price-history`, `/api/etf/{ticker}/holdings`, `/api/market/overview`, `/api/stocks/{ticker}/news`, `/api/stocks/{ticker}/disclosures` |
 
 - 데이터는 **사용자별로 분리**된다. 리서치 리포트 목록/조회/삭제/이어 쓰기(`previous_report_id`)는 본인 것만 대상이고,
   **남의 리포트 ID는 없는 리포트와 똑같이 404**다(403이 아니다 — 그 ID가 존재하는지 드러내지 않기 위해).
@@ -213,7 +213,10 @@ ETF도 주식과 같은 `company` 한 행으로 다룬다. 둘의 구분은 응�
 | GET | `/api/disclaimer` | 공개 | 서비스 면책 문구(`{"text": "..."}`) |
 | GET | `/api/status` | 공개 | 데이터 기준일(소스별 최신 날짜, 지수 stale 여부, 마지막 갱신 결과). 푸터의 "데이터 기준일" 표시용 |
 | GET | `/api/health` | 공개 | 서비스 상태(DB·마이그레이션·Ollama·데이터 기준일, 항상 200, `ok`/`degraded`) |
-| GET | `/api/stocks/{ticker}/price-history` | 공개 | 주가 추이 차트용 일별 시세(종가·거래량·등락률·시가·고가·저가). `days`는 1~90(기본 90)이고 **최근 N거래일**(달력 일 아님). 날짜 오름차순. 주식은 2026-06-26부터, ETF는 2026-07-16부터 데이터가 있어 90개가 안 될 수 있다(`count`로 확인) |
+| GET | `/api/stocks/{ticker}/price-history` | 공개 | 주가 추이 차트용 일별 시세(종가·거래량·등락률·시가·고가·저가). `days`는 1~365(기본 90, 2026-11-10에 상한 90에서 확장)이고 **최근 N거래일**(달력 일 아님). 날짜 오름차순. 데이터가 모자라면 `count < days`이고 저장 행 전체 수는 `available_count` |
+| GET | `/api/market/overview` | 공개 | 시장 요약(2026-11-10): 코스피·코스닥 종가와 직전 거래일 대비 등락폭·등락률, 수집 대상 주식의 상승·하락·보합 수, 신선도(`latest`/`delayed`/`stale`/`no_data`), 마지막 수집 시도. 브리핑을 만들지 않아도 된다 |
+| GET | `/api/stocks/{ticker}/news` | 공개 | 종목 뉴스 목록(2026-11-10): 게시 시각 최신순, `limit`(1~50)/`offset`/`date_from`/`date_to`/`order`, 같은 기사에 연결된 다른 종목(`related_tickers`), 신선도 |
+| GET | `/api/stocks/{ticker}/disclosures` | 공개 | 종목 DART 공시 목록(2026-11-10): 접수일 최신순, 정정 공시 표시·필터(`correction`), 접수번호, 같은 페이지 규칙. ETF는 200 + `supported=false` |
 | GET | `/api/briefing` | 필요 | 오늘의 개인화 브리핑(보유·관심종목 기준 시장 요약, 종목별 등락률·거래량 배수·뉴스·공시, flag, 포트폴리오 요약). LLM 없이 코드가 계산하고 읽기 전용(계좌를 만들지 않음). `news_limit` 1~5 |
 | POST | `/api/briefings/daily/generate` | 필요 | 개인화 일일 투자 브리핑 만들기(5개 영역, 날짜별 저장·버전). 같은 날 이미 있으면 저장본 그대로(200), `regenerate`면 새 버전(201), 하루 5개 |
 | GET | `/api/briefings/daily/current` | 필요 | 오늘(사용자 시간대) 브리핑의 마지막 버전, 없으면 404 |
@@ -3222,7 +3225,7 @@ curl "http://localhost:8000/api/stocks/005930/price-history?days=90"
 
 | 쿼리 | 기본 | 설명 |
 | --- | --- | --- |
-| `days` | 90 | 정수 1~90. **달력 일이 아니라 최근 N거래일**이다(그 종목의 저장된 일별 주가 행 수 기준, 주말·휴장일은 없는 날). 범위를 벗어나면 422 |
+| `days` | 90 | 정수 1~365(2026-11-10에 상한 90에서 365로 확장). **달력 일이 아니라 최근 N거래일**이다(그 종목의 저장된 일별 주가 행 수 기준, 주말·휴장일은 없는 날). 범위를 벗어나면 422 |
 
 실제 응답(2026-10-18 조회, 삼성전자 `days=90`, `items` 73개 중 앞 2개와 뒤 1개만 발췌):
 
@@ -3255,22 +3258,241 @@ curl "http://localhost:8000/api/stocks/005930/price-history?days=90"
 | `items[].volume` | int \| null | 거래량(주) |
 | `items[].change_pct` | number \| null | 전일 대비 등락률(%) |
 | `items[].open`, `high`, `low` | number \| null | 시가, 고가, 저가 |
+| `available_count` | int | (2026-11-10 추가) 이 종목의 저장된 주가 행 **전체** 수. `days`와 무관하다. 180·365거래일 버튼을 켤지 정할 때 쓴다(`available_count < 365`면 365는 모자란다) |
+| `first_date` | date \| null | (2026-11-10 추가) 이 종목의 가장 이른 저장 날짜. 주가가 없으면 `null` |
+| `missing_trading_days` | int | (2026-11-10 추가) `items` 첫날~끝날 사이에서 KRX 거래일 달력이 거래일로 확정한 날인데 행이 없는 날 수. 휴장일·주말은 세지 않는다. 0이 아니면 그 사이 수집 공백이 있다 |
 
 값이 없는 칸은 `null`이다(필드는 항상 있다). 숫자는 DB에 저장된 값 그대로다.
 
+**2026-11-10(41차) 확장:** `days` 상한 90은 성능 제한이 아니라 시세가 2026-06-26부터만 있던 때의 데이터 한계였다. 지금은 2023-10-30부터
+733거래일이 있고 350종목 중 342종목이 365행 이상이다. 같은 `(company_id, price_date)` 인덱스로 최근 N행만 읽고 창 함수로 전체 행 수를 같이
+세서 쿼리 수는 그대로 2개(종목 해석 + 시세)다. dev DB 측정: 삼성전자 `days=365` 약 46~59ms·약 44KB, `days=90` 약 14ms·11KB.
+기본값(90)과 기존 필드·순서는 그대로라 기존 20·60·90 호출의 `items`는 바뀌지 않는다. 실제 응답(2026-11-10, dev DB):
+
+| 요청 | `count` | `available_count` | `first_date` | `missing_trading_days` |
+| --- | --- | --- | --- | --- |
+| 삼성전자 `days=365` | 365 | 733 | 2023-10-30 | 0 |
+| 에임드바이오(0009K0) `days=365` | 222 | 222 | 2025-12-04 | 0 |
+
 한계:
 
-- **데이터 시작일이 있다.** 2026-10-18 현재 주식은 2026-06-26부터, ETF는 2026-07-16부터 시세가 있어 `days=90`이어도 `count`가 90보다 작을 수 있다
-  (삼성전자 73개, KODEX 200 59개). 날짜가 쌓이면 늘어난다. 화면에는 `count`를 기준으로 그리고 90개를 가정하지 않는다.
+- **데이터 시작일이 있다.** 2026-10-29 백필 뒤 대부분 종목은 2023-10-30부터 시세가 있지만, 최근 상장 종목은 더 짧다(2026-11-10 dev DB:
+  350종목 중 8종목이 365행 미만, 가장 짧은 종목 52행). 화면에는 `count`를 기준으로 그리고 `days`개를 가정하지 않는다.
+  (2026-10-18 당시에는 주식 2026-06-26, ETF 2026-07-16부터라 삼성전자 73개였다.)
 - **일별 저장 데이터**라 장중 시세가 아니다. 마지막 날짜는 `price_as_of`이고, 오늘 현재가는 `GET /api/stocks/{ticker}/realtime-price`를 쓴다.
-- 분할·배당 등에 대한 수정주가 보정은 하지 않는다(수집된 값 그대로).
+- **종가는 수집 소스(FinanceDataReader)가 준 값 그대로이고, 그 소스가 수정주가로 준 구간이 섞여 있다.** 백엔드는 따로 보정하지 않지만
+  "보정하지 않은 원 종가"라고 단정할 수 없다. 2026-11-10 dev DB에서 5만 원 이상 주식 종가 중 100원 단위가 아닌(호가 단위에 맞지 않는) 행이
+  2023~2026년 모두 있다(예: 삼성바이오로직스 2026-10-01 1,417,007원). 행마다 수정 여부를 저장하지 않아 어느 행이 수정값인지 구분할 수 없다.
+  저장된 등락률(`change_pct`)은 연속한 종가로 계산한 값과 0.6%p 넘게 다른 행이 없었다(248,655행). 화면 문구는 "수집 소스의 종가"로 쓰는 것이 맞다.
 - 주가 행이 아직 없는 종목은 200에 `items=[]`, `count=0`, `price_as_of=null`이다.
 
 | 상태 | 원인 | 응답 |
 | --- | --- | --- |
 | 404 | 종목을 찾지 못함 | `{"detail": "..."}` (다른 종목 API와 같은 메시지 형식) |
-| 422 | `days`가 정수가 아니거나 1~90 밖 | 검증 오류 형식 |
+| 422 | `days`가 정수가 아니거나 1~365 밖 | 검증 오류 형식 |
 | 503 | DB 연결 불가 | 다른 API와 같음 |
+
+---
+
+## GET /api/market/overview
+
+시장 요약(2026-11-10, 41차). 로그인 없이 호출한다. 지금까지 시장 지수는 일일 브리핑(로그인 + 오늘 브리핑 생성)의 `market` 영역에만 있어서
+브리핑이 없으면 리서치 홈의 "오늘의 시장"이 비었다. 이 API는 같은 저장 데이터를 브리핑 없이 읽는다. 읽기 전용(쿼리 4개), LLM 없음, 파라미터 없음.
+계산 코드는 `app/market_snapshot.py`.
+
+```bash
+curl http://localhost:8000/api/market/overview
+```
+
+실제 응답(2026-11-10 16:55 KST, dev DB. `by_market`의 KOSDAQ과 `prices` 기록은 줄였다):
+
+```json
+{
+  "as_of": "2026-11-03",
+  "expected_date": "2026-11-10",
+  "generated_at": "2026-11-10T16:55:58.354334+09:00",
+  "status": "ok",
+  "missing": [],
+  "freshness": {"status": "delayed", "lag_business_days": 5, "calendar_unknown_days": 0, "intraday_excluded": false, "dates_differ": false},
+  "indices": [
+    {"code": "KS11", "name": "코스피", "date": "2026-11-03", "close": 5637.63, "previous_date": "2026-11-02", "previous_close": 5859.08,
+     "change": -221.45, "change_pct": -3.78, "change_unavailable_reason": null,
+     "first_collected_at": "2026-11-03T19:48:21.263317+09:00", "lag_business_days": 5},
+    {"code": "KQ11", "name": "코스닥", "date": "2026-11-03", "close": 704.79, "previous_date": "2026-11-02", "previous_close": 734.36,
+     "change": -29.57, "change_pct": -4.03, "change_unavailable_reason": null,
+     "first_collected_at": "2026-11-03T19:48:21.307255+09:00", "lag_business_days": 5}
+  ],
+  "breadth": {
+    "date": "2026-11-03", "universe": "collected_stocks", "lag_business_days": 5,
+    "total": 300, "up": 67, "down": 230, "flat": 3, "change_missing": 0, "no_price": 0, "registered": 300,
+    "up_ratio_pct": 22.3, "down_ratio_pct": 76.7, "flat_ratio_pct": 1.0,
+    "by_market": {"KOSPI": {"total": 219, "up": 63, "down": 153, "flat": 3, "change_missing": 0, "no_price": 0, "registered": 219,
+                            "up_ratio_pct": 28.8, "down_ratio_pct": 69.9, "flat_ratio_pct": 1.4}, "KOSDAQ": {"...": "..."}}
+  },
+  "last_collection": {"index": {"step": "index", "status": "success", "ok": true, "finished_at": "2026-11-03T19:48:22.059546+09:00", "error_code": null},
+                      "prices": {"...": "..."}},
+  "source": {"provider": "FinanceDataReader", "tables": ["market_index", "stock_price"], "per_row_source_recorded": false},
+  "unavailable": ["trading_value", "market_volume"],
+  "note": "저장된 일별 종가 기준이며 실시간 시세가 아닙니다. 상승·하락 종목 수는 수집 대상 종목만 센 값입니다."
+}
+```
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `as_of` | date \| null | 지수 기준일(두 지수 날짜가 다르면 더 이른 날). 지수가 하나도 없으면 `null` |
+| `expected_date` | date | 지금 종가가 있어야 할 가장 최근 KRX 거래일(장중이면 직전 거래일, 휴장일이면 그 앞 거래일) |
+| `generated_at` | string | 응답을 만든 시각(ISO 8601, KST) |
+| `status` | `ok` \| `partial` \| `no_data` | `partial`: 지수 하나나 상승·하락 집계가 없다. `no_data`: 지수도 집계도 없다(그래도 200) |
+| `missing` | string[] | 없는 부분: `KS11`, `KQ11`, `breadth` |
+| `freshness.status` | `latest` \| `delayed` \| `stale` \| `no_data` | 기대 거래일 대비 늦은 거래일 수로 0이면 latest, 1~5 delayed, 6 이상 stale. **일일 브리핑 `freshness.status`와 같은 기준**이라 같은 지연 띠를 쓰면 된다 |
+| `freshness.lag_business_days` | int \| null | 지수·상승하락 중 가장 늦은 것(KRX 거래일 수, 휴장일 제외) |
+| `freshness.calendar_unknown_days` | int | 지연에 넣은 날 중 KRX 달력으로 확인할 수 없는 날(달력 범위 밖·미확정) 수 |
+| `freshness.intraday_excluded` | bool | 지금 장중(거래일 15:30 전)이라 오늘 날짜 행을 쓰지 않았다(장중 값은 종가가 아니다) |
+| `freshness.dates_differ` | bool | 지수끼리 또는 지수와 상승·하락의 기준일이 다르다 |
+| `indices[]` | 2개, 항상 `KS11`, `KQ11` 순서 | 데이터가 없는 지수도 항목은 있고 값이 `null`이다 |
+| `indices[].date`, `close` | date, number | 그 지수의 마지막 저장 종가와 날짜 |
+| `indices[].previous_date`, `previous_close` | date, number | 비교에 쓴 직전 저장 행 |
+| `indices[].change`, `change_pct` | number \| null | 등락폭(포인트)·등락률(%), 소수 둘째 자리. **직전 저장 행이 직전 KRX 거래일일 때만** 계산한다 |
+| `indices[].change_unavailable_reason` | `no_previous_row` \| `previous_trading_day_missing` \| null | 등락을 비운 이유. 수집 공백으로 직전 거래일 행이 없으면 여러 날의 변화를 "전일 대비"라고 부르지 않는다 |
+| `indices[].first_collected_at` | string \| null | 그 행을 처음 저장한 시각(KST). 기준일(`date`)과 다르다 |
+| `indices[].lag_business_days` | int | 그 지수의 기대 거래일 대비 지연 |
+| `breadth` | object \| null | 장중 행을 뺀 가장 최근 주식 시세 날짜의 상승·하락·보합. 주식 시세가 없으면 `null` |
+| `breadth.universe` | `collected_stocks` | **시장 전체가 아니라 수집 대상(시가총액 상위) 주식만**, ETF 제외 |
+| `breadth.total` | int | 그날 시세 행이 있는 주식 수(= `up + down + flat + change_missing`) |
+| `breadth.change_missing` | int | 시세는 있지만 등락률이 비어 있는 종목(상승·하락·보합에 넣지 않는다) |
+| `breadth.no_price` | int | 등록된 주식 중 그날 시세 행이 없는 종목(`total`에 들지 않는다) |
+| `breadth.up_ratio_pct` 등 | number \| null | `up / (up + down + flat) x 100`(소수 첫째 자리). 분모가 0이면 `null` |
+| `breadth.by_market` | object | `KOSPI`, `KOSDAQ`(코스닥 글로벌 포함), 시장이 비어 있는 주식이 있으면 `OTHER`. 각 값은 위와 같은 개수·비율 |
+| `last_collection.index`, `.prices` | object \| null | `refresh_data`의 지수·시세 단계의 마지막 실제 시도(`skipped` 제외): `step`, `status`(`success`/`partial`/`failed`), `ok`, `finished_at`(KST), `error_code`. 기록이 없으면 `null`. **지연·결측이 수집 실패 때문인지** 구분하는 용도이고 숫자는 바꾸지 않는다. 수동 수집 스크립트는 이 기록을 남기지 않는다 |
+| `unavailable` | string[] | 저장하지 않아 제공하지 않는 지표. `trading_value`(거래대금), `market_volume`(시장 전체 거래량). 값을 만들지 않는다 |
+| `source.per_row_source_recorded` | bool | `false`: 지수 수집은 FinanceDataReader 폴백 체인(별칭·Yahoo 심볼)을 쓰지만 행마다 어느 소스였는지 저장하지 않는다 |
+
+화면에서: `status`가 `no_data`면 "시장 데이터가 아직 없어요", `freshness.status`가 `delayed`·`stale`이면 브리핑과 같은 지연 띠,
+`change`가 `null`이면 등락 자리에 "—"와 이유를 보여준다. 0%로 그리지 않는다. 상승·하락 수 옆에는 "수집 대상 N종목 기준"을 같이 적는다.
+
+| 상태 | 원인 | 응답 |
+| --- | --- | --- |
+| 200 | 데이터가 없어도 | `status: "no_data"` |
+| 503 | DB 연결 불가 | 다른 API와 같음 |
+
+---
+
+## GET /api/stocks/{ticker}/news
+
+종목 뉴스 목록(2026-11-10, 41차). 로그인 없이 호출한다. 저장된 기사를 페이지로 나눠 줄 뿐 새로 요약하거나 계산하지 않는다(`app/stock_feed.py`).
+종목 해석은 **엄격 모드**(`allow_fuzzy=False`, 주문과 같다): 종목코드·정확한 종목명·공백/대소문자 차이·등록된 별칭만 받는다. 비슷한 이름으로
+다른 종목의 뉴스를 보여주지 않으며, 못 찾으면 404 + 후보 안내 문장이다(예: `{"detail": "정확한 종목을 찾지 못했습니다. 혹시 삼성전자인가요?"}`).
+
+```bash
+curl "http://localhost:8000/api/stocks/005930/news?limit=20&offset=0"
+```
+
+| 쿼리 | 기본 | 설명 |
+| --- | --- | --- |
+| `limit` | 20 | 1~50. 밖이면 422 |
+| `offset` | 0 | 0 이상. 밖이면 422 |
+| `date_from`, `date_to` | 없음 | `YYYY-MM-DD`, **KST 달력 날짜, 양끝 포함**(게시 시각 기준). `date_from > date_to`면 422(`loc: ["query", "date_from"]`, 기록 API와 같은 형식) |
+| `order` | `desc` | `desc`(최신순)·`asc`. 같은 시각이면 `id`가 보조 키다 |
+
+실제 응답(2026-11-10, dev DB, 삼성전자 `limit=3`, `items` 앞 1개만):
+
+```json
+{
+  "ticker": "005930", "company_name": "삼성전자", "asset_type": "stock",
+  "total": 60, "limit": 3, "offset": 0, "has_next": true, "total_pages": 20,
+  "filters": {"date_from": null, "date_to": null, "order": "desc"},
+  "freshness": {"last_collected_at": "2026-11-03T19:54:42.431681+09:00", "collection_lag_weekdays": 5, "stale": true,
+                "company_latest_at": "2026-11-03T19:48:00+09:00",
+                "last_collection": {"step": "news", "status": "success", "ok": true, "finished_at": "2026-11-03T19:54:42.667374+09:00", "error_code": null}},
+  "items": [
+    {"id": 16494, "title": "화성특례시, 서울서 AI 엑스포 'MARS 2026' 개막… 62개 기업·기관 참여",
+     "summary": "시에 따르면 화성에는 삼성전자와 현대차·기아 남양연구소, 제조업체 2만6000여 곳이 자리하고 있다. ...",
+     "source": "www.thereport.co.kr", "url": "https://www.thereport.co.kr/news/articleView.html?idxno=93012",
+     "published_at": "2026-11-03T19:48:00+09:00", "collected_at": "2026-11-03T19:48:22.921852+09:00",
+     "is_relevant": true, "related_tickers": ["000270", "004170", "005380", "069620"]}
+  ]
+}
+```
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `total`, `limit`, `offset`, `has_next`, `total_pages` | int, int, int, bool, int | 목록 API 공통 규칙과 같다(`has_next = offset + limit < total`, `total`이 0이면 `total_pages` 0) |
+| `filters` | object | 적용한 `date_from`·`date_to`·`order`(요청값 그대로) |
+| `freshness.last_collected_at` | string \| null | **뉴스 전체**의 마지막 저장 시각(KST). 수집이 멈췄는지 보는 값 |
+| `freshness.collection_lag_weekdays` | int \| null | 그 날짜가 최근 평일보다 늦은 평일 수. 뉴스·공시는 KRX 휴장과 무관해 평일 기준이다 |
+| `freshness.stale` | bool | `collection_lag_weekdays >= 2`이거나 수집 기록이 없으면 `true` |
+| `freshness.company_latest_at` | string \| null | 이 종목(목록 조건)의 가장 최근 게시 시각. 오래돼도 수집 지연이 아닐 수 있다(기사가 원래 없을 수 있다) |
+| `freshness.last_collection` | object \| null | `refresh_data` 뉴스·공시 단계(`news`)의 마지막 실제 시도(시장 요약의 `last_collection`과 같은 모양) |
+| `items[].id` | int | 뉴스 행 id |
+| `items[].title`, `url`, `source` | string, string \| null, string \| null | 제목, 원문 URL, 언론사 도메인(예: `www.mk.co.kr`) |
+| `items[].summary` | string \| null | 수집 때 네이버 뉴스 검색 API가 준 기사 앞부분 발췌. **우리가 만든 요약이 아니다**. 비어 있으면 `null` |
+| `items[].published_at` | string \| null | 기사 게시 시각(ISO 8601, KST) |
+| `items[].collected_at` | string \| null | 이 행을 처음 저장한 시각(KST) |
+| `items[].is_relevant` | bool \| null | 수집 때 저장한 종목 관련성 판정(`true` 또는 판정 없음 `null`). `false`인 기사는 목록에서 뺀다 |
+| `items[].related_tickers` | string[] | 같은 URL이 연결된 **다른** 종목 코드(오름차순). 같은 기사가 여러 종목에 연결되는 것은 정상이다 |
+
+목록 규칙:
+
+- **관련성:** 다른 모든 뉴스 경로(브리핑·사건 반응·리서치 도구)와 같이 `is_relevant = false` 기사를 뺀다. 수집 단계가 종목명으로 검색해 온 기사라
+  제목에 종목명이 없는 시황 기사가 섞일 수 있다(사건 반응 API는 여기에 "제목에 종목명" 조건을 더 건다. 이 목록은 그 조건을 걸지 않는다).
+- **중복:** 같은 종목에 같은 URL이 두 번 저장됐으면(유니크 제약이 없다, `docs/DATA_QUALITY_AND_TRADING_CALENDAR.md`) `id`가 가장 큰 행 하나만 보인다.
+  다른 종목에 연결된 같은 URL 행은 지우거나 숨기지 않는다. 제목이 비슷한 다른 언론사 기사는 묶지 않는다(일일 브리핑은 묶는다).
+- **빈 결과:** 200 + `items: []`, `total: 0`. `freshness.last_collection.status`가 `failed`면 수집 실패, `success`인데 비었으면 저장된 기사가 원래 없는 것이다.
+
+| 상태 | 원인 | 응답 |
+| --- | --- | --- |
+| 404 | 종목을 찾지 못함(엄격 모드) | `{"detail": "..."}` 후보 안내 문장 |
+| 422 | `limit`·`offset`·`order`·날짜 형식이 틀림, `date_from > date_to` | 검증 오류 형식(`loc[0] = "query"`) |
+| 503 | DB 연결 불가 | 다른 API와 같음 |
+
+쿼리 수: 종목 해석 1 + 건수·페이지·같은 URL의 다른 종목·신선도·수집 시도 5 = 6개(페이지 크기와 무관). dev DB 측정 `limit=50` 약 27ms·33KB.
+
+---
+
+## GET /api/stocks/{ticker}/disclosures
+
+종목 DART 공시 목록(2026-11-10, 41차). 로그인 없이 호출한다. 종목 해석·페이지·날짜 필터·`order`·오류는 위 뉴스 목록과 같다.
+`date_from`·`date_to`는 접수일(KST) 기준이다.
+
+| 쿼리 | 기본 | 설명 |
+| --- | --- | --- |
+| `limit`, `offset`, `date_from`, `date_to`, `order` | | 뉴스 목록과 같다 |
+| `correction` | `all` | `all`(전부)·`only`(정정 공시만)·`exclude`(정정 공시 제외). 그 밖의 값은 422 |
+
+실제 응답(2026-11-10, dev DB, 삼성전자 `correction=only&limit=3`, `items` 앞 1개만):
+
+```json
+{
+  "ticker": "005930", "company_name": "삼성전자", "asset_type": "stock",
+  "total": 3, "limit": 3, "offset": 0, "has_next": false, "total_pages": 1,
+  "filters": {"date_from": null, "date_to": null, "order": "desc", "correction": "only"},
+  "supported": true, "message": null,
+  "freshness": {"last_collected_at": "2026-11-03T19:53:51.961770+09:00", "collection_lag_weekdays": 5, "stale": true,
+                "company_latest_at": "2026-10-30T00:00:00+09:00", "last_collection": {"step": "news", "status": "success", "...": "..."}},
+  "items": [
+    {"id": 8071, "title": "[기재정정]연결재무제표기준영업(잠정)실적(공정공시)",
+     "disclosure_type": "[기재정정]연결재무제표기준영업(잠정)실적(공정공시)", "rcept_no": "20261029800099",
+     "disclosed_date": "2026-10-29", "disclosed_at": "2026-10-29T00:00:00+09:00",
+     "source_url": "https://dart.fss.or.kr/dsaf001/main.do?rcptNo=20261029800099",
+     "is_correction": true, "collected_at": "2026-10-31T12:31:36.764855+09:00"}
+  ]
+}
+```
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `supported` | bool | ETF는 DART 공시 수집 대상이 아니라 `false`(200, `items: []`, `total: 0`, `message`에 안내). 주식은 `true` |
+| `message` | string \| null | `supported=false`일 때 안내 문장 |
+| `freshness` | object | 뉴스 목록과 같은 모양. `last_collected_at`은 **공시 전체**의 마지막 저장 시각, `company_latest_at`은 이 종목 최근 접수일 00:00 KST |
+| `items[].disclosure_type` | string \| null | DART 보고서명(정정 접두어 포함 원문). 제목과 같은 값이 저장돼 있다 |
+| `items[].rcept_no` | string \| null | DART 접수번호(14자리). 원문 URL에서 읽는다 |
+| `items[].disclosed_date` | date \| null | 접수일(KST). **시각은 저장하지 않는다** |
+| `items[].disclosed_at` | string \| null | 접수일 00:00 KST(`2026-10-29T00:00:00+09:00`). 일일 브리핑의 공시 시각과 같은 표기다. 시각으로 보여주지 말 것 |
+| `items[].source_url` | string \| null | DART 원문 뷰어 URL |
+| `items[].is_correction` | bool | `[기재정정]`·`[첨부정정]`·`[첨부추가]`·`[발행조건확정]` 등 정정·추가 공시(`app.ingest_validation.is_correction`). 원본과 접수번호가 다른 **별개 공시**라 중복으로 지우지 않는다 |
+| `items[].collected_at` | string \| null | 이 행을 처음 저장한 시각(KST) |
+
+중복: 같은 종목에 같은 원문 URL(같은 접수번호)이 두 번 저장됐으면 `id`가 큰 행 하나만 보인다. 쿼리 수: 종목 해석 1 + 4 = 5개(ETF는 1 + 2).
 
 ---
 

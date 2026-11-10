@@ -76,9 +76,9 @@ POST /api/auth/login    {"username": "alice01", "password": "..."}  -> 200
   콜백이 프런트로 돌려준 1회용 코드를 `POST /api/auth/oauth/exchange`로 토큰과 바꾼다(`backend/API.md` "소셜 로그인").
 - 계정 설정: `GET/PUT /api/auth/preferences` `{"preferred_locale": "en-US", "preferred_timezone": "America/New_York"}`.
 
-## 5. API 전체 목록(47개 경로, 53개 메서드)
+## 5. API 전체 목록(50개 경로, 56개 메서드)
 
-"프런트 연동"은 프런트 `2fe2022`의 `src/api/http.ts`가 이미 부르는지다. 오류 코드는 OpenAPI에 선언된 것(503은 모두 가능, 422는 파라미터가 있으면 가능).
+"프런트 연동"은 프런트 `2fe2022`의 `src/api/http.ts`가 이미 부르는지다(41차 2026-11-10에 추가한 3개 경로는 `86a9aa8` 기준이고, 세부는 `docs/FRONTEND_HANDOFF_SPRINT_41.md`). 오류 코드는 OpenAPI에 선언된 것(503은 모두 가능, 422는 파라미터가 있으면 가능).
 
 | 메서드 | 경로 | 인증 | 용도 | 주요 오류 | 프런트 연동 |
 |---|---|---|---|---|---|
@@ -100,7 +100,10 @@ POST /api/auth/login    {"username": "alice01", "password": "..."}  -> 200
 | GET | `/api/research` | 필요 | 내 리포트 목록 | 401·422 | 됨 |
 | GET·DELETE | `/api/research/{report_id}` | 필요 | 리포트 한 건(`view=record`면 번역 상태·원문) / 삭제 | 401·404 | 됨 |
 | GET | `/api/stocks/{ticker}/realtime-price` | - | 실시간(장중)·종가 폴백 | 404 | 됨 |
-| GET | `/api/stocks/{ticker}/price-history?days=` | - | 일별 시세(차트) | 404·422 | 됨 |
+| GET | `/api/stocks/{ticker}/price-history?days=` | - | 일별 시세(차트). 41차: `days` 1~365, `available_count`·`first_date`·`missing_trading_days` 추가 | 404·422 | 됨(90 초과·새 필드는 아직) |
+| GET | `/api/stocks/{ticker}/news` | - | 종목 뉴스 목록(41차) | 404·422 | **아직** |
+| GET | `/api/stocks/{ticker}/disclosures` | - | 종목 공시 목록(41차, ETF는 `supported=false`) | 404·422 | **아직** |
+| GET | `/api/market/overview` | - | 시장 요약(41차, 브리핑 없이 지수·상승하락·신선도) | - | **아직** |
 | GET | `/api/stocks/{ticker}/event-reactions` | - | 공시·뉴스 뒤 주가 반응 | 404·422 | 됨 |
 | GET | `/api/companies` | - | 종목 검색·목록(`X-Total-Count`) | 422 | 됨 |
 | GET | `/api/discovery/trending` | - | 상승·하락·거래량 급증 | 422 | 됨 |

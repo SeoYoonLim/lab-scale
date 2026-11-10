@@ -44,10 +44,11 @@ AUTH_ROUTES = [(m, p) for m, p, auth in routes() if auth]
 
 
 def test_route_inventory_is_what_the_handoff_documents():
-    """핸드오프 문서(docs/FRONTEND_INTEGRATION_HANDOFF.md)의 전체 목록과 같은 47개 경로·53개 메서드(인증 33개).
-    API가 늘거나 줄면 이 숫자와 핸드오프 문서 3절 목록을 같이 고친다."""
+    """핸드오프 문서(docs/FRONTEND_INTEGRATION_HANDOFF.md)의 전체 목록과 같은 50개 경로·56개 메서드(인증 33개).
+    API가 늘거나 줄면 이 숫자와 핸드오프 문서 3절 목록을 같이 고친다.
+    41차(2026-11-10): 공개 GET 3개 추가(/api/market/overview, /api/stocks/{ticker}/news, /api/stocks/{ticker}/disclosures)."""
     rs = routes()
-    assert len({p for _, p, _ in rs}) == 47 and len(rs) == 53
+    assert len({p for _, p, _ in rs}) == 50 and len(rs) == 56
     assert len(AUTH_ROUTES) == 33
 
 
@@ -114,7 +115,10 @@ def user(login_as):
     "/api/portfolio/diagnosis/history?sort=score", "/api/briefings/daily/history?page=0", "/api/briefings/daily/history?size=101",
     "/api/portfolio/performance?period=2y", "/api/portfolio/performance?benchmark=SPX", "/api/portfolio/performance?view=chart",
     "/api/portfolio/exposure?view=sector", "/api/portfolio/exposure?limit=51", "/api/history/search?type=news",
-    "/api/history/search?sort=created_at", "/api/discovery/trending?category=volume_top", "/api/stocks/005930/price-history?days=91",
+    "/api/history/search?sort=created_at", "/api/discovery/trending?category=volume_top", "/api/stocks/005930/price-history?days=366",
+    "/api/stocks/005930/news?limit=51", "/api/stocks/005930/news?order=newest", "/api/stocks/005930/news?date_from=2026-11-31",
+    "/api/stocks/005930/news?date_from=2026-11-03&date_to=2026-11-01", "/api/stocks/005930/disclosures?correction=yes",
+    "/api/stocks/005930/disclosures?offset=-1",
     "/api/etf/069500/holdings?limit=0", "/api/history/search?date_from=2026-13-01",
 ])
 def test_invalid_query_parameters_are_422_with_query_location(user, url):  # 3, 19, 20

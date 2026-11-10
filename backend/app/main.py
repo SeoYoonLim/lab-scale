@@ -23,6 +23,7 @@ from app.api.disclaimer import router as disclaimer_router
 from app.api.discovery import router as discovery_router
 from app.api.etf import router as etf_router
 from app.api.history import router as history_router
+from app.api.market import router as market_router
 from app.api.oauth import router as oauth_router
 from app.api.exposure import router as exposure_router
 from app.api.performance import router as performance_router
@@ -174,6 +175,7 @@ app.include_router(exposure_router)
 app.include_router(backtest_router)
 app.include_router(history_router)
 app.include_router(etf_router)
+app.include_router(market_router)
 
 
 # ---------- OpenAPI 오류 응답 선언(2026-11-08, 37차) ----------

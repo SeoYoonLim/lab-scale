@@ -125,6 +125,10 @@ Content-Type: application/json
 
 - `indices[]`: 코스피·코스닥·원/달러 `{code: kospi|kosdaq|usd_krw, name, date, close, change_pct, week_change_pct, lag_business_days, text}`. 데이터가 없으면 `date: null`이고 `text`는 "코스닥: 데이터 없음"입니다. `text`를 그대로 한 줄로 써도 되고, 숫자 필드로 카드를 그려도 됩니다.
 - `news[]`: 제목에 시장 키워드(코스피·코스닥·증시·환율 등)가 있는 최근 3일 기사, 최대 3개 `{title, source, url, published_at, similar_count}`. 지수 이름이 들어간 기사가 먼저 옵니다. **제목만 보이고 해석하지 않으니** 위에 `news_label`을 붙여 주세요. 없으면 `news_empty_text`입니다.
+- (2026-11-10, 41차) 브리핑 밖에서 시장만 보여 줄 때(리서치 홈 "오늘의 시장" 등)는 `GET /api/market/overview`(공개)를 쓰세요. 로그인·브리핑 생성 없이
+  코스피·코스닥 종가·등락폭·등락률, 상승·하락·보합 수, 같은 기준의 신선도(`latest`/`delayed`/`stale`/`no_data`)를 줍니다. 원/달러와 시장 기사는
+  없습니다(이 영역에만 있음). 등락률은 이 영역의 `change_pct`와 같은 저장 종가로 계산하지만, 직전 거래일 행이 없으면 null로 비웁니다. 세부는
+  `docs/FRONTEND_HANDOFF_SPRINT_41.md`.
 - 상승·하락을 단정하는 문장은 없습니다.
 
 ### 4-2. `holdings`: 내 보유 종목 주요 변화
