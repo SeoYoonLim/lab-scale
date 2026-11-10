@@ -3,6 +3,7 @@ import { baseMockApi } from './mock'
 import { briefingMock } from './mock-briefing'
 import { etfMock, exposureMock } from './mock-exposure'
 import { historyMock } from './mock-history'
+import { marketMock } from './mock-market'
 import { performanceMock } from './mock-performance'
 
 // 영역별 mock을 한 객체로 합친다. 새 영역을 추가할 때는 mock-*.ts 파일을 만들고 여기에 펼친다.
@@ -14,4 +15,5 @@ export const mockApi: Api = {
   ...etfMock,
   ...briefingMock,
   ...historyMock,
+  ...marketMock,
 }
