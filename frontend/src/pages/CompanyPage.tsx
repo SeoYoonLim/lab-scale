@@ -6,6 +6,8 @@ import { ApiError } from '../api/errors'
 import { queryKeys } from '../api/queryKeys'
 import { useAuth } from '../auth/useAuth'
 import EventReactionsCard from '../components/EventReactionsCard'
+import AssetTypeBadge from '../components/AssetTypeBadge'
+import EtfHoldingsCard from '../components/EtfHoldingsCard'
 import PriceChartCard from '../components/PriceChartCard'
 import { formatDate, formatPct, formatPrice, trendClass } from '../utils/format'
 
@@ -45,6 +47,14 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
     retry: false, // 한 번 실패해도 다음 폴링이 3초 뒤 또 온다 - react-query 자체 재시도는 필요 없다.
   })
   const notFound = error instanceof ApiError && error.status === 404
+  // realtime-price에는 asset_type이 없어서, 차트가 부르는 price-history(같은 쿼리 키 = 중복 요청 없음)에서 종목 유형을 얻는다.
+  const history = useQuery({
+    queryKey: queryKeys.priceHistory(ticker, 60),
+    queryFn: () => api.getPriceHistory(ticker, 60),
+    retry: false,
+    staleTime: 60_000,
+  })
+  const assetType = history.data?.asset_type
 
   const [watchlistState, setWatchlistState] = useState<WatchlistState>('idle')
   const [watchlistError, setWatchlistError] = useState<string | null>(null)
@@ -56,6 +66,12 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.watchlist })
     },
   })
+
+  // AI 종목 전망: 전망 질문은 백엔드가 결론을 먼저 쓰고 근거·한계를 붙여 답한다. 리서치 화면으로 질문을 채워 보낸다.
+  function handleOutlook() {
+    const name = realtime?.company_name ?? ticker
+    navigate('/', { state: { prefillQuestion: `${name} 전망 알려줘` } })
+  }
 
   function handleResearch() {
     const name = realtime?.company_name ?? ticker
@@ -99,7 +115,9 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
             <span className="company-avatar" aria-hidden="true">
               {(realtime?.company_name ?? ticker).slice(0, 1)}
             </span>
-            <h1 className="company-title">{realtime?.company_name ?? ticker}</h1>
+            <h1 className="company-title">
+              {realtime?.company_name ?? ticker} {assetType && <AssetTypeBadge assetType={assetType} />}
+            </h1>
             <span className="ticker-chip num">{ticker}</span>
           </div>
           <div className="meta muted">
@@ -163,6 +181,8 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
 
       {realtime && <PriceChartCard ticker={realtime.ticker} />}
 
+      {realtime && assetType === 'etf' && <EtfHoldingsCard ticker={realtime.ticker} />}
+
       {realtime && <EventReactionsCard ticker={realtime.ticker} />}
 
       <div className="card research-cta">
@@ -170,9 +190,14 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
           <h2>더 자세히 알고 싶으신가요?</h2>
           <p className="muted">주가, 뉴스, 공시를 종합한 AI 리서치를 받아보세요.</p>
         </div>
-        <button type="button" className="send" onClick={handleResearch} disabled={!realtime && !error}>
-          이 종목으로 리서치해줘
-        </button>
+        <div className="cta-buttons">
+          <button type="button" className="reset-button" onClick={handleOutlook} disabled={!realtime && !error}>
+            AI 전망 보기
+          </button>
+          <button type="button" className="send" onClick={handleResearch} disabled={!realtime && !error}>
+            이 종목으로 리서치해줘
+          </button>
+        </div>
       </div>
     </div>
   )

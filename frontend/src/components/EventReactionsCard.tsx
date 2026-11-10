@@ -4,6 +4,7 @@ import { api } from '../api'
 import { queryKeys } from '../api/queryKeys'
 import type { EventReaction, EventReactionSummary, EventReturn, EventTypeFilter } from '../types'
 import { formatDate, formatPct, trendClass } from '../utils/format'
+import ErrorNotice from './ui/ErrorNotice'
 
 const EVENT_TYPE_OPTIONS: { value: EventTypeFilter; label: string }[] = [
   { value: 'all', label: '전체' },
@@ -130,7 +131,7 @@ function SummaryTable({ summary }: { summary: EventReactionSummary }) {
 // disclaimer를 항상 같이 보여준다(backend/API.md). 일 단위 값이라 종목 시세와 달리 폴링하지 않는다.
 export default function EventReactionsCard({ ticker }: { ticker: string }) {
   const [eventType, setEventType] = useState<EventTypeFilter>('all')
-  const { data, error, isPending, isPlaceholderData } = useQuery({
+  const { data, error, isPending, isPlaceholderData, refetch } = useQuery({
     queryKey: queryKeys.eventReactions(ticker, eventType),
     queryFn: () => api.getEventReactions(ticker, { eventType }),
     placeholderData: keepPreviousData,
@@ -157,7 +158,7 @@ export default function EventReactionsCard({ ticker }: { ticker: string }) {
       </div>
 
       {isPending && <p className="muted">불러오는 중…</p>}
-      {error && <p className="notice notice-error">{error.message}</p>}
+      {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
 
       {data && (
         <div className={isPlaceholderData ? 'is-stale' : undefined} aria-busy={isPlaceholderData}>

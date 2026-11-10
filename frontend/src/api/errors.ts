@@ -2,10 +2,48 @@
 // 메시지 문자열 대신 err.status로 분기할 수 있게 한다.
 export class ApiError extends Error {
   readonly status: number
+  // 429(요청 한도)일 때 응답 헤더 Retry-After(초). 없으면 undefined. "n초 뒤 다시"를 화면에 보여주는 데 쓴다.
+  readonly retryAfterSec?: number
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, retryAfterSec?: number) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.retryAfterSec = retryAfterSec
   }
+}
+
+// 화면마다 같은 상황(로그인 필요/없음/한도/서버 장애)을 같은 말로 안내하게 한 곳에 모은 분류.
+// backend/docs/FRONTEND_INTEGRATION_HANDOFF.md 6절의 "화면 처리" 열과 같다.
+export type ErrorKind = 'auth' | 'not_found' | 'conflict' | 'validation' | 'rate_limit' | 'timeout' | 'server' | 'unknown'
+
+export function classifyError(err: unknown): ErrorKind {
+  if (!(err instanceof ApiError)) return 'unknown'
+  switch (err.status) {
+    case 0:
+      return 'timeout'
+    case 401:
+      return 'auth'
+    case 404:
+      return 'not_found'
+    case 409:
+      return 'conflict'
+    case 422:
+      return 'validation'
+    case 429:
+      return 'rate_limit'
+    case 500:
+    case 502:
+    case 503:
+      return 'server'
+    default:
+      return 'unknown'
+  }
+}
+
+// 서버가 준 detail(한국어 문장)이 있으면 그대로가 가장 정확하다. 그래도 "다시 시도하면 되는 오류"인지는
+// 화면이 알아야 재시도 버튼을 보여줄 수 있다.
+export function isRetryable(err: unknown): boolean {
+  const kind = classifyError(err)
+  return kind === 'timeout' || kind === 'server' || kind === 'rate_limit' || kind === 'unknown'
 }

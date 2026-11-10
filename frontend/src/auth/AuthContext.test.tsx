@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { AuthProvider } from './AuthContext'
@@ -11,6 +12,7 @@ vi.mock('../api', () => ({
     me: vi.fn(),
     login: vi.fn(),
     signup: vi.fn(),
+    logout: vi.fn().mockResolvedValue(undefined),
   },
 }))
 
@@ -33,9 +35,11 @@ function Probe() {
 
 function renderProbe() {
   return render(
-    <AuthProvider>
-      <Probe />
-    </AuthProvider>,
+    <QueryClientProvider client={new QueryClient()}>
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    </QueryClientProvider>,
   )
 }
 

@@ -1,4 +1,5 @@
 import AssetTypeBadge from './AssetTypeBadge'
+import DiagnosisLookThrough from './DiagnosisLookThrough'
 import type { DiagnosisDetail, DiagnosisResponse } from '../types'
 import { formatDate, formatPct, formatPrice, trendClass } from '../utils/format'
 
@@ -106,6 +107,8 @@ export default function DiagnosisResultView({ result }: { result: DiagnosisRespo
           </div>
         </div>
       )}
+
+      <DiagnosisLookThrough snapshot={result.look_through} />
 
       {result.flags.length > 0 && (
         <div className="diagnosis-block">

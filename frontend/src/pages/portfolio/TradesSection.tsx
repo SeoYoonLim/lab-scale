@@ -6,6 +6,7 @@ import { queryKeys } from '../../api/queryKeys'
 import AssetTypeBadge from '../../components/AssetTypeBadge'
 import Pagination from '../../components/Pagination'
 import { formatDate, formatPrice } from '../../utils/format'
+import ErrorNotice from '../../components/ui/ErrorNotice'
 
 const TRADES_PAGE_SIZE = 20
 
@@ -15,7 +16,7 @@ export default function TradesSection() {
   const [appliedFilter, setAppliedFilter] = useState('')
   // placeOrder/resetPortfolio 뮤테이션이 ['trades']를 무효화하면(쿼리 키 접두어 일치) 이 쿼리도
   // 자동으로 다시 불러온다 - reloadKey를 prop으로 내려받지 않아도 된다.
-  const { data, error, isPending } = useQuery({
+  const { data, error, isPending, refetch } = useQuery({
     queryKey: queryKeys.trades(TRADES_PAGE_SIZE, offset, appliedFilter || undefined),
     queryFn: () => api.getTrades(TRADES_PAGE_SIZE, offset, appliedFilter || undefined),
     placeholderData: keepPreviousData,
@@ -42,7 +43,7 @@ export default function TradesSection() {
         </form>
 
         {isPending && <p className="muted">불러오는 중…</p>}
-        {error && <p className="notice notice-error">{error.message}</p>}
+        {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
         {data && data.items.length === 0 && <p className="muted">체결 내역이 없어요.</p>}
 
         {data && data.items.length > 0 && (

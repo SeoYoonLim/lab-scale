@@ -1,0 +1,37 @@
+{
+  "ticker": "102110",
+  "name": "TIGER 200",
+  "asset_type": "etf",
+  "as_of_date": "2026-10-29",
+  "collected_at": "2026-10-29T07:12:14.797394+00:00",
+  "stale": false,
+  "stale_notice": null,
+  "source": "미래에셋자산운용 TIGER ETF 홈페이지의 구성종목(PDF)",
+  "holding_count": 200,
+  "total_weight_pct": 100.09,
+  "top_weight_pct": 64.37,
+  "limit": 3,
+  "items": [
+    {
+      "rank": 1,
+      "name": "삼성전자",
+      "code": "005930",
+      "weight_pct": 35.29
+    },
+    {
+      "rank": 2,
+      "name": "SK하이닉스",
+      "code": "000660",
+      "weight_pct": 26.43
+    },
+    {
+      "rank": 3,
+      "name": "SK스퀘어",
+      "code": "402340",
+      "weight_pct": 2.65
+    }
+  ],
+  "data_warnings": [],
+  "message": null,
+  "disclaimer": "이 서비스는 학습·시연용 모의투자와 AI 리서치입니다. ..."
+}

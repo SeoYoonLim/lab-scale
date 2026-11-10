@@ -2328,3 +2328,770 @@ body {
 .chart-note {
   margin: 10px 0 0;
 }
+
+/* =====================================================================
+   2026-11 백엔드 업데이트 대응(성과·노출·브리핑·기록·설정) 공통 부품
+   ===================================================================== */
+
+/* 데이터 지연·오래된 구성 같은 띠 */
+.banner {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.banner-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.banner-body {
+  min-width: 0;
+}
+
+.banner-title {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.banner-text {
+  overflow-wrap: anywhere;
+}
+
+.banner-text > p {
+  margin: 0 0 4px;
+}
+
+.banner-warn {
+  border-color: color-mix(in srgb, var(--warn) 55%, var(--rule));
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+}
+
+.banner-warn .banner-icon {
+  background: var(--warn);
+  color: #fff;
+}
+
+.banner-danger {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--rule));
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+}
+
+.banner-danger .banner-icon {
+  background: var(--danger);
+  color: #fff;
+}
+
+.error-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.error-retry {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.empty-state {
+  padding: 24px 8px;
+  text-align: center;
+}
+
+.empty-state p {
+  margin: 0 0 12px;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-badge-ok {
+  background: color-mix(in srgb, var(--success) 16%, var(--surface));
+  color: var(--success);
+}
+
+.status-badge-warn {
+  background: color-mix(in srgb, var(--warn) 18%, var(--surface));
+  color: var(--warn);
+}
+
+.status-badge-danger {
+  background: color-mix(in srgb, var(--danger) 14%, var(--surface));
+  color: var(--danger);
+}
+
+.status-badge-accent {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ---------- 포트폴리오 탭·성과(2026-11) ---------- */
+.portfolio-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 -4px 20px;
+  padding: 0 4px 2px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--rule);
+  scrollbar-width: thin;
+}
+
+.portfolio-tab {
+  flex-shrink: 0;
+  padding: 10px 14px;
+  border-bottom: 2px solid transparent;
+  color: var(--ink-muted);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.portfolio-tab:hover {
+  color: var(--ink);
+}
+
+.portfolio-tab.active {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+
+.sub-title {
+  margin: 18px 0 10px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.card-head .sub-title {
+  margin: 0;
+}
+
+.performance-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-bottom: 14px;
+}
+
+.inline-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inline-select select {
+  padding: 6px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.data-basis-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 0 0 14px;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.metric-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px 20px;
+  margin: 0 0 8px;
+}
+
+.metric-list > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.metric-list dt {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.metric-list dd {
+  margin: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.warning-list ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.warning-list li {
+  margin-bottom: 4px;
+}
+
+.chart-baseline {
+  stroke: var(--ink-muted);
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+  opacity: 0.7;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  margin-right: 6px;
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+@media (max-width: 640px) {
+  .stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ---------- ETF 실질 노출(2026-11) ---------- */
+.exposure-bar {
+  display: flex;
+  height: 14px;
+  overflow: hidden;
+  border-radius: 7px;
+  background: var(--surface-2);
+}
+
+.exposure-seg {
+  display: block;
+  height: 100%;
+}
+
+.exposure-seg-companies {
+  background: var(--accent);
+}
+
+.exposure-seg-unidentified {
+  background: var(--ink-muted);
+  opacity: 0.55;
+}
+
+.exposure-seg-cash {
+  background: var(--success);
+  opacity: 0.7;
+}
+
+.exposure-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 8px 0 4px;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.exposure-legend .legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table caption {
+  padding-bottom: 6px;
+  text-align: left;
+}
+
+.data-table th,
+.data-table td {
+  padding: 8px 10px 8px 0;
+  border-top: 1px solid var(--rule);
+  text-align: right;
+  vertical-align: top;
+}
+
+.data-table thead th {
+  border-top: 0;
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.data-table th:first-child,
+.data-table td:first-child {
+  text-align: left;
+}
+
+.data-table th[scope='row'] {
+  font-weight: 600;
+}
+
+.exposure-table .rank {
+  display: inline-block;
+  min-width: 18px;
+  color: var(--ink-muted);
+  font-weight: 500;
+}
+
+.exposure-table td:nth-child(2) {
+  text-align: left;
+}
+
+.strong {
+  font-weight: 700;
+}
+
+.via-row td {
+  padding: 0 0 8px;
+  border-top: 0;
+  text-align: left;
+}
+
+.via-list {
+  margin: 0;
+  padding: 8px 12px;
+  list-style: none;
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: 13px;
+}
+
+.via-list li + li {
+  margin-top: 4px;
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  text-decoration: underline;
+}
+
+.etf-card-list {
+  display: grid;
+  gap: 12px;
+}
+
+.etf-card {
+  padding: 14px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+}
+
+.etf-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.etf-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.quality-details {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.flag-list ul,
+.plain-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 14px;
+}
+
+.flag-list li {
+  margin-bottom: 6px;
+}
+
+.diagnosis-look-through {
+  margin: 16px 0;
+  padding: 12px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+}
+
+.diagnosis-look-through > summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.diagnosis-look-through[open] > summary {
+  margin-bottom: 12px;
+}
+
+/* ---------- 일일 브리핑(2026-11) ---------- */
+.briefing-tabs {
+  margin-bottom: 16px;
+}
+
+.briefing-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.briefing-title {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.briefing-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.briefing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.briefing-generate {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 12px;
+}
+
+.check-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.briefing-section {
+  margin: 0 0 16px;
+  padding: 16px 18px;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+}
+
+.briefing-section-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.briefing-summary {
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
+.briefing-summary p {
+  margin: 8px 0 0;
+  line-height: 1.7;
+}
+
+.briefing-summary-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.briefing-checklist ol {
+  margin: 0;
+  padding-left: 20px;
+  line-height: 1.7;
+}
+
+.briefing-item {
+  padding: 12px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.briefing-item:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.briefing-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.briefing-item p {
+  margin: 4px 0;
+}
+
+.briefing-news ul,
+.briefing-disclosures,
+.briefing-risk-list,
+.briefing-cautions,
+.briefing-quiet {
+  margin: 4px 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.briefing-news li,
+.briefing-disclosures li {
+  margin-bottom: 3px;
+}
+
+.briefing-indirect {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.briefing-risk-list li {
+  color: var(--ink);
+}
+
+.flag-list-inline {
+  margin: 8px 0;
+  padding-left: 18px;
+  font-size: 14px;
+}
+
+.briefing-etf {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.history-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.date-group-header {
+  margin: 18px 0 6px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.history-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.history-open {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.history-open:hover .history-title {
+  color: var(--accent);
+}
+
+.history-title {
+  font-weight: 600;
+}
+
+.briefing-headline-warn {
+  color: var(--warn);
+}
+
+.back-link-button {
+  margin-bottom: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.center {
+  text-align: center;
+}
+
+.translation-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-bottom: 8px;
+}
+
+.translation-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-bottom: 8px;
+}
+
+.ma-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-bottom: 8px;
+}
+
+.ma-toggles .legend-swatch {
+  width: 12px;
+  margin-right: 0;
+}
+
+.return-list {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.return-list > div {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.return-list dd {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.cta-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cta-buttons .reset-button {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.etf-holdings-card .data-table th:nth-child(2),
+.etf-holdings-card .data-table td:nth-child(2) {
+  text-align: left;
+}
+
+/* 모바일: 펼친 ETF 기여 줄의 긴 문장이 표 전체를 가로로 늘려 첫 열이 잘리는 문제 방지 */
+.via-row td {
+  max-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.exposure-table {
+  min-width: 520px;
+}
+
+.exposure-table th[scope='row'] {
+  min-width: 130px;
+}

@@ -6,6 +6,7 @@ import { queryKeys } from '../api/queryKeys'
 import AssetTypeBadge from '../components/AssetTypeBadge'
 import type { AssetType } from '../types'
 import { formatPct, formatPrice, trendClass } from '../utils/format'
+import ErrorNotice from '../components/ui/ErrorNotice'
 
 // GET /api/companies?q= 는 로그인 없이 바로 검색할 수 있다(별칭 포함, 종목명/티커 부분 일치).
 // 예전처럼 300종목을 그냥 쭉 나열하는 대신, 검색으로 찾게 한다.
@@ -36,7 +37,7 @@ export default function CompanyListPage() {
 
   // placeholderData: keepPreviousData - 검색어를 바꾸는 동안 이전 결과를 그대로 보여주면서(깜빡임 없이)
   // isFetching만으로 "검색 중" 표시를 띄운다.
-  const { data, error, isPending, isFetching } = useQuery({
+  const { data, error, isPending, isFetching, refetch } = useQuery({
     queryKey: queryKeys.companies(debouncedQ || undefined, 50, assetType),
     queryFn: () => api.searchCompanies(debouncedQ || undefined, 50, assetType),
     placeholderData: keepPreviousData,
@@ -71,7 +72,7 @@ export default function CompanyListPage() {
       {/* 검색어를 바꾸는 중에는 이전 결과를 그대로 보여주면서(깜빡임 없이) 이 표시만 띄운다 -
           안 그러면 느린 검색일 때 이전 검색어의 결과가 새 검색어 결과처럼 잠깐 보일 수 있다. */}
       {isFetching && !isPending && <p className="muted small">검색 중…</p>}
-      {error && <p className="notice notice-error">{error.message}</p>}
+      {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
       {data && data.length === 0 && <p className="muted">검색 결과가 없어요.</p>}
 
       {data && data.length > 0 && (

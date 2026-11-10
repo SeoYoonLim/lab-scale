@@ -2,6 +2,13 @@
 // 각 스키마가 types.ts의 타입과 구조적으로 맞는지 컴파일 타임에도 체크한다 - 둘 중 하나만 바뀌면
 // 타입 에러가 난다.
 import { z } from 'zod'
+import { translationStatusSchema } from './contracts/common'
+import {
+  diagnosisCompareBasisSchema,
+  diagnosisMetricChangesSchema,
+  exposureChangesSchema,
+} from './contracts/diagnosis'
+import { lookThroughSnapshotSchema } from './contracts/exposure'
 import type {
   AssetType,
   AuthResponse,
@@ -72,6 +79,8 @@ export const researchResponseSchema = z.object({
   report_id: z.number().nullable(),
   previous_report_id: z.number().nullable(),
   disclaimer: z.string(),
+  locale: z.string().optional(),
+  translation_status: translationStatusSchema.nullish(),
 }) satisfies z.ZodType<ResearchResponse>
 
 export const reportListItemSchema = z.object({
@@ -86,6 +95,8 @@ export const reportListItemSchema = z.object({
 
 export const reportListSchema = z.object({
   total: z.number(),
+  has_next: z.boolean().optional(),
+  total_pages: z.number().optional(),
   items: z.array(reportListItemSchema),
 }) satisfies z.ZodType<ReportList>
 
@@ -188,6 +199,7 @@ export const orderResultSchema = z.object({
   executed_at: z.string(),
   cash_balance: z.number(),
   holding: z.object({ quantity: z.number(), avg_price: z.number() }).nullable(),
+  asset_type: assetTypeSchema.nullish(),
 }) satisfies z.ZodType<OrderResult>
 
 export const tradeSchema = z.object({
@@ -206,6 +218,8 @@ export const tradeListSchema = z.object({
   total: z.number(),
   limit: z.number(),
   offset: z.number(),
+  has_next: z.boolean().optional(),
+  total_pages: z.number().optional(),
   items: z.array(tradeSchema),
 }) satisfies z.ZodType<TradeList>
 
@@ -274,6 +288,7 @@ export const diagnosisResponseSchema = z.object({
   disclaimer: z.string(),
   diagnosis_id: z.number().nullable(),
   created_at: z.string().nullable(),
+  look_through: lookThroughSnapshotSchema.nullish(),
 }) satisfies z.ZodType<DiagnosisResponse>
 
 // GET /api/portfolio/diagnosis/{id} - diagnosis_id 자리에 id가 오는 것만 다르다.
@@ -302,6 +317,8 @@ export const diagnosisHistoryListSchema = z.object({
   total: z.number(),
   limit: z.number(),
   offset: z.number(),
+  has_next: z.boolean().optional(),
+  total_pages: z.number().optional(),
   items: z.array(diagnosisHistoryItemSchema),
 }) satisfies z.ZodType<DiagnosisHistoryList>
 
@@ -344,6 +361,9 @@ export const diagnosisCompareResponseSchema = z.object({
   previous: diagnosisHistoryItemSchema.nullable(),
   changes: diagnosisChangesSchema.nullable(),
   disclaimer: z.string(),
+  basis: diagnosisCompareBasisSchema.optional(),
+  metric_changes: diagnosisMetricChangesSchema.nullish(),
+  exposure_changes: exposureChangesSchema.nullish(),
 }) satisfies z.ZodType<DiagnosisCompareResponse>
 
 export const disclaimerResponseSchema = z.object({ text: z.string() })

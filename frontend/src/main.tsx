@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { AuthProvider } from './auth/AuthContext.tsx'
+import { LocaleProvider } from './i18n/LocaleProvider.tsx'
 import './index.css'
 import App from './App.tsx'
 
@@ -20,7 +21,9 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <App />
+        <LocaleProvider>
+          <App />
+        </LocaleProvider>
       </AuthProvider>
     </QueryClientProvider>
   </StrictMode>,

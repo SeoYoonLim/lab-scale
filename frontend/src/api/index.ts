@@ -22,13 +22,24 @@ import type {
   User,
   WatchlistItem,
 } from '../types'
+import type { Preferences, PreferencesInput } from './contracts/preferences'
+import type { ReportRecordDetail } from './contracts/research'
+import type { BriefingApi } from './domains/briefing'
+import type { EtfApi } from './domains/etf'
+import type { ExposureApi } from './domains/exposure'
+import type { HistoryApi } from './domains/history'
+import type { PerformanceApi } from './domains/performance'
 import { httpApi } from './http'
-import { mockApi } from './mock'
+import { mockApi } from './mockApi'
 
 export interface AuthApi {
   signup(username: string, password: string): Promise<AuthResponse>
   login(username: string, password: string): Promise<AuthResponse>
   me(): Promise<User>
+  // 서버에 토큰을 폐기하게 한다(2026-10-30 추가, 이 사용자의 모든 기기 토큰이 무효가 된다). 실패해도 화면은 로그아웃한다.
+  logout(): Promise<void>
+  getPreferences(): Promise<Preferences>
+  updatePreferences(input: PreferencesInput): Promise<Preferences>
 }
 
 // 로그인한 사용자 본인 것만 다루는 API(Authorization: Bearer 필요).
@@ -36,6 +47,8 @@ export interface ResearchApi {
   askResearch(question: string, previousReportId?: number | null): Promise<ResearchResponse>
   listReports(limit?: number, offset?: number): Promise<ReportList>
   getReport(reportId: number): Promise<ReportDetail>
+  // view=record: 제목·종목·분석 유형·기준일(data_basis)·작성 언어·번역 상태(translation_status)·한국어 원문(original_answer).
+  getReportRecord(reportId: number): Promise<ReportRecordDetail>
   deleteReport(reportId: number): Promise<void>
 }
 
@@ -72,7 +85,19 @@ export interface PublicApi {
   ): Promise<EventReactionsResponse>
 }
 
-export type Api = AuthApi & ResearchApi & AccountApi & PublicApi
+// 새 백엔드(2026-11) 기능은 영역별 인터페이스로 나눠 둔다(구현도 영역별 파일: http.ts / mock-*.ts).
+export type Api = AuthApi &
+  ResearchApi &
+  AccountApi &
+  PublicApi &
+  PerformanceApi &
+  ExposureApi &
+  BriefingApi &
+  HistoryApi &
+  EtfApi
+
+// 예전부터 있던 영역(이 파일의 위 네 인터페이스)만. mock.ts가 이것만 구현하고, mockApi.ts가 영역별 mock을 합친다.
+export type BaseApi = AuthApi & ResearchApi & AccountApi & PublicApi
 
 // 2026-10-07: 로그인 도입으로 모든 데이터가 실제 백엔드로 연동 가능해져서, mock 여부는
 // 더 이상 기능별로 나뉘지 않고 이 플래그 하나로 앱 전체가 토글된다.

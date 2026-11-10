@@ -94,3 +94,17 @@ export const IconSearch = () => (
     <path d="m20 20-4.3-4.3" />
   </Icon>
 )
+
+export const IconSun = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="3.8" />
+    <path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M6 6l1.4 1.4M16.6 16.6 18 18M18 6l-1.4 1.4M7.4 16.6 6 18" />
+  </Icon>
+)
+
+export const IconSettings = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="3" />
+    <path d="M12 3.5v2.2M12 18.3v2.2M20.5 12h-2.2M5.7 12H3.5M18 6l-1.6 1.6M7.6 16.4 6 18M18 18l-1.6-1.6M7.6 7.6 6 6" />
+  </Icon>
+)

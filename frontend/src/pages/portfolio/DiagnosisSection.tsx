@@ -4,6 +4,7 @@ import { api } from '../../api'
 import { queryKeys } from '../../api/queryKeys'
 import DiagnosisCompareView from '../../components/DiagnosisCompareView'
 import DiagnosisResultView from '../../components/DiagnosisResultView'
+import ErrorNotice from '../../components/ui/ErrorNotice'
 
 // 진단은 "항상 새로 계산"이고 결과를 캐시해서 재사용할 이유가 없다(backend/API.md) - 쿼리가 아니라
 // 뮤테이션(버튼을 누르는 행동)으로 다룬다. 보유 종목이 바뀌면 부모가 key를 바꿔 이 컴포넌트를
@@ -76,7 +77,7 @@ export default function DiagnosisSection() {
             {showCompare && (
               <div className="diagnosis-compare-panel">
                 {compareQuery.isPending && <p className="muted">비교하는 중…</p>}
-                {compareQuery.error && <p className="notice notice-error">{compareQuery.error.message}</p>}
+                {compareQuery.error && <ErrorNotice error={compareQuery.error} onRetry={() => void compareQuery.refetch()} />}
                 {compareQuery.data && <DiagnosisCompareView compare={compareQuery.data} />}
               </div>
             )}

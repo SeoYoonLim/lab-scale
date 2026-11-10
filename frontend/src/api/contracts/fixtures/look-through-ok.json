@@ -1,0 +1,377 @@
+{
+  "generated_at": "2026-11-06T20:00:00+09:00",
+  "calc_version": "look_through.v1",
+  "status": "ok",
+  "has_account": true,
+  "valuation_date": "2026-11-06",
+  "expected_date": "2026-11-06",
+  "price_lag_business_days": 0,
+  "etf_holdings_stale": false,
+  "summary": {
+    "cash_balance": 1000000,
+    "holdings_value": 3500000,
+    "total_asset": 4500000,
+    "stock_amount": 1000000,
+    "etf_amount": 2500000,
+    "direct_amount": 1000000,
+    "via_etf_amount": 1600000,
+    "companies_amount": 2600000,
+    "linked_via_amount": 1500000,
+    "unlinked_via_amount": 100000,
+    "nested_etf_amount": 200000,
+    "residual_amount": 200000,
+    "undecomposed_etf_amount": 500000,
+    "unidentified_amount": 900000,
+    "unidentified_weight_pct": 20,
+    "over_allocated_amount": 0,
+    "cash_weight_pct": 22.22,
+    "companies_weight_pct": 57.78,
+    "holding_count": 4,
+    "priced_holding_count": 3,
+    "unpriced_count": 1,
+    "company_count": 4,
+    "direct_top1_weight_pct": 22.22,
+    "look_through_top1": {
+      "name": "삼성전자",
+      "code": "005930",
+      "total_weight_pct": 31.11
+    }
+  },
+  "companies": [
+    {
+      "rank": 1,
+      "name": "삼성전자",
+      "code": "005930",
+      "ticker": "005930",
+      "linked": true,
+      "sector": null,
+      "exposure_type": "both",
+      "direct_amount": 1000000,
+      "via_etf_amount": 400000,
+      "total_amount": 1400000,
+      "direct_weight_pct": 22.22,
+      "via_etf_weight_pct": 8.89,
+      "total_weight_pct": 31.11,
+      "holdings_weight_pct": 40,
+      "via_etfs": [
+        {
+          "ticker": "111111",
+          "name": "TIGER 합성200",
+          "amount": 400000,
+          "constituent_weight_pct": 20,
+          "asset_weight_pct": 8.89
+        }
+      ]
+    },
+    {
+      "rank": 2,
+      "name": "현대차",
+      "code": "005380",
+      "ticker": "005380",
+      "linked": true,
+      "sector": null,
+      "exposure_type": "etf",
+      "direct_amount": 0,
+      "via_etf_amount": 800000,
+      "total_amount": 800000,
+      "direct_weight_pct": 0,
+      "via_etf_weight_pct": 17.78,
+      "total_weight_pct": 17.78,
+      "holdings_weight_pct": 22.86,
+      "via_etfs": [
+        {
+          "ticker": "111111",
+          "name": "TIGER 합성200",
+          "amount": 800000,
+          "constituent_weight_pct": 40,
+          "asset_weight_pct": 17.78
+        }
+      ]
+    },
+    {
+      "rank": 3,
+      "name": "SK하이닉스",
+      "code": "000660",
+      "ticker": "000660",
+      "linked": true,
+      "sector": null,
+      "exposure_type": "etf",
+      "direct_amount": 0,
+      "via_etf_amount": 300000,
+      "total_amount": 300000,
+      "direct_weight_pct": 0,
+      "via_etf_weight_pct": 6.67,
+      "total_weight_pct": 6.67,
+      "holdings_weight_pct": 8.57,
+      "via_etfs": [
+        {
+          "ticker": "111111",
+          "name": "TIGER 합성200",
+          "amount": 300000,
+          "constituent_weight_pct": 15,
+          "asset_weight_pct": 6.67
+        }
+      ]
+    },
+    {
+      "rank": 4,
+      "name": "NVIDIA Corp",
+      "code": "NVDA US EQUITY",
+      "ticker": null,
+      "linked": false,
+      "sector": null,
+      "exposure_type": "etf",
+      "direct_amount": 0,
+      "via_etf_amount": 100000,
+      "total_amount": 100000,
+      "direct_weight_pct": 0,
+      "via_etf_weight_pct": 2.22,
+      "total_weight_pct": 2.22,
+      "holdings_weight_pct": 2.86,
+      "via_etfs": [
+        {
+          "ticker": "111111",
+          "name": "TIGER 합성200",
+          "amount": 100000,
+          "constituent_weight_pct": 5,
+          "asset_weight_pct": 2.22
+        }
+      ]
+    }
+  ],
+  "overlaps": [
+    {
+      "rank": 1,
+      "name": "삼성전자",
+      "code": "005930",
+      "ticker": "005930",
+      "linked": true,
+      "sector": null,
+      "exposure_type": "both",
+      "direct_amount": 1000000,
+      "via_etf_amount": 400000,
+      "total_amount": 1400000,
+      "direct_weight_pct": 22.22,
+      "via_etf_weight_pct": 8.89,
+      "total_weight_pct": 31.11,
+      "holdings_weight_pct": 40,
+      "via_etfs": [
+        {
+          "ticker": "111111",
+          "name": "TIGER 합성200",
+          "amount": 400000,
+          "constituent_weight_pct": 20,
+          "asset_weight_pct": 8.89
+        }
+      ]
+    }
+  ],
+  "etfs": [
+    {
+      "ticker": "111111",
+      "name": "TIGER 합성200",
+      "eval_amount": 2000000,
+      "asset_weight_pct": 44.44,
+      "leverage_kind": null,
+      "holdings_as_of": "2026-11-05",
+      "holdings_lag_business_days": 1,
+      "holdings_stale": false,
+      "constituent_count": 5,
+      "null_weight_count": 0,
+      "zero_weight_count": 0,
+      "negative_weight_count": 0,
+      "negative_weight_sum_pct": 0,
+      "over_100_count": 0,
+      "duplicate_count": 0,
+      "positive_weight_sum_pct": 90,
+      "linked_count": 3,
+      "unlinked_count": 1,
+      "nested_etf_count": 1,
+      "allocated_amount": 1600000,
+      "nested_etf_amount": 200000,
+      "residual_amount": 200000,
+      "nested_etfs": [
+        {
+          "name": "TIGER 200",
+          "code": "102110",
+          "linked_ticker": "102110",
+          "weight_pct": 10,
+          "amount": 200000
+        }
+      ],
+      "status": "decomposed",
+      "reason_code": null,
+      "constituents": [
+        {
+          "name": "현대차",
+          "code": "005380",
+          "linked_ticker": "005380",
+          "weight_pct": 40,
+          "amount": 800000,
+          "kind": "company"
+        },
+        {
+          "name": "삼성전자",
+          "code": "005930",
+          "linked_ticker": "005930",
+          "weight_pct": 20,
+          "amount": 400000,
+          "kind": "company"
+        },
+        {
+          "name": "SK하이닉스",
+          "code": "000660",
+          "linked_ticker": "000660",
+          "weight_pct": 15,
+          "amount": 300000,
+          "kind": "company"
+        },
+        {
+          "name": "TIGER 200",
+          "code": "102110",
+          "linked_ticker": "102110",
+          "weight_pct": 10,
+          "amount": 200000,
+          "kind": "nested_etf"
+        },
+        {
+          "name": "NVIDIA Corp",
+          "code": "NVDA US EQUITY",
+          "linked_ticker": null,
+          "weight_pct": 5,
+          "amount": 100000,
+          "kind": "company"
+        }
+      ],
+      "notice": null
+    },
+    {
+      "ticker": "122630",
+      "name": "KODEX 레버리지",
+      "eval_amount": 500000,
+      "asset_weight_pct": 11.11,
+      "leverage_kind": "레버리지",
+      "holdings_as_of": "2026-11-05",
+      "holdings_lag_business_days": 1,
+      "holdings_stale": false,
+      "constituent_count": 2,
+      "null_weight_count": 0,
+      "zero_weight_count": 0,
+      "negative_weight_count": 0,
+      "negative_weight_sum_pct": 0,
+      "over_100_count": 0,
+      "duplicate_count": 0,
+      "positive_weight_sum_pct": 52.69,
+      "linked_count": 1,
+      "unlinked_count": 0,
+      "nested_etf_count": 1,
+      "allocated_amount": null,
+      "nested_etf_amount": null,
+      "residual_amount": null,
+      "nested_etfs": [],
+      "status": "not_decomposed",
+      "reason_code": "leveraged_inverse",
+      "constituents": [
+        {
+          "name": "삼성전자",
+          "code": "005930",
+          "linked_ticker": "005930",
+          "weight_pct": 30,
+          "amount": null,
+          "kind": "company"
+        },
+        {
+          "name": "KODEX 200",
+          "code": "069500",
+          "linked_ticker": "069500",
+          "weight_pct": 22.69,
+          "amount": null,
+          "kind": "nested_etf"
+        }
+      ],
+      "notice": "공시 구성 비중이며 경제적 노출이 아닙니다(배수를 곱하지 않음)."
+    }
+  ],
+  "unpriced": [
+    {
+      "ticker": "000660",
+      "name": "SK하이닉스",
+      "asset_type": "stock",
+      "quantity": 1
+    }
+  ],
+  "sector": {
+    "status": "unavailable",
+    "covered_weight_pct": 0,
+    "items": [],
+    "message": "업종 분류 데이터가 없어 업종별 집중도는 계산하지 않았습니다."
+  },
+  "flags": [
+    {
+      "kind": "etf_inflates_weight",
+      "name": "현대차",
+      "code": "005380",
+      "value_pct": 17.78,
+      "threshold_pct": 10,
+      "total_weight_pct": 17.78,
+      "direct_weight_pct": 0,
+      "message": "현대차의 ETF를 통한 노출이 총자산의 17.78%라 실질 노출(17.78%)이 직접 보유(0.0%)보다 큽니다(기준 10%p 이상)."
+    },
+    {
+      "kind": "single_etf_exposure",
+      "name": "현대차",
+      "code": "005380",
+      "etf_ticker": "111111",
+      "etf_name": "TIGER 합성200",
+      "value_pct": 17.78,
+      "threshold_pct": 10,
+      "message": "TIGER 합성200 한 상품을 통한 현대차 노출이 총자산의 17.78%입니다(기준 10% 이상)."
+    }
+  ],
+  "data_warnings": [
+    {
+      "kind": "no_price",
+      "ticker": "000660",
+      "name": "SK하이닉스",
+      "message": "SK하이닉스(000660)의 최신 종가가 없어 평가 불가로 두었습니다(0원으로 계산하지 않음)."
+    },
+    {
+      "ticker": "111111",
+      "name": "TIGER 합성200",
+      "kind": "etf_weight_under_100",
+      "pct": 90,
+      "rest": 10,
+      "amount": 200000,
+      "message": "TIGER 합성200의 구성 비중 합계가 90%입니다. 나머지 10%(200,000원)는 기존 종목에 나누지 않고 미확인 노출로 두었습니다."
+    },
+    {
+      "ticker": "111111",
+      "name": "TIGER 합성200",
+      "kind": "etf_nested_etf",
+      "count": 1,
+      "amount": 200000,
+      "message": "TIGER 합성200의 구성종목 중 다른 ETF가 1개 있습니다. 중첩 ETF는 다시 분해하지 않아 그 금액 200,000원을 미확인 노출로 두었습니다."
+    },
+    {
+      "ticker": "111111",
+      "name": "TIGER 합성200",
+      "kind": "etf_unlinked_constituents",
+      "count": 1,
+      "message": "TIGER 합성200의 구성종목 1건은 종목 목록과 연결되지 않아(해외 종목·채권·선물 등) 이름으로 묶었습니다."
+    },
+    {
+      "kind": "etf_leveraged_inverse",
+      "ticker": "122630",
+      "name": "KODEX 레버리지",
+      "leverage_kind": "레버리지",
+      "over_100_count": 0,
+      "message": "레버리지 ETF KODEX 레버리지(122630)의 구성종목은 분해하지 않았습니다. 배수·선물·스왑 구조 때문에 공시 구성 비중은 실제 경제적 노출과 다르고, 배수를 곱해 노출을 확정하지 않습니다."
+    }
+  ],
+  "limit": 10,
+  "locale": "ko-KR",
+  "message": null,
+  "stale": false,
+  "stale_notice": null,
+  "disclaimer": "실질 노출은 보유 평가액과 운용사가 공시한 ETF 구성 비중(구성 기준일 값)으로 계산한 참고 값입니다. 비중의 분모는 총자산(현금 + 주식 + ETF)이고 ETF 구성종목 금액을 총자산에 다시 더하지 않습니다. 매수·매도 권유가 아닙니다. 이 서비스는 학습·시연용 모의투자와 AI 리서치입니다. 제공되는 분석과 의견은 투자 권유나 자문이 아니며, 투자 판단과 그에 따른 손익의 책임은 본인에게 있습니다. AI 응답에는 오류가 있을 수 있습니다."
+}

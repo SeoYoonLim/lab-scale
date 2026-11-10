@@ -1,4 +1,18 @@
 import type { z } from 'zod'
+import { dailyBriefingHistorySchema, dailyBriefingSchema } from './contracts/briefing'
+import type { DailyBriefing, DailyBriefingHistory } from './contracts/briefing'
+import { etfHoldingsSchema } from './contracts/etf'
+import type { EtfHoldings } from './contracts/etf'
+import { lookThroughViewSchema } from './contracts/exposure'
+import type { LookThroughView } from './contracts/exposure'
+import { historySearchSchema } from './contracts/history'
+import type { HistorySearchResponse } from './contracts/history'
+import { performanceViewSchema } from './contracts/performance'
+import type { PerformanceView } from './contracts/performance'
+import { preferencesSchema } from './contracts/preferences'
+import type { Preferences } from './contracts/preferences'
+import { reportRecordDetailSchema } from './contracts/research'
+import type { ReportRecordDetail } from './contracts/research'
 import { ApiError } from './errors'
 import {
   authResponseSchema,
@@ -62,12 +76,30 @@ async function readErrorMessage(res: Response, fallback: string): Promise<string
     const body = (await res.json()) as { detail?: unknown }
     if (typeof body.detail === 'string') return body.detail
     if (Array.isArray(body.detail)) {
-      return body.detail.map((e) => (e as { msg?: string }).msg).filter(Boolean).join(' / ') || fallback
+      // pydantic은 직접 만든 검증 오류 메시지 앞에 "Value error, "를 붙인다(실제 백엔드 가입 422에서 확인) - 화면에는 문장만 보여준다
+      return (
+        body.detail
+          .map((e) => ((e as { msg?: string }).msg ?? '').replace(/^Value error,\s*/, ''))
+          .filter(Boolean)
+          .join(' / ') || fallback
+      )
     }
   } catch {
     // JSON이 아닌 응답(예: 500의 plain text)은 fallback을 쓴다.
   }
   return fallback
+}
+
+// 429면 Retry-After 헤더(초)를 읽어 "n초 뒤 다시 시도해주세요"를 덧붙인다(backend 핸드오프 6절).
+// 테스트 목(mock)처럼 headers가 없는 응답도 안전하게 지나가게 옵셔널 체이닝을 쓴다.
+async function toApiError(res: Response, fallback: string): Promise<ApiError> {
+  const message = await readErrorMessage(res, fallback)
+  if (res.status === 429) {
+    const raw = res.headers?.get?.('Retry-After')
+    const seconds = raw != null && /^\d+$/.test(raw) ? Number(raw) : undefined
+    return new ApiError(seconds != null ? `${message} (${seconds}초 뒤 다시 시도해주세요)` : message, 429, seconds)
+  }
+  return new ApiError(message, res.status)
 }
 
 function authHeader(): Record<string, string> {
@@ -124,7 +156,7 @@ async function request<T>(path: string, init: RequestInit = {}, options: Request
       signal,
     )
     if (!res.ok) {
-      throw new ApiError(await readErrorMessage(res, `요청에 실패했어요. (${res.status})`), res.status)
+      throw await toApiError(res, `요청에 실패했어요. (${res.status})`)
     }
     const json = await res.json()
     if (!schema) return json as T
@@ -155,7 +187,7 @@ async function requestVoid(
     const res = await doFetch(path, init, auth, signal)
     // 204 No Content: 본문이 없어서 res.json()을 호출하면 안 된다.
     if (!res.ok) {
-      throw new ApiError(await readErrorMessage(res, fallback), res.status)
+      throw await toApiError(res, fallback)
     }
   } catch (err) {
     if (isAbortError(err)) throw new ApiError(TIMEOUT_MESSAGE, 0)
@@ -185,6 +217,16 @@ export const httpApi: Api = {
       { schema: authResponseSchema },
     ),
   me: () => request<User>('/auth/me', {}, { auth: true, schema: userSchema }),
+  logout: async () => {
+    await request<{ ok: boolean }>('/auth/logout', { method: 'POST' }, { auth: true })
+  },
+  getPreferences: () => request<Preferences>('/auth/preferences', {}, { auth: true, schema: preferencesSchema }),
+  updatePreferences: (input) =>
+    request<Preferences>(
+      '/auth/preferences',
+      { method: 'PUT', body: JSON.stringify(input) },
+      { auth: true, schema: preferencesSchema },
+    ),
 
   askResearch: (question, previousReportId) =>
     request<ResearchResponse>(
@@ -196,6 +238,12 @@ export const httpApi: Api = {
     request<ReportList>(`/research${qs({ limit, offset })}`, {}, { auth: true, schema: reportListSchema }),
   getReport: (reportId) =>
     request<ReportDetail>(`/research/${reportId}`, {}, { auth: true, schema: reportDetailSchema }),
+  getReportRecord: (reportId) =>
+    request<ReportRecordDetail>(
+      `/research/${reportId}${qs({ view: 'record' })}`,
+      {},
+      { auth: true, schema: reportRecordDetailSchema },
+    ),
   deleteReport: (reportId) =>
     requestVoid(`/research/${reportId}`, { method: 'DELETE' }, '삭제에 실패했어요.', { auth: true }),
 
@@ -248,7 +296,7 @@ export const httpApi: Api = {
     request<DiagnosisDetail>(`/portfolio/diagnosis/${diagnosisId}`, {}, { auth: true, schema: diagnosisDetailSchema }),
   compareDiagnosis: (diagnosisId, baseId) =>
     request<DiagnosisCompareResponse>(
-      `/portfolio/diagnosis/${diagnosisId}/compare${qs({ base: baseId })}`,
+      `/portfolio/diagnosis/${diagnosisId}/compare${qs({ base: baseId, view: 'record' })}`,
       {},
       { auth: true, schema: diagnosisCompareResponseSchema },
     ),
@@ -281,6 +329,74 @@ export const httpApi: Api = {
       `/stocks/${encodeURIComponent(ticker)}/price-history${qs({ days })}`,
       {},
       { schema: priceHistoryResponseSchema },
+    ),
+  getPerformance: (params = {}) =>
+    request<PerformanceView>(
+      `/portfolio/performance${qs({ view: 'benchmark', period: params.period, benchmark: params.benchmark, locale: params.locale })}`,
+      {},
+      { auth: true, schema: performanceViewSchema },
+    ),
+  getLookThroughExposure: (params = {}) =>
+    request<LookThroughView>(
+      `/portfolio/exposure${qs({ view: 'look_through', limit: params.limit, locale: params.locale })}`,
+      {},
+      { auth: true, schema: lookThroughViewSchema },
+    ),
+  generateDailyBriefing: (input = {}) =>
+    request<DailyBriefing>(
+      '/briefings/daily/generate',
+      { method: 'POST', body: JSON.stringify(input) },
+      // AI 요약 때문에 4~15초 걸린다(핸드오프 10-3절). 리서치와 같은 60초까지 기다린다.
+      { auth: true, timeoutMs: RESEARCH_TIMEOUT_MS, schema: dailyBriefingSchema },
+    ),
+  getCurrentDailyBriefing: async (timezone) => {
+    try {
+      return await request<DailyBriefing>(
+        `/briefings/daily/current${qs({ timezone })}`,
+        {},
+        { auth: true, schema: dailyBriefingSchema },
+      )
+    } catch (err) {
+      // 오늘 브리핑이 아직 없으면 404 - 오류가 아니라 "만들기" 버튼을 보여줄 상태다.
+      if (err instanceof ApiError && err.status === 404) return null
+      throw err
+    }
+  },
+  listDailyBriefings: (params = {}) =>
+    request<DailyBriefingHistory>(
+      `/briefings/daily/history${qs({
+        page: params.page,
+        size: params.size,
+        date_from: params.date_from,
+        date_to: params.date_to,
+        latest_only: params.latest_only == null ? undefined : String(params.latest_only),
+        timezone: params.timezone,
+      })}`,
+      {},
+      { auth: true, schema: dailyBriefingHistorySchema },
+    ),
+  getDailyBriefing: (briefingId) =>
+    request<DailyBriefing>(`/briefings/daily/${briefingId}`, {}, { auth: true, schema: dailyBriefingSchema }),
+  searchHistory: (params = {}) =>
+    request<HistorySearchResponse>(
+      `/history/search${qs({
+        type: params.type,
+        keyword: params.keyword,
+        date_from: params.date_from,
+        date_to: params.date_to,
+        timezone: params.timezone,
+        page: params.page,
+        size: params.size,
+        sort: params.sort,
+      })}`,
+      {},
+      { auth: true, schema: historySearchSchema },
+    ),
+  getEtfHoldings: (ticker, limit) =>
+    request<EtfHoldings>(
+      `/etf/${encodeURIComponent(ticker)}/holdings${qs({ limit })}`,
+      {},
+      { schema: etfHoldingsSchema },
     ),
   getDisclaimer: () =>
     request<{ text: string }>('/disclaimer', {}, { schema: disclaimerResponseSchema }).then((res) => res.text),

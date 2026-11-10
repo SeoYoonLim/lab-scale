@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api'
-import AnswerSections from '../components/AnswerSections'
+import ResearchAnswerBody from '../components/ResearchAnswerBody'
 import { IconSearch, IconSend, IconSparkle } from '../components/icons'
 import DataToolCards from '../components/DataToolCards'
+import MarketSummaryCard from '../components/MarketSummaryCard'
 import ResearchProgress from '../components/ResearchProgress'
 import SourceFootnotes from '../components/SourceFootnotes'
 import TrendingWidget from '../components/TrendingWidget'
+import type { TranslationStatus } from '../api/contracts/common'
 import type { Source } from '../types'
 import { formatTime } from '../utils/format'
 
@@ -24,6 +26,9 @@ interface Entry {
   usedTools?: string[]
   sources?: Source[]
   disclaimer?: string
+  // 실제로 답한 언어와 번역 상태(핸드오프 15-1절) - 번역문인지, 번역 검증에 실패해 요약만 온 건지 구분해 보여준다
+  locale?: string
+  translationStatus?: TranslationStatus | null
   errorMessage?: string
 }
 
@@ -88,6 +93,8 @@ export default function ResearchPage() {
                 usedTools: res.used_tools,
                 sources: res.sources,
                 disclaimer: res.disclaimer,
+                locale: res.locale,
+                translationStatus: res.translation_status ?? null,
               }
             : e,
         ),
@@ -169,6 +176,7 @@ export default function ResearchPage() {
                   </li>
                 ))}
               </ul>
+              <MarketSummaryCard />
               <DataToolCards />
               <TrendingWidget onPick={(question) => setInput(question)} />
             </div>
@@ -196,7 +204,12 @@ export default function ResearchPage() {
                       <span className="ai-badge">AI</span>
                       <span className="answer-title">분석 결과</span>
                     </div>
-                    <AnswerSections answer={entry.answer ?? ''} />
+                    <ResearchAnswerBody
+                      answer={entry.answer ?? ''}
+                      locale={entry.locale}
+                      translationStatus={entry.translationStatus}
+                      reportId={entry.reportId ?? null}
+                    />
                     <SourceFootnotes usedTools={entry.usedTools ?? []} sources={entry.sources ?? []} />
                     {entry.disclaimer && <p className="disclaimer-note muted small">{entry.disclaimer}</p>}
                   </div>

@@ -1,22 +1,28 @@
+import { Suspense } from 'react'
 import type { ReactNode } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { USE_MOCK } from '../api'
 import { useAuth } from '../auth/useAuth'
+import { useLocale } from '../i18n/useLocale'
 import DisclaimerFooter from './DisclaimerFooter'
-import { IconBulb, IconChart, IconFile, IconHome, IconWallet } from './icons'
+import { IconBulb, IconChart, IconFile, IconHome, IconSettings, IconSun, IconWallet } from './icons'
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   isActive ? 'sidebar-link active' : 'sidebar-link'
 
-const NAV_ITEMS: { to: string; label: string; icon: ReactNode; end?: boolean }[] = [
-  { to: '/', label: '리서치 홈', icon: <IconHome />, end: true },
-  { to: '/companies', label: '종목 분석', icon: <IconChart /> },
-  { to: '/reports', label: '리서치 기록', icon: <IconFile /> },
-  { to: '/portfolio', label: '포트폴리오', icon: <IconWallet /> },
-]
-
 export default function Layout() {
   const { user, logout } = useAuth()
+  const { t } = useLocale()
+
+  // 라벨은 백엔드 리소스의 nav.* 와 언어 설정을 따른다(없는 키는 한국어 fallback)
+  const items: { to: string; label: string; icon: ReactNode; end?: boolean; auth?: boolean }[] = [
+    { to: '/', label: t('nav.research'), icon: <IconHome />, end: true, auth: true },
+    { to: '/briefing', label: t('nav.briefing'), icon: <IconSun />, auth: true },
+    { to: '/companies', label: t('nav.companies', { fallback: '종목 분석' }), icon: <IconChart /> },
+    { to: '/portfolio', label: t('nav.portfolio', { fallback: '포트폴리오' }), icon: <IconWallet />, auth: true },
+    { to: '/history', label: t('nav.my_records'), icon: <IconFile />, auth: true },
+    { to: '/settings', label: t('nav.settings'), icon: <IconSettings />, auth: true },
+  ]
 
   return (
     <div className="app-shell">
@@ -24,7 +30,7 @@ export default function Layout() {
         본문으로 건너뛰기
       </a>
       <aside className="sidebar">
-        <NavLink to="/" className="sidebar-brand">
+        <NavLink to={user ? '/' : '/companies'} className="sidebar-brand">
           <span className="brand-mark">AI</span>
           <span className="brand-text">
             <span className="brand-name">투자 리서치 에이전트</span>
@@ -33,12 +39,14 @@ export default function Layout() {
         </NavLink>
 
         <nav className="sidebar-nav" aria-label="주 메뉴">
-          {NAV_ITEMS.map((item) => (
-            <NavLink key={item.to} to={item.to} end={item.end} className={linkClass}>
-              <span className="sidebar-link-icon">{item.icon}</span>
-              <span>{item.label}</span>
-            </NavLink>
-          ))}
+          {items
+            .filter((item) => !item.auth || user)
+            .map((item) => (
+              <NavLink key={item.to} to={item.to} end={item.end} className={linkClass}>
+                <span className="sidebar-link-icon">{item.icon}</span>
+                <span>{item.label}</span>
+              </NavLink>
+            ))}
         </nav>
 
         <div className="sidebar-footer">
@@ -52,12 +60,12 @@ export default function Layout() {
             <div className="sidebar-user">
               <span className="sidebar-username">{user.username}</span>
               <button type="button" className="sidebar-logout" onClick={logout}>
-                로그아웃
+                {t('nav.logout', { fallback: '로그아웃' })}
               </button>
             </div>
           ) : (
             <NavLink to="/login" className="sidebar-link">
-              <span>로그인</span>
+              <span>{t('nav.login', { fallback: '로그인' })}</span>
             </NavLink>
           )}
           {USE_MOCK && (
@@ -68,7 +76,9 @@ export default function Layout() {
         </div>
       </aside>
       <main className="main" id="main" tabIndex={-1}>
-        <Outlet />
+        <Suspense fallback={<p className="muted container page">{t('common.loading')}</p>}>
+          <Outlet />
+        </Suspense>
         <DisclaimerFooter />
       </main>
     </div>

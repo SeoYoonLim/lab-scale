@@ -7,10 +7,11 @@ import { queryKeys } from '../../api/queryKeys'
 import AssetTypeBadge from '../../components/AssetTypeBadge'
 import type { WatchlistItem } from '../../types'
 import { formatDate, formatPct, formatPrice, trendClass } from '../../utils/format'
+import ErrorNotice from '../../components/ui/ErrorNotice'
 
 export default function WatchlistSection() {
   const queryClient = useQueryClient()
-  const { data, error, isPending } = useQuery({ queryKey: queryKeys.watchlist, queryFn: () => api.listWatchlist() })
+  const { data, error, isPending, refetch } = useQuery({ queryKey: queryKeys.watchlist, queryFn: () => api.listWatchlist() })
   const [ticker, setTicker] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [formNotice, setFormNotice] = useState<string | null>(null)
@@ -30,7 +31,13 @@ export default function WatchlistSection() {
     setFormError(null)
     setFormNotice(null)
     try {
-      await addMutation.mutateAsync(ticker.trim())
+      const input = ticker.trim()
+      const added = await addMutation.mutateAsync(input)
+      // 관심종목 추가는 유사 이름을 받아 가장 가까운 종목으로 등록한다(음차 "엘지전자" -> LG전자). 응답에는 "보정됨" 표시가 따로
+      // 없어서, 입력과 등록된 이름·코드가 둘 다 다르면 실제로 어떤 종목이 등록됐는지 알려준다.
+      if (input.toLowerCase() !== added.company_name.toLowerCase() && input !== added.ticker) {
+        setFormNotice(`'${input}' 대신 ${added.company_name}(${added.ticker})로 등록했어요.`)
+      }
       setTicker('')
     } catch (err) {
       // CompanyPage의 "이미 관심종목이에요"와 똑같이, 이미 등록된 종목(409)은 에러가 아니라
@@ -70,7 +77,7 @@ export default function WatchlistSection() {
         {formNotice && <p className="muted small">{formNotice}</p>}
 
         {isPending && <p className="muted">불러오는 중…</p>}
-        {error && <p className="notice notice-error">{error.message}</p>}
+        {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
         {data && data.length === 0 && <p className="muted">아직 등록한 관심종목이 없어요.</p>}
 
         <ul className="ledger">

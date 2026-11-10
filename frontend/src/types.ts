@@ -1,4 +1,7 @@
 // backend/API.md 기준 타입. 필드 이름은 백엔드 응답 그대로 따른다.
+import type { TranslationStatus } from './api/contracts/common'
+import type { DiagnosisCompareBasis, DiagnosisMetricChanges, ExposureChanges } from './api/contracts/diagnosis'
+import type { LookThroughSnapshot } from './api/contracts/exposure'
 
 // ---------- 종목 유형(2026-10-14 추가) ----------
 
@@ -37,6 +40,10 @@ export interface ResearchResponse {
   report_id: number | null
   previous_report_id: number | null
   disclaimer: string
+  // 2026-11-09(38차) 추가: 실제로 답한 언어와 번역 상태(핸드오프 15-1절). ko-KR 답이면 translation_status는 null.
+  // 아직 이 필드를 안 주는 백엔드(예전 버전)와도 맞게 둘 다 없을 수 있다고 둔다.
+  locale?: string
+  translation_status?: TranslationStatus | null
 }
 
 // GET /api/research 목록 항목
@@ -53,6 +60,8 @@ export interface ReportListItem {
 
 export interface ReportList {
   total: number
+  has_next?: boolean
+  total_pages?: number
   items: ReportListItem[]
 }
 
@@ -169,6 +178,8 @@ export interface OrderResult {
   executed_at: string
   cash_balance: number
   holding: { quantity: number; avg_price: number } | null // 매도로 전량 청산되면 null
+  // 2026-11-09(40차) 추가. 보유·체결 내역·관심종목과 같은 종목 마스터 값이고, 없으면 null(주식으로 가정하지 않는다).
+  asset_type?: AssetType | null
 }
 
 export interface Trade {
@@ -187,6 +198,9 @@ export interface TradeList {
   total: number
   limit: number
   offset: number
+  // 2026-11 추가(핸드오프 9절). 범위를 넘는 페이지는 오류가 아니라 items: [] + has_next: false다.
+  has_next?: boolean
+  total_pages?: number
   items: Trade[]
 }
 
@@ -260,6 +274,9 @@ export interface DiagnosisResponse {
   // 그래도 응답 자체는 200이고 나머지 필드는 정상이다.
   diagnosis_id: number | null
   created_at: string | null
+  // 2026-11-06 추가: 진단 당시 ETF 실질 노출 스냅샷. 이 기능 전에 저장한 진단은 null(="기록 없음"), 계산 실패는
+  // look_through.status === 'unavailable'(진단의 나머지는 정상). 과거 진단을 열어도 저장 당시 값 그대로다.
+  look_through?: LookThroughSnapshot | null
 }
 
 // ---------- 포트폴리오 진단 이력(/api/portfolio/diagnosis/history 등, 2026-10-14 추가) : 로그인 필요 ----------
@@ -287,6 +304,8 @@ export interface DiagnosisHistoryList {
   total: number
   limit: number
   offset: number
+  has_next?: boolean
+  total_pages?: number
   items: DiagnosisHistoryItem[]
 }
 
@@ -336,6 +355,10 @@ export interface DiagnosisCompareResponse {
   previous: DiagnosisHistoryItem | null
   changes: DiagnosisChanges | null
   disclaimer: string
+  // view=record로 부르면 더 온다(핸드오프 I18N_HISTORY 3-6절)
+  basis?: DiagnosisCompareBasis
+  metric_changes?: DiagnosisMetricChanges | null
+  exposure_changes?: ExposureChanges | null
 }
 
 // GET /api/status (데이터 기준일, 공개). 날짜 필드는 데이터가 아예 없으면 null.

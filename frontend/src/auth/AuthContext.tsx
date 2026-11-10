@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { api } from '../api'
@@ -13,6 +14,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [initError, setInitError] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
+  // 쿼리 캐시 키에는 사용자 구분이 없어서(['portfolio'] 등), 로그아웃·토큰 만료·계정 전환 때 비우지 않으면 다음 사람이
+  // 이전 사용자의 포트폴리오·기록·브리핑을 잠깐 보게 된다.
+  const queryClient = useQueryClient()
 
   // 앱 시작 시: 저장된 토큰이 있으면 유효한지 확인한다(backend/API.md "프론트가 할 일" 6번).
   // 토큰이 무효해서(401) 실패하면 http.ts/mock.ts가 AUTH_EXPIRED_EVENT를 쏘므로 아래 effect가 user를 비운다.
@@ -53,27 +57,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // RequireAuth가 user===null을 보고 로그인 화면으로 돌려보낸다.
   useEffect(() => {
     function handleExpired() {
+      queryClient.clear()
       setUser(null)
     }
     window.addEventListener(AUTH_EXPIRED_EVENT, handleExpired)
     return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handleExpired)
-  }, [])
+  }, [queryClient])
 
   async function login(username: string, password: string) {
     const res = await api.login(username, password)
+    queryClient.clear()
     setToken(res.access_token)
     setUser(res.user)
   }
 
   async function signup(username: string, password: string) {
     const res = await api.signup(username, password)
+    queryClient.clear()
     setToken(res.access_token)
     setUser(res.user)
   }
 
   function logout() {
-    // 서버에 토큰을 폐기하는 API는 없다(backend/API.md "인증 관련 한계") — 저장된 토큰을 지우는 게 전부다.
+    // 서버에도 알려 이 사용자의 토큰을 폐기하게 한다(2026-10-30 POST /api/auth/logout, 전체 기기 로그아웃).
+    // 화면은 서버 응답을 기다리지 않고 바로 로그아웃한다 - 요청의 Authorization 헤더는 api.logout()을 부르는 이 순간
+    // 동기적으로 만들어지므로 바로 아래에서 토큰을 지워도 이미 실린 상태다. 서버 호출이 실패해도(네트워크·이미 만료)
+    // 이 기기에서는 로그아웃된 것이고, 토큰은 24시간 뒤 어차피 만료된다.
+    void api.logout().catch(() => undefined)
     clearToken()
+    queryClient.clear()
     setUser(null)
   }
 

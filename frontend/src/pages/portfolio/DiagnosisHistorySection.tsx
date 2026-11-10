@@ -6,6 +6,7 @@ import DiagnosisCompareView from '../../components/DiagnosisCompareView'
 import DiagnosisResultView from '../../components/DiagnosisResultView'
 import Pagination from '../../components/Pagination'
 import { formatDate, formatPrice } from '../../utils/format'
+import ErrorNotice from '../../components/ui/ErrorNotice'
 
 const DIAGNOSIS_HISTORY_PAGE_SIZE = 10
 
@@ -14,7 +15,7 @@ export default function DiagnosisHistorySection() {
   const [offset, setOffset] = useState(0)
   const [expanded, setExpanded] = useState<{ id: number; view: 'detail' | 'compare' } | null>(null)
 
-  const { data, error, isPending } = useQuery({
+  const { data, error, isPending, refetch } = useQuery({
     queryKey: queryKeys.diagnosisHistory(DIAGNOSIS_HISTORY_PAGE_SIZE, offset),
     queryFn: () => api.getDiagnosisHistory(DIAGNOSIS_HISTORY_PAGE_SIZE, offset),
   })
@@ -52,7 +53,7 @@ export default function DiagnosisHistorySection() {
       <h2 className="section-title">진단 이력</h2>
       <div className="card">
         {isPending && <p className="muted">불러오는 중…</p>}
-        {error && <p className="notice notice-error">{error.message}</p>}
+        {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
         {data && data.items.length === 0 && (
           <p className="muted">아직 저장된 진단이 없어요. 위에서 AI 진단을 받아보세요.</p>
         )}
@@ -94,14 +95,14 @@ export default function DiagnosisHistorySection() {
                 {expanded?.id === item.id && expanded.view === 'detail' && (
                   <div className="ledger-detail">
                     {detailQuery.isPending && <p className="muted">불러오는 중…</p>}
-                    {detailQuery.error && <p className="notice notice-error">{detailQuery.error.message}</p>}
+                    {detailQuery.error && <ErrorNotice error={detailQuery.error} onRetry={() => void detailQuery.refetch()} />}
                     {detailQuery.data && <DiagnosisResultView result={detailQuery.data} />}
                   </div>
                 )}
                 {expanded?.id === item.id && expanded.view === 'compare' && (
                   <div className="ledger-detail">
                     {compareQuery.isPending && <p className="muted">비교하는 중…</p>}
-                    {compareQuery.error && <p className="notice notice-error">{compareQuery.error.message}</p>}
+                    {compareQuery.error && <ErrorNotice error={compareQuery.error} onRetry={() => void compareQuery.refetch()} />}
                     {compareQuery.data && <DiagnosisCompareView compare={compareQuery.data} />}
                   </div>
                 )}

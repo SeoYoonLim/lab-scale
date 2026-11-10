@@ -10,7 +10,7 @@ import { formatPct, formatPrice, trendClass } from '../../utils/format'
 const ORDER_PREVIEW_DEBOUNCE_MS = 400
 const MAX_ORDER_QUANTITY = 100_000 // backend/API.md: 주문 수량은 1~100,000주(정수)
 
-export default function HoldingsSection({ portfolio, onMutated }: { portfolio: Portfolio; onMutated: () => void }) {
+export default function HoldingsSection({ portfolio, onMutated }: { portfolio: Portfolio; onMutated?: () => void }) {
   const queryClient = useQueryClient()
   const [ticker, setTicker] = useState('')
   const [side, setSide] = useState<'buy' | 'sell'>('buy')
@@ -28,14 +28,14 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
     mutationFn: ({ t, s, qty }: { t: string; s: 'buy' | 'sell'; qty: number }) => api.placeOrder(t, s, qty),
     onSuccess: () => {
       invalidatePortfolioQueries()
-      onMutated()
+      onMutated?.()
     },
   })
   const resetMutation = useMutation({
     mutationFn: () => api.resetPortfolio(),
     onSuccess: () => {
       invalidatePortfolioQueries()
-      onMutated()
+      onMutated?.()
       // 초기화되면 holding 참조가 더 이상 유효하지 않으니, 이전 주문의 체결 결과 안내도 지운다 -
       // orderMutation.data는 초기화와 별개라서 그냥 두면 리셋 후에도 옛 체결 결과가 그대로 남는다.
       orderMutation.reset()

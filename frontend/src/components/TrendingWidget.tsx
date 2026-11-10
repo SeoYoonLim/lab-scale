@@ -4,6 +4,7 @@ import { api } from '../api'
 import { queryKeys } from '../api/queryKeys'
 import type { AssetType, TrendingCategory } from '../types'
 import { formatPct, formatPrice, trendClass } from '../utils/format'
+import ErrorNotice from './ui/ErrorNotice'
 
 const CATEGORY_LABELS: Record<TrendingCategory, string> = {
   gainers: '급등',
@@ -22,7 +23,7 @@ export default function TrendingWidget({ onPick }: { onPick: (question: string) 
   const [category, setCategory] = useState<TrendingCategory>('gainers')
   // 기본은 주식만(backend/API.md) - ETF도 따로 볼 수 있게 토글을 둔다.
   const [assetType, setAssetType] = useState<AssetType>('stock')
-  const { data, error, isPending } = useQuery({
+  const { data, error, isPending, refetch } = useQuery({
     queryKey: queryKeys.trending(category, assetType),
     queryFn: () => api.getTrending(category, 5, assetType),
   })
@@ -60,7 +61,7 @@ export default function TrendingWidget({ onPick }: { onPick: (question: string) 
       </div>
 
       {isPending && <p className="muted small">불러오는 중…</p>}
-      {error && <p className="notice notice-error small">{error.message}</p>}
+      {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
       {data && data.items.length === 0 && <p className="muted small">조건에 맞는 종목이 없어요.</p>}
 
       <ul className="trending-list">

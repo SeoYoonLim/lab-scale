@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mockApi } from './mock'
+import { mockApi } from './mockApi'
 import { ApiError } from './errors'
 import { setToken } from '../utils/token'
 
 // 매번 새 아이디로 가입해서 테스트끼리 데이터(관심종목/보유종목)가 섞이지 않게 한다.
 async function signupAndLogin(): Promise<void> {
   const username = `user${Math.random().toString(36).slice(2, 10)}`
-  const res = await mockApi.signup(username, 'password123')
+  const res = await mockApi.signup(username, 'Zk9-verify-pw')
   setToken(res.access_token)
 }
 
@@ -184,7 +184,7 @@ describe('mockApi 진단 이력(2026-10-14 추가)', () => {
 describe('mockApi auth', () => {
   it('로그인 실패(비밀번호 틀림)는 ApiError(401)를 던진다', async () => {
     const username = `user${Math.random().toString(36).slice(2, 10)}`
-    await mockApi.signup(username, 'password123')
+    await mockApi.signup(username, 'Zk9-verify-pw')
     const err: unknown = await mockApi.login(username, 'wrong-password').catch((e) => e)
     expect(err).toBeInstanceOf(ApiError)
     expect((err as ApiError).status).toBe(401)
@@ -275,5 +275,16 @@ describe('mockApi getPriceHistory (2026-10-19 추가)', () => {
       expect(i.high!).toBeGreaterThanOrEqual(Math.max(i.open!, i.close))
       expect(i.low!).toBeLessThanOrEqual(Math.min(i.open!, i.close))
     }
+  })
+})
+
+
+describe('mockApi 가입 비밀번호 규칙(실제 백엔드와 같다)', () => {
+  it('흔한 비밀번호·한 문자 반복·아이디가 든 비밀번호는 422로 거부한다', async () => {
+    await expect(mockApi.signup('rule_user1', 'password123')).rejects.toMatchObject({ status: 422 })
+    await expect(mockApi.signup('rule_user2', 'aaaaaaaaaa')).rejects.toMatchObject({ status: 422 })
+    await expect(mockApi.signup('ruleuser3', 'my-ruleuser3-pw')).rejects.toMatchObject({ status: 422 })
+    await expect(mockApi.signup('rule_user4', 'short')).rejects.toMatchObject({ status: 422 })
+    await expect(mockApi.signup('rule_user5', 'Zk9-verify-pw')).resolves.toBeTruthy()
   })
 })

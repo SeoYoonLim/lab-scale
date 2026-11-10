@@ -48,7 +48,7 @@ export default function SignupPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="new-password"
-            placeholder="8자 이상"
+            placeholder="8~128자 (흔한 비밀번호·아이디가 든 비밀번호는 안 돼요)"
           />
         </label>
         {error && <p className="notice notice-error">{error}</p>}

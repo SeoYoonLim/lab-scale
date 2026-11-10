@@ -39,180 +39,40 @@ import type {
   User,
   WatchlistItem,
 } from '../types'
-import type { Api } from './index'
+import type { BaseApi } from './index'
+import { DEFAULT_LOCALE, LOCALES, isLocale } from './contracts/common'
+import type { AnalysisType, Locale, TranslationStatus } from './contracts/common'
+import type { Preferences, PreferencesInput } from './contracts/preferences'
+import type { DataBasisItem, ReportRecordDetail } from './contracts/research'
+import { translate } from '../i18n'
+import type { ExposureChanges } from './contracts/diagnosis'
+import type { LookThroughSnapshot } from './contracts/exposure'
+import { computeLookThrough, toSnapshot } from './mock-exposure-core'
+import type { CompanyMeta } from './mock-core'
+import { researchText } from './mock-research-text'
 
-// 화면 개발용 샘플 데이터. 실제 시세/뉴스/공시/사용자가 아니다.
-
-const DISCLAIMER =
-  '이 서비스는 학습·시연용 모의투자와 AI 리서치입니다. 제공되는 분석과 의견은 투자 권유나 자문이 아니며, ' +
-  '투자 판단과 그에 따른 손익의 책임은 본인에게 있습니다. AI 응답에는 오류가 있을 수 있습니다.'
-
-interface CompanyMeta {
-  ticker: string
-  name: string
-  // ETF는 market이 null(backend/API.md "종목 유형: 주식과 ETF")
-  market: 'KOSPI' | 'KOSDAQ' | null
-  assetType: AssetType
-}
-
-// 백엔드 DB의 sector 컬럼은 2026-10-07 기준 실제로 비어 있다(README "구현된 API" 참고) — mock도 null로 맞춘다.
-const COMPANY_META: CompanyMeta[] = [
-  { ticker: '005930', name: '삼성전자', market: 'KOSPI', assetType: 'stock' },
-  { ticker: '000660', name: 'SK하이닉스', market: 'KOSPI', assetType: 'stock' },
-  { ticker: '035420', name: 'NAVER', market: 'KOSPI', assetType: 'stock' },
-  { ticker: '035720', name: '카카오', market: 'KOSPI', assetType: 'stock' },
-  { ticker: '005380', name: '현대차', market: 'KOSPI', assetType: 'stock' },
-  { ticker: '373220', name: 'LG에너지솔루션', market: 'KOSPI', assetType: 'stock' },
-  { ticker: '247540', name: '에코프로비엠', market: 'KOSDAQ', assetType: 'stock' },
-  // ETF(2026-10-14 추가). 실제 API.md 예시와 같은 종목코드/이름을 쓴다 - 레버리지·인버스는
-  // LEVERAGED_INVERSE_ETF 플래그 테스트용.
-  { ticker: '069500', name: 'KODEX 200', market: null, assetType: 'etf' },
-  { ticker: '360750', name: 'TIGER 미국S&P500', market: null, assetType: 'etf' },
-  { ticker: '122630', name: 'KODEX 레버리지', market: null, assetType: 'etf' },
-  { ticker: '114800', name: 'KODEX 인버스', market: null, assetType: 'etf' },
-]
-
-const BASE_PRICE: Record<string, number> = {
-  '005930': 70000,
-  '000660': 180000,
-  '035420': 200000,
-  '035720': 45000,
-  '005380': 230000,
-  '373220': 380000,
-  '247540': 130000,
-  '069500': 36000,
-  '360750': 19000,
-  '122630': 83000,
-  '114800': 5500,
-}
-
-// backend/API.md: 레버리지·인버스는 ETF 이름으로 판별한다(LEVERAGED_INVERSE_ETF 플래그).
-function isLeveragedOrInverseEtf(name: string): boolean {
-  return /레버리지|인버스|2X/i.test(name)
-}
-
-// 종목명에 "은/는"을 붙인다(한글 마지막 글자의 받침 유무로 판단). 실제 백엔드처럼 읽는 소리까지
-// 완벽히 따지지는 않지만("200"처럼 숫자로 끝나는 이름은 받침 있는 쪽으로 둔다), 적어도 한글로 끝나는
-// 흔한 ETF 이름("KODEX 레버리지" 등)에서 "레버리지은"처럼 틀리진 않는다.
-function josaEunNeun(name: string): string {
-  const last = name.trim().at(-1) ?? ''
-  const code = last.codePointAt(0) ?? 0
-  if (code >= 0xac00 && code <= 0xd7a3) {
-    return (code - 0xac00) % 28 === 0 ? '는' : '은'
-  }
-  return '은'
-}
-
-const DISCLOSURE_TYPES = [
-  '분기보고서',
-  '주요사항보고서(자기주식취득결정)',
-  '주식등의대량보유상황보고서',
-  '기업설명회(IR)개최',
-  '영업(잠정)실적(공정공시)',
-]
-
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
-
-function notFoundReport(reportId: number): ApiError {
-  return new ApiError(`report_id=${reportId} 리포트를 찾을 수 없습니다.`, 404)
-}
-
-function companyNotFound(input: string): ApiError {
-  return new ApiError(`'${input}' 종목을 찾지 못했습니다. company 테이블에 등록된 종목명 또는 종목코드를 지정해주세요.`, 404)
-}
-
-function unauthorized(): ApiError {
-  return new ApiError('인증이 필요합니다. 다시 로그인해주세요.', 401)
-}
-
-// 같은 종목은 항상 같은 값이 나오도록 시드 기반 난수를 쓴다.
-function mulberry32(seed: number) {
-  let a = seed
-  return () => {
-    a |= 0
-    a = (a + 0x6d2b79f5) | 0
-    let t = Math.imul(a ^ (a >>> 15), 1 | a)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
-
-function toDateString(d: Date) {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
-interface PriceSeriesPoint {
-  price_date: string
-  close_price: number
-  volume: number | null
-  change_pct: number | null
-}
-
-const priceCache = new Map<string, PriceSeriesPoint[]>()
-
-// 오늘까지 90거래일(주말 제외) 치 주가를 만든다. 백엔드 대응 API가 없어 이 파일 안에서만 쓰는 내부 모델이다.
-function getPriceSeries(ticker: string): PriceSeriesPoint[] {
-  const cached = priceCache.get(ticker)
-  if (cached) return cached
-
-  const rand = mulberry32(Number(ticker) || 1)
-  const dates: string[] = []
-  const cursor = new Date()
-  while (dates.length < 90) {
-    const weekday = cursor.getDay()
-    if (weekday !== 0 && weekday !== 6) dates.push(toDateString(cursor))
-    cursor.setDate(cursor.getDate() - 1)
-  }
-  dates.reverse()
-
-  let prevClose = BASE_PRICE[ticker] ?? 50000
-  const series = dates.map((price_date) => {
-    const move = (rand() - 0.5) * 0.05
-    const close = Math.max(100, Math.round((prevClose * (1 + move)) / 100) * 100)
-    const change_pct = Math.round(((close - prevClose) / prevClose) * 10000) / 100
-    const volume = Math.round(8_000_000 + rand() * 20_000_000)
-    prevClose = close
-    return { price_date, close_price: close, volume, change_pct }
-  })
-
-  priceCache.set(ticker, series)
-  return series
-}
-
-function findCompanyMeta(input: string): CompanyMeta | undefined {
-  const needle = input.trim().toLowerCase()
-  return COMPANY_META.find((c) => c.ticker === input || c.name.toLowerCase() === needle)
-}
-
-function companyView(meta: CompanyMeta): Company {
-  const latest = getPriceSeries(meta.ticker).at(-1)
-  return {
-    ticker: meta.ticker,
-    name: meta.name,
-    market: meta.market,
-    sector: null,
-    asset_type: meta.assetType,
-    latest_close: latest?.close_price ?? null,
-    change_pct: latest?.change_pct ?? null,
-  }
-}
-
-function makeNews(name: string, limit: number): { title: string; url: string }[] {
-  return Array.from({ length: limit }, (_, i) => ({
-    title: `[샘플] ${name} 관련 뉴스 ${i + 1}`,
-    url: `https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(name)}`,
-  }))
-}
-
-function makeDisclosures(name: string, limit: number): { title: string; url: string }[] {
-  return Array.from({ length: limit }, (_, i) => ({
-    title: `[샘플] ${name} ${DISCLOSURE_TYPES[i % DISCLOSURE_TYPES.length]}`,
-    url: 'https://dart.fss.or.kr',
-  }))
-}
+import {
+  COMPANY_META,
+  DEFAULT_TIMEZONE,
+  DISCLAIMER,
+  companyNotFound,
+  companyView,
+  delay,
+  findCompanyMeta,
+  getPriceSeries,
+  dateGroupOf,
+  isLeveragedOrInverseEtf,
+  isValidTimezone,
+  kstDate,
+  josaEunNeun,
+  localParts,
+  makeDisclosures,
+  makeNews,
+  mockNow,
+  mulberry32,
+  notFoundReport,
+  unauthorized,
+} from './mock-core'
 
 // ---------- 인증 (로그인 전이면 모든 보호된 API가 여기서 막힌다) ----------
 
@@ -264,9 +124,23 @@ function validateUsername(raw: string): string {
   return normalized
 }
 
-function validatePassword(password: string): void {
+// 실제 백엔드(2026-10-30)의 가입·변경·재설정 공통 규칙: 8~128자, 내장 목록의 흔한 비밀번호·한 문자 반복·아이디 일부(3자 이상) 거부.
+// 흔한 비밀번호 목록 전체는 서버에 있고, mock은 대표적인 몇 개만 막는다(실제 서버에서 "password123"이 거부되는 걸 확인했다).
+const COMMON_PASSWORDS = ['password', 'password1', 'password123', '12345678', '123456789', 'qwerty123', 'iloveyou', 'abc12345']
+
+function validatePassword(password: string, username?: string): void {
   if (password.length < 8 || password.length > 128) {
     throw new ApiError('비밀번호는 8~128자여야 해요.', 422)
+  }
+  const lower = password.toLowerCase()
+  if (COMMON_PASSWORDS.includes(lower)) {
+    throw new ApiError('너무 흔한 비밀번호입니다. 다른 비밀번호를 정해주세요.', 422)
+  }
+  if (new Set(password).size === 1) {
+    throw new ApiError('같은 문자만 반복한 비밀번호는 사용할 수 없습니다.', 422)
+  }
+  if (username && username.length >= 3 && lower.includes(username.toLowerCase())) {
+    throw new ApiError('아이디가 들어간 비밀번호는 사용할 수 없습니다.', 422)
   }
 }
 
@@ -286,7 +160,7 @@ function toUserOut(user: MockUser): User {
 // 보호된 API 진입점마다 호출한다. 토큰이 없거나 모르는 형식이거나 발급 24시간이 지났으면 실제
 // 401과 같은 흐름(토큰 삭제 + AUTH_EXPIRED_EVENT)을 그대로 흉내 낸다 — mock이어도 AuthContext/
 // RequireAuth 동작을 그대로 검증할 수 있다.
-function currentUserId(): number {
+export function currentUserId(): number {
   const token = getToken()
   const match = token?.match(/^mock\.(\d+)\.(\d+)\./)
   const userId = match ? Number(match[1]) : undefined
@@ -303,7 +177,7 @@ function currentUserId(): number {
 async function signup(username: string, password: string): Promise<AuthResponse> {
   await delay(300)
   const normalized = validateUsername(username)
-  validatePassword(password)
+  validatePassword(password, normalized)
   if (users.some((u) => u.username === normalized)) {
     throw new ApiError('이미 사용 중인 아이디입니다.', 409)
   }
@@ -342,13 +216,25 @@ interface UserStore {
   // 진단 이력(2026-10-14 추가). 실제 백엔드처럼 최근 50건만 보관한다.
   diagnosisHistory: DiagnosisDetail[]
   nextDiagnosisId: number
+  // 언어·시간대 설정(GET/PUT /api/auth/preferences). 기존 사용자는 ko-KR, 시간대 null(= Asia/Seoul).
+  preferences: { locale: Locale; timezone: string | null }
+  // 리포트별 기록 정보(view=record): 작성 언어·번역 상태·한국어 원문·분석 유형·기준일. 기본 응답(ReportDetail)에는 없는 값이다.
+  reportRecords: Map<number, ReportRecordExtra>
+}
+
+export interface ReportRecordExtra {
+  locale: Locale
+  translation_status: TranslationStatus | null
+  original_answer: string | null
+  analysis_types: AnalysisType[]
+  data_basis: DataBasisItem[]
 }
 
 const INITIAL_CASH = 10_000_000
 const MAX_DIAGNOSIS_HISTORY = 50
 const stores = new Map<number, UserStore>()
 
-function storeFor(userId: number): UserStore {
+export function storeFor(userId: number): UserStore {
   let s = stores.get(userId)
   if (!s) {
     s = {
@@ -361,6 +247,8 @@ function storeFor(userId: number): UserStore {
       nextTradeId: 1,
       diagnosisHistory: [],
       nextDiagnosisId: 1,
+      preferences: { locale: DEFAULT_LOCALE, timezone: null },
+      reportRecords: new Map(),
     }
     stores.set(userId, s)
   }
@@ -380,9 +268,47 @@ function summarize(answer: string): string {
 }
 
 // 백엔드 에이전트(backend/app/agent.py)의 도구 선택 규칙을 흉내 낸다.
+interface AnswerContext {
+  meta: CompanyMeta | undefined
+  previousQuestion: string | undefined
+  useStock: boolean
+  wantsWhy: boolean
+  evidenceTitles: string[]
+  changePct: number | null
+  volume: string
+}
+
+// 같은 구조("## 섹션")의 답을 언어별로 만든다. 한국어 답이 "원문"이고, 다른 언어 답은 번역본 흉내다.
+function buildAnswer(locale: Locale, ctx: AnswerContext): string {
+  const t = researchText(locale)
+  const intro = ctx.previousQuestion ? t.introFollowUp(ctx.previousQuestion) : t.intro
+  if (ctx.meta == null) return `${intro} ${t.noTool}`
+
+  const sections: string[] = []
+  if (ctx.useStock) {
+    sections.push(`## ${t.price}\n${t.priceLine(ctx.meta.name, ctx.changePct, ctx.volume)}`)
+  }
+  if (ctx.wantsWhy) sections.push(`## ${t.cause}\n${t.causeLine}`)
+  if (ctx.evidenceTitles.length > 0) {
+    sections.push(`## ${t.evidence}\n${ctx.evidenceTitles.map((title) => `- ${title}`).join('\n')}`)
+  }
+  return sections.length > 0 ? `${intro}\n\n${sections.join('\n\n')}` : `${intro} ${t.genericLookup(ctx.meta.name)}`
+}
+
+function classifyAnalysis(question: string, meta: CompanyMeta | undefined, tools: string[]): AnalysisType[] {
+  const types: AnalysisType[] = []
+  if (/전망|예상|오를까|내릴까/.test(question)) types.push('outlook')
+  if (meta?.assetType === 'etf') types.push('etf')
+  if (tools.includes('disclosure_tool')) types.push('disclosure')
+  if (tools.includes('news_tool')) types.push('news')
+  if (tools.includes('stock_tool')) types.push('price')
+  return types.length > 0 ? types : ['general']
+}
+
 async function askResearch(question: string, previousReportId?: number | null): Promise<ResearchResponse> {
   await delay(1200)
   const store = storeFor(currentUserId())
+  const locale = store.preferences.locale
 
   let previous: ReportDetail | undefined
   if (previousReportId != null) {
@@ -402,25 +328,14 @@ async function askResearch(question: string, previousReportId?: number | null): 
 
   const used_tools: string[] = []
   const sources: Source[] = []
-  // 백엔드는 실제로 호출한 tool이 뒷받침하는 섹션만 "## 제목"으로 구조화한다(backend/app/agent.py의
-  // ANSWER_STRUCTURE_INSTRUCTION - 주가 동향/원인 분석/뉴스·공시 근거/시장 상황/위험요인). mock도
-  // 같은 모양을 흉내 내야 AnswerSections(섹션 파싱·렌더링)를 실제로 검증할 수 있다.
-  const sections: string[] = []
+  const evidenceTitles: string[] = []
+  const dataBasis: DataBasisItem[] = []
 
-  if (useStock && meta) {
-    const latest = getPriceSeries(meta.ticker).at(-1)!
+  const latest = meta ? getPriceSeries(meta.ticker).at(-1)! : undefined
+  if (useStock && meta && latest) {
     used_tools.push('stock_tool')
-    sections.push(
-      `## 주가 동향\n${meta.name}의 최근 등락률은 ${latest.change_pct}%, 거래량은 ${latest.volume?.toLocaleString('ko-KR')}주예요.`,
-    )
+    dataBasis.push({ tool: 'stock_tool', company_name: meta.name, ticker: meta.ticker, price_as_of: latest.price_date })
   }
-  if (wantsWhy && meta) {
-    sections.push(
-      '## 원인 분석\n실제 백엔드가 연결되면 llama3.1:8b가 주가·뉴스 조회 결과를 종합해 이 자리에 원인을 서술해요. ' +
-        '샘플 응답에서는 조회한 결과만 보여드려요.',
-    )
-  }
-  const evidenceLines: string[] = []
   if (wantsNews && meta) {
     used_tools.push('news_tool')
     for (const item of makeNews(meta.name, 3)) {
@@ -432,7 +347,7 @@ async function askResearch(question: string, previousReportId?: number | null): 
         company_filter: null,
         url: item.url,
       })
-      evidenceLines.push(`- ${item.title}`)
+      evidenceTitles.push(item.title)
     }
   }
   if (wantsDisclosure && meta) {
@@ -446,21 +361,45 @@ async function askResearch(question: string, previousReportId?: number | null): 
         company_filter: null,
         url: item.url,
       })
-      evidenceLines.push(`- ${item.title}`)
+      evidenceTitles.push(item.title)
     }
   }
-  if (evidenceLines.length > 0) {
-    sections.push(`## 뉴스·공시 근거\n${evidenceLines.join('\n')}`)
+
+  const ctx: AnswerContext = {
+    meta,
+    previousQuestion: previous?.question,
+    useStock,
+    wantsWhy: wantsWhy && meta != null,
+    evidenceTitles,
+    changePct: latest?.change_pct ?? null,
+    volume: latest?.volume?.toLocaleString('ko-KR') ?? '-',
   }
 
-  const intro = previous ? `[샘플 응답 · "${previous.question}"에 이어서]` : '[샘플 응답]'
-  const answer =
-    meta == null
-      ? `${intro} 도구를 호출하지 않고 바로 답하는 경우예요. 종목명(삼성전자, SK하이닉스, NAVER 등)을 넣어서 질문하면 근거(sources)도 함께 볼 수 있어요.`
-      : sections.length > 0
-        ? `${intro}\n\n${sections.join('\n\n')}`
-        : `${intro} ${meta.name}에 대해 조회했어요. 실제 백엔드가 연결되면 llama3.1:8b가 도구 결과를 바탕으로 만든 답변이 여기에 표시돼요.`
+  // 백엔드는 모든 답을 한국어로 먼저 만든다(숫자 검증 등 전부 적용). ko-KR이 아니면 그 답을 번역(translated)하거나,
+  // 코드가 그 언어로 바로 쓰거나(localized: 도구 없이 답하는 안내 등), 번역 검증에 실패하면(fallback_summary)
+  // 그 언어 안내 + 데이터 요약만 준다. mock은 질문에 "번역실패"가 들어 있으면 fallback_summary 상태를 보여준다.
+  const koAnswer = buildAnswer('ko-KR', ctx)
+  let answer = koAnswer
+  let translationStatus: TranslationStatus | null = null
+  let originalAnswer: string | null = null
+  if (locale !== DEFAULT_LOCALE) {
+    const t = researchText(locale)
+    if (meta == null) {
+      answer = buildAnswer(locale, ctx)
+      translationStatus = 'localized'
+    } else if (question.includes('번역실패')) {
+      const summary = useStock ? t.priceLine(meta.name, ctx.changePct, ctx.volume) : t.genericLookup(meta.name)
+      answer = `${t.fallbackNote}\n\n## ${t.fallbackHeading}\n${summary}`
+      translationStatus = 'fallback_summary'
+      originalAnswer = koAnswer
+    } else {
+      answer = `${buildAnswer(locale, ctx)}\n\n${t.translatedNote}`
+      translationStatus = 'translated'
+      originalAnswer = koAnswer
+    }
+  }
 
+  const disclaimer = translate(locale, 'system.disclaimer', { fallback: DISCLAIMER })
   const report: ReportDetail = {
     report_id: store.nextReportId++,
     previous_report_id: previousReportId ?? null,
@@ -468,12 +407,19 @@ async function askResearch(question: string, previousReportId?: number | null): 
     answer,
     summary: summarize(answer),
     company_name: meta?.name ?? null,
-    created_at: new Date().toISOString(),
+    created_at: mockNow().toISOString(),
     used_tools,
     sources,
-    disclaimer: DISCLAIMER,
+    disclaimer,
   }
   store.reportStore.push(report)
+  store.reportRecords.set(report.report_id, {
+    locale,
+    translation_status: translationStatus,
+    original_answer: originalAnswer,
+    analysis_types: classifyAnalysis(question, meta, used_tools),
+    data_basis: dataBasis,
+  })
 
   return {
     answer,
@@ -481,8 +427,89 @@ async function askResearch(question: string, previousReportId?: number | null): 
     sources,
     report_id: report.report_id,
     previous_report_id: report.previous_report_id,
-    disclaimer: DISCLAIMER,
+    disclaimer,
+    locale,
+    translation_status: translationStatus,
   }
+}
+
+// 리포트 기록 정보(view=record) - 제목·종목·분석 유형·기준일·작성 언어·번역 상태·한국어 원문.
+export function toRecordItem(report: ReportDetail, store: UserStore) {
+  const extra = store.reportRecords.get(report.report_id)
+  const timeZone = store.preferences.timezone ?? DEFAULT_TIMEZONE
+  const local = localParts(report.created_at, timeZone)
+  const meta = report.company_name ? findCompanyMeta(report.company_name) : undefined
+  const types = extra?.analysis_types ?? ['general']
+  return {
+    report_id: report.report_id,
+    previous_report_id: report.previous_report_id,
+    question: report.question,
+    summary: report.summary,
+    company_name: report.company_name,
+    created_at: report.created_at,
+    used_tools: report.used_tools,
+    title: report.question.length > 60 ? `${report.question.slice(0, 60)}…` : report.question,
+    company_names: meta ? [meta.name] : [],
+    tickers: meta ? [meta.ticker] : [],
+    analysis_type: types[0],
+    analysis_types: types,
+    source_count: report.sources.length,
+    local_date: local.date,
+    local_time: local.time,
+    date_group: dateGroupOf(local.date, timeZone, mockNow()),
+    locale: extra?.locale ?? DEFAULT_LOCALE,
+  }
+}
+
+async function getReportRecord(reportId: number): Promise<ReportRecordDetail> {
+  await delay(150)
+  const store = storeFor(currentUserId())
+  const report = store.reportStore.find((r) => r.report_id === reportId)
+  if (!report) throw notFoundReport(reportId)
+  const extra = store.reportRecords.get(reportId)
+  return {
+    ...toRecordItem(report, store),
+    answer: report.answer,
+    sources: report.sources,
+    disclaimer: report.disclaimer,
+    data_basis: extra?.data_basis ?? [],
+    timezone: store.preferences.timezone ?? DEFAULT_TIMEZONE,
+    translation_status: extra?.translation_status ?? null,
+    original_answer: extra?.original_answer ?? null,
+  }
+}
+
+async function logout(): Promise<void> {
+  await delay(100)
+  // 실제 백엔드는 이 사용자의 모든 토큰을 폐기한다. mock의 토큰은 만료 시각만 보므로 호출 자체가 전부다.
+}
+
+async function getPreferences(): Promise<Preferences> {
+  await delay(100)
+  const { preferences } = storeFor(currentUserId())
+  return {
+    preferred_locale: preferences.locale,
+    preferred_timezone: preferences.timezone,
+    effective_timezone: preferences.timezone ?? DEFAULT_TIMEZONE,
+    supported_locales: [...LOCALES],
+    default_locale: DEFAULT_LOCALE,
+  }
+}
+
+async function updatePreferences(input: PreferencesInput): Promise<Preferences> {
+  await delay(150)
+  const store = storeFor(currentUserId())
+  // 실제 백엔드처럼 지원하지 않는 값은 422다(GET의 locale 파라미터는 조용히 ko-KR로 가지만, 저장만 422).
+  if (input.preferred_locale !== undefined && !isLocale(input.preferred_locale)) {
+    throw new ApiError(`지원하지 않는 언어입니다: ${LOCALES.join(', ')} 중 하나`, 422)
+  }
+  if (input.preferred_timezone != null && !isValidTimezone(input.preferred_timezone)) {
+    throw new ApiError(`알 수 없는 시간대입니다: ${input.preferred_timezone}`, 422)
+  }
+  if (input.preferred_locale !== undefined) store.preferences.locale = input.preferred_locale as Locale
+  // 필드를 안 보내면 그대로, null을 보내면 기본(Asia/Seoul)으로 돌아간다.
+  if (input.preferred_timezone !== undefined) store.preferences.timezone = input.preferred_timezone
+  return getPreferences()
 }
 
 async function listReports(limit = 20, offset = 0) {
@@ -895,7 +922,12 @@ async function placeOrder(ticker: string, side: 'buy' | 'sell', quantity: number
   const meta = findCompanyMeta(ticker)
   if (!meta) throw companyNotFound(ticker)
 
-  const price = getPriceSeries(meta.ticker).at(-1)!.close_price
+  // 체결가 = 그 시점(mockNow)의 종가. 개발용 시계 훅(mock-core)으로 시계를 과거로 옮긴 상태에서 넣은 주문은 그날 종가로
+  // 체결된 것으로 기록돼서, 성과 곡선 mock이 체결 내역을 다시 재생할 때 가격이 맞는다. 훅이 없으면 마지막 종가(전과 같음).
+  const executedAt = mockNow().toISOString()
+  const executedDate = kstDate(executedAt)
+  const series = getPriceSeries(meta.ticker)
+  const price = (series.findLast((p) => p.price_date <= executedDate) ?? series[0]).close_price
   const existing = store.holdings.get(meta.ticker)
 
   if (side === 'buy') {
@@ -929,7 +961,7 @@ async function placeOrder(ticker: string, side: 'buy' | 'sell', quantity: number
     quantity,
     price,
     amount: Math.round(price * quantity),
-    executed_at: new Date().toISOString(),
+    executed_at: executedAt,
   })
 
   const after = store.holdings.get(meta.ticker)
@@ -939,9 +971,10 @@ async function placeOrder(ticker: string, side: 'buy' | 'sell', quantity: number
     side,
     quantity,
     price,
-    executed_at: new Date().toISOString(),
+    executed_at: executedAt,
     cash_balance: store.cashBalance,
     holding: after ? { quantity: after.quantity, avg_price: after.avg_price } : null,
+    asset_type: meta.assetType,
   }
 }
 
@@ -1226,6 +1259,23 @@ async function getDiagnosis(): Promise<DiagnosisResponse> {
     suggestions,
     notes: ['샘플 데이터 기반 규칙 진단이에요(실제 백엔드의 LLM 설명과는 다릅니다).'],
     disclaimer: DISCLAIMER,
+    // 2026-11-06 추가: 진단 당시 ETF 실질 노출 스냅샷(저장본이라 나중에 열어도 그때 값 그대로).
+    look_through: toSnapshot(
+      computeLookThrough({
+        cash: store.cashBalance,
+        holdings: [...store.holdings].map(([ticker, h]) => ({ ticker, quantity: h.quantity })),
+        // 진단이 쓴 현재가(= 마지막 종가)로 평가한다(valuation_basis: diagnosis_prices)
+        priceOf: (ticker) => {
+          const last = getPriceSeries(ticker).at(-1)
+          return last ? { price: last.close_price, date: last.price_date } : null
+        },
+        limit: 20,
+        locale: store.preferences.locale,
+        expectedDate: getPriceSeries('005930').at(-1)!.price_date,
+        lagBusinessDays: 0,
+        tradingDates: getPriceSeries('005930').map((p) => p.price_date),
+      }),
+    ),
   }
 
   // 성공한 진단은 이력에 저장한다(최근 50건, backend/API.md "진단 이력"). 실패 없이 매번 저장되므로
@@ -1366,14 +1416,92 @@ async function compareDiagnosis(diagnosisId: number, baseId?: number): Promise<D
       .sort((a, b) => (a.created_at === b.created_at ? b.id - a.id : b.created_at!.localeCompare(a.created_at!)))[0]
   }
 
+  const basis = {
+    current_created_at: current.created_at!,
+    current_generated_at: current.generated_at,
+    previous_created_at: previous?.created_at ?? null,
+    previous_generated_at: previous?.generated_at ?? null,
+    // 저장 당시 값끼리 비교한다 - 현재 시세로 다시 계산하지 않는다(핸드오프 I18N_HISTORY 3-6절)
+    recomputed: false,
+    note: '두 진단은 각각 저장 당시의 보유 구성과 시세로 계산한 결과입니다. 기준 시점이 서로 다르고, 현재 시세로 다시 계산하지 않았습니다.',
+  }
   if (!previous) {
-    return { current: toHistoryItem(current), previous: null, changes: null, disclaimer: DISCLAIMER }
+    return {
+      current: toHistoryItem(current),
+      previous: null,
+      changes: null,
+      disclaimer: DISCLAIMER,
+      basis,
+      metric_changes: null,
+      exposure_changes: null,
+    }
   }
   return {
     current: toHistoryItem(current),
     previous: toHistoryItem(previous),
     changes: computeDiagnosisChanges(previous, current),
     disclaimer: DISCLAIMER,
+    basis,
+    metric_changes: computeMetricChanges(previous, current),
+    exposure_changes: computeExposureChanges(previous.look_through, current.look_through),
+  }
+}
+
+function metricChange(previous: number | null, current: number | null) {
+  return { previous, current, change: previous != null && current != null ? Math.round((current - previous) * 10000) / 10000 : null }
+}
+
+function computeMetricChanges(previous: DiagnosisDetail, current: DiagnosisDetail) {
+  const p = previous.metrics
+  const c = current.metrics
+  return {
+    cash_balance: metricChange(p.cash_balance, c.cash_balance),
+    cash_weight_pct: metricChange(p.cash_weight_pct, c.cash_weight_pct),
+    stock_eval_amount: metricChange(p.stock_eval_amount, c.stock_eval_amount),
+    holding_count: metricChange(p.holding_count, c.holding_count),
+    top1_weight_pct: metricChange(p.top1_weight_pct, c.top1_weight_pct),
+    top3_weight_pct: metricChange(p.top3_weight_pct, c.top3_weight_pct),
+    herfindahl_index: metricChange(p.herfindahl_index, c.herfindahl_index),
+    total_profit_loss_pct: metricChange(p.total_profit_loss_pct, c.total_profit_loss_pct),
+  }
+}
+
+// 두 저장본 모두에 status ok인 실질 노출 스냅샷이 있을 때만(아니면 null). 기업은 각 저장본에 남긴 상위 20개끼리 비교한다.
+function computeExposureChanges(
+  previous: LookThroughSnapshot | null | undefined,
+  current: LookThroughSnapshot | null | undefined,
+): ExposureChanges | null {
+  if (!previous || !current || previous.status !== 'ok' || current.status !== 'ok') return null
+  const before = new Map(previous.companies.map((c) => [c.code ?? c.name, c]))
+  const after = new Map(current.companies.map((c) => [c.code ?? c.name, c]))
+  const keys = new Set([...before.keys(), ...after.keys()])
+  const companies = [...keys]
+    .map((key) => {
+      const b = before.get(key)
+      const a = after.get(key)
+      const prevPct = b?.total_weight_pct ?? null
+      const curPct = a?.total_weight_pct ?? null
+      return {
+        name: (a ?? b)!.name,
+        code: (a ?? b)!.code,
+        previous_total_weight_pct: prevPct,
+        current_total_weight_pct: curPct,
+        change_pct: Math.round(((curPct ?? 0) - (prevPct ?? 0)) * 100) / 100,
+        previous_total_amount: b?.total_amount ?? null,
+        current_total_amount: a?.total_amount ?? null,
+        status: (b == null ? 'added' : a == null ? 'removed' : 'changed') as 'added' | 'removed' | 'changed',
+      }
+    })
+    .sort((x, y) => Math.abs(y.change_pct) - Math.abs(x.change_pct))
+  const summaryKeys = ['total_asset', 'via_etf_amount', 'unidentified_weight_pct', 'companies_weight_pct', 'direct_top1_weight_pct'] as const
+  return {
+    calc_version: { previous: previous.calc_version, current: current.calc_version },
+    valuation_date: { previous: previous.valuation_date, current: current.valuation_date },
+    summary: Object.fromEntries(summaryKeys.map((k) => [k, metricChange(previous.summary[k], current.summary[k])])),
+    look_through_top1: { previous: previous.summary.look_through_top1, current: current.summary.look_through_top1 },
+    companies,
+    note_code: 'stored_snapshots',
+    companies_compared: 'top_saved',
   }
 }
 
@@ -1385,14 +1513,19 @@ async function deleteDiagnosis(diagnosisId: number): Promise<void> {
   store.diagnosisHistory.splice(index, 1)
 }
 
-export const mockApi: Api = {
+// 예전부터 있던 영역의 mock. 새 영역(성과·노출·브리핑·기록·ETF)은 mock-*.ts에 있고 mockApi.ts가 합친다.
+export const baseMockApi: BaseApi = {
   signup,
   login,
   me,
+  logout,
+  getPreferences,
+  updatePreferences,
 
   askResearch,
   listReports,
   getReport,
+  getReportRecord,
   deleteReport,
 
   getRealtimePrice,

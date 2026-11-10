@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PriceHistoryItem } from '../types'
-import { computeChart, nearestIndex, summarizeHistory } from './priceChart'
+import { computeChart, movingAverage, nearestIndex, periodReturn, summarizeHistory } from './priceChart'
 import type { ChartLayout } from './priceChart'
 
 const LAYOUT: ChartLayout = {
@@ -73,5 +73,19 @@ describe('summarizeHistory', () => {
   it('거래일이 1개뿐이면 등락률은 null, 없으면 전체가 null', () => {
     expect(summarizeHistory([item('a', 100)])?.changePct).toBeNull()
     expect(summarizeHistory([])).toBeNull()
+  })
+})
+
+describe('movingAverage / periodReturn', () => {
+  it('window개가 모이기 전에는 null이고 이후엔 직전 window개의 평균이다', () => {
+    expect(movingAverage([10, 20, 30, 40], 3)).toEqual([null, null, 20, 30])
+    expect(movingAverage([10, 20], 5)).toEqual([null, null])
+  })
+
+  it('N거래일 전 종가 대비 수익률을 주고, 데이터가 모자라면 null이다', () => {
+    const items = [100, 110, 121].map((close, i) => ({ date: `d${i}`, close, volume: null, change_pct: null, open: null, high: null, low: null }))
+    expect(periodReturn(items, 1)).toBe(10)
+    expect(periodReturn(items, 2)).toBe(21)
+    expect(periodReturn(items, 3)).toBeNull()
   })
 })
