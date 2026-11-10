@@ -1,5 +1,6 @@
 import type { BriefingHistoryParams } from './contracts/briefing'
 import type { HistorySearchParams } from './contracts/history'
+import type { DisclosureParams, FeedParams } from './contracts/stockFeed'
 import type { BenchmarkCode, PerformancePeriod } from './contracts/performance'
 import type { AssetType, EventTypeFilter, TrendingCategory } from '../types'
 
@@ -32,6 +33,8 @@ export const queryKeys = {
   reportRecord: (reportId: number) => ['reportRecord', reportId] as const,
   etfHoldings: (ticker: string, limit: number) => ['etfHoldings', ticker, limit] as const,
   marketOverview: ['marketOverview'] as const,
+  stockNews: (ticker: string, params: FeedParams) => ['stockNews', ticker, params] as const,
+  stockDisclosures: (ticker: string, params: DisclosureParams) => ['stockDisclosures', ticker, params] as const,
   priceHistory: (ticker: string, days: number) => ['priceHistory', ticker, days] as const,
   status: ['status'] as const,
   eventReactions: (ticker: string, eventType: EventTypeFilter) => ['eventReactions', ticker, eventType] as const,

@@ -465,4 +465,10 @@ export interface PriceHistoryResponse {
   price_as_of: string | null
   // 날짜 오름차순(과거 -> 최근)
   items: PriceHistoryItem[]
+  // 이 종목의 저장된 시세 행 전체 수(days와 무관). 180·365 버튼을 켜고 끌 때 쓴다.
+  available_count?: number
+  // 가장 이른 저장 날짜
+  first_date?: string | null
+  // 응답 구간 안에서 수집되지 않은 KRX 거래일 수
+  missing_trading_days?: number
 }

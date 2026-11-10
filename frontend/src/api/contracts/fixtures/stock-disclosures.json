@@ -1,0 +1,44 @@
+{
+  "ticker": "005930",
+  "company_name": "삼성전자",
+  "asset_type": "stock",
+  "total": 3,
+  "limit": 3,
+  "offset": 0,
+  "has_next": false,
+  "total_pages": 1,
+  "filters": {
+    "date_from": null,
+    "date_to": null,
+    "order": "desc",
+    "correction": "only"
+  },
+  "supported": true,
+  "message": null,
+  "freshness": {
+    "last_collected_at": "2026-11-03T19:53:51.961770+09:00",
+    "collection_lag_weekdays": 5,
+    "stale": true,
+    "company_latest_at": "2026-10-30T00:00:00+09:00",
+    "last_collection": {
+      "step": "news",
+      "status": "success",
+      "ok": true,
+      "finished_at": "2026-11-03T19:54:42.667374+09:00",
+      "error_code": null
+    }
+  },
+  "items": [
+    {
+      "id": 8071,
+      "title": "[기재정정]연결재무제표기준영업(잠정)실적(공정공시)",
+      "disclosure_type": "[기재정정]연결재무제표기준영업(잠정)실적(공정공시)",
+      "rcept_no": "20261029800099",
+      "disclosed_date": "2026-10-29",
+      "disclosed_at": "2026-10-29T00:00:00+09:00",
+      "source_url": "https://dart.fss.or.kr/dsaf001/main.do?rcptNo=20261029800099",
+      "is_correction": true,
+      "collected_at": "2026-10-31T12:31:36.764855+09:00"
+    }
+  ]
+}

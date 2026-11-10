@@ -4,12 +4,16 @@ import { lookThroughViewSchema } from './exposure'
 import { etfHoldingsSchema } from './etf'
 import { historySearchSchema } from './history'
 import { breadthBarSegments, changeUnavailableKey, marketOverviewSchema } from './market'
+import { dateRangeInvalid, feedEmptyReason, otherTickers, stockDisclosuresSchema, stockNewsSchema } from './stockFeed'
+import { priceHistoryResponseSchema } from '../schemas'
 import { performanceViewSchema } from './performance'
 import { preferencesSchema } from './preferences'
 import { reportRecordDetailSchema, reportRecordListSchema } from './research'
 import briefingFixture from './fixtures/daily-briefing.json'
 import etfFixture from './fixtures/etf-holdings.json'
 import marketFixture from './fixtures/market-overview.json'
+import newsFixture from './fixtures/stock-news.json'
+import disclosuresFixture from './fixtures/stock-disclosures.json'
 import lookThroughFixture from './fixtures/look-through-ok.json'
 import perfHistoryUnavailable from './fixtures/performance-history-unavailable.json'
 import perfNoTrades from './fixtures/performance-no-trades.json'
@@ -232,32 +236,6 @@ describe('문서 예시를 그대로 옮긴 작은 응답들', () => {
     })
     expect(history.items[0].versions_on_date).toBe(3)
   })
-})
-
-describe('스키마가 문서와 다른 모양은 막는다', () => {
-  it('성과의 status가 모르는 값이거나 숫자 필드가 문자열이면 거부한다', () => {
-    expect(performanceViewSchema.safeParse({ ...perfOk, status: 'maybe' }).success).toBe(false)
-    expect(performanceViewSchema.safeParse({ ...perfOk, summary: { ...perfOk.summary, end_value: '9479960' } }).success).toBe(false)
-  })
-
-  it('노출의 비중이 문자열이면 거부한다', () => {
-    const broken = { ...lookThroughFixture, summary: { ...lookThroughFixture.summary, total_asset: '4500000' } }
-    expect(lookThroughViewSchema.safeParse(broken).success).toBe(false)
-  })
-
-  it('브리핑은 영역 안의 세부 필드가 빠져도(방어적으로) 통과하고 기본값을 채운다', () => {
-    const minimal = {
-      ...briefingFixture,
-      content: {
-        ...briefingFixture.content,
-        sections: { market: { title: '시장', status: 'ok' }, holdings: { title: '보유', status: 'empty', message: '없음' } },
-      },
-    }
-    const parsed = dailyBriefingSchema.parse(minimal)
-    expect(parsed.content.sections.market?.indices).toEqual([])
-    expect(parsed.content.sections.holdings?.items).toEqual([])
-    expect(parsed.content.sections.risk).toBeNull()
-  })
 
   it('시장 요약(market/overview): 정상 응답과 등락이 비는 경우, 데이터 없음', () => {
     const ok = marketOverviewSchema.parse(marketFixture)
@@ -293,5 +271,72 @@ describe('스키마가 문서와 다른 모양은 막는다', () => {
     expect(none.breadth).toBeNull()
     // 분모가 0이라 비율이 없으면 막대를 그리지 않는다
     expect(breadthBarSegments({ ...ok.breadth!, up_ratio_pct: null })).toBeNull()
+  })
+
+  it('종목 뉴스·공시 목록: 정상 응답, 정정 공시, ETF(supported=false), 빈 목록의 이유', () => {
+    const news = stockNewsSchema.parse(newsFixture)
+    // 문서 예시의 related_tickers에는 현재 종목(005930)이 들어 있지 않다 - 같은 기사가 연결된 종목들일 뿐이다
+    expect(news.items[0].related_tickers.length).toBeGreaterThan(0)
+    // 같은 기사가 연결된 다른 종목만 링크로 쓴다(현재 종목·중복 제외)
+    expect(otherTickers(news.items[0], '005930')).toEqual(['000270', '004170', '005380', '069620'])
+    expect(otherTickers({ ...news.items[0], related_tickers: ['005930', '000270', '000270'] }, '005930')).toEqual(['000270'])
+    expect(news.freshness.stale).toBe(true)
+
+    const disclosures = stockDisclosuresSchema.parse(disclosuresFixture)
+    expect(disclosures.supported).toBe(true)
+    expect(disclosures.items[0].is_correction).toBe(true)
+    // 공시는 접수일만 알고 시각은 없다: disclosed_at의 T00:00:00+09:00를 시각으로 쓰면 안 된다
+    expect(disclosures.items[0].disclosed_date).toBe('2026-10-29')
+
+    // ETF: 200 + supported=false + message + items []
+    const etf = stockDisclosuresSchema.parse({ ...disclosuresFixture, asset_type: 'etf', supported: false, message: '공시 수집 대상이 아닙니다.', total: 0, total_pages: 0, items: [] })
+    expect(etf.supported).toBe(false)
+
+    // 비었을 때 이유: 마지막 수집이 failed면 "수집 실패", 아니면 "그 기간에 없다"
+    expect(feedEmptyReason(news.freshness)).toBe('none')
+    expect(feedEmptyReason({ ...news.freshness, last_collection: { ...news.freshness.last_collection!, status: 'failed' } })).toBe('collection_failed')
+    expect(feedEmptyReason({ ...news.freshness, last_collection: null })).toBe('none')
+
+    expect(dateRangeInvalid('2026-11-05', '2026-11-01')).toBe(true)
+    expect(dateRangeInvalid('2026-11-01', '2026-11-01')).toBe(false)
+    expect(dateRangeInvalid('2026-11-01', '')).toBe(false)
+  })
+
+  it('주가 이력: 새 필드(available_count·first_date·missing_trading_days)가 있어도 없어도(옛 서버) 통과한다', () => {
+    const base = {
+      ticker: '005930', company_name: '삼성전자', asset_type: 'stock', days: 365, count: 1, price_as_of: '2026-11-03',
+      items: [{ date: '2026-11-03', close: 70000, volume: 1000, change_pct: 0.5, open: 69500, high: 70500, low: 69000 }],
+    }
+    expect(priceHistoryResponseSchema.parse(base).available_count).toBeUndefined()
+    const extended = priceHistoryResponseSchema.parse({ ...base, available_count: 342, first_date: '2025-06-02', missing_trading_days: 2 })
+    expect(extended.available_count).toBe(342)
+    expect(extended.missing_trading_days).toBe(2)
+    expect(priceHistoryResponseSchema.parse({ ...base, available_count: 0, first_date: null }).first_date).toBeNull()
+  })
+})
+
+describe('스키마가 문서와 다른 모양은 막는다', () => {
+  it('성과의 status가 모르는 값이거나 숫자 필드가 문자열이면 거부한다', () => {
+    expect(performanceViewSchema.safeParse({ ...perfOk, status: 'maybe' }).success).toBe(false)
+    expect(performanceViewSchema.safeParse({ ...perfOk, summary: { ...perfOk.summary, end_value: '9479960' } }).success).toBe(false)
+  })
+
+  it('노출의 비중이 문자열이면 거부한다', () => {
+    const broken = { ...lookThroughFixture, summary: { ...lookThroughFixture.summary, total_asset: '4500000' } }
+    expect(lookThroughViewSchema.safeParse(broken).success).toBe(false)
+  })
+
+  it('브리핑은 영역 안의 세부 필드가 빠져도(방어적으로) 통과하고 기본값을 채운다', () => {
+    const minimal = {
+      ...briefingFixture,
+      content: {
+        ...briefingFixture.content,
+        sections: { market: { title: '시장', status: 'ok' }, holdings: { title: '보유', status: 'empty', message: '없음' } },
+      },
+    }
+    const parsed = dailyBriefingSchema.parse(minimal)
+    expect(parsed.content.sections.market?.indices).toEqual([])
+    expect(parsed.content.sections.holdings?.items).toEqual([])
+    expect(parsed.content.sections.risk).toBeNull()
   })
 })

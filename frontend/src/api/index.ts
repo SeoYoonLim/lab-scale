@@ -31,6 +31,7 @@ import type { HistoryApi } from './domains/history'
 import type { MarketApi } from './domains/market'
 import type { PerformanceApi } from './domains/performance'
 import type { RecoveryApi } from './domains/recovery'
+import type { StockFeedApi } from './domains/stockFeed'
 import { httpApi } from './http'
 import { mockApi } from './mockApi'
 
@@ -98,7 +99,8 @@ export type Api = AuthApi &
   HistoryApi &
   EtfApi &
   MarketApi &
-  RecoveryApi
+  RecoveryApi &
+  StockFeedApi
 
 // 예전부터 있던 영역(이 파일의 위 네 인터페이스)만. mock.ts가 이것만 구현하고, mockApi.ts가 영역별 mock을 합친다.
 export type BaseApi = AuthApi & ResearchApi & AccountApi & PublicApi

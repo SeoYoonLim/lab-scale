@@ -1,0 +1,46 @@
+{
+  "ticker": "005930",
+  "company_name": "삼성전자",
+  "asset_type": "stock",
+  "total": 60,
+  "limit": 3,
+  "offset": 0,
+  "has_next": true,
+  "total_pages": 20,
+  "filters": {
+    "date_from": null,
+    "date_to": null,
+    "order": "desc"
+  },
+  "freshness": {
+    "last_collected_at": "2026-11-03T19:54:42.431681+09:00",
+    "collection_lag_weekdays": 5,
+    "stale": true,
+    "company_latest_at": "2026-11-03T19:48:00+09:00",
+    "last_collection": {
+      "step": "news",
+      "status": "success",
+      "ok": true,
+      "finished_at": "2026-11-03T19:54:42.667374+09:00",
+      "error_code": null
+    }
+  },
+  "items": [
+    {
+      "id": 16494,
+      "title": "화성특례시, 서울서 AI 엑스포 'MARS 2026' 개막… 62개 기업·기관 참여",
+      "summary": "시에 따르면 화성에는 삼성전자와 현대차·기아 남양연구소, 제조업체 2만6000여 곳이 자리하고 있다. ...",
+      "source": "www.thereport.co.kr",
+      "url": "https://www.thereport.co.kr/news/articleView.html?idxno=93012",
+      "published_at": "2026-11-03T19:48:00+09:00",
+      "collected_at": "2026-11-03T19:48:22.921852+09:00",
+      "is_relevant": true,
+      "related_tickers": [
+        "000270",
+        "004170",
+        "005380",
+        "069620"
+      ]
+    }
+  ]
+}

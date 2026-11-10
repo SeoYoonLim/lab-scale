@@ -11,6 +11,8 @@ import { historySearchSchema } from './contracts/history'
 import type { HistorySearchResponse } from './contracts/history'
 import { marketOverviewSchema } from './contracts/market'
 import type { MarketOverview } from './contracts/market'
+import { stockDisclosuresSchema, stockNewsSchema } from './contracts/stockFeed'
+import type { StockDisclosures, StockNews } from './contracts/stockFeed'
 import { performanceViewSchema } from './contracts/performance'
 import type { PerformanceView } from './contracts/performance'
 import { preferencesSchema } from './contracts/preferences'
@@ -451,6 +453,31 @@ export const httpApi: Api = {
       `/etf/${encodeURIComponent(ticker)}/holdings${qs({ limit })}`,
       {},
       { schema: etfHoldingsSchema },
+    ),
+  getStockNews: (ticker, params = {}) =>
+    request<StockNews>(
+      `/stocks/${encodeURIComponent(ticker)}/news${qs({
+        limit: params.limit,
+        offset: params.offset,
+        date_from: params.date_from,
+        date_to: params.date_to,
+        order: params.order,
+      })}`,
+      {},
+      { schema: stockNewsSchema },
+    ),
+  getStockDisclosures: (ticker, params = {}) =>
+    request<StockDisclosures>(
+      `/stocks/${encodeURIComponent(ticker)}/disclosures${qs({
+        limit: params.limit,
+        offset: params.offset,
+        date_from: params.date_from,
+        date_to: params.date_to,
+        order: params.order,
+        correction: params.correction,
+      })}`,
+      {},
+      { schema: stockDisclosuresSchema },
     ),
   getMarketOverview: () => request<MarketOverview>('/market/overview', {}, { schema: marketOverviewSchema }),
   getDisclaimer: () =>

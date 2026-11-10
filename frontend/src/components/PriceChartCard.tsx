@@ -13,8 +13,14 @@ import { formatDate, formatPct, formatPrice, formatVolume, trendClass } from '..
 const RANGES = [
   { days: 20, label: '20거래일' },
   { days: 60, label: '60거래일' },
-  { days: 90, label: '최대(90)' },
+  { days: 90, label: '90거래일' },
+  { days: 180, label: '180거래일' },
+  { days: 365, label: '365거래일' },
 ] as const
+
+// 180·365는 저장된 시세가 그만큼 있어야 의미가 있다(available_count). 모자라면 버튼을 끄고 몇 거래일만 있는지 알려준다.
+// 20·60·90은 모자라도 그대로 눌러서 "수집 시작일 때문에 적게 보여드려요" 안내를 보게 한다.
+const LONG_RANGE_FROM = 180
 
 // 이동평균선: 화면에서 종가로 계산한 단순이동평균이다(서버가 주는 값이 아니다). 창(window)만큼 거래일이 쌓이기 전 구간은 그리지 않는다.
 const MOVING_AVERAGES = [
@@ -98,6 +104,10 @@ export default function PriceChartCard({ ticker }: { ticker: string }) {
   }
 
   const shortfall = data != null && data.count > 0 && data.count < data.days
+  const available = data?.available_count
+  const unavailableRange = (rangeDays: number) =>
+    rangeDays >= LONG_RANGE_FROM && available != null && available < rangeDays
+  const hasDisabledRange = RANGES.some((r) => unavailableRange(r.days))
 
   return (
     <section className="card price-chart-card" aria-labelledby="price-chart-heading">
@@ -110,6 +120,8 @@ export default function PriceChartCard({ ticker }: { ticker: string }) {
               type="button"
               className={days === range.days ? 'seg active' : 'seg'}
               aria-pressed={days === range.days}
+              disabled={unavailableRange(range.days)}
+              title={unavailableRange(range.days) ? `${available}거래일만 있어요` : undefined}
               onClick={() => {
                 setDays(range.days)
                 setActiveIndex(null)
@@ -137,6 +149,11 @@ export default function PriceChartCard({ ticker }: { ticker: string }) {
         ))}
       </div>
 
+      {hasDisabledRange && (
+        <p className="muted small">
+          이 종목은 저장된 주가가 {available}거래일이라 {LONG_RANGE_FROM}거래일 이상은 볼 수 없어요.
+        </p>
+      )}
       {isPending && <p className="muted">불러오는 중…</p>}
       {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
 
@@ -270,7 +287,10 @@ export default function PriceChartCard({ ticker }: { ticker: string }) {
             일별 종가 기준이에요(장중 시세 아님). {data.price_as_of && `${formatDate(data.price_as_of)}까지 수집돼 있어요. `}
             {shortfall &&
               `수집 시작일 때문에 요청한 ${data.days}거래일보다 적은 ${data.count}거래일만 보여드려요. `}
-            분할·배당 보정은 하지 않은 값이에요.
+            수집 소스(FinanceDataReader)가 준 일별 종가예요. 일부 구간은 수정주가일 수 있어요.
+            {data.missing_trading_days != null &&
+              data.missing_trading_days > 0 &&
+              ` 이 구간에 수집되지 않은 거래일이 ${data.missing_trading_days}일 있어요.`}
           </p>
         </div>
       )}
