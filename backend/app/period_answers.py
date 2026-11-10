@@ -1,0 +1,209 @@
+"""(2026-10-31) 과거 기간 시세 질문의 답을 코드가 만든다: 특정 날짜 종가, 휴장일 안내, 기간 등락률·최고/최저·거래량(시작·끝 날짜 명시).
+
+배경: 3년치 시세 백필(2023-10-30~) 뒤 "기아 2024년 등락률"의 기간이 보유 범위 안이 되면서 app.period_scope의 코드 거절이 작동하지
+않고 LLM + stock_tool(최근 N거래일만 조회)로 넘어갔다. 모델은 2026년 값에 "2024-10-30"이라는 날짜를 붙이거나("2024-10-30 종가 94,800원",
+실제 2024-10-30 종가는 94,100원), 있는 데이터를 "없다"고 답했다. 그래서 날짜로 조회할 수 있는 시세 질문은 LLM에 맡기지 않는다.
+
+이 모듈은 판별과 문장(순수 함수)만 담당하고, DB 조회는 app.agent._answer_period_history가 한다.
+- 대상: 시세를 묻고(거래량 포함) 뉴스·원인·전망 같은 다른 정보를 묻지 않으며, 기간이 "하루"이거나 최근 창(파서가 N거래일로 답하는 경로)이
+  아닌 질문. 그 밖에는 기존 흐름이다(애매하면 LLM 경로로 두고, 그 경로의 stock_tool에는 코드가 날짜 범위를 넘긴다).
+- 보유 범위보다 앞서는 기간은 여기로 오기 전에 app.period_scope가 답한다(두 종목 질문은 여기서 같은 문장을 재사용한다).
+"""
+
+import re
+from datetime import date
+
+from app import code_answers, routing
+from app.period_scope import PRICE_INTENT_RE, RequestedPeriod
+
+# 이보다 짧은 과거 창("지난주", "지난달")은 기존 LLM 흐름으로 두고 stock_tool에 날짜 범위만 넘긴다(흐름 서술이 필요한 질문이 많다)
+SHORT_WINDOW_DAYS = 60
+ALL_TIME_LABEL = "보유 데이터 전체"
+ALL_TIME_RE = re.compile(r"역대|사상\s*(?:최고|최저)|상장\s*(?:이후|이래)|전체\s*기간")
+# 거래량은 이 경로가 답하므로 code_answers의 "다른 정보" 목록에서 뺀다
+_OTHER_INTENT_RE = re.compile(code_answers._OTHER_INTENT_RE.pattern.replace("거래량|", ""), re.IGNORECASE)
+_VOLUME_RE = re.compile(r"거래량")
+_OHLC_RE = re.compile(r"시가(?!총액)|(?<!최)고가|(?<!최)저가")
+_WEEKDAYS = "월화수목금토일"
+
+REASON_WEEKEND = "weekend"
+REASON_HOLIDAY = "holiday"
+REASON_COMPANY = "company"
+REASON_NOT_COLLECTED = "not_collected"
+
+
+def is_history_question(question: str) -> bool:
+    """시세만 묻는 질문인지. 다른 정보(뉴스·원인·전망 등)나 다른 도구가 필요한 질문은 False(기존 흐름)."""
+    q = question or ""
+    if not PRICE_INTENT_RE.search(q) or _OTHER_INTENT_RE.search(q):
+        return False
+    return not (routing.is_cause_question(q) or routing.needs_market_tool(q) or routing.needs_event_reaction_tool(q)
+                or routing.needs_discovery_tool(q) or routing.explicitly_requested_tools(q) or routing.needs_fx_tool(q))
+
+
+# 두 시점 사이 수익률(2026-11-02): "X에 사서 Y까지 들고 있었으면", "X부터 Y까지 얼마나 올랐어", "X 대비 Y"
+_HOLDING_INTENT_RE = re.compile(r"사서|샀|사면|사뒀|매수|투자|들고|보유|갖고|가지고|수익률|얼마나|몇\s*(?:퍼센트|%|프로)|대비|벌었|올랐|내렸|떨어|변했|등락률")
+_HOLDING_EXCLUDE_RE = re.compile(r"왜|이유|원인|뉴스|공시|기사|전망|분석|거래량|거래대금|최고|최저|평균|흐름|추이|배당|실적|코스피|코스닥|지수", re.IGNORECASE)
+
+
+def is_holding_return_question(question: str) -> bool:
+    """두 시점 사이 수익률을 묻는 질문인지(날짜가 둘인지는 app.period_scope.date_pair가 본다)."""
+    q = question or ""
+    return bool(_HOLDING_INTENT_RE.search(q)) and not _HOLDING_EXCLUDE_RE.search(q)
+
+
+HOLDING_BASIS_NOTE = "주가 기준이며 배당·수수료·세금은 반영하지 않았습니다."
+
+
+def holding_invalid_text(name: str, start: date, end: date, today: date, data_start: date, data_end: date) -> str | None:
+    """계산하지 않고 거절할 때의 문장. 계산할 수 있으면 None."""
+    period = f"{start.isoformat()}~{end.isoformat()}"
+    if start >= end:
+        return f"시작일이 종료일과 같거나 늦어 {name}의 수익률을 확인할 수 없습니다(요청: {period})."
+    if end > today or start > today:
+        return f"아직 오지 않은 날짜가 있어 {name}의 수익률을 확인할 수 없습니다(요청: {period}, 오늘: {today.isoformat()})."
+    if start < data_start or start > data_end:
+        return (f"요청하신 기간({period})의 {name} 시세 데이터는 제공하지 않습니다. "
+                f"보유한 데이터는 {data_start.isoformat()}부터 {data_end.isoformat()}까지입니다.")
+    return None
+
+
+def holding_text(name: str, requested_start: date, requested_end: date, result: dict) -> str:
+    """시작일 이후 첫 거래일 종가에서 종료일 이전 마지막 거래일 종가까지의 수익률. 실제 쓴 날짜가 요청과 다르면 밝힌다."""
+    first, last = result["base_date"], result["prices"][-1]
+    start_used, end_used = first, last["price_date"]
+    text = (f"{name}의 {start_used} 종가 {result['base_close']:,.0f}원에서 {end_used} 종가 {last['close_price']:,.0f}원까지 "
+            f"수익률은 {result['period_change_pct']:+.2f}%입니다. {HOLDING_BASIS_NOTE}")
+    notes = []
+    if start_used != requested_start.isoformat():
+        notes.append(f"시작일 {requested_start.isoformat()}은 거래일이 아니어서 다음 거래일 {start_used} 종가를 썼습니다.")
+    if end_used != requested_end.isoformat():
+        notes.append(f"종료일 {requested_end.isoformat()}의 시세가 없어 직전 거래일 {end_used} 종가를 썼습니다.")
+    return " ".join([text, *notes])
+
+
+def is_market_period_question(question: str) -> bool:
+    """시장 비교만 묻는 질문인지(뉴스·원인·전망 등을 함께 묻거나 다른 도구가 필요하면 False)."""
+    q = question or ""
+    return not (_OTHER_INTENT_RE.search(q) or routing.is_cause_question(q) or routing.needs_event_reaction_tool(q)
+                or routing.needs_discovery_tool(q) or routing.needs_fx_tool(q))
+
+
+def market_text(result: dict, requested: RequestedPeriod) -> str:
+    """종목·지수 같은 구간 비교의 답: 요청 기간, market_tool 요약, 덮지 못한 범위 안내."""
+    parts = [f"요청하신 기간({requested.label}: {requested.start.isoformat()}~{requested.end.isoformat()}) 기준입니다.", result["summary"]]
+    if result.get("note"):
+        parts.append(result["note"])
+    return " ".join(parts)
+
+
+def needs_date_lookup(requested: RequestedPeriod | None, parsed, today: date) -> bool:
+    """최근 N거래일 창으로는 답할 수 없는 기간인지: 특정 하루(오늘 제외), 파서가 인식하지 못한 기간("2024년", "3분기"),
+    끝이 오늘 이전인 기간("지난달"). 끝이 오늘인 창("최근 1년", "3개월 추이")은 기존 흐름이다(stock_tool이 전체 기간을 요약한다)."""
+    if requested is None:
+        return False
+    if requested.start == requested.end:
+        return requested.start != today
+    if parsed is None:
+        return True
+    return parsed.end_date < today
+
+
+def code_answers_period(requested: RequestedPeriod | None, parsed, today: date) -> bool:
+    """날짜 조회가 필요한 기간 중 코드가 직접 답할 기간: 특정 하루, 파서가 모르는 기간, 긴 과거 창("작년")."""
+    if not needs_date_lookup(requested, parsed, today):
+        return False
+    return requested.start == requested.end or parsed is None or parsed.period_days > SHORT_WINDOW_DAYS
+
+
+def closed_reason(day: date, market_has_rows: bool, data_end: date) -> str:
+    """이 종목 시세가 없는 날의 사유. 2026-11-08(36차): KRX 달력의 휴장일이면 수집 전이라도 휴장이다(예전에는 마지막 데이터 뒤의
+    공휴일을 "아직 수집되지 않았습니다"로 답했다)."""
+    if day.weekday() >= 5:
+        return REASON_WEEKEND
+    from app.krx_calendar import is_holiday
+
+    if is_holiday(day):
+        return REASON_HOLIDAY
+    if day > data_end:
+        return REASON_NOT_COLLECTED
+    return REASON_COMPANY if market_has_rows else REASON_HOLIDAY
+
+
+def _day_label(day: date) -> str:
+    return f"{day.isoformat()}({_WEEKDAYS[day.weekday()]})"
+
+
+def closed_day_text(name: str, day: date, reason: str, previous: dict, latest_note: str | None = None) -> str:
+    """시세가 없는 날의 답. previous는 직전 거래일의 시세 {"price_date", "close_price"}다.
+    latest_note(2026-11-08): previous가 이 종목의 마지막 저장 시세인데 그날의 직전 평일보다 앞서면(수집이 늦음) 호출측이 넘기는
+    기준일·지연 안내(app.quote_freshness.line). 이때는 "직전 거래일"이라고 쓰지 않는다(일요일에 "어제"를 물으면 11-06이 아니라
+    11-03 종가를 "직전 거래일"이라고 답했다, 35차 live lv_27)."""
+    label = _day_label(day)
+    close = f"{previous['close_price']:,.0f}원"
+    if reason == REASON_NOT_COLLECTED:
+        return (f"{label} {name} 시세 데이터가 없습니다(아직 수집되지 않았습니다). "
+                f"마지막 데이터인 {previous['price_date']} 종가는 {close}입니다.")
+    head = {
+        REASON_WEEKEND: f"{label}은 주말이라 휴장이고 시세 데이터가 없습니다.",
+        REASON_HOLIDAY: f"{label}은 휴장일이라 시세 데이터가 없습니다.",
+        REASON_COMPANY: f"{label}은 다른 종목은 거래됐지만 {name} 시세 데이터가 없습니다(거래정지 등일 수 있습니다).",
+    }[reason]
+    if latest_note:
+        return f"{head} 저장된 마지막 시세인 {previous['price_date']} {name} 종가는 {close}입니다.\n\n{latest_note}"
+    return f"{head} 직전 거래일({previous['price_date']}) {name} 종가는 {close}입니다."
+
+
+def day_text(name: str, row: dict, question: str = "") -> str:
+    """거래일 하루의 답. row: price_date, close_price, change_pct, volume(시가·고가·저가가 있으면 질문이 물을 때 덧붙인다)."""
+    text = f"{name}의 {row['price_date']} 종가는 {row['close_price']:,.0f}원입니다."
+    extra = []
+    if row.get("change_pct") is not None:
+        extra.append(f"전일 대비 등락률은 {row['change_pct']:+.2f}%")
+    if row.get("volume") is not None:
+        extra.append(f"거래량은 {row['volume']:,}주")
+    if extra:
+        text += " " + ", ".join(extra) + "입니다."
+    if _OHLC_RE.search(question or ""):
+        ohlc = [f"{word} {row[key]:,.0f}원" for word, key in (("시가", "open_price"), ("고가", "high_price"), ("저가", "low_price"))
+                if row.get(key) is not None]
+        if ohlc:
+            text += " " + ", ".join(ohlc) + "입니다."
+    return text
+
+
+def volume_stats(prices: list[dict]) -> dict:
+    """기간 일평균·최대 거래량. 거래량이 없으면 빈 dict."""
+    rows = [p for p in prices if p.get("volume") is not None]
+    if not rows:
+        return {}
+    top = max(rows, key=lambda p: p["volume"])
+    return {"volume_avg": round(sum(p["volume"] for p in rows) / len(rows)), "volume_max": top["volume"],
+            "volume_max_date": top["price_date"]}
+
+
+def window_text(result: dict, requested: RequestedPeriod, data_end: date, question: str = "") -> str:
+    """기간 답: 요청 기간과 실제 시작·끝 날짜를 밝히고 코드가 계산한 요약을 쓴다."""
+    q = question or ""
+    if requested.label == ALL_TIME_LABEL:
+        head = f"{ALL_TIME_LABEL}({requested.start.isoformat()}~{requested.end.isoformat()}) 기준입니다."
+    else:
+        head = f"요청하신 기간({requested.label}: {requested.start.isoformat()}~{requested.end.isoformat()}) 기준입니다."
+    parts = [head]
+    if _VOLUME_RE.search(q) and result.get("volume_avg") is not None:
+        parts.append(
+            f"{result['company_name']}의 이 기간 일평균 거래량은 {result['volume_avg']:,}주, "
+            f"최대 거래량은 {result['volume_max']:,}주({result['volume_max_date']})입니다."
+        )
+    parts.append(result["summary"])
+    if code_answers._HIGH_LOW_RE.search(q):
+        parts.append("최고·최저는 종가 기준이며 장중 고가·저가가 아닙니다.")
+    if requested.end > data_end:
+        parts.append(f"마지막 데이터는 {data_end.isoformat()} 기준입니다.")
+    return " ".join(parts)
+
+
+def after_data_text(name: str, requested: RequestedPeriod, data_start: date, data_end: date) -> str:
+    """요청 기간 전체가 보유 데이터 마지막 날보다 뒤일 때의 답."""
+    return (f"요청하신 기간({requested.label}: {requested.start.isoformat()}~{requested.end.isoformat()})의 {name} 시세 데이터는 "
+            f"아직 없습니다. 보유한 데이터는 {data_start.isoformat()}부터 {data_end.isoformat()}까지입니다.")

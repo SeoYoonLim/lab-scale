@@ -1,0 +1,1026 @@
+{
+  "git_commit": "4844a2edd17a0780de8da469384637fc34484397",
+  "git_dirty": false,
+  "date": "2026-10-28T11:01:15",
+  "model": "llama3.1:8b",
+  "args": {
+    "mode": "all",
+    "split": "all",
+    "repeats": 3,
+    "only": null,
+    "limit": null,
+    "out": "C:/project/lab-scale-r5/backend/evals/results/summary_baseline_r5_2026-10-28.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 52,
+    "live": 106,
+    "records": 370
+  },
+  "live": {
+    "ran": true,
+    "repeats": 3,
+    "eval_user": "captest_0da14aa97a1f",
+    "deleted_reports": 318,
+    "elapsed_s": 983.4
+  },
+  "elapsed_s": 985.8,
+  "metrics": {
+    "entity_default_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "entity_default_wrong_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "entity_default_miss_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "entity_default_ambiguous_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "entity_strict_accuracy": {
+      "dev": 0.6471,
+      "holdout": 0.5455,
+      "holdout_seen": 0.5455,
+      "holdout_unseen": null,
+      "all": 0.6071,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "entity_strict_wrong_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "entity_strict_miss_rate": {
+      "dev": 0.1765,
+      "holdout": 0.3636,
+      "holdout_seen": 0.3636,
+      "holdout_unseen": null,
+      "all": 0.25,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "entity_strict_ambiguous_rate": {
+      "dev": 0.1765,
+      "holdout": 0.0909,
+      "holdout_seen": 0.0909,
+      "holdout_unseen": null,
+      "all": 0.1429,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "period_parse_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 8,
+        "holdout": 6,
+        "holdout_seen": 6,
+        "holdout_unseen": 0,
+        "all": 14
+      }
+    },
+    "routing_gate_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 4,
+        "holdout_seen": 4,
+        "holdout_unseen": 0,
+        "all": 10
+      }
+    },
+    "tool_selection_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 54,
+        "holdout": 36,
+        "holdout_seen": 36,
+        "holdout_unseen": 0,
+        "all": 90
+      }
+    },
+    "live_company_accuracy": {
+      "dev": 0.9512,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 0.9701,
+      "n": {
+        "dev": 123,
+        "holdout": 78,
+        "holdout_seen": 57,
+        "holdout_unseen": 21,
+        "all": 201
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 123,
+        "holdout": 78,
+        "holdout_seen": 57,
+        "holdout_unseen": 21,
+        "all": 201
+      }
+    },
+    "live_period_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 12,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 12
+      }
+    },
+    "number_match_rate": {
+      "dev": 0.9969,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 0.9979,
+      "n": {
+        "dev": 326,
+        "holdout": 141,
+        "holdout_seen": 96,
+        "holdout_unseen": 45,
+        "all": 467
+      }
+    },
+    "number_full_support_rate": {
+      "dev": 0.9859,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 0.9914,
+      "n": {
+        "dev": 71,
+        "holdout": 45,
+        "holdout_seen": 30,
+        "holdout_unseen": 15,
+        "all": 116
+      }
+    },
+    "source_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 35,
+        "holdout": 27,
+        "holdout_seen": 21,
+        "holdout_unseen": 6,
+        "all": 62
+      }
+    },
+    "refusal_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 36,
+        "holdout": 24,
+        "holdout_seen": 24,
+        "holdout_unseen": 0,
+        "all": 60
+      }
+    },
+    "period_label_violation_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 15,
+        "holdout": 9,
+        "holdout_seen": 9,
+        "holdout_unseen": 0,
+        "all": 24
+      }
+    },
+    "must_contain_rate": {
+      "dev": 0.9286,
+      "holdout": 0.8889,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 0.0,
+      "all": 0.913,
+      "n": {
+        "dev": 42,
+        "holdout": 27,
+        "holdout_seen": 24,
+        "holdout_unseen": 3,
+        "all": 69
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 192,
+        "holdout": 126,
+        "holdout_seen": 99,
+        "holdout_unseen": 27,
+        "all": 318
+      }
+    },
+    "data_date_rate": {
+      "dev": 1.0,
+      "holdout": 0.5,
+      "holdout_seen": 0.5,
+      "holdout_unseen": null,
+      "all": 0.75,
+      "n": {
+        "dev": 6,
+        "holdout": 6,
+        "holdout_seen": 6,
+        "holdout_unseen": 0,
+        "all": 12
+      }
+    },
+    "briefing_link_accuracy": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 6,
+        "holdout": 6,
+        "holdout_seen": 0,
+        "holdout_unseen": 6,
+        "all": 12
+      }
+    },
+    "number_attachment_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 11,
+        "holdout": 6,
+        "holdout_seen": 0,
+        "holdout_unseen": 6,
+        "all": 17
+      }
+    },
+    "code_answer_rate": {
+      "dev": 0.4844,
+      "holdout": 0.5,
+      "holdout_seen": 0.6364,
+      "holdout_unseen": 0.0,
+      "all": 0.4906,
+      "n": {
+        "dev": 192,
+        "holdout": 126,
+        "holdout_seen": 99,
+        "holdout_unseen": 27,
+        "all": 318
+      }
+    },
+    "loop_rate": {
+      "dev": 0.0052,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0031,
+      "n": {
+        "dev": 192,
+        "holdout": 126,
+        "holdout_seen": 99,
+        "holdout_unseen": 27,
+        "all": 318
+      }
+    },
+    "stability_answer_rate": {
+      "dev": 0.9444,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 0.9667,
+      "n": {
+        "dev": 18,
+        "holdout": 12,
+        "holdout_seen": 6,
+        "holdout_unseen": 6,
+        "all": 30
+      }
+    },
+    "guard_replacement_rate": {
+      "dev": 0.0119,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0072,
+      "n": {
+        "dev": 84,
+        "holdout": 54,
+        "holdout_seen": 33,
+        "holdout_unseen": 21,
+        "all": 138
+      }
+    },
+    "fallback_rate": {
+      "dev": 0.0104,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0063,
+      "n": {
+        "dev": 192,
+        "holdout": 126,
+        "holdout_seen": 99,
+        "holdout_unseen": 27,
+        "all": 318
+      }
+    },
+    "error_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 192,
+        "holdout": 126,
+        "holdout_seen": 99,
+        "holdout_unseen": 27,
+        "all": 318
+      }
+    },
+    "latency_p50_s": {
+      "dev": 1.09,
+      "holdout": 0.57,
+      "holdout_seen": 0.03,
+      "holdout_unseen": 5.0,
+      "all": 1.065,
+      "n": {
+        "dev": 192,
+        "holdout": 126,
+        "holdout_seen": 99,
+        "holdout_unseen": 27,
+        "all": 318
+      }
+    },
+    "latency_p95_s": {
+      "dev": 11.5535,
+      "holdout": 8.6925,
+      "holdout_seen": 8.672,
+      "holdout_unseen": 8.446,
+      "all": 10.489,
+      "n": {
+        "dev": 192,
+        "holdout": 126,
+        "holdout_seen": 99,
+        "holdout_unseen": 27,
+        "all": 318
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "att_05",
+      "split": "dev",
+      "category": "attachment",
+      "run": 2,
+      "question": "LG화학과 삼성SDI의 최근 거래량을 비교해줘",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "LG화학",
+          "삼성SDI"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "LG화학"
+      ]
+    },
+    {
+      "id": "grd_28",
+      "split": "dev",
+      "category": "grounding",
+      "run": 2,
+      "question": "삼성전자와 SK하이닉스 중 최근 한 달 동안 어디가 더 올랐어?",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "삼성전자",
+          "SK하이닉스"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "삼성전자"
+      ]
+    },
+    {
+      "id": "stab_07",
+      "split": "dev",
+      "category": "stability",
+      "run": 2,
+      "question": "삼성전자에 투자할 때 고려해야 할 위험 요인을 전반적으로 정리해줘",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "삼성전자"
+        ],
+        "must_not": null
+      },
+      "actual": []
+    },
+    {
+      "id": "stab_10",
+      "split": "dev",
+      "category": "stability",
+      "run": 0,
+      "question": "현대차와 기아의 사업 구조 차이와 각각의 위험 요인을 설명해줘",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "현대차",
+          "기아"
+        ],
+        "must_not": null
+      },
+      "actual": []
+    },
+    {
+      "id": "stab_10",
+      "split": "dev",
+      "category": "stability",
+      "run": 1,
+      "question": "현대차와 기아의 사업 구조 차이와 각각의 위험 요인을 설명해줘",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "현대차",
+          "기아"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "현대차"
+      ]
+    },
+    {
+      "id": "stab_10",
+      "split": "dev",
+      "category": "stability",
+      "run": 2,
+      "question": "현대차와 기아의 사업 구조 차이와 각각의 위험 요인을 설명해줘",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "현대차",
+          "기아"
+        ],
+        "must_not": null
+      },
+      "actual": []
+    },
+    {
+      "id": "ent_08",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "JB금융",
+      "check": "entity_strict",
+      "expected": "JB금융지주",
+      "actual": "ambiguous: ['JB금융지주']"
+    },
+    {
+      "id": "ent_14",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "셀트리언",
+      "check": "entity_strict",
+      "expected": "셀트리온",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '셀트리언'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_15",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "카카오뱅쿠",
+      "check": "entity_strict",
+      "expected": "카카오뱅크",
+      "actual": "ambiguous: ['카카오뱅크', '카카오']"
+    },
+    {
+      "id": "ent_17",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "엘지전자",
+      "check": "entity_strict",
+      "expected": "LG전자",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '엘지전자'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_21",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "엘지화학",
+      "check": "entity_strict",
+      "expected": "LG화학",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '엘지화학'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_22",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "케이비금융",
+      "check": "entity_strict",
+      "expected": "KB금융",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '케이비금융'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_23",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "에스케이텔레콤",
+      "check": "entity_strict",
+      "expected": "SK텔레콤",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '에스케이텔레콤'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_24",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "지에스건설",
+      "check": "entity_strict",
+      "expected": "GS건설",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '지에스건설'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_25",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "씨제이제일제당",
+      "check": "entity_strict",
+      "expected": "CJ제일제당",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '씨제이제일제당'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_26",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "한미반도",
+      "check": "entity_strict",
+      "expected": "한미반도체",
+      "actual": "ambiguous: ['한미반도체']"
+    },
+    {
+      "id": "ent_27",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "현대모비수",
+      "check": "entity_strict",
+      "expected": "현대모비스",
+      "actual": "ambiguous: ['현대모비스']"
+    },
+    {
+      "id": "grd_30",
+      "split": "dev",
+      "category": "grounding",
+      "run": 0,
+      "question": "현대차 최근 3개월 중에 가장 비쌌던 날이랑 그 가격 알려줘",
+      "check": "number_support",
+      "expected": "답변 숫자 전부 도구 결과로 설명",
+      "actual": [
+        "120,396주"
+      ]
+    },
+    {
+      "id": "brf_01",
+      "split": "dev",
+      "category": "briefing",
+      "run": 0,
+      "question": "오늘 브리핑 해줘",
+      "check": "briefing",
+      "expected": "브리핑 숫자만 + 숫자 1개 이상 + 면책 + 금지 표현 없음",
+      "actual": {
+        "matched": 0,
+        "unmatched": [],
+        "disclaimer": false,
+        "answer": "해당 종목을 찾지 못했습니다. 종목명 또는 종목코드를 정확히 입력해주세요."
+      }
+    },
+    {
+      "id": "brf_01",
+      "split": "dev",
+      "category": "briefing",
+      "run": 1,
+      "question": "오늘 브리핑 해줘",
+      "check": "briefing",
+      "expected": "브리핑 숫자만 + 숫자 1개 이상 + 면책 + 금지 표현 없음",
+      "actual": {
+        "matched": 0,
+        "unmatched": [],
+        "disclaimer": false,
+        "answer": "해당 종목을 찾지 못했습니다. 종목명 또는 종목코드를 정확히 입력해주세요."
+      }
+    },
+    {
+      "id": "brf_01",
+      "split": "dev",
+      "category": "briefing",
+      "run": 2,
+      "question": "오늘 브리핑 해줘",
+      "check": "briefing",
+      "expected": "브리핑 숫자만 + 숫자 1개 이상 + 면책 + 금지 표현 없음",
+      "actual": {
+        "matched": 0,
+        "unmatched": [],
+        "disclaimer": false,
+        "answer": "해당 종목을 찾지 못했습니다. 종목명 또는 종목코드를 정확히 입력해주세요."
+      }
+    },
+    {
+      "id": "brf_02",
+      "split": "holdout",
+      "category": "briefing",
+      "run": 0,
+      "question": "내 보유종목 오늘 어때?",
+      "check": "briefing",
+      "expected": "브리핑 숫자만 + 숫자 1개 이상 + 면책 + 금지 표현 없음",
+      "actual": {
+        "matched": 0,
+        "unmatched": [],
+        "disclaimer": false,
+        "answer": "해당 종목을 찾지 못했습니다. 종목명 또는 종목코드를 정확히 입력해주세요."
+      }
+    },
+    {
+      "id": "brf_02",
+      "split": "holdout",
+      "category": "briefing",
+      "run": 1,
+      "question": "내 보유종목 오늘 어때?",
+      "check": "briefing",
+      "expected": "브리핑 숫자만 + 숫자 1개 이상 + 면책 + 금지 표현 없음",
+      "actual": {
+        "matched": 0,
+        "unmatched": [],
+        "disclaimer": false,
+        "answer": "해당 종목을 찾지 못했습니다. 종목명 또는 종목코드를 정확히 입력해주세요."
+      }
+    },
+    {
+      "id": "brf_02",
+      "split": "holdout",
+      "category": "briefing",
+      "run": 2,
+      "question": "내 보유종목 오늘 어때?",
+      "check": "briefing",
+      "expected": "브리핑 숫자만 + 숫자 1개 이상 + 면책 + 금지 표현 없음",
+      "actual": {
+        "matched": 0,
+        "unmatched": [],
+        "disclaimer": false,
+        "answer": "해당 종목을 찾지 못했습니다. 종목명 또는 종목코드를 정확히 입력해주세요."
+      }
+    },
+    {
+      "id": "brf_03",
+      "split": "dev",
+      "category": "briefing",
+      "run": 0,
+      "question": "관심종목 뭐 달라졌어?",
+      "check": "briefing",
+      "expected": "브리핑 숫자만 + 숫자 1개 이상 + 면책 + 금지 표현 없음",
+      "actual": {
+        "matched": 0,
+        "unmatched": [],
+        "disclaimer": false,
+        "answer": "해당 종목을 찾지 못했습니다. 종목명 또는 종목코드를 정확히 입력해주세요."
+      }
+    },
+    {
+      "id": "brf_03",
+      "split": "dev",
+      "category": "briefing",
+      "run": 1,
+      "question": "관심종목 뭐 달라졌어?",
+      "check": "briefing",
+      "expected": "브리핑 숫자만 + 숫자 1개 이상 + 면책 + 금지 표현 없음",
+      "actual": {
+        "matched": 0,
+        "unmatched": [],
+        "disclaimer": false,
+        "answer": "해당 종목을 찾지 못했습니다. 종목명 또는 종목코드를 정확히 입력해주세요."
+      }
+    },
+    {
+      "id": "brf_03",
+      "split": "dev",
+      "category": "briefing",
+      "run": 2,
+      "question": "관심종목 뭐 달라졌어?",
+      "check": "briefing",
+      "expected": "브리핑 숫자만 + 숫자 1개 이상 + 면책 + 금지 표현 없음",
+      "actual": {
+        "matched": 0,
+        "unmatched": [],
+        "disclaimer": false,
+        "answer": "## 뉴스·공시 근거\n\n삼성전자는 갤럭시 워치와 링을 활용한 수면 무호흡 기능을 고도화했다. 기존 수면 무호흡 징후 감지에서 나아가 인공지능(AI)으로 수면 중 호흡 장애 수준을 3단계로 분석할 수 있도록 했다.\n\n삼성전자는 고도화된 수면 무호흡 기능을 통해 사용자가 수면 중 호흡 장애 수준을 정확하게 측정할 수 있게 해준다. 또한, 호흡 장애가 발생할 시"
+      }
+    },
+    {
+      "id": "brf_04",
+      "split": "holdout",
+      "category": "briefing",
+      "run": 0,
+      "question": "오늘 내 포트폴리오 상황 요약해줘",
+      "check": "briefing",
+      "expected": "브리핑 숫자만 + 숫자 1개 이상 + 면책 + 금지 표현 없음",
+      "actual": {
+        "matched": 0,
+        "unmatched": [],
+        "disclaimer": false,
+        "answer": "해당 종목을 찾지 못했습니다. 종목명 또는 종목코드를 정확히 입력해주세요."
+      }
+    },
+    {
+      "id": "brf_04",
+      "split": "holdout",
+      "category": "briefing",
+      "run": 1,
+      "question": "오늘 내 포트폴리오 상황 요약해줘",
+      "check": "briefing",
+      "expected": "브리핑 숫자만 + 숫자 1개 이상 + 면책 + 금지 표현 없음",
+      "actual": {
+        "matched": 0,
+        "unmatched": [],
+        "disclaimer": false,
+        "answer": "해당 종목을 찾지 못했습니다. 종목명 또는 종목코드를 정확히 입력해주세요."
+      }
+    },
+    {
+      "id": "brf_04",
+      "split": "holdout",
+      "category": "briefing",
+      "run": 2,
+      "question": "오늘 내 포트폴리오 상황 요약해줘",
+      "check": "briefing",
+      "expected": "브리핑 숫자만 + 숫자 1개 이상 + 면책 + 금지 표현 없음",
+      "actual": {
+        "matched": 0,
+        "unmatched": [],
+        "disclaimer": false,
+        "answer": "해당 종목을 찾지 못했습니다. 종목명 또는 종목코드를 정확히 입력해주세요."
+      }
+    },
+    {
+      "id": "fresh_04",
+      "split": "holdout",
+      "category": "freshness",
+      "run": 0,
+      "question": "LG화학 지금 주가 어때?",
+      "check": "data_date",
+      "expected": "마지막 데이터 날짜(2026-10-28) 명시 + 오래됐으면 알림",
+      "actual": "## 주가 동향\nLG화학의 현재 주가는 235,500원으로, 1일 간격으로 확인한 결과 2.17%이상 상승했습니다. 거래량은 54,104주가 거래되었습니다."
+    },
+    {
+      "id": "fresh_04",
+      "split": "holdout",
+      "category": "freshness",
+      "run": 1,
+      "question": "LG화학 지금 주가 어때?",
+      "check": "data_date",
+      "expected": "마지막 데이터 날짜(2026-10-28) 명시 + 오래됐으면 알림",
+      "actual": "## 주가 동향\nLG화학의 최근 주가는 235,500원으로, 전일比 2.17% 상승했습니다. 거래량은 54,104 주가 거래되었습니다."
+    },
+    {
+      "id": "fresh_04",
+      "split": "holdout",
+      "category": "freshness",
+      "run": 2,
+      "question": "LG화학 지금 주가 어때?",
+      "check": "data_date",
+      "expected": "마지막 데이터 날짜(2026-10-28) 명시 + 오래됐으면 알림",
+      "actual": "## 주가 동향\nLG화학은 최근 1일 동안 2.17% 상승하였습니다."
+    },
+    {
+      "id": "stab_01",
+      "split": "dev",
+      "category": "stability",
+      "run": 2,
+      "question": "KODEX 레버리지는 어떤 상품이야? 주의할 점도 자세히 알려줘",
+      "check": "answered",
+      "expected": "timeout·fallback 없이 정상 답변",
+      "actual": "length"
+    },
+    {
+      "id": "brf_02",
+      "split": "holdout",
+      "category": "briefing",
+      "run": 0,
+      "question": "내 보유종목 오늘 어때?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:삼성전자"
+      ]
+    },
+    {
+      "id": "brf_02",
+      "split": "holdout",
+      "category": "briefing",
+      "run": 1,
+      "question": "내 보유종목 오늘 어때?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:삼성전자"
+      ]
+    },
+    {
+      "id": "brf_02",
+      "split": "holdout",
+      "category": "briefing",
+      "run": 2,
+      "question": "내 보유종목 오늘 어때?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "삼성전자"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:삼성전자"
+      ]
+    },
+    {
+      "id": "brf_03",
+      "split": "dev",
+      "category": "briefing",
+      "run": 0,
+      "question": "관심종목 뭐 달라졌어?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "SK하이닉스"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:SK하이닉스"
+      ]
+    },
+    {
+      "id": "brf_03",
+      "split": "dev",
+      "category": "briefing",
+      "run": 1,
+      "question": "관심종목 뭐 달라졌어?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "SK하이닉스"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:SK하이닉스"
+      ]
+    },
+    {
+      "id": "brf_03",
+      "split": "dev",
+      "category": "briefing",
+      "run": 2,
+      "question": "관심종목 뭐 달라졌어?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "SK하이닉스"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:SK하이닉스"
+      ]
+    }
+  ]
+}

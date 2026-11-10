@@ -1,0 +1,375 @@
+{
+  "id": 45,
+  "version": 1,
+  "local_date": "2026-11-06",
+  "timezone": "Asia/Seoul",
+  "locale": "ko-KR",
+  "generated_at": "2026-11-06T14:23:01.587027+09:00",
+  "data_as_of": "2026-11-03",
+  "market_data_status": "delayed",
+  "summary_source": "llm",
+  "section_status": {
+    "risk": "ok",
+    "market": "ok",
+    "holdings": "ok",
+    "checklist": "ok",
+    "watchlist": "ok"
+  },
+  "date_group": "today",
+  "created": true,
+  "tickers": [
+    {
+      "name": "SK하이닉스",
+      "scope": "holding",
+      "ticker": "000660"
+    },
+    {
+      "name": "삼성전자",
+      "scope": "holding",
+      "ticker": "005930"
+    },
+    {
+      "name": "KODEX 200",
+      "scope": "holding",
+      "ticker": "069500"
+    },
+    {
+      "name": "NAVER",
+      "scope": "watchlist",
+      "ticker": "035420"
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://n.news.naver.com/mnews/article/056/0012286460?sid=101",
+      "date": "2026-11-03T19:18:00+09:00",
+      "kind": "news",
+      "title": "코스피, 3.59% 하락…삼전 4.2%·하이닉스 5.4%↓",
+      "ticker": "000660"
+    },
+    {
+      "url": "http://www.4th.kr/news/articleView.html?idxno=2120972",
+      "date": "2026-11-02T18:32:00+09:00",
+      "kind": "news",
+      "title": "SK하닉 AI해커톤 망친 크래프톤, \"10만원 받고 다시 봐\"",
+      "ticker": "000660"
+    }
+  ],
+  "original_content": null,
+  "content": {
+    "title": "2026-11-06 일일 투자 브리핑",
+    "locale": "ko-KR",
+    "local_date": "2026-11-06",
+    "timezone": "Asia/Seoul",
+    "generated_at": "2026-11-06T14:23:01.587027+09:00",
+    "data_as_of": "2026-11-03",
+    "market_data_status": "delayed",
+    "section_order": [
+      "market",
+      "holdings",
+      "watchlist",
+      "risk",
+      "checklist"
+    ],
+    "section_status": {
+      "risk": "ok",
+      "market": "ok",
+      "holdings": "ok",
+      "checklist": "ok",
+      "watchlist": "ok"
+    },
+    "not_advice": "확인된 데이터를 정리한 것이며 매수·매도 권유나 가격 예측이 아닙니다.",
+    "freshness": {
+      "status": "delayed",
+      "warning": true,
+      "headline": "시세가 2영업일 지연됐습니다. 마지막 종가는 2026-11-03, 기대 거래일은 2026-11-05입니다(미수집). 아래 숫자는 2026-11-03 종가 기준이며 오늘의 시장 상황이 아닙니다.",
+      "notices": [
+        "코스피 지수 데이터는 2026-11-03 기준입니다(2영업일 지연).",
+        "코스닥 지수 데이터는 2026-11-03 기준입니다(2영업일 지연).",
+        "원/달러 환율 데이터는 2026-11-02 기준입니다(3영업일 지연).",
+        "장 마감 전이라 오늘 시세는 쓰지 않고 직전 거래일 종가를 씁니다."
+      ],
+      "data_as_of": "2026-11-03",
+      "expected_date": "2026-11-05",
+      "lag_business_days": 2,
+      "price_status": "미수집",
+      "sources": {
+        "kospi": {
+          "date": "2026-11-03",
+          "lag_business_days": 2
+        },
+        "kosdaq": {
+          "date": "2026-11-03",
+          "lag_business_days": 2
+        },
+        "usd_krw": {
+          "date": "2026-11-02",
+          "lag_business_days": 3
+        }
+      },
+      "news_collected_at": "2026-11-03T19:54:42.431681+09:00",
+      "disclosure_collected_at": "2026-11-03T19:53:51.961770+09:00",
+      "last_refresh": {
+        "ok": true,
+        "finished_at": "2026-11-03T20:03:27.072135+09:00",
+        "failed_steps": []
+      },
+      "intraday": true
+    },
+    "summary": {
+      "note": "AI가 위 계산 결과만으로 쓴 요약입니다(숫자 검증 통과).",
+      "text": "시세가 2영업일 지연된 2026-11-03 기준입니다. 코스피는 5,637.63, 전일 대비 -3.78%이며 5거래일 -0.01%입니다. 코스닥은 704.79, 전일 대비 -4.03%, 5거래일 -5.25%입니다. 원/달러는 1,325.52원, 전일 대비 -0.72%, 5거래일 +0.06%입니다. SK하이닉스는 2026-11-03 종가 1,414,000원, 전일 대비 -4.46%, 5거래일 +2.91%입니다. 삼성전자도 2026-11-03 종가 222,000원, 전일 대비 -3.48%, 5거래일 -1.33%입니다. KODEX 200은 2026-11-03 종가 89,325원, 전일 대비 -3.89%, 5거래일 +0.62%입니다. NAVER의 공시는 최근 7일 안에 3건 있습니다.",
+      "source": "llm"
+    },
+    "sections": {
+      "market": {
+        "news": [
+          {
+            "url": "https://www.vegannews.co.kr/news/article.html?no=399999",
+            "title": "AI 투자 수익성 우려에 코스피 3.59% 하락",
+            "source": "www.vegannews.co.kr",
+            "published_at": "2026-11-03T19:18:00+09:00",
+            "similar_count": 3
+          }
+        ],
+        "title": "오늘의 시장 요약",
+        "status": "ok",
+        "indices": [
+          {
+            "code": "kospi",
+            "date": "2026-11-03",
+            "name": "코스피",
+            "text": "코스피 2026-11-03 종가 5,637.63 · 전일 대비 -3.78% · 5거래일 -0.01%",
+            "close": 5637.63,
+            "change_pct": -3.78,
+            "week_change_pct": -0.01,
+            "lag_business_days": 2
+          },
+          {
+            "code": "kosdaq",
+            "date": "2026-11-03",
+            "name": "코스닥",
+            "text": "코스닥 2026-11-03 종가 704.79 · 전일 대비 -4.03% · 5거래일 -5.25%",
+            "close": 704.79,
+            "change_pct": -4.03,
+            "week_change_pct": -5.25,
+            "lag_business_days": 2
+          },
+          {
+            "code": "usd_krw",
+            "date": "2026-11-02",
+            "name": "원/달러",
+            "text": "원/달러 2026-11-02 종가 1,325.52원 · 전일 대비 -0.72% · 5거래일 +0.06%",
+            "close": 1325.52,
+            "change_pct": -0.72,
+            "week_change_pct": 0.06,
+            "lag_business_days": 3
+          }
+        ],
+        "news_label": "시장 관련 기사(제목에 시장 키워드가 있는 기사, 제목만 보이며 해석하지 않습니다)",
+        "news_empty_text": null
+      },
+      "holdings": {
+        "items": [
+          {
+            "ticker": "000660",
+            "name": "SK하이닉스",
+            "asset_type": "stock",
+            "latest_date": "2026-11-03",
+            "lag_business_days": 2,
+            "latest_close": 1414000,
+            "day_change_pct": -4.46,
+            "week_change_pct": 2.91,
+            "return_20d_pct": -23.24,
+            "volume_ratio": 0.63,
+            "quantity": 2,
+            "avg_price": 1500000,
+            "eval_amount": 2828000,
+            "weight_pct": 28.76,
+            "profit_loss_pct": -5.73,
+            "price_text": "2026-11-03 종가 1,414,000원 · 전일 대비 -4.46% · 5거래일 +2.91% · 20거래일 -23.24%",
+            "position_text": "보유 2주 · 평가액 2,828,000원 · 비중 28.76% · 평균 매입가 대비 -5.73%",
+            "risk_factors": [
+              "SK하이닉스의 2026-11-03 종가는 전 거래일 대비 -4.46% 하락했습니다."
+            ],
+            "notes": [],
+            "news_label": "직접 관련 뉴스",
+            "news": [
+              {
+                "url": "https://n.news.naver.com/mnews/article/056/0012286460?sid=101",
+                "title": "코스피, 3.59% 하락…삼전 4.2%·하이닉스 5.4%↓",
+                "source": "news.kbs.co.kr",
+                "published_at": "2026-11-03T19:18:00+09:00",
+                "similar_count": 1
+              }
+            ],
+            "news_empty_text": null,
+            "indirect_news": {
+              "kind": "sector",
+              "items": [
+                {
+                  "url": "http://www.kjdaily.com/article.php?aid=1793701912691119008",
+                  "title": "여수시, 석유·화학 기반 ‘반도체 클러스터’ 연계 시동",
+                  "source": "www.kjdaily.com",
+                  "published_at": "2026-11-03T10:36:00+00:00",
+                  "similar_count": 1
+                }
+              ],
+              "label": "업종·산업 뉴스(간접)",
+              "topic": "반도체"
+            },
+            "disclosures": [],
+            "disclosure_empty_text": "최근 7일 공시가 없습니다."
+          }
+        ],
+        "title": "내 보유 종목 주요 변화",
+        "status": "ok",
+        "message": null
+      },
+      "watchlist": {
+        "items": [
+          {
+            "ticker": "035420",
+            "name": "NAVER",
+            "latest_date": "2026-11-03",
+            "day_change_pct": -2.9,
+            "week_change_pct": -5.84,
+            "price_text": "2026-11-03 종가 170,800원 · 전일 대비 -2.90% · 5거래일 -5.84% · 20거래일 -11.13%",
+            "notable": true,
+            "changes": [
+              "NAVER의 공시가 최근 7일 안에 3건 있습니다."
+            ],
+            "status_text": null,
+            "since_research": null,
+            "disclosures": [
+              {
+                "title": "[기재정정]장래사업ㆍ경영계획(공정공시)",
+                "source_url": "https://dart.fss.or.kr/dsaf001/main.do?rcptNo=20261103800603",
+                "disclosed_at": "2026-11-03T00:00:00+09:00",
+                "disclosure_type": "[기재정정]장래사업ㆍ경영계획(공정공시)"
+              }
+            ],
+            "news": [
+              {
+                "url": "https://www.gamevu.co.kr/news/articleView.html?idxno=61979",
+                "title": "[ICT 종합] 네이버 'AI 탭' 국제표준 인증 및 두나무 소식 외",
+                "source": "www.gamevu.co.kr",
+                "published_at": "2026-11-03T17:46:00+09:00",
+                "similar_count": 1
+              }
+            ]
+          }
+        ],
+        "title": "관심 종목 업데이트",
+        "status": "ok",
+        "message": null,
+        "dedup_text": "보유 종목과 겹치는 관심 종목 1개는 보유 종목 영역에만 표시했습니다.",
+        "notable_count": 1
+      },
+      "risk": {
+        "flags": [
+          {
+            "code": "MARKET_SKEW",
+            "text": "주식 평가금액의 100.0%가 KOSPI에 몰려 있습니다(기준 80%).",
+            "value": 100,
+            "ticker": null,
+            "threshold": 80,
+            "company_name": null
+          }
+        ],
+        "texts": [
+          "상위 1종목 비중 28.76% · 상위 3종목 비중 69.50% · 현금 비중 30.50% · 보유 종목 3개"
+        ],
+        "title": "포트폴리오 위험 점검",
+        "sector": {
+          "text": "업종 분류 데이터가 없어 업종 집중도는 계산하지 않았습니다.",
+          "status": "unavailable"
+        },
+        "status": "ok",
+        "metrics": {
+          "total_asset": 9834500,
+          "holding_count": 3,
+          "cash_weight_pct": 30.5,
+          "top1_weight_pct": 28.76,
+          "top3_weight_pct": 69.5,
+          "herfindahl_index": 0.3451,
+          "market_weights_pct": {
+            "KOSPI": 100
+          },
+          "priced_holding_count": 3
+        },
+        "cautions": [
+          "시세가 2영업일 지연돼 위험 점검도 2026-11-03 종가 기준입니다.",
+          "SK하이닉스의 2026-11-03 종가는 전 거래일 대비 -4.46% 하락했습니다.",
+          "삼성전자의 2026-11-03 종가는 전 거래일 대비 -3.48% 하락했습니다.",
+          "KODEX 200의 2026-11-03 종가는 전 거래일 대비 -3.89% 하락했습니다."
+        ],
+        "etf_exposure": {
+          "text": "ETF 구성종목 비중을 반영한 기업별 실질 노출을 계산했습니다(구성종목 기준일 2026-10-30).",
+          "flags": [
+            {
+              "kind": "concentration",
+              "text": "SK하이닉스의 실질 비중이 보유 평가금액의 48.54%입니다(기준 40% 이상).",
+              "value_pct": 48.54,
+              "threshold_pct": 40
+            },
+            {
+              "kind": "concentration",
+              "text": "삼성전자의 실질 비중이 보유 평가금액의 41.42%입니다(기준 40% 이상).",
+              "value_pct": 41.42,
+              "threshold_pct": 40
+            }
+          ],
+          "status": "computed",
+          "undecomposed": [],
+          "top_companies": [
+            {
+              "code": "000660",
+              "name": "SK하이닉스",
+              "weight_pct": 48.54
+            },
+            {
+              "code": "005930",
+              "name": "삼성전자",
+              "weight_pct": 41.42
+            }
+          ]
+        }
+      },
+      "checklist": {
+        "items": [
+          {
+            "kind": "data_delay",
+            "text": "시세가 2영업일 지연돼 있어 최신 거래일(2026-11-05) 내용이 반영되지 않았습니다.",
+            "ticker": null
+          },
+          {
+            "url": "https://dart.fss.or.kr/dsaf001/main.do?rcptNo=20261103800603",
+            "kind": "watchlist_disclosure",
+            "text": "NAVER(035420)의 최근 공시: [기재정정]장래사업ㆍ경영계획(공정공시) (2026-11-03)",
+            "scope": "watchlist",
+            "ticker": "035420"
+          }
+        ],
+        "title": "오늘 확인할 사항",
+        "status": "ok",
+        "message": null
+      }
+    },
+    "highlights": [
+      {
+        "date": "2026-11-03",
+        "name": "SK하이닉스",
+        "text": "SK하이닉스의 2026-11-03 종가는 전 거래일 대비 -4.46% 하락했습니다.",
+        "type": "day_move",
+        "unit": "%",
+        "scope": "holding",
+        "value": -4.46,
+        "ticker": "000660",
+        "direction": "down",
+        "threshold": 3
+      }
+    ],
+    "disclaimer": "이 서비스는 학습·시연용 모의투자와 AI 리서치입니다. 제공되는 분석과 의견은 투자 권유나 자문이 아니며, 투자 판단과 그에 따른 손익의 책임은 본인에게 있습니다. AI 응답에는 오류가 있을 수 있습니다."
+  }
+}

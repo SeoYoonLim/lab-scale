@@ -1,0 +1,99 @@
+:root {
+  /* 시안 톤: 짙은 남색 사이드바 + 연한 하늘색 배경 + 흰 카드 + 선명한 파란 포인트.
+     상승/하락은 신호 색이라 accent와 구분되게 따로 둔다. */
+  --bg: #f2f6fd; /* 콘텐츠 영역 배경 */
+  --surface: #ffffff; /* 카드 배경 */
+  --surface-2: #eef4fd; /* 옅은 강조(hover·칩 등) */
+  --rule: #e0e8f5; /* 카드 테두리/구분선 */
+  --ink: #111a33; /* 본문 텍스트 */
+  --ink-muted: #5f6b8a; /* 보조 텍스트 */
+
+  --sidebar-bg: linear-gradient(180deg, #0c1a3d 0%, #0a1430 100%);
+  --sidebar-text: #a9b6da;
+  --sidebar-text-active: #ffffff;
+  --sidebar-active-bg: #2563eb;
+
+  --up: #e5383b; /* 상승 = 빨강(한국 증권 관례) */
+  --down: #2f6bd6; /* 하락 = 파랑 */
+  --accent: #2563eb; /* 버튼·링크·활성 상태 전용. 상승/하락과 겹치지 않게 분리 */
+  --accent-strong: #1d4fd0;
+  --accent-soft: #e4eeff;
+  --accent-text: #ffffff;
+  --success: #12a05c;
+  --warn: #e08a00;
+  --danger: #dc2626;
+
+  --radius: 16px;
+  --radius-sm: 10px;
+  --shadow-card: 0 1px 2px rgba(20, 44, 96, 0.04), 0 4px 16px rgba(20, 44, 96, 0.06);
+  --sidebar-w: 248px;
+
+  --font-body: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    'Malgun Gothic', sans-serif;
+  --font-display: var(--font-body);
+
+  font-family: var(--font-body);
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--bg);
+  color-scheme: light dark;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0c1224;
+    --surface: #141b33;
+    --surface-2: #1b2442;
+    --rule: #27304f;
+    --ink: #e8ecfa;
+    --ink-muted: #9ba7cb;
+
+    --sidebar-bg: linear-gradient(180deg, #08102a 0%, #060b1e 100%);
+    --sidebar-text: #8b98c4;
+
+    --up: #ff6b6f;
+    --down: #6f9bd8;
+    --accent: #5b8cf5;
+    --accent-strong: #7aa2ff;
+    --accent-soft: #1a2a52;
+    --accent-text: #08102a;
+    --success: #3ccf8e;
+    --warn: #f0a93a;
+    --danger: #f1605c;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--bg);
+}
+
+a {
+  color: inherit;
+}
+
+button,
+textarea,
+select,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+h1,
+h2 {
+  margin: 0;
+  font-family: var(--font-display);
+}

@@ -1,0 +1,2012 @@
+{
+  "git_commit": "57b4749ba7d213e1dae169e16c9006851bd725cd",
+  "git_commit_note": "실행 시작 시점의 HEAD(57b4749)를 기록함. 원래 값 81a6006은 실행기가 종료 시점에 HEAD를 읽던 버그로 찍힌 값이고, 측정된 에이전트 코드는 시작 시점에 로드된 57b4749다(이후 실행기를 시작 시점 기록으로 수정).",
+  "date": "2026-10-27T17:23:11",
+  "model": "llama3.1:8b",
+  "args": {
+    "mode": "all",
+    "split": "all",
+    "repeats": 3,
+    "only": null,
+    "limit": null,
+    "out": "evals/results/summary_baseline_r3_2026-10-27.json"
+  },
+  "n_items": {
+    "offline": 52,
+    "live": 58,
+    "records": 226
+  },
+  "live": {
+    "ran": true,
+    "repeats": 3,
+    "eval_user": "captest_8b1c330cbd9e",
+    "deleted_reports": 174,
+    "elapsed_s": 1884.4,
+    "note": "run 1의 etf_02~tool_20 9건이 연속 120초 timeout(약 18분 Ollama 응답 정지 후 복귀). 오류율·p95와, 그 9건의 must_contain/refusal 판정(빈 답변)에 반영돼 있다."
+  },
+  "elapsed_s": 1886.7,
+  "metrics": {
+    "entity_default_accuracy": {
+      "dev": 0.7059,
+      "holdout": 0.6364,
+      "holdout_seen": 0.75,
+      "holdout_unseen": 0.3333,
+      "all": 0.6786,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 8,
+        "holdout_unseen": 3,
+        "all": 28
+      }
+    },
+    "entity_default_wrong_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 8,
+        "holdout_unseen": 3,
+        "all": 28
+      }
+    },
+    "entity_default_miss_rate": {
+      "dev": 0.2941,
+      "holdout": 0.3636,
+      "holdout_seen": 0.25,
+      "holdout_unseen": 0.6667,
+      "all": 0.3214,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 8,
+        "holdout_unseen": 3,
+        "all": 28
+      }
+    },
+    "entity_default_ambiguous_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 8,
+        "holdout_unseen": 3,
+        "all": 28
+      }
+    },
+    "entity_strict_accuracy": {
+      "dev": 0.6471,
+      "holdout": 0.5455,
+      "holdout_seen": 0.75,
+      "holdout_unseen": 0.0,
+      "all": 0.6071,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 8,
+        "holdout_unseen": 3,
+        "all": 28
+      }
+    },
+    "entity_strict_wrong_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 8,
+        "holdout_unseen": 3,
+        "all": 28
+      }
+    },
+    "entity_strict_miss_rate": {
+      "dev": 0.1765,
+      "holdout": 0.3636,
+      "holdout_seen": 0.25,
+      "holdout_unseen": 0.6667,
+      "all": 0.25,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 8,
+        "holdout_unseen": 3,
+        "all": 28
+      }
+    },
+    "entity_strict_ambiguous_rate": {
+      "dev": 0.1765,
+      "holdout": 0.0909,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.3333,
+      "all": 0.1429,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 8,
+        "holdout_unseen": 3,
+        "all": 28
+      }
+    },
+    "period_parse_rate": {
+      "dev": 0.75,
+      "holdout": 0.6667,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 0.0,
+      "all": 0.7143,
+      "n": {
+        "dev": 8,
+        "holdout": 6,
+        "holdout_seen": 4,
+        "holdout_unseen": 2,
+        "all": 14
+      }
+    },
+    "routing_gate_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 4,
+        "holdout_seen": 4,
+        "holdout_unseen": 0,
+        "all": 10
+      }
+    },
+    "tool_selection_accuracy": {
+      "dev": 0.7857,
+      "holdout": 0.7333,
+      "holdout_seen": 0.75,
+      "holdout_unseen": 0.6667,
+      "all": 0.7639,
+      "n": {
+        "dev": 42,
+        "holdout": 30,
+        "holdout_seen": 24,
+        "holdout_unseen": 6,
+        "all": 72
+      }
+    },
+    "live_company_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 54,
+        "holdout": 33,
+        "holdout_seen": 30,
+        "holdout_unseen": 3,
+        "all": 87
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 54,
+        "holdout": 33,
+        "holdout_seen": 30,
+        "holdout_unseen": 3,
+        "all": 87
+      }
+    },
+    "live_period_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 12,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 12
+      }
+    },
+    "number_match_rate": {
+      "dev": 1.0,
+      "holdout": 0.9792,
+      "holdout_seen": 0.9792,
+      "holdout_unseen": null,
+      "all": 0.994,
+      "n": {
+        "dev": 118,
+        "holdout": 48,
+        "holdout_seen": 48,
+        "holdout_unseen": 0,
+        "all": 166
+      }
+    },
+    "number_full_support_rate": {
+      "dev": 1.0,
+      "holdout": 0.9444,
+      "holdout_seen": 0.9444,
+      "holdout_unseen": null,
+      "all": 0.9778,
+      "n": {
+        "dev": 27,
+        "holdout": 18,
+        "holdout_seen": 18,
+        "holdout_unseen": 0,
+        "all": 45
+      }
+    },
+    "source_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 32,
+        "holdout": 28,
+        "holdout_seen": 20,
+        "holdout_unseen": 8,
+        "all": 60
+      }
+    },
+    "refusal_accuracy": {
+      "dev": 0.3056,
+      "holdout": 0.125,
+      "holdout_seen": 0.3333,
+      "holdout_unseen": 0.0,
+      "all": 0.2333,
+      "n": {
+        "dev": 36,
+        "holdout": 24,
+        "holdout_seen": 9,
+        "holdout_unseen": 15,
+        "all": 60
+      }
+    },
+    "period_label_violation_rate": {
+      "dev": 0.6,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 0.75,
+      "n": {
+        "dev": 15,
+        "holdout": 9,
+        "holdout_seen": 3,
+        "holdout_unseen": 6,
+        "all": 24
+      }
+    },
+    "must_contain_rate": {
+      "dev": 0.7778,
+      "holdout": 0.8333,
+      "holdout_seen": 0.8333,
+      "holdout_unseen": 0.8333,
+      "all": 0.8,
+      "n": {
+        "dev": 27,
+        "holdout": 18,
+        "holdout_seen": 6,
+        "holdout_unseen": 12,
+        "all": 45
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 100,
+        "holdout": 65,
+        "holdout_seen": 46,
+        "holdout_unseen": 19,
+        "all": 165
+      }
+    },
+    "fallback_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 100,
+        "holdout": 65,
+        "holdout_seen": 46,
+        "holdout_unseen": 19,
+        "all": 165
+      }
+    },
+    "error_rate": {
+      "dev": 0.0476,
+      "holdout": 0.058,
+      "holdout_seen": 0.0417,
+      "holdout_unseen": 0.0952,
+      "all": 0.0517,
+      "n": {
+        "dev": 105,
+        "holdout": 69,
+        "holdout_seen": 48,
+        "holdout_unseen": 21,
+        "all": 174
+      }
+    },
+    "latency_p50_s": {
+      "dev": 4.2,
+      "holdout": 4.32,
+      "holdout_seen": 4.17,
+      "holdout_unseen": 5.07,
+      "all": 4.225,
+      "n": {
+        "dev": 105,
+        "holdout": 69,
+        "holdout_seen": 48,
+        "holdout_unseen": 21,
+        "all": 174
+      }
+    },
+    "latency_p95_s": {
+      "dev": 27.928,
+      "holdout": 79.686,
+      "holdout_seen": 14.094,
+      "holdout_unseen": 120.01,
+      "all": 62.602,
+      "n": {
+        "dev": 105,
+        "holdout": 69,
+        "holdout_seen": 48,
+        "holdout_unseen": 21,
+        "all": 174
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "ent_08",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "JB금융",
+      "check": "entity_default",
+      "expected": "JB금융지주",
+      "actual": "not_found: 'JB금융' 종목을 찾지 못했습니다. company 테이블에 등록된 종목명 또는 종목코드를 지정해주세요."
+    },
+    {
+      "id": "ent_14",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "셀트리언",
+      "check": "entity_default",
+      "expected": "셀트리온",
+      "actual": "not_found: '셀트리언' 종목을 찾지 못했습니다. company 테이블에 등록된 종목명 또는 종목코드를 지정해주세요."
+    },
+    {
+      "id": "ent_17",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "엘지전자",
+      "check": "entity_default",
+      "expected": "LG전자",
+      "actual": "not_found: '엘지전자' 종목을 찾지 못했습니다. company 테이블에 등록된 종목명 또는 종목코드를 지정해주세요."
+    },
+    {
+      "id": "ent_21",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "엘지화학",
+      "check": "entity_default",
+      "expected": "LG화학",
+      "actual": "not_found: '엘지화학' 종목을 찾지 못했습니다. company 테이블에 등록된 종목명 또는 종목코드를 지정해주세요."
+    },
+    {
+      "id": "ent_22",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "케이비금융",
+      "check": "entity_default",
+      "expected": "KB금융",
+      "actual": "not_found: '케이비금융' 종목을 찾지 못했습니다. company 테이블에 등록된 종목명 또는 종목코드를 지정해주세요."
+    },
+    {
+      "id": "ent_23",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "에스케이텔레콤",
+      "check": "entity_default",
+      "expected": "SK텔레콤",
+      "actual": "not_found: '에스케이텔레콤' 종목을 찾지 못했습니다. company 테이블에 등록된 종목명 또는 종목코드를 지정해주세요."
+    },
+    {
+      "id": "ent_24",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "지에스건설",
+      "check": "entity_default",
+      "expected": "GS건설",
+      "actual": "not_found: '지에스건설' 종목을 찾지 못했습니다. company 테이블에 등록된 종목명 또는 종목코드를 지정해주세요."
+    },
+    {
+      "id": "ent_25",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "씨제이제일제당",
+      "check": "entity_default",
+      "expected": "CJ제일제당",
+      "actual": "not_found: '씨제이제일제당' 종목을 찾지 못했습니다. company 테이블에 등록된 종목명 또는 종목코드를 지정해주세요."
+    },
+    {
+      "id": "ent_26",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "한미반도",
+      "check": "entity_default",
+      "expected": "한미반도체",
+      "actual": "not_found: '한미반도' 종목을 찾지 못했습니다. company 테이블에 등록된 종목명 또는 종목코드를 지정해주세요."
+    },
+    {
+      "id": "ent_08",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "JB금융",
+      "check": "entity_strict",
+      "expected": "JB금융지주",
+      "actual": "ambiguous: ['JB금융지주']"
+    },
+    {
+      "id": "ent_14",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "셀트리언",
+      "check": "entity_strict",
+      "expected": "셀트리온",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '셀트리언'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_15",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "카카오뱅쿠",
+      "check": "entity_strict",
+      "expected": "카카오뱅크",
+      "actual": "ambiguous: ['카카오뱅크', '카카오']"
+    },
+    {
+      "id": "ent_17",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "엘지전자",
+      "check": "entity_strict",
+      "expected": "LG전자",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '엘지전자'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_21",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "엘지화학",
+      "check": "entity_strict",
+      "expected": "LG화학",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '엘지화학'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_22",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "케이비금융",
+      "check": "entity_strict",
+      "expected": "KB금융",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '케이비금융'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_23",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "에스케이텔레콤",
+      "check": "entity_strict",
+      "expected": "SK텔레콤",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '에스케이텔레콤'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_24",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "지에스건설",
+      "check": "entity_strict",
+      "expected": "GS건설",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '지에스건설'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_25",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "씨제이제일제당",
+      "check": "entity_strict",
+      "expected": "CJ제일제당",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '씨제이제일제당'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_26",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "한미반도",
+      "check": "entity_strict",
+      "expected": "한미반도체",
+      "actual": "ambiguous: ['한미반도체']"
+    },
+    {
+      "id": "ent_27",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "현대모비수",
+      "check": "entity_strict",
+      "expected": "현대모비스",
+      "actual": "ambiguous: ['현대모비스']"
+    },
+    {
+      "id": "ref_04",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 0,
+      "question": "삼성전자 2024년 3월 주가 알려줘",
+      "check": "period_label",
+      "expected": "보유 범위 밖 기간의 값처럼 쓴 숫자 없음",
+      "actual": "## 주가 동향\n\n삼성전자는 현재 235,000 원에 거래되고 있습니다. \n\n## 뉴스·공시 근거\n\n주가 변동 원인에 대한 뉴스와 공시 내용은 다음과 같습니다.\n\n- \n- \n\n## 위험요인\n\n아무런 위험 요인이 보이지 않습니다."
+    },
+    {
+      "id": "ref_04",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 1,
+      "question": "삼성전자 2024년 3월 주가 알려줘",
+      "check": "period_label",
+      "expected": "보유 범위 밖 기간의 값처럼 쓴 숫자 없음",
+      "actual": "## 주가 동향\n\n삼성전자는 현재 235,000원에 거래되고 있습니다."
+    },
+    {
+      "id": "ref_04",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 2,
+      "question": "삼성전자 2024년 3월 주가 알려줘",
+      "check": "period_label",
+      "expected": "보유 범위 밖 기간의 값처럼 쓴 숫자 없음",
+      "actual": "## 주가 동향\n삼성전자는 2026년 10월 14일 현재 235,000원에 거래되고 있습니다. 60일 간의 변동폭은 -10.65%입니다."
+    },
+    {
+      "id": "ref_05",
+      "split": "dev",
+      "category": "refusal",
+      "run": 0,
+      "question": "SK하이닉스 2025년 1월 거래량은?",
+      "check": "period_label",
+      "expected": "보유 범위 밖 기간의 값처럼 쓴 숫자 없음",
+      "actual": "2025년 1월의 거래량은 3494666주입니다."
+    },
+    {
+      "id": "ref_06",
+      "split": "dev",
+      "category": "refusal",
+      "run": 0,
+      "question": "삼성전자 2023년 주가 알려줘",
+      "check": "period_label",
+      "expected": "보유 범위 밖 기간의 값처럼 쓴 숫자 없음",
+      "actual": "## 주가 동향\n삼성전자의 2026-10-14 종가는 235,000원으로, 2026-07-14 종가 263,000원 대비 60거래일간 -10.65%입니다."
+    },
+    {
+      "id": "ref_06",
+      "split": "dev",
+      "category": "refusal",
+      "run": 2,
+      "question": "삼성전자 2023년 주가 알려줘",
+      "check": "period_label",
+      "expected": "보유 범위 밖 기간의 값처럼 쓴 숫자 없음",
+      "actual": "## 주가 동향\n\n삼성전자의 2023년 주가는 현재 235,000원으로, 전일比 0.43% 상승했습니다."
+    },
+    {
+      "id": "ref_07",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 0,
+      "question": "SK하이닉스 2025년 12월 거래량은?",
+      "check": "period_label",
+      "expected": "보유 범위 밖 기간의 값처럼 쓴 숫자 없음",
+      "actual": "2025년 12월 거래량은 없고, 2026년 10월 14일 현재 거래량은 3,494,666입니다."
+    },
+    {
+      "id": "ref_07",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 1,
+      "question": "SK하이닉스 2025년 12월 거래량은?",
+      "check": "period_label",
+      "expected": "보유 범위 밖 기간의 값처럼 쓴 숫자 없음",
+      "actual": "## 주가 동향\nSK하이닉스의 2026년 10월 14일 종가는 1,435,000원으로, 2026년 7월 14일 종가 1,913,000원 대비 60거래일간 -24.99%입니다. 이 기간 종가 최고는 2,082,000원(2026년 7월 15일), 최저는 1,322,000원(2026년 7월 30일)입니다. 마지막 거래일(2026년 10월 14일) 하루 등락률은 "
+    },
+    {
+      "id": "ref_07",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 2,
+      "question": "SK하이닉스 2025년 12월 거래량은?",
+      "check": "period_label",
+      "expected": "보유 범위 밖 기간의 값처럼 쓴 숫자 없음",
+      "actual": "SK하이닉스의 2025년 12월 거래량은 3,494,666주입니다."
+    },
+    {
+      "id": "ref_08",
+      "split": "dev",
+      "category": "refusal",
+      "run": 1,
+      "question": "현대차 2026년 3월 15일 종가 알려줘",
+      "check": "period_label",
+      "expected": "보유 범위 밖 기간의 값처럼 쓴 숫자 없음",
+      "actual": "2026년 3월 15일의 현대차 종가는 314,000원입니다."
+    },
+    {
+      "id": "ref_08",
+      "split": "dev",
+      "category": "refusal",
+      "run": 2,
+      "question": "현대차 2026년 3월 15일 종가 알려줘",
+      "check": "period_label",
+      "expected": "보유 범위 밖 기간의 값처럼 쓴 숫자 없음",
+      "actual": "## 주가 동향\n\n현대차의 2026-10-14 종가는 314,000원으로, 2026-09-23 종가 357,000원 대비 11거래일간 -12.04%입니다. 이 기간 종가 최고는 354,000원(2026-09-28), 최저는 311,500원(2026-10-13)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 +0.80%, 거래량은 467,889주입"
+    },
+    {
+      "id": "ref_09",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 0,
+      "question": "NAVER 작년 이맘때 주가는 얼마였어?",
+      "check": "period_label",
+      "expected": "보유 범위 밖 기간의 값처럼 쓴 숫자 없음",
+      "actual": "NAVER의 작년 주가는 약 179,200원입니다."
+    },
+    {
+      "id": "ref_09",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 1,
+      "question": "NAVER 작년 이맘때 주가는 얼마였어?",
+      "check": "period_label",
+      "expected": "보유 범위 밖 기간의 값처럼 쓴 숫자 없음",
+      "actual": "NAVER의 2022 년 9 월 30 일 주가는 193,500 원이었습니다."
+    },
+    {
+      "id": "ref_09",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 2,
+      "question": "NAVER 작년 이맘때 주가는 얼마였어?",
+      "check": "period_label",
+      "expected": "보유 범위 밖 기간의 값처럼 쓴 숫자 없음",
+      "actual": "NAVER의 2026년 9월의 종가는 203,000원으로, 2026년 7월 14일 종가 183,200원 대비 60거래일간 -2.18%입니다. 이 기간 종가 최고는 229,000원(2026-08-05), 최저는 176,900원(2026-10-13)입니다."
+    },
+    {
+      "id": "ref_10",
+      "split": "dev",
+      "category": "refusal",
+      "run": 0,
+      "question": "카카오 3년 전 주가 알려줘",
+      "check": "period_label",
+      "expected": "보유 범위 밖 기간의 값처럼 쓴 숫자 없음",
+      "actual": "## 주가 동향\n\n카카오의 3년 전 주가(2023년 10월 14일 기준)는 31,650원으로, 2026년 10월 14일 종가 대비 -6.50%입니다."
+    },
+    {
+      "id": "ref_13",
+      "split": "dev",
+      "category": "refusal",
+      "run": 0,
+      "question": "기아 2024년 등락률 알려줘",
+      "check": "period_label",
+      "expected": "보유 범위 밖 기간의 값처럼 쓴 숫자 없음",
+      "actual": "## 주가 동향\n기아의 2026-10-14 종가는 108,200원으로, 2026-07-14 종가 139,600원 대비 60거래일간 -22.49%입니다. 이 기간 종가 최고는 149,800원(2026-07-23), 최저는 107,000원(2026-10-08)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 +0.74%, 거래량은 794,309주입니다"
+    },
+    {
+      "id": "ref_13",
+      "split": "dev",
+      "category": "refusal",
+      "run": 1,
+      "question": "기아 2024년 등락률 알려줘",
+      "check": "period_label",
+      "expected": "보유 범위 밖 기간의 값처럼 쓴 숫자 없음",
+      "actual": "## 주가 동향\n기아의 2026-10-14 종가는 108,200원으로, 2026-07-14 종가 139,600원 대비 60거래일간 -22.49%입니다. 이 기간 종가 최고는 149,800원(2026-07-23), 최저는 107,000원(2026-10-08)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 +0.74%, 거래량은 794,309주입니다"
+    },
+    {
+      "id": "ref_13",
+      "split": "dev",
+      "category": "refusal",
+      "run": 2,
+      "question": "기아 2024년 등락률 알려줘",
+      "check": "period_label",
+      "expected": "보유 범위 밖 기간의 값처럼 쓴 숫자 없음",
+      "actual": "## 주가 동향\n기아의 2026-10-14 종가는 108,200원으로, 2026-08-27 종가 126,100원 대비 30거래일간 -14.20%입니다."
+    },
+    {
+      "id": "etf_03",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "KODEX 200 구성종목 비중 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\nKODEX 200의 2026-10-14 종가는 94,805원으로, 2026-09-10 종가 111,865원 대비 20거래일간 -15.25%입니다. 이 기간 종가 최고는 113,145원(2026-09-23), 최저는 94,805원(2026-10-14)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 -0.47%, 거래량은 28,394"
+      }
+    },
+    {
+      "id": "etf_03",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "KODEX 200 구성종목 비중 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": ""
+      }
+    },
+    {
+      "id": "etf_03",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 2,
+      "question": "KODEX 200 구성종목 비중 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\nKODEX 200의 2026-10-14 종가는 94,805원으로, 2026-09-10 종가 111,865원 대비 20거래일간 -15.25%입니다. 이 기간 종가 최고는 113,145원(2026-09-23), 최저는 94,805원(2026-10-14)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 -0.47%, 거래량은 28,394"
+      }
+    },
+    {
+      "id": "etf_04",
+      "split": "holdout",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "TIGER 미국나스닥100에 어떤 종목들이 들어있어?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\nTIGER 미국나스닥100의 2026-10-14 종가는 181,000원으로, 2026-09-10 종가 174,540원 대비 20거래일간 +3.70%입니다. 이 기간 종가 최고는 185,655원(2026-10-01), 최저는 173,050원(2026-09-14)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 -0.08%, 거래량은 "
+      }
+    },
+    {
+      "id": "etf_04",
+      "split": "holdout",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "TIGER 미국나스닥100에 어떤 종목들이 들어있어?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": ""
+      }
+    },
+    {
+      "id": "etf_04",
+      "split": "holdout",
+      "category": "etf_safety",
+      "run": 2,
+      "question": "TIGER 미국나스닥100에 어떤 종목들이 들어있어?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\nTIGER 미국나스닥100의 2026-10-14 종가는 181,000원으로, 2026-09-10 종가 174,540원 대비 20거래일간 +3.70%입니다. 이 기간 종가 최고는 185,655원(2026-10-01), 최저는 173,050원(2026-09-14)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 -0.08%, 거래량은 "
+      }
+    },
+    {
+      "id": "etf_06",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "KODEX 반도체 편입 비중 상위 종목 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\nKODEX 반도체의 2026-10-14 종가는 127,520원으로, 2026-09-10 종가 136,920원 대비 20거래일간 -6.87%입니다. 이 기간 종가 최고는 151,060원(2026-10-06), 최저는 122,695원(2026-09-15)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 -4.37%, 거래량은 1,725"
+      }
+    },
+    {
+      "id": "etf_06",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "KODEX 반도체 편입 비중 상위 종목 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\nKODEX 반도체의 2026-10-14 종가는 127,520원으로, 2026-09-10 종가 136,920원 대비 20거래일간 -6.87%입니다. 이 기간 종가 최고는 151,060원(2026-10-06), 최저는 122,695원(2026-09-15)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 -4.37%, 거래량은 1,725"
+      }
+    },
+    {
+      "id": "etf_06",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 2,
+      "question": "KODEX 반도체 편입 비중 상위 종목 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\nKODEX 반도체의 2026-10-14 종가는 127,520원으로, 2026-09-10 종가 136,920원 대비 20거래일간 -6.87%입니다. 이 기간 종가 최고는 151,060원(2026-10-06), 최저는 122,695원(2026-09-15)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 -4.37%, 거래량은 1,725"
+      }
+    },
+    {
+      "id": "etf_07",
+      "split": "holdout",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "TIGER 미국S&P500 보유종목 TOP10은?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 관련 뉴스\n- 삼성자산운용, 'KODEX 머니마켓액티브' 1개월 2조5105억원 유입…ETF 1위 (www.press9.kr, 2026-10-14)\n- 삼성·미래에셋운용 ETF 자금 흐름...머니마켓·미국 지수로, 반도체선 ... (www.ezyeconomy.com, 2026-10-14)\n- 삼성전자·SK하이닉스 급락에 코스피 '털썩'…6000선 턱걸"
+      }
+    },
+    {
+      "id": "etf_07",
+      "split": "holdout",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "TIGER 미국S&P500 보유종목 TOP10은?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 관련 뉴스\n- 삼성자산운용, 'KODEX 머니마켓액티브' 1개월 2조5105억원 유입…ETF 1위 (www.press9.kr, 2026-10-14)\n- 삼성·미래에셋운용 ETF 자금 흐름...머니마켓·미국 지수로, 반도체선 ... (www.ezyeconomy.com, 2026-10-14)\n- 삼성전자·SK하이닉스 급락에 코스피 '털썩'…6000선 턱걸"
+      }
+    },
+    {
+      "id": "etf_07",
+      "split": "holdout",
+      "category": "etf_safety",
+      "run": 2,
+      "question": "TIGER 미국S&P500 보유종목 TOP10은?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 관련 뉴스\n- 삼성자산운용, 'KODEX 머니마켓액티브' 1개월 2조5105억원 유입…ETF 1위 (www.press9.kr, 2026-10-14)\n- 삼성·미래에셋운용 ETF 자금 흐름...머니마켓·미국 지수로, 반도체선 ... (www.ezyeconomy.com, 2026-10-14)\n- 삼성전자·SK하이닉스 급락에 코스피 '털썩'…6000선 턱걸"
+      }
+    },
+    {
+      "id": "etf_08",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "KODEX 2차전지산업에 무슨 종목이 들어 있어?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\nKODEX 2차전지산업의 2026-10-14 종가는 15,820원으로, 2026-09-10 종가 15,365원 대비 20거래일간 +2.96%입니다. 이 기간 종가 최고는 15,985원(2026-10-06), 최저는 14,275원(2026-09-29)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 +2.89%, 거래량은 8,557,"
+      }
+    },
+    {
+      "id": "etf_08",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "KODEX 2차전지산업에 무슨 종목이 들어 있어?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\nKODEX 2차전지산업의 2026-10-14 종가는 15,820원으로, 2026-09-10 종가 15,365원 대비 20거래일간 +2.96%입니다. 이 기간 종가 최고는 15,985원(2026-10-06), 최저는 14,275원(2026-09-29)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 +2.89%, 거래량은 8,557,"
+      }
+    },
+    {
+      "id": "etf_08",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 2,
+      "question": "KODEX 2차전지산업에 무슨 종목이 들어 있어?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\nKODEX 2차전지산업의 2026-10-14 종가는 15,820원으로, 2026-09-10 종가 15,365원 대비 20거래일간 +2.96%입니다. 이 기간 종가 최고는 15,985원(2026-10-06), 최저는 14,275원(2026-09-29)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 +2.89%, 거래량은 8,557,"
+      }
+    },
+    {
+      "id": "etf_09",
+      "split": "holdout",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "TIGER 반도체TOP10 구성종목이랑 비중 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\nTIGER 반도체TOP10의 2026-10-14 종가는 32,445원으로, 2026-09-10 종가 38,220원 대비 20거래일간 -15.11%입니다. 이 기간 종가 최고는 40,110원(2026-10-06), 최저는 32,445원(2026-10-14)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 -1.96%, 거래량은 12,"
+      }
+    },
+    {
+      "id": "etf_09",
+      "split": "holdout",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "TIGER 반도체TOP10 구성종목이랑 비중 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\nTIGER 반도체TOP10의 2026-10-14 종가는 32,445원으로, 2026-09-10 종가 38,220원 대비 20거래일간 -15.11%입니다. 이 기간 종가 최고는 40,110원(2026-10-06), 최저는 32,445원(2026-10-14)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 -1.96%, 거래량은 12,"
+      }
+    },
+    {
+      "id": "etf_09",
+      "split": "holdout",
+      "category": "etf_safety",
+      "run": 2,
+      "question": "TIGER 반도체TOP10 구성종목이랑 비중 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\nTIGER 반도체TOP10의 2026-10-14 종가는 32,445원으로, 2026-09-10 종가 38,220원 대비 20거래일간 -15.11%입니다. 이 기간 종가 최고는 40,110원(2026-10-06), 최저는 32,445원(2026-10-14)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 -1.96%, 거래량은 12,"
+      }
+    },
+    {
+      "id": "etf_10",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 0,
+      "question": "ACE 미국나스닥100 상위 보유 종목이 뭐야?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\nACE 미국나스닥100의 2026-10-14 종가는 31,140원으로, 2026-09-10 종가 30,000원 대비 20거래일간 +3.80%입니다. 이 기간 종가 최고는 31,910원(2026-10-01), 최저는 29,760원(2026-09-14)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 -0.06%, 거래량은 415,10"
+      }
+    },
+    {
+      "id": "etf_10",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "ACE 미국나스닥100 상위 보유 종목이 뭐야?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\nACE 미국나스닥100의 2026-10-14 종가는 31,140원으로, 2026-09-10 종가 30,000원 대비 20거래일간 +3.80%입니다. 이 기간 종가 최고는 31,910원(2026-10-01), 최저는 29,760원(2026-09-14)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 -0.06%, 거래량은 415,10"
+      }
+    },
+    {
+      "id": "etf_10",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 2,
+      "question": "ACE 미국나스닥100 상위 보유 종목이 뭐야?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\nACE 미국나스닥100의 2026-10-14 종가는 31,140원으로, 2026-09-10 종가 30,000원 대비 20거래일간 +3.80%입니다. 이 기간 종가 최고는 31,910원(2026-10-01), 최저는 29,760원(2026-09-14)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 -0.06%, 거래량은 415,10"
+      }
+    },
+    {
+      "id": "ref_01",
+      "split": "dev",
+      "category": "refusal",
+      "run": 2,
+      "question": "롯데칠성 주가 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "'롯데칠성'이 아닌 '북레반카일소'이라는 이름의 문제가 있습니다. 정확한 종목명이나 종목코드를 알려주시면 확인해드리겠습니다."
+      }
+    },
+    {
+      "id": "ref_04",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 0,
+      "question": "삼성전자 2024년 3월 주가 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\n\n삼성전자는 현재 235,000 원에 거래되고 있습니다. \n\n## 뉴스·공시 근거\n\n주가 변동 원인에 대한 뉴스와 공시 내용은 다음과 같습니다.\n\n- \n- \n\n## 위험요인\n\n아무런 위험 요인이 보이지 않습니다."
+      }
+    },
+    {
+      "id": "ref_04",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 1,
+      "question": "삼성전자 2024년 3월 주가 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\n\n삼성전자는 현재 235,000원에 거래되고 있습니다."
+      }
+    },
+    {
+      "id": "ref_04",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 2,
+      "question": "삼성전자 2024년 3월 주가 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\n삼성전자는 2026년 10월 14일 현재 235,000원에 거래되고 있습니다. 60일 간의 변동폭은 -10.65%입니다."
+      }
+    },
+    {
+      "id": "ref_05",
+      "split": "dev",
+      "category": "refusal",
+      "run": 0,
+      "question": "SK하이닉스 2025년 1월 거래량은?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "2025년 1월의 거래량은 3494666주입니다."
+      }
+    },
+    {
+      "id": "ref_05",
+      "split": "dev",
+      "category": "refusal",
+      "run": 1,
+      "question": "SK하이닉스 2025년 1월 거래량은?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "SK하이닉스 2025년 1월 거래량은 3494666 종목당 하나입니다."
+      }
+    },
+    {
+      "id": "ref_06",
+      "split": "dev",
+      "category": "refusal",
+      "run": 0,
+      "question": "삼성전자 2023년 주가 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\n삼성전자의 2026-10-14 종가는 235,000원으로, 2026-07-14 종가 263,000원 대비 60거래일간 -10.65%입니다."
+      }
+    },
+    {
+      "id": "ref_06",
+      "split": "dev",
+      "category": "refusal",
+      "run": 2,
+      "question": "삼성전자 2023년 주가 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\n\n삼성전자의 2023년 주가는 현재 235,000원으로, 전일比 0.43% 상승했습니다."
+      }
+    },
+    {
+      "id": "ref_07",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 0,
+      "question": "SK하이닉스 2025년 12월 거래량은?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "2025년 12월 거래량은 없고, 2026년 10월 14일 현재 거래량은 3,494,666입니다."
+      }
+    },
+    {
+      "id": "ref_07",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 1,
+      "question": "SK하이닉스 2025년 12월 거래량은?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\nSK하이닉스의 2026년 10월 14일 종가는 1,435,000원으로, 2026년 7월 14일 종가 1,913,000원 대비 60거래일간 -24.99%입니다. 이 기간 종가 최고는 2,082,000원(2026년 7월 15일), 최저는 1,322,000원(2026년 7월 30일)입니다. 마지막 거래일(2026년 10월 14일) 하루 등락률은 "
+      }
+    },
+    {
+      "id": "ref_07",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 2,
+      "question": "SK하이닉스 2025년 12월 거래량은?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "SK하이닉스의 2025년 12월 거래량은 3,494,666주입니다."
+      }
+    },
+    {
+      "id": "ref_08",
+      "split": "dev",
+      "category": "refusal",
+      "run": 0,
+      "question": "현대차 2026년 3월 15일 종가 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "현대차 2026년 3월 15일 종가가 궁금하셨을 것으로 추측합니다. 하지만 2026년 3월 15일은 아직 오늘이 아니므로 정확한 종가 조회가 어렵습니다."
+      }
+    },
+    {
+      "id": "ref_08",
+      "split": "dev",
+      "category": "refusal",
+      "run": 1,
+      "question": "현대차 2026년 3월 15일 종가 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "2026년 3월 15일의 현대차 종가는 314,000원입니다."
+      }
+    },
+    {
+      "id": "ref_08",
+      "split": "dev",
+      "category": "refusal",
+      "run": 2,
+      "question": "현대차 2026년 3월 15일 종가 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\n\n현대차의 2026-10-14 종가는 314,000원으로, 2026-09-23 종가 357,000원 대비 11거래일간 -12.04%입니다. 이 기간 종가 최고는 354,000원(2026-09-28), 최저는 311,500원(2026-10-13)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 +0.80%, 거래량은 467,889주입"
+      }
+    },
+    {
+      "id": "ref_09",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 0,
+      "question": "NAVER 작년 이맘때 주가는 얼마였어?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "NAVER의 작년 주가는 약 179,200원입니다."
+      }
+    },
+    {
+      "id": "ref_09",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 1,
+      "question": "NAVER 작년 이맘때 주가는 얼마였어?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "NAVER의 2022 년 9 월 30 일 주가는 193,500 원이었습니다."
+      }
+    },
+    {
+      "id": "ref_09",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 2,
+      "question": "NAVER 작년 이맘때 주가는 얼마였어?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "NAVER의 2026년 9월의 종가는 203,000원으로, 2026년 7월 14일 종가 183,200원 대비 60거래일간 -2.18%입니다. 이 기간 종가 최고는 229,000원(2026-08-05), 최저는 176,900원(2026-10-13)입니다."
+      }
+    },
+    {
+      "id": "ref_10",
+      "split": "dev",
+      "category": "refusal",
+      "run": 0,
+      "question": "카카오 3년 전 주가 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\n\n카카오의 3년 전 주가(2023년 10월 14일 기준)는 31,650원으로, 2026년 10월 14일 종가 대비 -6.50%입니다."
+      }
+    },
+    {
+      "id": "ref_13",
+      "split": "dev",
+      "category": "refusal",
+      "run": 0,
+      "question": "기아 2024년 등락률 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\n기아의 2026-10-14 종가는 108,200원으로, 2026-07-14 종가 139,600원 대비 60거래일간 -22.49%입니다. 이 기간 종가 최고는 149,800원(2026-07-23), 최저는 107,000원(2026-10-08)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 +0.74%, 거래량은 794,309주입니다"
+      }
+    },
+    {
+      "id": "ref_13",
+      "split": "dev",
+      "category": "refusal",
+      "run": 1,
+      "question": "기아 2024년 등락률 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\n기아의 2026-10-14 종가는 108,200원으로, 2026-07-14 종가 139,600원 대비 60거래일간 -22.49%입니다. 이 기간 종가 최고는 149,800원(2026-07-23), 최저는 107,000원(2026-10-08)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 +0.74%, 거래량은 794,309주입니다"
+      }
+    },
+    {
+      "id": "ref_13",
+      "split": "dev",
+      "category": "refusal",
+      "run": 2,
+      "question": "기아 2024년 등락률 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "## 주가 동향\n기아의 2026-10-14 종가는 108,200원으로, 2026-08-27 종가 126,100원 대비 30거래일간 -14.20%입니다."
+      }
+    },
+    {
+      "id": "ref_11",
+      "split": "dev",
+      "category": "refusal",
+      "run": 1,
+      "question": "LG전자 2026년 6월 주가 흐름 알려줘",
+      "check": "partial",
+      "expected": "없는 구간 명시 + 있는 구간 값(근거 있음)",
+      "actual": {
+        "refusal_phrase": false,
+        "matched": 4,
+        "unmatched": [],
+        "answer": "## 주가 동향\nLG전자 주가는 2026년 6월 현재 약 177,800원에 거래되고 있습니다. 60일 동안의 주가는 약 4.10% 하락했습니다. 주가는 현재 148,000원(2026-07-30)에서 233,000원(2026-10-06)까지 움직이었습니다.\n\n## 원인 분석\n주가의 변동은 여러 가지 원인에 의해 영향을 받을 수 있습니다. 이 경우, LG전자의"
+      }
+    },
+    {
+      "id": "ref_12",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 0,
+      "question": "셀트리온 올해 1월부터 지금까지 등락률은?",
+      "check": "partial",
+      "expected": "없는 구간 명시 + 있는 구간 값(근거 있음)",
+      "actual": {
+        "refusal_phrase": false,
+        "matched": 4,
+        "unmatched": [],
+        "answer": "셀트리온의 60일간 종가 최고는 210,500원(2026-08-11), 최저는 170,100원(2026-07-22)입니다. 마지막 거래일(2026-10-14) 하루 등락률은 +1.07%, 거래량은 458,666주입니다."
+      }
+    },
+    {
+      "id": "ref_12",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 1,
+      "question": "셀트리온 올해 1월부터 지금까지 등락률은?",
+      "check": "partial",
+      "expected": "없는 구간 명시 + 있는 구간 값(근거 있음)",
+      "actual": {
+        "refusal_phrase": false,
+        "matched": 1,
+        "unmatched": [],
+        "answer": "## 주가 동향\n셀트리온의 60거래일간 주가는 -4.05% 변동했습니다."
+      }
+    },
+    {
+      "id": "ref_12",
+      "split": "holdout",
+      "category": "refusal",
+      "run": 2,
+      "question": "셀트리온 올해 1월부터 지금까지 등락률은?",
+      "check": "partial",
+      "expected": "없는 구간 명시 + 있는 구간 값(근거 있음)",
+      "actual": {
+        "refusal_phrase": false,
+        "matched": 1,
+        "unmatched": [],
+        "answer": "셀트리온의 60일 이동 평균 등락률은 4.05%입니다."
+      }
+    },
+    {
+      "id": "grd_14",
+      "split": "holdout",
+      "category": "grounding",
+      "run": 0,
+      "question": "HD현대중공업 최근 공시와 주가 알려줘",
+      "check": "number_support",
+      "expected": "답변 숫자 전부 도구 결과로 설명",
+      "actual": [
+        "7,866"
+      ]
+    },
+    {
+      "id": "tool_04",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "PER이 뭐야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_04",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "PER이 뭐야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_04",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 2,
+      "question": "PER이 뭐야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_05",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "배당수익률이 뭔지 설명해줘",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_05",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "배당수익률이 뭔지 설명해줘",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_05",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 2,
+      "question": "배당수익률이 뭔지 설명해줘",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_14",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "공매도가 뭐야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "disclosure_tool"
+      ]
+    },
+    {
+      "id": "tool_14",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "공매도가 뭐야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_14",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 2,
+      "question": "공매도가 뭐야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_16",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "PBR이 뭐야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_16",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 2,
+      "question": "PBR이 뭐야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_18",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "배당락이 뭐야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_18",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 2,
+      "question": "배당락이 뭐야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_19",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "공모주가 뭔지 알려줘",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "disclosure_tool"
+      ]
+    },
+    {
+      "id": "tool_19",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 2,
+      "question": "공모주가 뭔지 알려줘",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_20",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "시가총액이 뭐야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "rag_search_tool"
+      ]
+    },
+    {
+      "id": "tool_20",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 2,
+      "question": "시가총액이 뭐야?",
+      "check": "tool_selection",
+      "expected": {
+        "all": null,
+        "forbidden": [
+          "*"
+        ]
+      },
+      "actual": [
+        "stock_tool"
+      ]
+    },
+    {
+      "id": "etf_02",
+      "split": "holdout",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "KODEX 인버스는 어떤 상품이야? 위험한 점도 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "반대|인버스",
+          "복리|손실|위험"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:반대|인버스",
+        "missing:복리|손실|위험"
+      ]
+    },
+    {
+      "id": "etf_05",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "KODEX 코스닥150레버리지 사도 돼?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "복리|손실|위험"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:복리|손실|위험"
+      ]
+    },
+    {
+      "id": "tool_16",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "PBR이 뭐야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "순자산|자본"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:순자산|자본"
+      ]
+    },
+    {
+      "id": "tool_17",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "ROE가 무슨 뜻이야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "자기자본|자본"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:자기자본|자본"
+      ]
+    },
+    {
+      "id": "tool_18",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "배당락이 뭐야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "배당"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:배당"
+      ]
+    },
+    {
+      "id": "tool_19",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "공모주가 뭔지 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "상장|청약|공모"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:상장|청약|공모"
+      ]
+    },
+    {
+      "id": "tool_20",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 0,
+      "question": "시가총액이 뭐야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "주식\\s*수|발행"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:주식\\s*수|발행"
+      ]
+    },
+    {
+      "id": "tool_20",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "시가총액이 뭐야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "주식\\s*수|발행"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:주식\\s*수|발행"
+      ]
+    },
+    {
+      "id": "tool_20",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 2,
+      "question": "시가총액이 뭐야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "주식\\s*수|발행"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:주식\\s*수|발행"
+      ]
+    },
+    {
+      "id": "per_03",
+      "split": "dev",
+      "category": "period",
+      "run": 0,
+      "question": "카카오 한 달 주가 흐름 보여줘",
+      "check": "period_parse",
+      "expected": {
+        "period_days": 23,
+        "start": "2026-09-14",
+        "end": "2026-10-14"
+      },
+      "actual": null
+    },
+    {
+      "id": "per_10",
+      "split": "dev",
+      "category": "period",
+      "run": 0,
+      "question": "KODEX 200 일주일 동안 가격 알려줘",
+      "check": "period_parse",
+      "expected": {
+        "period_days": 5,
+        "start": "2026-10-08",
+        "end": "2026-10-14"
+      },
+      "actual": null
+    },
+    {
+      "id": "per_12",
+      "split": "holdout",
+      "category": "period",
+      "run": 0,
+      "question": "SK하이닉스 반년 동안 주가 흐름 보여줘",
+      "check": "period_parse",
+      "expected": {
+        "period_days": 132,
+        "start": "2026-04-14",
+        "end": "2026-10-14"
+      },
+      "actual": null
+    },
+    {
+      "id": "per_14",
+      "split": "holdout",
+      "category": "period",
+      "run": 0,
+      "question": "카카오 최근 두 달 주가 어땠어?",
+      "check": "period_parse",
+      "expected": {
+        "period_days": 44,
+        "start": "2026-08-14",
+        "end": "2026-10-14"
+      },
+      "actual": null
+    },
+    {
+      "id": "etf_02",
+      "split": "holdout",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "KODEX 인버스는 어떤 상품이야? 위험한 점도 알려줘",
+      "check": "error",
+      "expected": "정상 응답",
+      "actual": "timeout>120s"
+    },
+    {
+      "id": "etf_03",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "KODEX 200 구성종목 비중 알려줘",
+      "check": "error",
+      "expected": "정상 응답",
+      "actual": "timeout>120s"
+    },
+    {
+      "id": "etf_04",
+      "split": "holdout",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "TIGER 미국나스닥100에 어떤 종목들이 들어있어?",
+      "check": "error",
+      "expected": "정상 응답",
+      "actual": "timeout>120s"
+    },
+    {
+      "id": "etf_05",
+      "split": "dev",
+      "category": "etf_safety",
+      "run": 1,
+      "question": "KODEX 코스닥150레버리지 사도 돼?",
+      "check": "error",
+      "expected": "정상 응답",
+      "actual": "timeout>120s"
+    },
+    {
+      "id": "tool_16",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "PBR이 뭐야?",
+      "check": "error",
+      "expected": "정상 응답",
+      "actual": "timeout>120s"
+    },
+    {
+      "id": "tool_17",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "ROE가 무슨 뜻이야?",
+      "check": "error",
+      "expected": "정상 응답",
+      "actual": "timeout>120s"
+    },
+    {
+      "id": "tool_18",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "배당락이 뭐야?",
+      "check": "error",
+      "expected": "정상 응답",
+      "actual": "timeout>120s"
+    },
+    {
+      "id": "tool_19",
+      "split": "holdout",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "공모주가 뭔지 알려줘",
+      "check": "error",
+      "expected": "정상 응답",
+      "actual": "timeout>120s"
+    },
+    {
+      "id": "tool_20",
+      "split": "dev",
+      "category": "tool_selection",
+      "run": 1,
+      "question": "시가총액이 뭐야?",
+      "check": "error",
+      "expected": "정상 응답",
+      "actual": "timeout>120s"
+    }
+  ]
+}

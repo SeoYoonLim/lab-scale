@@ -1,0 +1,49 @@
+{
+  "_doc": "숫자 검증기 holdout 세트. guard_cases.json으로 규칙을 보강한 뒤, 그 규칙에 맞추지 않고 새 시나리오로 작성해 한 번만 측정했다(2026-10-28). 이 세트를 보고 규칙을 고치지 않는다.",
+  "scenarios": {
+    "naver_5d": [
+      {"tool_name": "stock_tool", "arguments": {"ticker": "NAVER", "period_days": 5},
+       "result": {"ticker": "035420", "company_name": "NAVER", "period_days": 5, "found": true, "change_pct": 1.16, "volume": 812345,
+                  "period_start_date": "2026-10-20", "period_end_date": "2026-10-27", "trading_days": 5, "period_change_pct": 5.79,
+                  "summary": "NAVER의 2026-10-27 종가는 201,000원으로, 2026-10-20 종가 190,000원 대비 5거래일간 +5.79%입니다. 이 기간 종가 최고는 201,000원(2026-10-27), 최저는 189,800원(2026-10-22)입니다. 마지막 거래일(2026-10-27) 하루 등락률은 +1.16%, 거래량은 812,345주입니다.",
+                  "prices": [
+                    {"price_date": "2026-10-21", "close_price": 192300.0, "volume": 700000, "change_pct": 1.21},
+                    {"price_date": "2026-10-22", "close_price": 189800.0, "volume": 650000, "change_pct": -1.30},
+                    {"price_date": "2026-10-23", "close_price": 195500.0, "volume": 1020000, "change_pct": 3.00},
+                    {"price_date": "2026-10-24", "close_price": 198700.0, "volume": 905000, "change_pct": 1.64},
+                    {"price_date": "2026-10-27", "close_price": 201000.0, "volume": 812345, "change_pct": 1.16}
+                  ]}}
+    ],
+    "lgchem_sdi_1d": [
+      {"tool_name": "stock_tool", "arguments": {"ticker": "LG화학", "period_days": 1},
+       "result": {"ticker": "051910", "company_name": "LG화학", "period_days": 1, "found": true, "change_pct": -2.34, "volume": 402118,
+                  "prices": [{"price_date": "2026-10-27", "close_price": 312500.0, "volume": 402118, "change_pct": -2.34}]}},
+      {"tool_name": "stock_tool", "arguments": {"ticker": "삼성SDI", "period_days": 1},
+       "result": {"ticker": "006400", "company_name": "삼성SDI", "period_days": 1, "found": true, "change_pct": 4.03, "volume": 655901,
+                  "prices": [{"price_date": "2026-10-27", "close_price": 245000.0, "volume": 655901, "change_pct": 4.03}]}}
+    ]
+  },
+  "cases": [
+    {"id": "hv01", "label": "violation", "type": "digit", "scenario": "naver_5d", "question": "NAVER 주가 알려줘", "answer": "NAVER 종가는 20,100원입니다."},
+    {"id": "hv02", "label": "violation", "type": "invented", "scenario": "naver_5d", "question": "NAVER 최근 흐름 어때?", "answer": "NAVER는 최근 5거래일간 9.1% 상승했습니다."},
+    {"id": "hv03", "label": "violation", "type": "wrong_target", "scenario": "lgchem_sdi_1d", "question": "LG화학 오늘 어때?", "answer": "LG화학은 전일 대비 4.03% 올랐습니다."},
+    {"id": "hv04", "label": "violation", "type": "wrong_target", "scenario": "lgchem_sdi_1d", "question": "삼성SDI 주가 알려줘", "answer": "삼성SDI 종가는 312,500원입니다."},
+    {"id": "hv05", "label": "violation", "type": "unit", "scenario": "naver_5d", "question": "NAVER 거래량은?", "answer": "NAVER 거래량은 약 8,123만 주입니다."},
+    {"id": "hv06", "label": "violation", "type": "unit", "scenario": "lgchem_sdi_1d", "question": "삼성SDI 주가 알려줘", "answer": "삼성SDI 주가는 2억 4,500만원입니다."},
+    {"id": "hv07", "label": "violation", "type": "date", "scenario": "naver_5d", "question": "NAVER 지난주 수요일 종가는?", "answer": "NAVER의 10월 22일 종가는 201,000원입니다."},
+    {"id": "hv08", "label": "violation", "type": "date", "scenario": "naver_5d", "question": "NAVER 주가 알려줘", "answer": "NAVER는 10월 31일 201,000원입니다."},
+    {"id": "hv09", "label": "violation", "type": "wrong_target", "scenario": "naver_5d", "question": "NAVER 오늘 얼마나 올랐어?", "answer": "NAVER는 하루 동안 5.79% 올랐습니다."},
+    {"id": "hv10", "label": "violation", "type": "invented", "scenario": "lgchem_sdi_1d", "question": "LG화학 거래량 어때?", "answer": "LG화학 거래량은 전일보다 52,000주 줄었습니다."},
+
+    {"id": "hn01", "label": "ok", "scenario": "naver_5d", "question": "NAVER 주가 알려줘", "answer": "NAVER의 2026-10-27 종가는 201,000원, 전일 대비 1.16% 상승입니다."},
+    {"id": "hn02", "label": "ok", "scenario": "naver_5d", "question": "NAVER 최근 흐름 어때?", "answer": "NAVER는 5거래일간 5.79% 올랐습니다."},
+    {"id": "hn03", "label": "ok", "scenario": "naver_5d", "question": "NAVER 주가 알려줘", "answer": "NAVER는 20만 1천원에 마감했습니다."},
+    {"id": "hn04", "label": "ok", "scenario": "naver_5d", "question": "NAVER 최근 최고가 최저가는?", "answer": "이 기간 최저가는 10월 22일 189,800원, 최고가는 10월 27일 201,000원입니다."},
+    {"id": "hn05", "label": "ok", "scenario": "lgchem_sdi_1d", "question": "LG화학이랑 삼성SDI 비교해줘", "answer": "LG화학은 312,500원으로 2.34% 내렸고, 삼성SDI는 245,000원으로 4.03% 올랐습니다."},
+    {"id": "hn06", "label": "ok", "scenario": "lgchem_sdi_1d", "question": "LG화학이랑 삼성SDI 중 어디가 더 올랐어?", "answer": "삼성SDI가 LG화학보다 등락률이 6.37%p 높았습니다."},
+    {"id": "hn07", "label": "ok", "scenario": "lgchem_sdi_1d", "question": "LG화학 거래량은?", "answer": "LG화학 거래량은 402,118주, 약 40만 주입니다."},
+    {"id": "hn08", "label": "ok", "scenario": "naver_5d", "question": "NAVER 최근 흐름 어때?", "answer": "NAVER는 10월 23일 하루에 3% 올랐습니다."},
+    {"id": "hn09", "label": "ok", "scenario": "lgchem_sdi_1d", "question": "삼성SDI 주가 알려줘", "answer": "삼성SDI 종가는 약 24.5만원입니다."},
+    {"id": "hn10", "label": "ok", "scenario": "naver_5d", "question": "NAVER 거래량 어때?", "answer": "NAVER 거래량은 812,345주로 직전 거래일(905,000주)보다 줄었습니다."}
+  ]
+}

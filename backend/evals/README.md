@@ -1,0 +1,791 @@
+# AI 평가 (evals/)
+
+리서치 에이전트의 품질을 **규칙 기반**으로 숫자로 재는 도구입니다. LLM 심사(LLM-as-judge)는 쓰지 않습니다.
+에이전트 코드(`app/agent.py`, `app/routing.py`, `app/tools/company_resolver.py` 등)를 바꾸기 전후에 같은 데이터셋을 돌려
+`compare.py`로 지표 변화를 봅니다.
+
+| 파일 | 내용 |
+|---|---|
+| `dataset.jsonl` | 질문 350개와 기대값(한 줄 = 한 문항) |
+| `metrics.py` | 채점 순수 함수(DB·Ollama 없이 테스트: `tests/test_evals_metrics.py`) |
+| `run_eval.py` | 실행기(offline/live), summary·raw 결과 저장 |
+| `compare.py` | summary 두 개의 지표별 변화 표 |
+| `results/` | `summary_*.json`만 커밋. `raw_*.jsonl`(답변 원문·도구 인자)은 `.gitignore` |
+| `quality_*.py`, `quality_cases.jsonl`, `quality_dataset.json`, `quality_baseline.json`, `run_quality.py` | (2026-11-07) 8개 영역 품질 평가: 제품 경로 결정론 평가, 판정기 검증, 기준선 비교, 하드 실패 집계. **`docs/AI_QUALITY_EVALUATION.md`** |
+
+> 2026-11-07부터 CI `eval-offline`은 위 offline 59문항 뒤에 `python -m evals.run_quality --legacy-summary ...`도 돈다. offline 실패 11건(전부 엄격 모드 `entity_strict`의
+> 의도된 거절: 음차·오타·잘린 이름)은 `quality_baseline.json`의 `legacy_offline`에 `intended_reject`로 분류했고, 목록이 바뀌면 알려 준다(새 실패는 게이트 실패).
+> 문항·기대값·`entity_strict_accuracy`는 바꾸지 않았다. 자세한 구조·지표·하드 실패·기준선·한계는 `docs/AI_QUALITY_EVALUATION.md`.
+
+## 실행
+
+`backend/`에서 실행합니다.
+
+```bash
+python -m evals.run_eval                                  # 기본: offline 전체(dev+holdout), DB만 필요, 몇 초
+python -m evals.run_eval --mode live --split dev          # 실제 Ollama 에이전트 호출(질문당 약 20~40초)
+python -m evals.run_eval --mode all --repeats 3 --out evals/results/summary_x.json
+python -m evals.run_eval --mode live --only grounding,refusal --limit 5
+python -m evals.compare evals/results/summary_baseline_2026-10-27.json evals/results/summary_x.json
+```
+
+- `--mode offline|live|all`(기본 offline), `--split dev|holdout|all`(기본 all), `--repeats N`(live만 반복, 기본 1),
+  `--only 카테고리[,카테고리]`, `--ids 문항[,문항]`, `--limit N`(필터 후 앞에서 N개), `--out summary 경로`(raw는 같은 폴더에 `raw_*.jsonl`).
+- **live**는 `captest_<랜덤>` 평가 계정을 만들어 `app.agent.ask_question(question, user_id=...)`을 질문마다 120초 제한으로 부르고,
+  저장된 `tool_call_log`에서 도구 인자·결과를 읽어 채점한 뒤 **계정과 그 리포트를 모두 지웁니다**(tool_call_log는 리포트 FK CASCADE).
+  평가 계정 비밀번호는 저장·출력하지 않습니다.
+- Ollama(`OLLAMA_HOST`, 기본 `http://localhost:11434`)에 연결되지 않거나 `app.agent.MODEL_NAME` 모델이 없으면 live를 건너뛰고
+  summary의 `live.skipped_reason`에 사유를 남깁니다. offline은 그대로 돕니다.
+- summary: `git_commit`(실행 시점 HEAD), `date`, `model`, `args`, `live`(소요 시간·평가 계정·삭제한 리포트 수), 지표별 `dev/holdout/all`과 표본 수 `n`,
+  `failures`(id, split, 질문, check, expected, actual; 오매칭이 맨 앞).
+
+## split 규칙 (중요)
+
+- 카테고리마다 **dev 60% / holdout 40%**(카테고리 안 순번 i에서 `i % 5 in (1, 3)`이 holdout).
+- **프롬프트·코드 튜닝은 dev 결과만 보고 한다.** holdout은 튜닝을 끝낸 뒤 **최종 전후 비교에만** 쓴다.
+  holdout 실패를 보고 고친 뒤 holdout 점수로 개선을 주장하면 안 된다(그러면 holdout이 dev가 된다).
+- 문항을 추가할 때도 카테고리별 비율을 지키고(`tests/test_evals_dataset.py`가 확인), 실제 DB(`company` 테이블)에 있는 종목만 씁니다.
+- **seen / unseen holdout**(2026-10-27 수정 작업부터): 첫 기준선(repeats 1)의 holdout 결과는 실패 6건(ref_04, etf_04, tool_04, tool_14,
+  ent_14, ent_17)까지 공개돼서 "본 적 있는" holdout이 됐다. 그래서 수정 전에 새 문항 30개(`"batch": 2`)를 추가했고, summary는
+  `holdout_seen`(batch 1의 holdout 32개 전체 — 실패 6건만이 아니라 결과가 공개된 문항 전부로 보수적으로 잡음)과
+  `holdout_unseen`(batch 2의 holdout 12개, 수정 중에 한 번도 돌리지 않음)을 따로 집계한다. 개선 주장은 unseen 기준으로 한다.
+
+## 데이터셋
+
+| category | mode | 개수(dev/holdout) | 기대값(expect) |
+|---|---|---|---|
+| entity | offline | 33 (17/16) | `companies`(정답 1개, DB에 없는 종목이면 `[]`), `must_not_companies` |
+| period | offline | 14 (8/6) | `ref_date`, `period_days`(평일 수, 기간이 아니면 `null`), `start`, `end` |
+| routing_gate | offline | 10 (6/4) | `gates`: `routing.py` 함수 이름 → 기대값(True/False 또는 tool 목록) |
+| tool_selection | live | 26 (16/10) | `tools_all`, `tools_forbidden`(`["*"]` = 도구 호출 없어야 함), `companies`, `period_days`, 개념 질문은 `must_contain` |
+| grounding | live | 35 (20/15) | `companies`, 일부 `tools_all` |
+| refusal | live | 18 (8/10) | `must_refuse` 또는 `must_partial`(일부 기간만 데이터가 있음), `must_not_companies` |
+| etf_safety | live | 20 (10/10) | `must_contain` / `must_not_contain`(정규식), `must_refuse` (2026-10-29: 구성종목 문항은 데이터 유무에 따라 기대가 갈림, 아래 "ETF 구성종목 기능" 절) |
+| freshness | live | 4 (2/2) | `companies`, `must_state_data_date`(마지막 데이터 날짜 명시 + 오래됐으면 알림) |
+| stability | live | 12 (7/5) | `companies`, `must_answer`(timeout·fallback 없이 답함) |
+| briefing | live | 6 (2/4) | `must_briefing`(평가 계정의 브리핑 숫자만 + 숫자 1개 이상 + 면책 + 금지 표현 없음), 일부 `must_contain` |
+| attachment | live | 8 (4/4) | `companies`(2개), `check_attachment`(숫자를 맞는 종목에 붙임) |
+| period_history | live | 64 (29/35) | `companies`, `must_contain`(날짜·값), 범위 밖은 `must_refuse`, 걸침은 `must_partial`, 숫자 일치도 채점 |
+| narrative | live | 80 (31/49) | `companies`, `must_answer`, 사건 반응은 `number_scored: false`, 숫자 일치도 채점 |
+| news_relevance | live | 12 (7/5) | `companies`, `must_answer`, `must_not_contain`(동명 표기), SK는 `must_refuse`, 숫자 일치도 채점 |
+| safety | live | 8 (0/8) | 프롬프트 인젝션·주문 실행 요구. `must_not_contain`, 일부 `must_answer` |
+
+총 350개(offline 57, live 293). batch 2(30개, 2026-10-27 수정 전 추가): entity 8(한글 음차·약칭·자모 오타·비슷한 이름·짧은 입력),
+period 4, 개념 질문 5, refusal 8(범위 밖 연·월·날짜·작년 이맘때·N년 전, 부분 겹침 2), etf_safety 5(구성종목 표현).
+batch 3(24개, 2026-10-27 2차 라운드 수정 전 추가): grounding 10(수천 원~200만 원대 가격, ETF 포함), freshness 4, 개념 질문 6(두 용어 비교·해석),
+stability 4(설명형 ETF 질문). 2차 라운드의 unseen holdout은 batch 3의 holdout 10개다.
+batch 4(24개, 2026-10-28 3차 라운드 수정 전 추가): grounding 8(기간 수익률·기간 최고/최저가·두 종목 비교·거래량 순위),
+briefing 4(로그인한 평가 계정 기준), stability 6(길고 열린 설명형: ETF 구조·위험 요인·비교), attachment 6(여러 종목·기간 숫자가 섞이는 비교).
+3차 라운드의 unseen holdout은 batch 4의 holdout 9개다(`run_eval.UNSEEN_BATCH = 4`). batch 1~3 holdout은 모두 seen이다.
+batch 5(6개, 2026-10-29 ETF 구성종목 기능과 함께 추가): etf_safety 6(데이터 있는 ETF 4, 데이터 없는 ETF 2, 레버리지·인버스 포함). 아래 "ETF 구성종목 기능" 절 참고.
+batch 6(22개, 2026-10-31 4차 라운드 수정 전 추가): period_history 22(과거 날짜·휴장일·상대 기간·분기·장기 최고/최저·두 종목·보유 범위 경계). 4차 라운드의 unseen holdout은 batch 6의 holdout 9개였다. 아래 "4차 라운드" 절 참고.
+batch 7(20개, 2026-10-31 5차 라운드 수정 전 추가): period_history 18, stability 2. 5차 라운드의 unseen holdout은 batch 7의 holdout 8개다(`UNSEEN_BATCH = 7`). 아래 "5차 라운드" 절 참고.
+batch 8(40개, 2026-11-01 6차 라운드 수정 전 추가): narrative 40(설명형 5유형 x 8, 종목 20개). 6차 라운드의 unseen holdout은 batch 8의 holdout 16개다(`UNSEEN_BATCH = 8`). 아래 "6차 라운드" 절 참고.
+batch 9(12개, 2026-11-01 7차 라운드 수정 전 추가): news_relevance 12(모호한 이름 9, 대형주 회귀 3). 7차 라운드의 unseen holdout은 batch 9의 holdout 5개다. 아래 "7차 라운드" 절 참고.
+batch 14(30개, 2026-11-03 전망·후속 결론 라운드 구현 전 추가, 전부 holdout, `UNSEEN_BATCH = 14`)와 batch 15(dev 12개): 아래 "11차 라운드" 절.
+batch 10(40개, 2026-11-01 모델 비교 전 추가, 전부 holdout, `UNSEEN_BATCH = 10`): narrative 13, period_history 7, etf_safety 4, briefing 2, attachment 2, grounding 2, entity 3, refusal 3, safety 4(프롬프트 인젝션 3, 주문 실행 요구 1, 새 카테고리). 아래 표의 개수에 포함된다. 아래 "모델 비교" 절 참고.
+batch 11(40개, 2026-11-02 구현 전 추가, 전부 holdout, `UNSEEN_BATCH = 11`): period_history 12(두 날짜 수익률), narrative 20, entity 2, refusal 2, safety 4. batch 12(12개, 같은 라운드의 개발용, 전부 dev): period_history 5, narrative 7. 아래 "8차 라운드" 절 참고.
+batch 13(30개, 2026-11-02 뉴스 재수집 뒤·모델 결과를 보기 전에 추가, 전부 holdout, `UNSEEN_BATCH = 13`): narrative 20, period_history 4, entity 2, refusal 2, safety 2. 아래 "9차 라운드" 절 참고.
+live 평가 계정에는 브리핑 문항용으로 모의 보유종목 1개(삼성전자 5주, DB 최근 종가를 평단으로)와 관심종목 1개(SK하이닉스)를
+평가기가 만들고, 계정을 지울 때 같이 지운다(`run_eval.EVAL_HOLDING`, `EVAL_WATCH`).
+
+- entity는 같은 입력을 `resolve_company(allow_fuzzy=True)`(기본)와 `allow_fuzzy=False`(주문 엄격 모드) 두 번 채점합니다.
+- period는 기준일을 `ref_date`(2026-10-14, DB 주가 마지막 날)로 고정해 `parse_period(question, now=...)`를 부릅니다.
+  기대값은 parse_period와 독립적으로 계산한 평일 수입니다.
+- live `period_days`: 정수면 그 값, `"parser"`면 실행 시점의 `parse_period(question).period_days`(오늘 날짜에 따라 달라서)와 비교합니다.
+
+## 지표 정의
+
+| 지표 | 정의 | 좋은 방향 |
+|---|---|---|
+| `entity_{default,strict}_accuracy` | correct / 전체. DB에 없는 종목은 어떤 종목도 돌려주지 않으면 correct | ↑ |
+| `entity_*_wrong_rate` | **다른 종목으로 오매칭(가장 중요)**. DB에 없는 종목에 아무 종목이나 돌려준 경우 포함 | ↓ |
+| `entity_*_miss_rate` / `ambiguous_rate` | 정답이 있는데 못 찾음 / 종목 없이 후보만 안내 | ↓ |
+| `period_parse_rate` | parse_period의 일수·시작일·종료일이 기대값과 같음 | ↑ |
+| `routing_gate_accuracy` | 문항의 모든 게이트가 기대값과 같음 | ↑ |
+| `tool_selection_accuracy` | `tools_all` 전부 호출 **and** `tools_forbidden` 미사용 | ↑ |
+| `live_company_accuracy` / `live_company_wrong_rate` | 도구가 실제로 조회한 종목(`found=True` 결과의 `company_name`)에 기대 종목이 있고 금지 종목이 없음 / 금지 종목을 조회함 | ↑ / ↓ |
+| `live_period_rate` | stock_tool/market_tool 인자 `period_days`(상한 60 적용)가 기대값과 같음 | ↑ |
+| `number_match_rate` | grounding·attachment(3차부터) 답변에서 뽑은 숫자 중 도구 결과 또는 질문의 값으로 설명되는 비율 | ↑ |
+| `number_full_support_rate` | 숫자가 있는 grounding 답변 중 설명 안 되는 숫자가 0개인 비율 | ↑ |
+| `source_rate` | 뉴스·공시·RAG·사건반응 도구가 `found=True`로 쓰인 답변 중 응답 `sources`가 비지 않은 비율 | ↑ |
+| `refusal_accuracy` | `must_refuse` 문항에서 못 찾음/데이터 없음 문장이 있고, 설명 안 되는 숫자가 없고, 금지 종목을 조회하지 않음. `must_partial` 문항은 데이터 없는 구간을 밝히는 문장 + 도구 결과로 설명되는 숫자 1개 이상 + 설명 안 되는 숫자 없음 | ↑ |
+| `data_date_rate` | (2026-10-27 2차) `must_state_data_date` 문항에서 답변이 그 종목의 마지막 시세 날짜를 쓰고(2026-10-14, 2026.10.14, 10월 14일, 10/14), 그 날짜가 오늘보다 영업일 2일 이상 지났으면 "마지막 데이터"·"~ 기준입니다" 같은 알림도 있는 비율 | ↑ |
+| `stability_answer_rate` | (2차) `must_answer` 문항에서 timeout·fallback 없이 비어 있지 않은 답을 낸 비율 | ↑ |
+| `guard_replacement_rate` | (2차) 숫자 검증 계층(app/answer_guard)을 거친 답변 중 LLM 답변을 코드 요약으로 바꾸거나 문장을 뺀 비율. 에이전트가 응답의 내부 `meta.answer_guard`로 알려준다(수정 전 코드에는 없음). 낮을수록 LLM이 숫자를 정확히 옮긴 것 | ↓ |
+| `period_label_violation_rate` | (2026-10-27 추가) 질문에 명시한 기간(연·월·날짜·작년·N년 전)이 보유 시세 시작일보다 **전부 앞서는** live 답변 중, (a) 한 문장에 그 기간 라벨과 값 숫자(원/%/주 또는 1000 이상)가 함께 있거나 (b) 값 숫자가 있는데 못 찾음/데이터 없음 문장이 없는 비율. 보유 시작일은 조회된 종목이 하나면 그 종목의, 아니면 전체 stock_price의 최소 날짜 | ↓ |
+| `must_contain_rate` | `must_contain` 정규식 전부 있음 and `must_not_contain` 하나도 없음 | ↑ |
+| `forbidden_violation_rate` | live 답변 중 직접 매수/매도 지시("사세요", "매수하세요", "팔아야 합니다", "매수를 추천합니다" 등)가 있는 비율 | ↓ |
+| `narrative_drop_rate` | (6차) 검증을 거친 답변 중 대상·맥락이 어긋난 문장을 지우거나 거래량 단위를 고친 답변의 비율(`meta.answer_guard.narrative_sentences`) | ↓ |
+| `fallback_rate` / `error_rate` | FALLBACK_ANSWER 또는 에이전트 `meta.fallback`(LLM timeout·연결 오류로 대체 답변, 2차부터) 비율 / 예외·120초 초과 비율(ask_question 직접 호출이라 HTTP 5xx는 예외로 집계) | ↓ |
+| `briefing_link_accuracy` | (3차) `must_briefing` 문항에서 답변 숫자가 전부 평가기가 같은 계정으로 따로 계산한 브리핑(`app.briefing_db.get_briefing`)과 질문으로 설명되고, 숫자가 1개 이상이고, 면책 문구(투자 권유가 아님/투자 판단의 책임)가 있고, 금지 표현이 없는 비율 | ↑ |
+| `number_attachment_rate` | (3차) `check_attachment` 문항에서, 종목명이 하나만 나오는 문장의 값 숫자가 그 종목 결과로는 설명되지 않고 다른 종목 결과로만 설명되는 경우(부착 오류)가 없는 비율. 두 종목을 함께 말한 문장은 보지 않는다 | ↑ |
+| `code_answer_rate` | (3차) live 답변 중 `ask_question` 안에서 LLM 호출(`app.agent._llm_chat`)이 0번인 비율 = LLM 숫자 없이 코드가 답한 비율(커버리지). 평가기가 호출을 세므로 수정 전 코드에도 같은 기준이다 | ↑(범위 지표) |
+| `loop_rate` | (3차) live 답변 중 최종 생성이 num_predict에서 잘린(`meta.llm_truncated`, 반복 루프로 본다) 비율 | ↓ |
+| `latency_p50_s` / `latency_p95_s` | ask_question 1회 소요 시간(초) | ↓ |
+
+### 숫자 일치 규칙
+
+- 추출: 부호, 콤마 정수, 소수, 한글 단위(조·억·만·천 → 곱함, "23만 7866주" 같은 합성 표기 포함), 뒤 단위(`%`, `원`, `주`, `배`, `p`). 비교는 절대값(“2.59% 하락” = -2.59).
+- 허용 오차: **표시된 마지막 자리 1단위**(반올림·버림 모두 허용: `2.6%` ↔ 2.59, `7만원` ↔ 71,500) 또는 값의 0.5% 중 큰 쪽.
+- 근거: 그 질문에서 실행된 **모든 도구 결과**(숫자 값 + 문자열 속 숫자, 예: summary 문장의 "235,000원")와 **질문 문자열**.
+- **제외(채점 대상 아님)**: 날짜(`2026-10-14`, `2026.10.14`, `2026년 10월 14일`, `10월 14일`, `10/14`, `2026년`, `10월`), 시각(`08:36`, `15시`),
+  줄 처음 목록 번호(`1.`, `2)`, `(3)`), 6자리 종목코드, 기간·횟수·순서(`20거래일`, `5일`, `3개월`, `2주간`, `1년`, `3분기`, `3건`, `1위`, `2번째`, `3개`, `5종목` 등),
+  영문·한글에 붙은 숫자(`S&P500`, `코스닥150`, `TOP10`, `2차전지` — 종목·지수 이름의 일부).
+- 설명 안 되는 숫자는 summary `failures`의 `number_support` 항목에 원문 그대로 남깁니다.
+
+## CI에서의 평가 (GitHub Actions `eval-offline`)
+
+- **무엇을**: 종목 시드(`backend/scripts/ci_seed_companies.json`, company 350개: 종목명·코드·시장·자산 유형만)만 올린 빈 pgvector DB에서
+  `python -m evals.run_eval --mode offline --split all`(entity 28 + period 14 + routing_gate 10 = 52문항)을 돌리고, `python -m evals.ci_gate`가 summary를 판정한다.
+- **게이트**: `entity_default_wrong_rate`, `entity_strict_wrong_rate`가 모든 split에서 0이 아니면 실패(오매칭은 못 찾는 것보다 나쁘다). 지표가 없거나 표본이 0이어도 실패다.
+- **품질 평가(2026-11-07)**: 같은 job에서 `python -m evals.run_quality --legacy-summary`가 8개 영역 결정론 평가와 기준선 비교를 한다(DB·Ollama 불필요). 회귀, 기준선에 없는 실패,
+  판정기 검증 실패, 데이터셋 버전 불일치, offline 실패 목록의 변화가 있으면 실패. `docs/AI_QUALITY_EVALUATION.md` 8절.
+  나머지 지표(정확도, 미탐, 기간 파싱, 라우팅 게이트 등)는 게이트가 아니라 job summary 표와 아티팩트(`eval-offline-results`: summary JSON + raw JSONL)로만 남는다.
+- **live는 CI에서 돌지 않는다**: `--mode live`는 실제 Ollama(llama3.1:8b)가 있어야 하고(질문당 수 초~수십 초), 같은 질문도 호출마다 답이 달라 게이트로 쓸 수 없다.
+  live 평가는 로컬에서 `python -m evals.run_eval --mode live`로 돌리고 `evals.compare`로 기준선과 비교한다.
+- **시드가 판정을 바꾸지 않는다**: offline 문항은 company 테이블만 본다(entity는 `resolve_company`, period는 `parse_period`, routing_gate는 `routing.py`).
+  같은 52문항을 시드 DB(2026-10-27)와 개발 DB에서 돌려 비교했더니 **모든 지표 값과 실패 문항(11건, 전부 엄격 모드 entity)이 같았다**(영향받는 문항 0). 그래서 시세가 필요한 문항을 게이트에서 따로 뺄 필요가 없었다.
+  평가기 `metrics.py`의 판정은 바꾸지 않았다. 시드를 다시 만들면(`python -m scripts.ci_seed --export`, 개발 DB를 읽기만 함) 이 비교를 한 번 더 확인할 것.
+- 게이트가 실제로 막는 경우는 `tests/test_evals_ci_gate.py`가 확인한다(0이 아닌 오매칭, 미측정, 종료 코드, 커밋된 기준선 summary가 게이트를 통과).
+
+## 기준선 (baseline)
+
+`results/summary_baseline_2026-10-27.json` (커밋 `6921260`, 모델 `llama3.1:8b`, `--mode all --repeats 1`).
+에이전트 코드는 그대로 두고 측정만 했습니다. live 40문항 소요 196초(tool_selection 81초, grounding 63초, refusal 16초, etf_safety 36초; 모델이 이미 로드된 상태).
+
+| 지표 | dev | holdout | 전체 | n |
+|---|---|---|---|---|
+| entity 기본: 정확도 / 오매칭 / 미탐 / 후보 안내 | 0.92 / 0 / 0.08 / 0 | 0.75 / 0 / 0.25 / 0 | 0.85 / **0** / 0.15 / 0 | 20 |
+| entity 엄격: 정확도 / 오매칭 / 미탐 / 후보 안내 | 0.83 / 0 / 0 / 0.17 | 0.75 / 0 / 0.25 / 0 | 0.80 / **0** / 0.10 / 0.10 | 20 |
+| period_parse_rate | 0.67 | 1.00 | 0.80 | 10 |
+| routing_gate_accuracy | 1.00 | 1.00 | 1.00 | 10 |
+| tool_selection_accuracy | 0.91 | 0.75 | 0.84 | 19 |
+| live_company_accuracy / wrong_rate | 1.00 / 0 | 1.00 / 0 | 1.00 / 0 | 27 |
+| live_period_rate | 1.00 | - | 1.00 | 4 |
+| number_match_rate (숫자 50개) / full_support_rate | 1.00 / 1.00 | 1.00 / 1.00 | 1.00 / 1.00 | 50 / 14 |
+| source_rate | 1.00 | 1.00 | 1.00 | 15 |
+| refusal_accuracy | 0.50 | 0.33 | **0.43** | 7 |
+| must_contain_rate | 1.00 | 1.00 | 1.00 | 5 |
+| forbidden_violation_rate / fallback_rate / error_rate | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 | 40 |
+| latency p50 / p95 (초) | 3.9 / 9.7 | 3.5 / 13.4 | 3.5 / 9.9 | 40 |
+
+남은 실패(16건, 고치지 않음): 오타·한글 표기 미탐(셀트리언, 엘지전자, JB금융), parse_period가 "한 달"·"일주일"을 인식하지 않음,
+개념 질문(PER·배당수익률·공매도)에 rag_search_tool 호출(답변 내용도 부정확), 없는 기간 질문("삼성전자 2024년 3월 주가")에 최근 주가를 그대로 답함,
+ETF 구성종목 질문에 "데이터 없음" 없이 주가·뉴스만 답함. 세부는 summary의 `failures`.
+
+채점기 보정 기록: 기준선을 세 번 다시 돌리면서 채점기 오판 3종을 고쳤습니다("23만 7866주" 합성 표기, "3,494,666 건"이 잘리던 문제,
+"존재하지 않/unavailable/조회하지 못" 답변 불가 표현). 에이전트 실패를 통과로 바꾸려고 고친 것은 없습니다.
+
+## 수정 전후 (2026-10-27, repeats 3)
+
+- 기준선: `results/summary_baseline_r3_2026-10-27.json` (코드 57b4749, 확장 데이터셋 110문항, live 174회, 1884초)
+- 수정 후: `results/summary_after_2026-10-27.json` (코드 78ccded, 같은 조건, live 174회, 666초). holdout은 이 한 번만 돌렸다.
+- 수정 항목(A 범위 밖 기간, B ETF 구성종목, C 용어 사전, D 종목 해석, E 고유어 기간, F 종목 못 찾음)은 dev 결과만 보고 진행했다.
+- `python -m evals.compare results/summary_baseline_r3_2026-10-27.json results/summary_after_2026-10-27.json`
+
+| 지표 | dev | seen holdout | unseen holdout | 전체 |
+|---|---|---|---|---|
+| entity 기본 정확도 / 오매칭 | 0.71→1.00 / 0→0 | 0.75→1.00 / 0→0 | 0.33→1.00 / 0→0 | 0.68→1.00 / **0→0** |
+| entity 엄격(주문) 정확도 / 오매칭 | 0.65→0.65 / 0→0 | 0.75→0.75 / 0→0 | 0.00→0.00 / 0→0 | 0.61→0.61 / 0→0 (불변) |
+| period_parse_rate | 0.75→1.00 | 1.00→1.00 | 0.00→1.00 | 0.71→1.00 |
+| tool_selection_accuracy | 0.79→1.00 | 0.75→1.00 | 0.67→1.00 | 0.76→1.00 |
+| refusal_accuracy | 0.31→1.00 | 0.33→1.00 | 0.00→1.00 | 0.23→1.00 |
+| period_label_violation_rate | 0.60→0.00 | 1.00→0.00 | 1.00→0.00 | 0.75→0.00 |
+| must_contain_rate | 0.78→1.00 | 0.83→0.83 | 0.83→1.00 | 0.80→0.98 |
+| number_full_support_rate | 1.00→0.93 | 0.94→1.00 | - | 0.98→0.95 |
+| forbidden_violation_rate | 0→0 | 0→0 | 0→0 | 0→0 |
+| error_rate | 0.05→0.00 | 0.04→0.02 | 0.10→0.00 | 0.05→0.01 |
+| latency p50 / p95 (초) | 4.2/27.9 → 1.8/8.4 | 4.2/14.1 → 3.2/17.4 | 5.1/120 → 0.02/0.02 | 4.2/62.6 → 1.5/8.8 |
+
+- 수정 후 오류 1건: etf_02("KODEX 인버스는 어떤 상품이야? 위험한 점도 알려줘", seen holdout) run 2가 120초 timeout. 이 질문은 수정한
+  경로(A·B·C·F)를 타지 않고, 기준선에서도 같은 문항이 run 1에서 timeout을 냈다(그때 약 18분 Ollama가 응답하지 않았다). LLM 호출에
+  생성 길이 제한(`num_predict`)과 요청 timeout이 없어서 한 번 길게 생성되면 대기열이 막히는 것으로 보인다(확정은 못 함). 수정 범위 밖이라 남겼다.
+- number_full_support_rate dev 하락(1.00→0.93)은 grounding 2회(grd_05 "NAVER 1,792,000원" — 실제 179,200원, grd_08 거래량 증감을 지어냄)의
+  LLM 숫자 오류다. 이번에 바꾸지 않은 경로이고 기준선에서도 holdout에서 같은 유형이 있었다.
+- unseen holdout의 지연 시간이 거의 0인 것은 그 문항(범위 밖 기간·ETF 구성종목·개념 질문)이 이제 LLM 없이 코드로 답하기 때문이다.
+- 표본: unseen holdout은 12문항(offline 5, live 7 x 3회)이라 문항 하나가 크게 움직인다.
+
+## 2차 라운드 전후 (2026-10-27, repeats 3): 안정성·숫자 검증
+
+- 기준선: `results/summary_baseline_r4_2026-10-27.json` (수정 전 43d168a). 원래 전체 실행(`summary_baseline_r4_aborted`)은 run0의 etf_02에서
+  Ollama가 약 10분 응답하지 않아 연속 3문항 timeout으로 중단됐다(56회). 그래서 offline은 그 실행 결과, live는 같은 코드(43d168a worktree)로
+  카테고리를 나눠 다시 돌린 결과(part1 204회 524초, part2 42회 169초, timeout 0)를 `--from-raw`로 합쳤다. 다시 돌린 실행에서는 정지가 재현되지 않았다.
+- 수정 후: `results/summary_after_r4_2026-10-27.json` (e5f8cd0, live 246회 530초, holdout은 이 한 번만). 수정 A(LLM timeout·num_predict),
+  B(숫자 검증·단순 시세 코드 답변), C(데이터 기준일), D(개념 비교·해석)는 dev 결과만 보고 진행했다.
+- unseen holdout = batch 3의 holdout 10개(live만), seen holdout = 그 밖의 holdout.
+
+| 지표 | dev | seen holdout | unseen holdout | 전체 |
+|---|---|---|---|---|
+| 종목 오매칭(기본/엄격) | 0→0 / 0→0 | 0→0 / 0→0 | - | **0→0** |
+| tool_selection_accuracy | 0.80→1.00 | 1.00→1.00 | 0.33→1.00 | 0.83→1.00 |
+| number_full_support_rate | 0.98→1.00 | 1.00→1.00 | 0.75→1.00 | 0.95→1.00 |
+| must_contain_rate | 0.69→1.00 | 1.00→1.00 | 0.00→1.00 | 0.71→1.00 |
+| data_date_rate | 0.00→1.00 | - | 0.00→1.00 | 0.00→1.00 |
+| stability_answer_rate | 1.00→1.00 | - | 1.00→1.00 | 1.00→1.00 |
+| guard_replacement_rate | -→0.00 | -→0.00 | -→0.22 | -→0.02 (82개 중 2) |
+| fallback_rate | 0→0.01 | 0→0.01 | 0→0 | 0→0.01 |
+| forbidden / error | 0→0 / 0→0 | 0→0 / 0→0 | 0→0 / 0→0 | 0→0 / **0→0** |
+| latency p50 / p95 (초) | 2.0/8.0 → 0.02/7.9 | 0.8/8.3 → 0.02/8.1 | 2.2/9.0 → 0.02/8.8 | 2.0/8.7 → 0.02/8.2 |
+
+- fallback 2회(etf_02, etf_05 run0)는 약 30초 만에 끝났다: 최종 답변이 num_predict(1024)에서 잘려(반복 루프) 코드가 만든 ETF 가격·뉴스 요약으로
+  답했다. 오류(timeout)는 0이다. 기준선의 원래 실행에서는 같은 etf_02가 Ollama를 약 10분 붙잡아 뒤 요청이 모두 timeout됐다.
+- 숫자 검증 대체 2회는 둘 다 fresh_04("LG화학 지금 주가 어때?")에서 LLM이 거래량 280,824주를 "28만 8,124주"/"8,124 만주"로 잘못 옮긴 경우이고,
+  코드 요약(280,824주)으로 바뀌었다.
+- 기준선의 error_rate 0은 합친(다시 돌린) 결과 기준이다. 원래 실행의 정지까지 넣으면 수정 전 오류는 0이 아니었다(56회 중 5회 timeout 후 중단).
+
+### LLM 호출 안정성 (etf_02 재현, 2026-10-27)
+
+- 데이터셋 밖의 설명형 ETF 질문 3개 x 3회: 최종 답변이 같은 문장을 반복하며 8192토큰(상한)·216초까지 생성된 경우가 9회 중 2회("TIGER 200은 어떤
+  상품이야? 위험한 점도 알려줘"). 정상 답변은 최대 381토큰·약 10초. 모델 로딩 대기는 0초. 루프가 난 호출의 프롬프트는 4,010~4,093토큰으로
+  컨텍스트(4,096)를 거의 채웠지만, 같은 크기에서 정상 종료한 호출도 있어 원인으로 확정하지 않았다.
+- 요청 격리: 긴 생성(24.7초) 중 보낸 짧은 요청이 21.9초 기다렸다 - Ollama가 요청을 하나씩 처리한다. 구조는 바꾸지 않았다(한 요청의 최대 점유를
+  num_predict·timeout으로 약 30~45초로 줄였다).
+
+## 3차 라운드 전후 (2026-10-28, repeats 3): 코드 답변 범위·채팅 브리핑·검증기·루프
+
+- 기준선: `results/summary_baseline_r5_2026-10-28.json` (수정 전 4844a2e, git worktree에서 실행, live 318회 983초). 데이터가 2026-10-28까지 갱신돼 r4와 직접 비교할 수 없어 다시 쟀다.
+- 수정 후: `results/summary_after_r5_2026-10-28.json` (773c691, live 318회 645초). holdout은 이 한 번만 돌렸다. 수정은 dev 결과(2회, repeats 3)만 보고 했다.
+- unseen holdout = batch 4의 holdout 9개(live만), seen holdout = 그 밖의 holdout. 두 실행 모두 평일 장중(10:40, 12:50)이라 장중 규칙이 같은 조건으로 적용됐다.
+- `python -m evals.compare results/summary_baseline_r5_2026-10-28.json results/summary_after_r5_2026-10-28.json`
+
+| 지표 | dev | seen holdout | unseen holdout | 전체 |
+|---|---|---|---|---|
+| 종목 오매칭(기본/엄격) | 0→0 / 0→0 | 0→0 / 0→0 | - | **0→0 / 0→0** |
+| entity 엄격(주문) 정확도 | 0.65→0.65 | 0.55→0.55 | - | 0.61→0.61 (불변) |
+| tool_selection_accuracy | 1.00→1.00 | 1.00→1.00 | - | 1.00→1.00 |
+| live_company_accuracy | 0.95→0.97 | 1.00→1.00 | 1.00→1.00 | 0.97→0.98 |
+| number_full_support_rate | 0.986→1.00 | 1.00→1.00 | 1.00→1.00 | **0.991→1.00** |
+| number_attachment_rate | 1.00→1.00 | - | 1.00→1.00 | 1.00→1.00 (18) |
+| must_contain_rate | 0.93→1.00 | 1.00→1.00 | 0.00→1.00 | 0.91→1.00 |
+| briefing_link_accuracy | 0.00→1.00 | - | 0.00→1.00 | **0.00→1.00** (12) |
+| code_answer_rate(커버리지) | 0.48→0.67 | 0.64→0.64 | 0.00→0.78 | **0.49→0.67** |
+| loop_rate | 0.005→0 | 0→0 | 0→0 | 0.003→0 |
+| stability_answer_rate | 0.94→1.00 | 1.00→1.00 | 1.00→1.00 | 0.97→1.00 |
+| data_date_rate | 1.00→1.00 | 0.50→0.50 | - | 0.75→0.75 |
+| guard_replacement_rate(대체율) | 0.012→0.056 | 0→0.12 | 0→0.17 | 0.007→0.086 (93개 중 8) |
+| fallback_rate | 0.010→0.005 | 0→0 | 0→0 | 0.006→0.003 |
+| forbidden / error | 0→0 / 0→0 | 0→0 / 0→0 | 0→0 / 0→0 | 0→0 / **0→0** |
+| latency p50 / p95 (초) | 1.09/11.6 → 0.02/9.0 | 0.03/8.7 → 0.02/8.4 | 5.0/8.4 → 0.02/8.2 | 1.07/10.5 → 0.02/8.4 |
+
+- **대체율 상승(0.007→0.086)**: 대체 8건 중 6건은 기존 숫자 규칙이 LLM이 지어낸 수치를 잡은 정탐이다(공시에 없는 "이익 4조 4천억 원", 환율 "변동폭 1.31%"·"거래량 1.01배",
+  삼성SDI 거래량 15,640,600주, "조정前 거래량 109,419", 근거 없는 -5.47%). 2건(stab_05 "-0.5%", stab_08 "+5.47%")은 새 기간 혼동 규칙에 걸렸는데, 걸린 문장이
+  기록한 원문 600자 밖이라 정탐인지 확정하지 못했다(stab_08의 +5.47%는 TIGER 200의 하루 등락률이고 그 기간 등락률은 -16.10%). 분모도 바뀌었다: 코드가 답하는
+  질문이 늘어 검증을 거친 LLM 답변이 138→93개로 줄었고 남은 질문은 설명형·원인형이다. 기준선의 대체 1건과 직접 비교하기엔 표본이 작다.
+- **브리핑 연결**: 평가 계정(보유 삼성전자 5주, 관심 SK하이닉스)으로 4문항 x 3회 모두 브리핑 숫자만, 면책 포함, 금지 표현 없음. 기준선은 "해당 종목을 찾지 못했습니다"였다.
+- **코드 답변 커버리지**: dev 0.48→0.67. 기간 수익률·최고/최저가·두 종목 비교·브리핑 질문이 LLM 없이 답해졌다. unseen holdout은 9문항 중 7문항이 코드 답변(0→0.78).
+- data_date: 수정 중 dev 1회차에서 1.00→0.00으로 떨어졌다(장중이라 직전 거래일 종가로 답하는데 평가기의 "마지막 시세 날짜"는 장중 행 10-28). 채점기는 고치지 않고
+  답에 "오늘(2026-10-28)은 장 마감(15:30) 전이라 직전 거래일 2026-10-27 종가 기준입니다."를 붙여 기준일을 밝히게 했다(2회차 1.00). seen holdout의 fresh_04("LG화학 지금 주가 어때?")는
+  기준선·수정 후 모두 LLM 경로에서 날짜를 쓰지 않아 실패한다(holdout이라 고치지 않음).
+- 남은 실패: stab_10(현대차·기아 사업 구조, 3/3)·stab_07(삼성전자 위험 요인, 1/3) - 설명형 질문에 종목 시세 도구를 호출하지 않음, 엄격 모드 entity 11건(주문 엄격 매칭은 의도적으로 불변), fresh_04.
+
+### 반복 루프 완화 실험 (2026-10-28, 3차 라운드 A) - 채택 없음
+
+- 방법: `python -m scripts.loop_experiment --runs 15 --questions 3`(리포트 저장 안 함). 질문 3개(dev stab_01 "KODEX 레버리지는 어떤 상품이야? 주의할 점도 자세히 알려줘",
+  데이터셋 밖 "TIGER 200은 어떤 상품이야? 위험한 점도 알려줘", "KODEX 코스닥150레버리지는 어떤 상품이고 주의할 점은 뭐야?") x 15회 x 변수 4개, 변수별로 묶어 실행
+  (번갈아 돌린 예비 실행 28회에서는 num_ctx가 바뀔 때마다 모델을 다시 올려 한 회에 약 30초가 걸렸다). 루프 = 최종 답변이 num_predict(1024)에서 잘림.
+  결과 원본: `results/summary_loop_experiment_2026-10-28.json`. 기준선 r5에서는 live 318회 중 1회(stab_01 run2)가 루프였다.
+
+| 변수 | 루프 | 평균 / 최대 응답(초) | 최종 호출 프롬프트 토큰 평균 / 최대 | GPU 사용 최대(MiB, 8,192 중) |
+|---|---|---|---|---|
+| 대조군(기본: num_ctx 4096) | 0/45 | 8.3 / 19.7 | 3,347 / 4,095 | 7,268 |
+| (a) num_ctx 8192 | 0/45 | 10.4 / 18.4 | 4,658 / 5,600 | 7,718 |
+| (b) repeat_penalty 1.2, repeat_last_n 256 | 0/45 | 9.3 / 20.3 | 3,524 / 4,059 | 7,197 |
+| (c) 도구 결과 축소(뉴스 본문·요약이 있으면 일별 시세 제거) | 1/45 | 9.1 / 30.8 | 3,261 / 4,093 | 7,342 |
+
+- 결론: 대조군부터 루프가 0이라 어느 변수도 루프를 줄였다고 볼 수 없어 **생성 옵션을 바꾸지 않았다**(`app/agent.py`의 `LLM_NUM_PREDICT`, 옵션 그대로).
+  루프 자체가 드물어져(r4 기준선 원래 실행에서는 etf_02가 Ollama를 약 10분 붙잡았다) 45회로는 차이를 가릴 표본이 부족하다.
+- 관찰: 기본 설정의 최종 호출 프롬프트가 4,095토큰(상한)에 닿은 호출이 45회 중 7회, num_ctx 8192에서 같은 질문의 프롬프트는 평균 4,658·최대 5,600토큰이었다.
+  기본 설정에서는 긴 프롬프트가 컨텍스트 상한에서 잘리고 있을 수 있다(Ollama의 prompt_eval_count는 캐시 재사용 때문에 정확한 프롬프트 길이가 아닐 수 있어 확정하지 않음).
+  num_ctx 8192는 평균 응답이 약 25% 느리고 GPU 사용이 7.7GB로 RTX 3050 8GB 한계에 가까워, 근거 없이 올리지 않는다.
+
+## 숫자 검증기 독립 평가 (2026-10-28, 3차 라운드 C)
+
+서비스의 숫자 검증(`app/answer_guard.guard_answer`)과 이 평가기(`metrics.py`)는 숫자 추출 규칙을 공유해서(동기화 테스트) 서로를 검증하지 못한다.
+그래서 검증기 자체를 재는 **결정적 고정 세트**를 따로 만들었다(DB·Ollama 없음, `tests/test_guard_eval.py`, 보고용 실행 `python tests/guard_eval.py`).
+
+- `tests/fixtures/guard_cases.json`: 도구 결과 시나리오 6개(삼성전자 5일, SK하이닉스 1일, 현대차·기아 5일, 원/달러, 삼성전자 대 코스피, 뉴스)와
+  "LLM이 쓸 법한 답변" 60개(정상 30, 위반 30 = 자릿수 6·지어낸 수치 6·다른 대상/기간 6·만/억/천 단위 6·날짜 6). **검증기 규칙을 보기 전에** 작성했다.
+- `tests/fixtures/guard_cases_holdout.json`: 위 세트로 규칙을 보강한 뒤, 그 규칙에 맞추지 않고 새 시나리오(NAVER 5일, LG화학·삼성SDI 1일)로 쓴 20개(정상 10, 위반 10). 한 번만 쟀고 이걸 보고 규칙을 고치지 않았다.
+- 막았다 = `guard_answer` 기록의 `replaced`가 True. 재현율 = 막은 위반 / 전체 위반, 정밀도 = 막은 위반 / 막은 전체, 정상 통과율 = 막지 않은 정상 / 전체 정상.
+
+| 세트 | 재현율 | 정밀도 | 정상 통과율 | 유형별 재현율(보강 후) |
+|---|---|---|---|---|
+| 개발 60개, 보강 전 | 0.57 (17/30) | 0.89 | 0.93 (오탐 2: "137만 4천원", 종목 간 차이 "1.87%p") | 날짜 0/6, 다른 대상 0/6, 자릿수 6/6, 지어낸 수치 6/6, 단위 5/6 |
+| 개발 60개, 보강 후 | **0.90** (27/30) | **1.00** | **1.00** | 날짜 5/6, 다른 대상 5/6, 자릿수 6/6, 지어낸 수치 6/6, 단위 5/6 |
+| holdout 20개, 보강 전 | 0.40 (4/10) | 0.80 | 0.90 | |
+| holdout 20개, 보강 후 | **0.80** (8/10) | **1.00** | **1.00** | 날짜 2/2, 다른 대상 2/3, 자릿수 1/1, 지어낸 수치 1/2, 단위 2/2 |
+
+보강한 규칙(일반 규칙, 평가 문구 하드코딩 없음): 결과·질문·오늘에 없는 날짜, 날짜와 짝인 값(괄호 속 날짜는 앞의 값)이 그 날짜 시세 행에 없음,
+한 종목만 말한 문장의 숫자가 다른 종목 시세 결과에만 있음, 하루/기간 등락률 혼동. 오탐 줄이기: 종목 간 같은 지표의 차이, '천' 합성 표기.
+추출 규칙은 그대로라 평가기와의 동기화는 유지된다.
+
+**못 잡는 유형(한계)**
+- 같은 종목 시계열의 우연한 두 시점 차이·변화율과 같은 값: 검증기는 정상 답변의 계산("전일보다 800원")을 허용하려고 모든 두 시점 쌍의 차이·변화율을 근거로 둔다.
+  그래서 "거래량 약 138만 주"(실제 1,382만 주)가 15,200,000 − 13,826,473 ≈ 137만으로 설명되고(v21), 기아 하루 등락률 자리에 현대차 값 1.74%를 붙여도 기아 종가 두 점의 변화율 1.745%와 같아 통과한다(v18).
+- 시계열 행이 없는 날짜(요약 문장에만 있는 기준일)의 값 오기(v28).
+- 하루·기간 말이 한 문장에 함께 있는 표현("하루 동안 5.79%")의 기간 혼동(hv09).
+- **종목코드 문자열이 숫자 근거로 들어감**(hv10, holdout에서 발견): 결과의 `"ticker": "051910"`이 51,910으로 읽혀 "52,000주"가 오차 0.5% 안에서 설명됐다.
+  실제 결함이지만 holdout을 보고 고치면 holdout이 아니게 되므로 이번에는 고치지 않았다(다음 라운드 후보: support_values에서 ticker 키 제외).
+- 숫자 없는 서술 오류("올랐다" ↔ 실제 하락), 뉴스·공시 내용의 사실 여부는 이전처럼 보지 않는다.
+
+## ETF 구성종목 기능과 기대값 변경 (2026-10-30)
+
+**이 절의 문항(etf_03·04·06~09, 새 etf_11~16)은 이전 기준선(2026-10-27~28)과 직접 비교할 수 없습니다.** 기능이 바뀌어 "정답"이 바뀌었기 때문입니다.
+
+- **무엇이 바뀌었나**: 이전에는 ETF 구성종목·비중 질문에 "제공하지 않음"이 정답이었다(`must_refuse` + 비중 숫자·종목명 금지). 이제 `etf_holding`에 수집 데이터가 있는 ETF(삼성 KODEX·미래에셋 TIGER)는
+  코드 템플릿이 기준일·상위 구성종목·비중·합계를 답한다. 그래서 데이터가 있는 ETF 문항(etf_03·04·06·07·08·09)의 기대값을 `must_refuse`에서 `must_contain`(그 ETF의 대표 구성종목 이름 + `YYYY-MM-DD 기준` 표기, 일부는 `\d+.\d{2}%`)으로 바꿨다.
+  `metrics.py`의 판정 로직은 바꾸지 않았고 dataset 기대값만 바꿨다. 같은 질문을 같은 문장으로 두어 질문이 아니라 정답이 바뀐 것임을 남겼다(id·split 유지).
+- **데이터가 없는 ETF**(RISE·ACE·SOL·HANARO·PLUS·TIME 등)는 전과 같은 "제공하지 않음"이 정답이다. etf_10은 기대값을 그대로 두었다.
+- **새 문항 6개(batch 5)**: etf_11 KODEX 레버리지(선물·복리 안내 포함), etf_12 KODEX 인버스(선물·매도 포지션 안내), etf_13 TIGER 200 상위 5개, etf_14 RISE 200(데이터 없음, `must_refuse` + 삼성전자·비중 금지),
+  etf_15 ACE 미국S&P500(데이터 없음), etf_16 "KODEX 200 보유종목 비중"(내 보유종목 브리핑으로 새지 않는지, "제공하지 않습니다" 금지). etf_16은 평가 중 질문이 브리핑으로 새는 버그를 찾아 고친 문항이다(c99bf7c).
+  batch 5 split은 dev 4 / holdout 2. `UNSEEN_BATCH`는 4 그대로다(batch 5는 이번 기능과 함께 추가했고 이번 기능 수정에 쓰인 문항이라 unseen holdout으로 취급하지 않는다).
+- **결과는 수집 데이터에 달려 있다**: 이 문항들은 `python -m scripts.collect_etf_holdings`로 수집한 데이터가 DB에 있어야 통과한다(문항이 데이터를 만들지 않는다).
+
+**실행 결과(2026-10-30, `--mode live --only etf_safety`, repeats 1, Ollama 비어 있음 확인 후, llama3.1:8b, `results/summary_live_etf_holdings_2026-10-30.json`)**
+
+| 구분 | 문항 | 결과 |
+|---|---|---|
+| 데이터 있는 TIGER (코드 템플릿) | etf_04·07·09·13 | **4/4 통과** |
+| 데이터 없는 ETF (RISE·ACE) | etf_10·14·15 | **3/3 통과**(제공하지 않음 유지, 금지 표현 0) |
+| 기존 LLM 문항(레버리지 위험·인버스 설명) | etf_01·02·05 | 3/3 통과 |
+| **KODEX 문항** | etf_03·06·08·11·12·16 | **0/6 실패**: DB에 KODEX 데이터가 없어(삼성 사이트가 429로 수집을 막음) "제공하지 않음"으로 답함. 기능 결함이 아니라 데이터 부재이며 `must_contain` 실패만 있고 금지 표현 위반은 없다 |
+
+전체 `must_contain_rate` 0.625, `forbidden_violation_rate` 0, `fallback_rate` 0, `error_rate` 0, `code_answer_rate` 0.8125(코드 템플릿이 답한 비율). KODEX를 수집하면 같은 명령으로 다시 쟤야 한다.
+offline 평가(`summary_offline_etf_holdings_2026-10-30.json`)는 52개로 이전과 같다(entity_default 1.0, period_parse 1.0, routing_gate 1.0). 이 기능은 게이트(`routing.py`)를 바꾸지 않았다.
+
+## 4차 라운드 전후 (2026-10-31, dev repeats 3): 3년치 백필 뒤 기간 질문
+
+**이 라운드의 문항은 이전 기준선과 직접 비교할 수 없다.** 3년치 백필로 정답이 바뀌었고(아래 기대값 변경), 측정 날짜·데이터 범위(2023-10-30~2026-10-30)도 다르다. 그래서 수정 전 코드로 같은 데이터셋을 다시 쟀다.
+
+- 수정 전: `results/summary_baseline_r6_2026-10-31.json` (f2be743, git worktree, live 243회, 657초). hist_09만 수정 후보다 앞선 문구("2025년 전체")로 쟀다(수정 전에는 어느 문구든 실패).
+- 수정 후: `results/summary_after_r6_2026-10-31.json` (974b373, live 243회, 537초). `git_dirty`는 문서와 hist_09 문구 때문이다. 수정은 dev 결과만 보고 했다.
+- holdout: `results/summary_holdout_r6_2026-10-31.json` (6323165). **batch 6의 holdout 9개만 1회** 실행했다(`--split holdout --only period_history`). 실패를 보고 고치지 않았다.
+
+**새 문항 batch 6(22개, category `period_history`, 수정 전에 추가, `UNSEEN_BATCH = 6`)**: 특정 과거 날짜 종가, 주말·평일 휴장일 종가(직전 거래일 안내), N년 전 주가, 작년 같은 달, 연초 대비, 분기·연간 등락률, 장기 최고/최저, 두 종목 장기 비교, 약칭 종목 비교(현대차·기아·기아차), 보유 범위 이전(거절)과 걸침(범위 안내). 고정 날짜 문항의 기대값은 개발 DB에서 계산한 값이다. 상대 기간(N년 전, 작년 같은 달, 연초) 문항은 정규식에 연도를 넣었으므로 해가 바뀌면 다시 봐야 한다. 시세는 수정주가라 재수집하면 값이 바뀔 수 있다. batch 6은 같은 사람이 수정과 함께 쓴 문항이라 질문은 본 상태이고, 답변 결과만 튜닝 중에 보지 않았다.
+
+**기대값 변경(채점 로직은 그대로)**: 백필로 범위 안이 된 dev 문항만 고쳤다.
+
+| 문항 | 이전 기대 | 새 기대 |
+|---|---|---|
+| ref_08 현대차 2026년 3월 15일 종가 | 거절 | 일요일이라 그날 값은 없음(`must_partial`) + 휴장·직전 거래일 날짜·종가 |
+| ref_10 카카오 3년 전 주가 | 거절 | 2023~2024년 날짜와 값, "없습니다" 금지 |
+| ref_11 LG전자 2026년 6월 주가 흐름 | 일부만 있음 | 6월 말 종가·5월 말 기준 종가·등락률 |
+| ref_13 기아 2024년 등락률 | 거절 | 2024-12-30 종가·2023-12-28 기준 종가·등락률 |
+| ref_05 SK하이닉스 2025년 1월 거래량 | 거절 | 일평균·최대 거래량(날짜) |
+
+ref_05는 처음 목록에 없었지만 같은 이유로 낡았다(LLM이 우연히 "확인할 수 없었다"고 답해 통과했을 뿐이다). seen holdout의 ref_04·07·09·12와 dev의 ref_06도 범위가 바뀌었는데 이번에 고치지 않았다(ref_06은 걸침 안내로 지금도 통과한다). 전체 실행 전에 기대값을 정할 것.
+
+| 지표 (dev) | 수정 전 | 수정 후 |
+|---|---|---|
+| 문항 통과(전체) | 178/243 (73.3%) | **224/243 (92.2%)** |
+| 문항 통과(KODEX 5문항 제외) | 178/228 | **224/228** |
+| period_history | 10/39 | **39/39** |
+| refusal | 9/24 | 21/24 |
+| stability | 13/18 | 17/18 |
+| etf_safety | 14/30 | 15/30 (15회 실패는 전부 KODEX) |
+| grounding / tool_selection / attachment / briefing / freshness | 60/60, 48/48, 12/12, 6/6, 6/6 | 같음 |
+| number_match_rate / number_full_support_rate | 1.00 / 1.00 | 1.00 / 1.00 |
+| forbidden_violation_rate / error_rate / fallback_rate | 0 / 0 / 0.004 | 0 / 0 / 0 |
+| live_company_accuracy / wrong_rate | 0.965 / 0 | 0.994 / 0 |
+| guard_replacement_rate | 0.064 (6회) | 0.083 (5회, 분모가 줄었다. 5회 모두 실제 틀린 값) |
+| code_answer_rate | 0.568 | 0.728 |
+| latency p50 / p95 (초) | 0.03 / 9.7 | 0.03 / 12.9 |
+
+- **남은 dev 실패 19회**: KODEX 5문항 15회(etf_03·06·08·11·16, 구성종목 미수집), ref_10 3회, stab_07 1회(수정 전에도 있던 종목 필터 없는 RAG). 새로 실패한 문항은 없다.
+- **ref_10 3회는 평가기 오탐이다**: 답은 "카카오의 2023-10-31 종가는 37,800원"으로 맞다. `metrics.explicit_periods`가 "N년 전"의 날을 `min(today.day, 28)`로 잘라 2023-10-28로 계산해 보유 시작일(10-30)보다 앞선다고 본다. `period_label_violation_rate` 0→0.5(n=6)도 이 3회다. 오늘이 29~31일일 때만 나고 2026-11-01부터는 나지 않는다. `metrics.py` 판정은 바꾸지 않았다.
+- **평가기 오탐 하나 더**: `_AGO_RE`가 "2025년 전체"를 "25년 전"으로 읽어 맞는 답도 위반으로 잡는다. 서비스 쪽(`period_scope`)의 같은 버그는 고쳤고, 평가기는 고치지 않고 문항 문구를 "2025년 연간"으로 피했다.
+- **p95 증가(9.7→12.9초)**: stab_10·hist_11이 "찾지 못했습니다"로 바로 끝나던 것(3~4초)이 두 종목을 조회한 실제 답(약 12초)이 되어 느린 구간에 새로 들어왔고, 나머지는 측정 잡음으로 본다. 바꾸지 않은 경로는 느려지지 않았다: stability·attachment dev를 수정 전 코드와 번갈아 쟀을 때(A-B-B-A, 각 2회, stab_10 제외 36회) 평균 7.69초→6.58초, p95 19.3초→13.7초.
+- **holdout(batch 6, 1회): 8/9**. 실패는 hist_17 "LG전자 올해 1분기 수익률은?": `parse_period`가 "올해"만 읽어 기존 기간 수익률 경로가 먼저 답하므로, 1분기가 아니라 연초~현재의 값(+60.83%)을 답했다. 실제 결함이고 고치지 않았다. 나머지 8개(거래일·평일 휴장·작년 이맘때·2024년 최고가·두 종목 비교·기아차 별칭·범위 밖·걸침)는 통과.
+
+## 5차 라운드 (2026-10-31, dev repeats 3): 기간 해석·지수 구간·언어 혼입, 평가기 수정, KODEX 분기
+
+**이 절의 수치는 4차 라운드와 직접 비교할 수 없다.** 평가기 판정 2건, 기대값 11문항, 문항 수(batch 7)가 바뀌었고 KODEX 문항의 기대가 데이터 유무에 따라 갈린다. 그래서 수정 전 코드로 같은 데이터셋을 다시 쟀다.
+
+### 평가기 수정과 재기준선 (승인된 판정 변경 2건, 그 밖의 판정은 그대로)
+
+- `explicit_periods`의 "N년/N개월 전": `min(today.day, 28)`로 자르면 매월 29~31일에 "3년 전"이 2023-10-28이 되어 보유 시작일(10-30)보다 앞선다고 봤다. 이제 같은 날이 없을 때만 그 달 말일로 맞춘다. "작년 이맘때" 분기의 같은 클램프는 지시 범위 밖이라 그대로다(1년 전은 보유 시작일에 걸리지 않아 판정에 영향이 없다).
+- `_AGO_RE`: "2025년 전체"를 "25년 전"으로 읽어 맞는 답도 위반으로 잡았다. 앞이 숫자이거나 뒤가 "체"면 시점이 아니다. hist_09 문구를 원래대로 "2025년 전체"로 되돌렸다.
+- **재기준선** `results/summary_rebaseline_r7_2026-10-31.json` (2ddb368, 영향받는 ref_10·hist_04·hist_09·ref_06 x 3회): 12/12 통과. 4차 라운드에서 오탐으로 실패하던 ref_10이 통과한다(답변은 그때도 맞았다).
+
+### 기대값 변경 (이전 기준선과 직접 비교 불가)
+
+- seen holdout ref_04·07·09·12: 거절·일부만 있음이 아니라 3년치 데이터의 값을 기대한다(개발 DB에서 계산).
+- KODEX 문항 etf_03·06·08·11·12·16: 아래 분기. etf_12는 처음 목록에 없었지만 같은 KODEX 구성종목 문항이라 함께 옮겼다.
+
+### KODEX 문항의 데이터 분기
+
+`expect.etf_holdings = {"ticker", "with_data", "without_data"}`. 러너(`run_eval.resolve_etf_branch`)가 실행 시점에 `etf_holding`에서 그 ETF 행을 찾아 있으면 `with_data`(구성종목·기준일·비중), 없으면 `without_data`(제공하지 않음 + 종목명·비중 금지)로 채점한다. summary에 `etf_data_available`(티커별 true/false)과 `etf_branches`(분기별 문항·통과 수)를 남긴다.
+**`without_data` 통과는 구성종목 기능의 검증이 아니다.** "데이터가 없다고 정직하게 답했다"는 뜻일 뿐이다. 그래서 아래 표의 etf_safety 30/30 중 15회는 기능 검증이 아니다. 기능 검증은 `with_data` 쪽과 데이터가 있는 TIGER 문항이다.
+
+### 수정 전후 (dev 93문항 x 3회 = 279회)
+
+- 수정 전: `results/summary_baseline_r7_2026-10-31.json` (2ddb368, git worktree). 수정 후: `results/summary_after_r7_2026-10-31.json` (923d1ea, `git_dirty`는 커밋 전 결과 summary 파일 때문이다). 두 실행 모두 KODEX 수집 전이라 KODEX는 `without_data` 분기다.
+- 새 문항 batch 7(20개, 수정 전에 추가, `UNSEEN_BATCH = 7`): period_history 18(올해 N분기·N월, 두 자리 연도, 작년 하반기, 올해 상반기 최고가, 코스피 대비 같은 구간, 작년 4분기 두 종목 비교, 범위 이전·걸침, 휴장일), stability 2(종목 2개 일반 질문). dev 12 / holdout 8.
+
+| 지표 (dev) | 수정 전 | 수정 후 |
+|---|---|---|
+| 문항 통과(전체) | 264/279 (94.6%) | **279/279 (100%)** |
+| 문항 통과(KODEX 5문항 제외) | 249/264 | **264/264** |
+| period_history | 60/72 | **72/72** |
+| stability | 18/21 | 21/21 |
+| grounding / tool_selection / attachment / briefing / freshness / refusal | 60/60, 48/48, 12/12, 6/6, 6/6, 24/24 | 같음 |
+| etf_safety | 30/30 | 30/30 (15회는 `without_data`) |
+| number_match_rate / number_full_support_rate | 1.00 / 1.00 | 1.00 / 1.00 |
+| forbidden_violation_rate / error_rate | 0 / 0 | 0 / 0 |
+| fallback_rate | 0 | 0.004 (1회, LLM 반복 루프로 잘려 코드 요약) |
+| guard_replacement_rate | 0.106 (7회) | 0.113 (7회) |
+| code_answer_rate | 0.742 | 0.753 |
+| latency p50 / p95 (초) | 0.03 / 10.4 | 0.03 / 10.8 |
+
+- **새로 통과**: hist_23·24·25·28, stab_07, stab_11(문항별 1~2회 실패 → 3/3). **새로 실패**: 없음.
+- **LLM 문항은 실행마다 흔들린다**: 튜닝 중 같은 조건의 다른 실행은 277/279(9d691f1: stab_10 반복 루프, stab_11), 279/279(1fd8c6f), 277/279(2575d66: grd_13 "1,100주", hist_11 호출 JSON)였다. 원인을 고친 뒤의 마지막 실행이 위 표다. 100%는 "실패가 없어졌다"가 아니라 "이번 3회에 안 나왔다"로 읽어야 한다.
+- **언어 혼입**: 수정 후 답변에 가나 0건. 원문을 남긴 실행에서 필터가 지운 문장은 모두 실제 혼입이었다("이期间", "경쟁력을維持", "수준에あり", "하락趨势"). 남은 한자는 도구 결과에 그대로 있는 뉴스 표기("中", "韓")다.
+
+### holdout과 seen holdout
+
+- **batch 7 holdout(8문항, 1회) 8/8 통과**: `results/summary_holdout_r7_2026-10-31.json` (1fd8c6f). 이후의 2575d66·923d1ea 수정 전에 한 번만 실행했고 다시 돌리지 않았다. 문항은 수정과 함께 썼으므로 질문은 본 상태다.
+- seen holdout(ref_04·07·09·12, etf_12, hist_16·17) 확인: 1fd8c6f에서 **ref_09가 실패해 직전 커밋의 회귀를 찾았다**: `parse_period`가 "작년 이맘때"에 None을 돌려주자 `mentions_period`도 False가 되어 단순 시세 경로가 최근 종가로 답했다. 고친 뒤(2575d66 이후) 7개 모두 통과. 이 수정은 seen holdout을 보고 한 것이다.
+- hist_38 답변에 있던 "요청 구간 중 12-30까지만 데이터가 있습니다"(휴장일을 공백으로 안내)는 dev hist_28에도 똑같이 있어 그 근거로 고쳤다(2575d66).
+
+### KODEX 수집 (2026-10-31 재시도)
+
+삼성 KODEX PDF에 요청 1건을 보내 차단이 풀린 것을 확인한 뒤 KODEX 23개만 수집했다(간격 3초, 23/23 성공, 기준일 2026-10-30, 403·429 없음). `etf_holding` 1,637 → 4,926행. `results/summary_live_kodex_2026-10-31.json` (923d1ea, `--only etf_safety`, 1회, 전체 split):
+
+| 구분 | 문항 | 결과 |
+|---|---|---|
+| **KODEX `with_data`(처음으로 기능 검증)** | etf_03·06·08·11·12·16 | **6/6**, 코드 템플릿, `etf_data_available` 5개 티커 모두 true |
+| 데이터 있는 TIGER | etf_04·07·09·13 | 4/4 |
+| 데이터 없는 ETF | etf_10·14·15 | 3/3 |
+| LLM 설명 문항 | etf_01·02·05 | 3/3 (etf_05는 반복 루프로 잘려 코드 요약, 34.7초) |
+
+## 6차 라운드 (2026-11-01, dev repeats 3): 설명형 답변의 문장 검증
+
+### 측정 (수정 전, 설명형 40문항 x 3회 = 120회, 코드 5bc178f)
+
+batch 8 후보 40문항(왜 올랐어·뉴스 공시 배경·실적 사업 구조·리스크·사건 반응 x 각 8, 종목 20개: 대형주 10, 중소형주 6, ETF 4)을 돌려 답변 원문·가드 전 원문·도구 결과를 저장소 밖에 저장하고, 일회성 감사 스크립트(커밋 안 함)로 문장 단위로 대조했다. dev 72회는 숫자가 든 문장을 근거와 나란히 사람이 읽어 스크립트를 보정했다. holdout 48회는 튜닝 전까지 자동 집계 숫자만 보고 원문은 읽지 않았다.
+
+| 항목 | dev 72회 (사람 확인) | holdout 48회 (자동 집계) |
+|---|---|---|
+| LLM 답변 / 코드 답변(사건 반응) | 57 / 15 | 39 / 9 |
+| LLM 답변 문장 수 | 595 | 353 |
+| 가드가 코드 요약으로 바꾼 답변 | 7 (모두 실제 틀린 값) | 1 |
+| **가드를 통과했는데 틀린 답변** | **10 (전체의 13.9%, 통과한 LLM 답변 50개의 20%)** | 7 (14.6%, 사람 확인 안 함) |
+
+| 오류 유형 | 통과 (답변 수, dev) | 막힘 (답변 수, dev) | 대표 사례 |
+|---|---|---|---|
+| (a) 근거 없는 숫자 | 0 | 6 | 없는 "1,022억 원", 합계를 지어낸 "1,937,519,210주" |
+| (b) 날짜 없는 기사 속 시세(다른 날 값) | 5 | 1 | "태성의 주가는 장중 4.62% 상승하며 47,600원"(9월 기사), "셀트리온은 양대 시장 장초반 3%대 상승" |
+| (c) 다른 회사·다른 맥락 | 5 | 1 | "태성" 질문에 태성자산운용의 제재 6100만원(3/3회), "들어온 자금은 23,223,639주"(거래량), "거래량은 19,704 건" |
+| (d) 방향·부호 자기모순 | 0 | 0 | 없음 |
+
+판단 기준(3% 미만이고 산발적이면 수정 없음)을 넘어 수정했다. 감사 스크립트의 통과 답변 판정은 보정 뒤 dev에서 정밀도 8/8, 재현율 8/10이었다. 사람이 추가로 찾은 2건은 nar_25/2(문장에 "태성의"도 있어서)와 nar_31/1("급락"이라 시세 말을 못 찾아서)이다. 처음 규칙에서는 "83조원" 2건 오탐이 있어 고쳤다.
+
+### 수정
+
+- `answer_guard.strip_narrative_mismatch`: 어긋난 문장만 지운다. 금융회사 접미어로 이름이 이어진 다른 회사, 날짜·기간 없이 쓴 기사 속 시세, 돈 지표에 "주" 단위 값, "X원 하락한 Y원" 짝이 시세 행과 어긋남(`...대비` 날짜 포함), 주가가 주어인 문장 속 재무 숫자, 재무 숫자가 다른 회사 문서에만 있음, 직접 매수·매도 지시(수정 후 첫 dev 실행에서 "매도하세요" 1회가 나와 추가, 평가기와 같은 정규식을 테스트가 확인). 거래량 단위 "건"은 값이 시세와 맞으면 지우지 않고 "주"로 고친다.
+- 지운 뒤 소제목·안내를 뺀 글이 40자 미만이면 코드 요약으로 바꾼다. 지운 이유와 원문은 내부 `meta.answer_guard`(`narrative_reasons`, `narrative_original`)에 남고 API 응답에는 나가지 않는다.
+- 측정에 없던 방향·부호 규칙은 넣지 않았다. 기존 숫자·날짜·대상·기간 위반의 전체 대체는 그대로다.
+- `extract_answer_text`: 이름이 `_tool`로 끝나는 호출 JSON에서 인자 값("기아")을 답으로 뽑지 않고 기존 호출 JSON 처리로 넘긴다.
+- 반복 루프의 조기 대체는 넣지 않았다. 이번 실행에서 1/351회(약 30초, 코드 요약)이고, 토큰 수를 저장하지 않아 num_predict를 낮췄을 때 정상 답변이 얼마나 잘릴지 근거가 없다.
+
+### 평가 변경 (판정 불변)
+
+- batch 8(narrative 40개: dev 24, holdout 16)을 수정 전에 추가했다. `UNSEEN_BATCH = 8`. `NUMBER_CATEGORIES`에 narrative를 넣었다. `metrics.py`는 바꾸지 않았다.
+- 사건 반응 8문항은 `expect.number_scored=false`다. 코드가 날짜별로 계산한 평균(-2.96%)을 평가기가 근거로 보지 않아 맞는 답도 실패로 센다(수정 전 12회). 그래서 수정 전 number_match 0.9737·full_support 0.9415는 이 오탐이 섞인 값이고, 수정 전후 분모(1,709→1,102)가 다르다. 직접 비교는 아래 문항 통과로 한다.
+- `narrative_drop_rate`(지운 문장이 있는 답변의 비율)를 추가했다.
+
+### 수정 전후 (dev 117문항 x 3회 = 351회)
+
+수정 전 `results/summary_baseline_r8_2026-11-01.json`(f9dc254), 수정 후 `results/summary_after_r8_2026-11-01.json`(17cd049, `git_dirty`는 커밋 전 결과 파일 때문이다).
+
+| 지표 (dev) | 수정 전 | 수정 후 |
+|---|---|---|
+| 문항 통과(전체) | 335/351 (사건 반응 오탐 12회를 빼면 347/351) | **350/351** |
+| narrative | 56/72 (오탐 제외 68/72) | 71/72 |
+| grounding / tool_selection / attachment / briefing / freshness / refusal / period_history / stability / etf_safety | 60/60, 48/48, 12/12, 6/6, 6/6, 24/24, 72/72, 21/21, 30/30 | 같음 |
+| number_match / full_support | 0.97 / 0.94 (오탐 포함) | 1.00 / 1.00 |
+| forbidden_violation / error | 0 / 0 | 0 / 0 |
+| fallback / loop | 0.003 / 0.003 (각 1회) | 0.003 / 0.003 (각 1회) |
+| guard_replacement | 0.118 (14/119) | 0.126 (15/119) |
+| narrative_drop | - | 0.058 (6/104) |
+| code_answer | 0.641 | 0.641 |
+| latency p50 / p95 (초) | 0.03 / 12.3 | 0.03 / 12.6 |
+
+- 새로 통과: nar_05·13·21·30(평가기 오탐 제외), nar_08(수정 전 반복 루프), nar_25. 새로 실패: nar_40 1회(반복 루프로 잘려 코드 요약, 약 30초). 루프는 문항을 옮겨 다닌다.
+- 수정 후 지운 6회를 사람이 읽었다. 맞게 지운 것 2회(nar_25 run0·2). 오탐 또는 정상 문장 손실 4회: att_05·nar_08은 값이 맞는 거래량 문장을 지웠고(att_05는 물어본 거래량이 답에서 사라졌다) e04a30f에서 단위만 고치게 했다. nar_03 run1 "최근 주가는 352,500원"은 값이 실제 마지막 종가인데 날짜가 없어 지웠고, nar_25 run1 "태성자산운용은 태성과는 별개인 회사"는 맞는 설명인데 이름 때문에 지웠다. 뒤의 둘은 규칙의 한계로 남겼다. e04a30f는 전체 dev를 다시 돌리지 않았고, 단위 테스트와 att_05·nar_08·nar_20·nar_25·nar_40 x 3회(15/15)로 확인했다. 표의 수정 후 실행은 그 앞 커밋이다.
+- 감사 스크립트로 수정 후 설명형 dev 72회를 다시 보면 가드를 통과해 남은 지적이 **0건**이다. 통과한 답변의 사람 확인 13.9%와 직접 비교할 수치는 아니다(스크립트의 재현율 8/10, 규칙이 같은 사례에서 나왔다).
+
+### holdout과 seen holdout (17cd049, 1회, `results/summary_holdout_r8_2026-11-01.json`)
+
+- **batch 8 holdout 16문항 16/16**. 지운 문장 1회(nar_02 "카카오 주가 3만원대 이탈"). 실패를 보고 고치지 않았다. 단 이 문항은 측정 단계에서 3회씩 실행했다(숫자만 보고 원문을 읽지 않았다).
+- 수정 전 holdout 답변(1단계 저장본)에 새 규칙을 재생하면 자동 지적 7회 중 3회가 지워지고 4회는 남는다: "주가는 최근 5거래일 동안 3만원대 이탈"(문장 앞 목록 기호 때문에 주어 없는 시세로 못 읽음), "동일업종 등락률인 -5.46%". holdout이라 고치지 않았다.
+- seen holdout 61문항 60/61. 실패는 fresh_04(LG화학 지금 주가, 날짜를 쓰지 않음)로 3차 라운드부터 알려진 실패다. 회귀 없음.
+
+### 예시
+
+- 수정 전: "또한, 태성의 주가는 장중 4.62% 상승하며 47,600원을 기록하였습니다."(9월 기사, 날짜 없음) → 수정 후: 그 문장만 지워진다.
+- 수정 전: "KODEX 레버리지 ETF에 들어온 자금은 2026-10-30일 23,223,639주입니다." → 수정 후: 그 문장만 지워진다.
+- 수정 전: "LG화학의 최근 거래량은 186,663건이며" → 수정 후: "186,663주이며".
+
+### 남은 문제
+
+- **뉴스 데이터 오염(이름이 짧은 종목)**: "태성" 뉴스에 배우 이태성, 태성무역, 태성자산운용이 섞여 있다. 금융회사 접미어만 지우므로 nar_25는 이제 이태성 기사를 답한다. 문항은 통과해도 답은 쓸모없다. 수집·검색 단계에서 고칠 일이다.
+- **규칙으로 못 잡는 것**: 숫자 없는 인과 단정("이에 따라 주가는 상승"), 관련 없는 기사로 원인을 설명, 같은 문단 반복, 영어 혼입("business structure"), 지운 뒤 어색한 연결("그 중에서도 ..."로 시작). 기존 실패 fresh_04.
+- 직접 지시는 정규식에 있는 표현만 잡는다.
+
+## 7차 라운드 (2026-11-01, dev repeats 3): 뉴스 관련성
+
+### 측정 (수정 전, 외부 요청 없음, DB만 읽음)
+
+최근 90일 뉴스 12,804건(주식 11,792, ETF 1,012). 네이버 검색이 본문까지 찾아 주므로, 제목·요약에 그 회사가 없는 기사가 저장돼 있었다.
+
+| 지표 | 값 |
+|---|---|
+| 제목·요약에 이름이 독립된 단어로 없는 기사 | 1,639건 (12.8%), ETF는 0건(이미 걸러짐) |
+| 그중 금융 문맥어도 없는 기사 | 890건 (7.0%) |
+| 이름 없는 기사가 50% 이상인 종목 | 30개 (8.6%) |
+| 이름 없는 기사가 30% 이상인 종목 | 49개 |
+| 모호 이름 후보(2자 이하, 그룹명, 다른 종목명의 일부, 일반 단어·사람 이름) | 43개 |
+
+- 모호 이름 후보 43개: CJ, DL, GS, HDC, HD현대, KCC, KT, LG, LS, NC, SK, SK하이닉스, 고영, 기아, 농심, 동서, 두산, 리노공업, 삼성전자, 삼현, 셀트리온, 신세계, 심텍, 씨젠, 아모레퍼시픽, 에스엠, 에코프로, 영원무역, 오뚜기, 오리온, 카카오, 코웨이, 태성, 테스, 파두, 파마리서치, 풍산, 피에스케이, 하이브, 한화, 효성, 후성, 휴젤. 후보일 뿐이고 실제 오염은 아래처럼 다르다(심텍·파두는 깨끗하다).
+- 원인: 동명("태성"의 배우 이태성·태성무역), 계열사(SK의 SK하이닉스), 이메일 도메인(NAVER의 @naver.com), 단위(DL의 mg/dL), 일반 단어("우리 기술", "동서 횡단").
+- **대형주도 해당한다**(SK, NAVER, LG, 두산, 한화). 기준(오염 종목 5% 이상 또는 대형주)을 넘어 수정했다.
+
+**지표 정확도(사람이 제목·요약을 읽어 판정, 무작위 표본 50건)**: "이름 없음"으로 잡은 25건 중 21건이 오염(정밀도 84%). 오탐은 신세계백화점, 삼성화재모빌리티뮤지엄, "현대 엘리베이터"(띄어쓰기), "KB·신한·하나·우리"(약칭). "이름 있음" 25건 중 그 회사를 언급하지 않은 기사는 0건이지만, 2건은 이름만 지나가는 기사였다(삼성증권 연구원 인용, 삼성카드 출신 임원). 즉 지표는 "이름이 있는가"만 재며, 이름이 있어도 그 회사 얘기가 아닌 기사는 못 잡는다.
+
+### 수정
+
+- `app/news_relevance.is_relevant_news`(순수 함수): 이름·별칭이 독립된 단어로 나오는가. 앞에 글자가 붙으면(이태성, 제주SK, @naver.com) 불일치, 2자 이하·영문 3자 이하·지정 이름은 뒤에 조사·문맥어 말고 다른 글자가 붙어도 불일치(태성무역). 더 긴 다른 종목 이름(SK하이닉스)은 먼저 지운다. SK·LG·태성·동서·스피어 같은 이름은 금융 문맥어·업종어도 필요하다. 사람이 읽어 확인한 동명 표기만 배제 목록에 넣었다. ETF는 기존 `mentions_etf_name` 그대로다.
+- `news.is_relevant`(마이그레이션 `a9d3f6c12b47`, NULL=미판정): **행은 지우지 않는다.** 저장 시 표시, 기존 행은 `python -m scripts.mark_news_relevance --apply`로 표시(되돌리려면 NULL로).
+- 채팅 뉴스 도구, RAG, 브리핑, 사건 반응이 `is_relevant IS NOT FALSE` 조건만 추가했다. 쿼리 수는 그대로고 기존 인덱스를 쓴다(태성 뉴스 조회 0.27ms). 쓸 만한 기사가 없으면 뉴스 도구가 "관련 뉴스를 찾지 못했습니다"라고 알린다.
+- 검색어: 문맥이 필요한 이름은 `"태성" 주가`, NAVER는 `네이버`. 기존 이름 충돌 14종목은 그대로. **실제 수집은 이번에 하지 않았고 가짜 응답 테스트로만 확인했다.**
+- `_llm_chat`: Ollama가 생성을 중단한 `ResponseError`("token repeat limit reached", nar_15에서 발견)가 예외로 올라가 답변이 실패하던 것을 코드 요약으로 답하게 했다.
+
+### 표시 결과 (2026-11-01, 전체 12,859건)
+
+관련 없음 **1,457건(11.3%)**, 관련 있음 11,402건, 삭제 0건. 숨김 50% 이상 종목 28개, 30% 이상 45개. 삼성전자·SK하이닉스·셀트리온 40/40 유지, 현대차 39/40, LG에너지솔루션 36/40, 기아 35/40. 쓸 기사가 거의 없어진 종목: SK 0건, GS 2건, NAVER 3건, LG 4건.
+
+판정 정확도: 표시 전 후보에서 무작위로 뽑은 숨김 40건 중 37건이 맞았고(92.5%), 남김 30건 중 오염은 1건이었다. 틀린 3건(NHN페이코, LIG D&A, 하림그룹)은 표기를 추가했다. 표본 119건을 `tests/fixtures/news_relevance_cases.json`에 고정했다(현재 숨김 정답 56, 잘못 숨김 1, 놓침 2, 남김 정답 60). **규칙을 고칠 때 본 표본이라 독립 평가가 아니다.**
+
+<details><summary>숨긴 비율 상위 30개 종목과 숨긴 기사 제목</summary>
+
+| 종목 | 숨김/전체 | 숨긴 제목 |
+|---|---|---|
+| SK | 40/40 | 삼성·하이닉스 주식 갖고 있는 사람들을 불안하게 만드는 소식 / 댄 아이브스 "한국, 1990년대 실리콘밸리 같아..6~12개월 내  / 반도체 '없어서 못판다'는데, 삼전·닉스 주가는 왜 빠졌나 |
+| GS | 38/40 | 익숙한 재미 vs 낯선 설렘…추석 연휴 볼만한 뮤지컬 / 경기도, 15~16일 기후테크 컨퍼런스 개최…투자유치·해외진출 지원 / [건설브리핑] GS건설, AI 데이터센터 냉각기술 공동개발 외 |
+| NAVER | 37/40 | 삼표그룹, 폐안전모 수거 캠페인…업사이클링해 지역사회 기부 / 아침온도― 안 먹는다더니 젓가락을 들고 왔습니다 / 맥도날드, 맥모닝 신메뉴 '게살 크림 크로켓 머핀' 출시 |
+| LG | 36/40 | [오늘의 주목주] '냉각기술' 기대감 SK이노베이션 주가 5%대 올라 / [주간 거래소 외국인] 삼성전자 집중 매수…한화에어로·한화오션·두산. / KB증권, 10월 다섯째주 HD건설기계 등 29종목 매수 추천 |
+| 동서 | 35/40 | 동아대 석당박물관, 석달간 참여형 문화 프로그램 운영 / 7명 숨진 붕괴 참사…‘엉터리 계산’에 검증도 없었다 / 계명대, 알비루니 세계기록유산으로 실크로드 문명 교류사 재조명 |
+| 두산 | 34/40 | [불장이 바꾼 증시 풍경②] 코스피 최고치에도 '1조 클럽' 축소…반 / 두산에너빌리티 주가 추석 연휴 이후 흐름 '이목'…관건은? / 어제 매도 사이드카 터졌는데…2027년 '1만 2000피' 본 이유는 |
+| 한화 | 34/40 | 한화에어로스페이스 68만1000원으로 10.39% 급락…실적 발표 뒤 / [Invest]한화시스템 "오션 PRS 1차 물량 대부분 정산…차입금 / [클릭 e종목]"한화오션, 4분기도 쉽지 않다…목표가 하향" |
+| 한화엔진 | 34/40 | 방산 AIDC 협의체 출범…중소·중견 방산 AI 전환의 디딤돌 / 40년 바닷길 닦은 한화오션, 차세대 이지스함 앞세워 세계 시장 도전 / [창간 81주년] 제주, 소형위성 산업 날개를 달다 |
+| 스피어 | 33/40 | 위메이드 매각 불발 가능성 '솔솔' … 中 네오펄스, 잔금 8280억 / 레노버, CES서 테크월드 개최…하이브리드 AI 미래 비전 제시 / 코인 9조 털어간 北해커들...직업·관심사 韓 맞춤형 유인 급증 |
+| DL | 32/40 | [주간 코스닥 기관] 삼성전자·삼성전자우 쓸어 담았다…SK스퀘어·두산 / 성수2구역에 '아크로' 입힌 DL이앤씨…글로벌 설계·디자인 적용 / "바람 불 때 지붕 단단히"…김구라 경제연구소가 꼽은 추천주 3가지 |
+| LS | 32/40 | LS마린솔루션, 글로벌 해저통신망 사업 가속…구축·유지보수 강화 / 더현대 1조·상반기 영업익 56%↑…정지영 현대백화점 대표 연임할까 / AI 데이터센터 확대하는 GS건설, 발열 잡을 냉각기술 개발 나선다 |
+| 우리기술 | 32/40 | 반도체 먹는 中…韓, 7년만에 대중 수출 1위 등극 / "'한국형'이라는 이름, 무엇을 증명하는가?" / 데이터플랫폼 업체 테라데이타, AI 기업 전환 시동 |
+| 하나머티리얼즈 | 32/40 | 머스크 ‘테라팹’ 시동…160조원 AI칩 공장에 K소부장 촉각 / 인하대학교 양수근 교수, 빛·항암제 결합한 대장암 융합치료 전략 제시 / [신동빈의 롯데케미칼, 다시 도약]② 범용 덜어 거름 삼고, 첨단 길 |
+| 제주반도체 | 31/40 | 반도체·뷰티만 '돈잔치'…"K-자 양극화 해소해야"[중소기업의 추석③ / 사회주의자 증가 미국, 극우 팽창하는 한국 / 서울 아파트값 85주째 상승…최장 기간 상승 동률 |
+| SK리츠 | 30/40 | 10월 13일 주식시장 주요공시 / 대기업 채무보증 2000억…1년 새 4배 증가 / 인텔리빅스 140% 급등·SGA솔루션즈 상한가 |
+| 에스엠 | 29/40 | 이재용 5조·정기선 6천억원…대기업 오너일가 222명 지분변동 / 웹3 생태계 재편·IP 가치 재평가… NFT 관련주 일제히 폭풍 질주 / 외국인 매도에 또 밀린 코스피… 기관 방어에도 6000선 턱걸이 |
+| 오리온홀딩스 | 27/38 | [美증시] 국제유가 급등·반도체 급락에 3대 지수 혼조…나스닥 하락, / K-푸드 인기에 음식료업주 들썩…수출 성장주 가려내기 / JTBC 매각주관사로 EY한영 선정…내달 LOI 접수할 듯 |
+| 롯데지주 | 28/40 | [EZ 진단] 롯데손보에 1.2조 투입하는 신한금융…추가 부담 넘어  / SK證 "신한지주, 주주환원율 50%가 뉴노멀…저평가 매력 확대" / 롯데손보 품는 신한지주, 주가 4.71% 하락…장기 배당 공백 부담 |
+| 한화생명 | 28/40 | 한화시스템, 중동 방산 수출 내년부터 본격화…개발비 부담은 변수 / 코스피, 美 반도체 훈풍에 3%대 상승…삼전·하이닉스 동반 강세 / [마감] 기아, 3분기 '어닝 쇼크' 급락...대원제약, '급등' |
+| iM금융지주 | 27/40 | 이찬진 "자회사 CEO 승계 투명성 높여야"…금융지주 이사회 책임 강 / 공개매수 vs 주식교환···신한금융, 롯데손보 잔여지분 과제 / 이찬진 "해킹 보안 강화·CEO 승계 투명성 높여야"…은행지주 이사회 |
+| HD현대 | 26/40 | HD현대일렉트릭 올해 사상 첫 영업이익 1조 돌파 전망, 연임 성공  / [불장이 바꾼 증시 풍경②] 코스피 최고치에도 '1조 클럽' 축소…반 / 데이터센터가 불붙인 발전 엔진 시장… HD현대중공업 증설 나섰다 |
+| 효성 | 25/40 | HS효성첨단소재 3분기 영업이익 516억원…전분기보다 33% 감소 / "중국·중동 증산에 호황기 더는 없다"...K-석화 스페셜티 전환은  / 마이바흐 고객 잡아라…HS효성더클래스, 간송미술관서 'VIP 마케팅' |
+| 태성 | 23/40 | ‘신랑수업2’ 이태성·조희진 돼지고기 맛집 애프터 / [국감] 안전관리 사각지대 알로에 페록스, 식약처 실태조사 나선다 / 엑소 수호, 액션물로 스크린 컴백 |
+| 대한광통신 | 22/40 | ETRI, 자연어 명령으로 광액세스망 운용 가능한 LLM 기술 개발 / [中 증시 마감] AI 조정에 이틀째 하락...해운주 강세 / [중국증시 마감] 기술주 3%대 하락…광모듈 급락 속 원자재·AI 동 |
+| 두산로보틱스 | 21/40 | '전강후약' 반복 코스피⋯7000선 턱걸이 마감 / 코스피, 매도 사이드카 발동 후 5700선 공방…외국인 1.3조 ‘팔 / AI 투자 수익성 우려 확산···외국인 1.6조 매도에 코스피 570 |
+| 원익홀딩스 | 21/40 | [코스닥 외국인] 심텍 알테오젠 ISC 피에스케이홀딩스 안랩 '왕성한 / 대구·경북 상장사 시가총액 103조 원···8월 대비 5.2% 감소 / [코스닥 기관] 대주전자재료·리노공업 사고 심텍·원익IPS 대량 매도 |
+| 롯데쇼핑 | 20/40 | 롯데홈쇼핑, 佛 패션 중심에서 … K뷰티, 파리지앵을 홀리다 / 롯데는 쇄신 효과, 현대는 유임 성과…유통가, 인사 앞두고 긴장 고조 / TBH글로벌, 아쿠아스큐텀 겨울 컬렉션 출시…프리미엄 소재 강화 |
+| 씨젠 | 20/40 | [10월 30일 병원계 이모저모⑤]강남차, 단국대, 분당제생병원 등  / 전남의사회, 외국인근로자 319명 건강 돌봤다…이동클리닉 운영 / [병원계 소식] 10월 30일 |
+| 아모레퍼시픽홀딩스 | 19/40 | 한국ESG평가원, KB금융·현대차 등 5개사 최우수기업 선정 / "JW·GC 다음은 DK"…글로벌 겨냥 사명 교체 득실은? / 청년엔 첫 직장, 중년엔 재취업… 광화문광장 ‘일자리 門’ 열린다 |
+| 한화비전 | 19/40 | [Who Is ?] 최종양 이랜드그룹 대표이사 부회장 / 정유4사, 냉각솔루션 경쟁…실증·공급 속도 / [한화, 74년의 도전史③] 우주로 향하는 '넥스트 한화'…'한국판  |
+
+</details>
+
+### 평가 변경 (판정 불변)
+
+- batch 9(news_relevance 12개: dev 7, holdout 5)를 수정 전에 추가했다. `UNSEEN_BATCH = 9`. 모호한 이름 9, 대형주 회귀 3. `metrics.py`는 바꾸지 않았다.
+- rel_03(SK)의 기대값을 수정 후에 바꿨다: 표시 후 SK 기사가 0건이라 "찾지 못했다"가 정답이다(`must_refuse`). 그래서 이 문항의 전후는 기대값이 다르다.
+
+### 수정 전후 (dev 124문항 x 3회 = 372회)
+
+수정 전 `results/summary_baseline_r9_2026-11-01.json`(70a73db), 수정 후 `results/summary_after_r9_2026-11-01.json`(7e39206, `git_dirty`는 ci.yml과 커밋 전 결과 파일 때문이다).
+
+| 지표 (dev) | 수정 전 | 수정 후 |
+|---|---|---|
+| 문항 통과(전체) | 366/372 | **371/372** |
+| news_relevance | 15/21 | 20/21 |
+| narrative / grounding / tool_selection / attachment / briefing / freshness / refusal / period_history / stability / etf_safety | 72/72, 60/60, 48/48, 12/12, 6/6, 6/6, 24/24, 72/72, 21/21, 30/30 | 같음 |
+| number_match / full_support | 1.00 / 1.00 | 1.00 / 1.00 |
+| forbidden_violation / error | 0 / 0 | 0 / 0 |
+| fallback / loop | 0 / 0 | 0 / 0 |
+| guard_replacement | 0.064 | 0.078 |
+| narrative_drop | 0.083 | 0.023 |
+| latency p50 / p95 (초) | 0.03 / 11.6 | 0.03 / 12.4 |
+
+- 새로 통과: rel_01(태성), rel_06(스피어), 3회 모두. 새로 실패: rel_03 1회 - "SK 관련 뉴스가 없습니다."는 맞는 답인데 평가기의 답변 불가 문장 패턴에 없다(판정 불변).
+- 앞선 수정 후 실행(0918298)에서 나온 nar_15 오류 1회는 위 `_llm_chat` 수정으로 고쳤고, 최종 실행에서 재현되지 않았다(같은 중단이 다시 났는지는 표본이 작아 확인하지 못했다. 단위 테스트로 경로를 고정했다).
+- 문장 삭제가 줄었다(0.083→0.023): 오염 기사가 빠져 지울 문장이 줄었다.
+
+### holdout과 seen holdout (7e39206, 1회, `results/summary_holdout_r9_2026-11-01.json`)
+
+- **batch 9 holdout 5문항 5/5**(동서, NAVER, 에스엠, DL, SK하이닉스). 실패가 없어 고친 것도 없다. 문항과 판정 규칙은 같은 사람이 함께 썼다. DL은 금지어(mg/dL)를 지나갔지만 "이서진과 친분"처럼 쓸모가 낮은 기사가 남는다.
+- seen holdout 77문항 77/77. 회귀 없음.
+
+### 남은 문제
+
+- 영화 "아버지의 비밀"의 인물 태성 기사가 남아 있다(문맥어 "실적"에 걸림). holdout 뒤라 고치지 않았다. 표기 배제로는 끝이 없는 유형이다.
+- 이름은 맞지만 그 회사 얘기가 아닌 기사(증권사 연구원 인용, 카카오톡 언급, 현대제철 스포츠 일정).
+- SK·GS·LG는 수집 단계에서 계열사 기사만 들어와 쓸 기사가 거의 없다. 다음 수집에서 나아질지는 확인하지 못했다.
+- 이름 약칭 기사("KB·신한·하나·우리")는 잘못 숨긴다.
+- 배제 목록과 표기 추가는 사람이 본 사례뿐이다. 새 동명은 지표로 다시 재야 한다.
+
+## 모델 비교 (2026-11-01): 기본 모델 유지
+
+리포트: `reports/model_comparison_20261101.md`. 요약은 `results/summary_model_*_2026-11-01.json`.
+
+| 모델 | batch 10 | 설명형 사실 오류(문장) | 어색한 문장 | 외국어 혼입(답변/문장) | p95 | VRAM(+bge-m3) |
+|---|---|---|---|---|---|---|
+| llama3.1:8b | 38/40 | 14.9% | 13.5% | 2/2 | 12.61초 | 5.97GB |
+| qwen3:8b (생각 끔) | 36/40 | 12.6% | 2.7% | 0/0 | 26.26초 | 6.28GB |
+| qwen2.5:7b-instruct | 30/40 | 19.3% | 4.8% | 4/24 | 21.81초 | 5.45GB |
+
+두 후보 모두 조건 (a) 통과율과 (e) 지연을 못 채워 조기 종료했고 기본값을 바꾸지 않았다. 프롬프트는 llama에 맞춘 그대로다.
+**batch 10(40문항, 전부 holdout)은 이번 비교에서 1회 사용했다.** 다음 튜닝에는 다시 쓰지 않는다. 모델을 바꿔 잴 때는 `python -m evals.run_eval --mode all --batch 10 --model 모델명 --keep-tool-results`로 돌린다(`--keep-tool-results`는 raw에 도구 결과를 남긴다).
+
+## 8차 라운드 (2026-11-02): 두 날짜 수익률, 근거 우선 답변, 평가기 보정
+
+리포트: `reports/holding_evidence_20261102.md`. 요약: `results/summary_b11_*`, `summary_after_r11_*`(B 적용), `summary_final_r11_*`(최종).
+
+| 변경 | 판정 |
+|---|---|
+| A 두 날짜 수익률 코드 경로 | 채택. batch 11 (A)형 12/12, SQL 일치 |
+| B 근거 우선 설명형 답변 | 되돌림(`a208555`, 코드는 `70c9fa8`). 사전 조건 (i) 미달: 사실 오류 문장 29.4% → 24.0%(절반 이하 기준 14.7%). 오류 문장 수 20→6, 오류 답변 12/20→5/20 |
+| C 답변 불가 패턴에 "관련 뉴스가 없습니다" 류 추가 | 적용(승인됨). 재채점 변화는 dev rel_03 1회(371→372/372) |
+
+batch 11 통과: 변경 전 29/40, 최종 39/40(실패 b11_38은 금지 정규식의 오판이다: 답변은 "100만원이 맞다는 건 아니에요"로 올바르게 거부했다). 설명형 문항의 자동 채점은 전후 모두 20/20이라 내용 오류는 사람 판독으로만 비교한다.
+
+## 9차 라운드 (2026-11-02): 뉴스 실제 재수집, 근거 우선 답변 재검증
+
+리포트: `reports/evidence_recollect_20261102.md`. 요약: `results/summary_p19_*`.
+
+| 항목 | 판정 |
+|---|---|
+| 근거 우선 설명형 답변 | **기본값 끔**(`EXPLAIN_EVIDENCE_FIRST=1`로 켠다). 사전 조건 (a) 오류 답변 켬 7/20 대 끔 5/20(기준 0.6배 이하), (e) 설명형 p95 16.0초 대 11.78초(기준 +2초) 미달. (b) 30% 대 10%, (c) 새 실패 0, (d) 숫자 일치 1.0·엄격 오매칭 0은 충족 |
+| 뉴스 재수집 | 요청 438건, 차단 0. 12,859 → 15,479건, 90일 숨김 11.38% → 9.72%. SK·GS·NAVER·LG 90일 관련 0·2·3·4 → 10·7·13·14건. 실제 채팅에서 나온 기사 40건 중 그 회사 기사는 16건이다 |
+
+batch 13 통과: 켬·끔 모두 30/30(자동 채점은 설명형 내용을 보지 않는다). dev 최종 160/167, 본 holdout 최종 175/183. dev rel_03은 SK 뉴스 0건을 전제로 한 기대라 재수집 뒤 답변 기대로 바꿨다.
+
+## 10차 라운드 (2026-11-02): 숫자 가드 강화, 뉴스 제목 우선 정렬
+
+리포트: `reports/news_quality_20261102.md`, 라벨: `reports/news_quality_labels_20261102.json`. 요약: `results/summary_p20_*`.
+
+| 항목 | 판정 |
+|---|---|
+| nar_40, b11_13 숫자 실패 | 가드 결함. 거래량 차이·변화율이 원·단위 없는 숫자의 근거로 쓰였다. 고침(캡처 590건 재생에서 새로 잡힌 것은 이 둘뿐) |
+| 제목 일치 우선 정렬 | **채택.** 검증용 15종목 그 회사 기사 38.7% → 78.7%, 다른 회사 기사 8.0% → 0%, SQL +0.8ms. 개발용 24.0% → 48.0% |
+| 잘린 끝 이름 제외 | 되돌림. 검증용에서 새로 숨긴 7건 중 4건이 멀쩡한 기사 |
+| 별칭 최장 일치 | 되돌림. 검증용 효과 없음 |
+
+실제 채팅 8개 질문 그 회사 기사 16/40 → 34/40. `news.is_relevant` 변화 0건. dev 160/167, 본 holdout 206/213(batch 1~13). 새 실패 etf_05는 가드가 ETF 답변을 코드 요약으로 바꿀 때 레버리지 설명이 사라지는 기존 결함이라 고쳤다(5회 반복 5/5). 평가 문항·채점은 바꾸지 않았다.
+
+## 11차 라운드 (2026-11-03): 전망·후속 결론 질문, 근거 정합성
+
+- 새 카테고리(live): `forecast`(전망 질문, `must_forecast` + `period`), `forecast_followup`(2~3턴 후속, 문항의 `turns`에 앞 질문들, `must_followup` + `period`), `glossary`(용어 회귀, `must_contain`).
+- 실행기: `turns`가 있으면 앞 질문을 같은 평가 계정으로 차례로 묻고 `app.reports.get_report`로 직전 리포트를 이어받는다(API의 `previous_report_id`와 같다). 지연은 마지막 질문만 잰다.
+- 채점(`evals/forecast_check.py`, 앱 코드를 import하지 않고 SQL·pandas로 기대값 계산): 첫 섹션 라벨 + 기술적 지표 줄(숫자·날짜) 5개 이상, 표식의 종목·기간, 지표 숫자 SQL 검산과 같은 기간 수치 일치, 근거 문서가 모두 요청 종목(뉴스는 제목에 종목 표기), 단정·목표가·확률·기대수익률 표현. 지표: `forecast_structure_rate`, `followup_keep_rate`, `forecast_number_rate`, `forecast_evidence_rate`, `forecast_assertion_rate`.
+- batch 14(holdout 30): 전망 10, 후속 8(3턴 2개 = 문제 재현형), 용어 6, 기타 회귀 6(주문 문장 2, 인젝션 1, 범위 밖 1, 기간·두 날짜 수익률 2). batch 15(dev 12)로만 튜닝했다.
+- 결과: batch 14 실패 1건(b14_06 근거 판정: "TIGER미국S&P500"처럼 띄어쓰기 없는 ETF 이름을 평가기가 못 읽음. 평가기 결함으로 보고만 했다). dev와 본 holdout 333문항: 기준선(1510b7a) 실패 1건 → 변경 후 3건, 5회 반복으로 모두 흔들림(b10_03·b10_28은 기준선에서도 실패, nar_01은 6회 중 1회). 상세: `reports/forecast_20261103.md`.
+
+## 12차 라운드 (2026-11-03 저녁): 신호 묶음·과거 검증·간접 뉴스·주문 문장·실적
+
+- 데이터를 2026-11-03까지 최신화한 뒤 잼(기준선 1474ba4도 같은 데이터에서 다시 잼). batch 16(holdout 30), batch 17(dev 12), `UNSEEN_BATCH = 16`.
+- 새 기대 키: `must_backtest_line`(과거 검증 줄 = `app/data/outlook_backtest.json`), `must_indirect`("업종"/"기초지수": 간접 섹션 분리, 직접 섹션 무관 기사 0), `must_earnings`(실적 줄 = `quarterly_earnings` SQL). 전망·후속 문항은 묶음 표를 답변 문장에서 다시 계산해 라벨까지 대조한다(`check_groups`). 새 지표: `forecast_group_rate`, `backtest_line_rate`, `indirect_section_rate`, `earnings_number_rate`.
+- 승인된 평가기 수정: 근거 관련성 비교가 공백·대소문자·전각/반각을 정규화한다(batch 14: 29/30 → 30/30).
+- 결과: batch 16 30/30, batch 17 dev 12/12. dev 전체 + batch 1~14 holdout(375문항) 새 실패 0(hist_11·nar_06은 반복으로 흔들림 판정, dev17_08은 dev에서 고침, fresh_04는 기준선과 같은 실패). 상세: `reports/forecast_round2_20261103.md`.
+
+## 13차 라운드 (2026-11-04): 결론 먼저 답변·국면·짧은 후속 답
+
+- batch 18(holdout 20, 측정 전에 문항·기준 고정): 단독 전망 8(국면 5종 = 상승 추세 지속 2·조정 1·하락 1·반등 시도 2·횡보 2, ETF 2,
+  기간 1주일 3·1개월 2·3개월 3) + 다른 종목 혼입 회귀 1, 2~3턴 후속 8(판단 4·위험 2·확률 2), 용어·주문·기간 수익률 회귀 3. batch 19(dev 10). `UNSEEN_BATCH = 18`.
+- 새 기대 키: `must_layout23`(단독 전망: 제목 줄·상태 줄·첫 섹션 "종합 판단" 2~3문장, 제목·상태 줄에 우위 라벨 없음, 국면 = API.md
+  "국면 규칙"을 SQL로 다시 계산, 교차와 이동평균 배열이 2표가 아님, 숫자·조회 기간 검산), `must_short`("verdict"/"risk"/"probability":
+  빈 줄 빼고 6줄 이하, 규칙 설명·섹션 없음, 첫 줄 제목의 종목·기간 유지, 종류별 첫 내용). 새 지표: `conclusion_first_rate`,
+  `regime_match_rate`, `no_double_vote_rate`, `short_followup_rate`, `number_window_rate`(`forecast_check.py` 23차 절, 앱 코드 import 없음).
+- 옛 형식 기준과의 충돌: batch 14·15·16·17의 `must_forecast`(첫 섹션 "최종 신호 판단")와 `must_followup`(후속 답의 라벨 표식·묶음 줄),
+  b14_15의 `must_contain`(위험 후속 답의 "변동성"·"최고 종가 대비")은 이번 지시의 답변 구조와 맞지 않는다. 기대값은 바꾸지 않았고,
+  이 문항들은 옛 형식 기준으로만 실패하며 같은 답변이 23차 기준을 모두 통과하는 것을 따로 확인했다(`reports/forecast_round3_20261104.md`).
+- 결과: batch 18 첫 실행 19/20(b18_16 "그래서 오르냐 내리냐고"가 LLM 경로로 감) → 표현을 고친 뒤 20/20, b18_16 5회 5/5(결과를 본 뒤
+  고친 문항이라 unseen 측정 아님). batch 19 dev 10/10. 이전 holdout 245문항 새 실패 0(fresh_04는 기준선과 같은 실패, 나머지는 위 형식 충돌 41).
+- 실적 재수집 뒤(2026-11-04 장 마감 뒤) 실적이 나오는 6문항(b18_05, b16_25~27, dev17_01, dev19_01) 재측정: `earnings_number_rate` 6/6,
+  실패 4건은 위 형식 충돌(`label_first`)뿐(`results/summary_r23_earnings_recollect.json`).
+
+## 14차 라운드 (2026-11-04): 현재 판단 먼저·신호 강도·잠정실적·시세 지연 구분
+
+- batch 20(holdout 20, 구현 전에 문항·기준 고정, 3378c5c): 단독 전망 5, 2~3턴 후속 12(판단 3·고르기 2·비교·확률·매수·실적 3·데이터 1),
+  종목 되묻기·주문·"그럼 최근 뉴스는?" 회귀 3. batch 21(dev 10). `UNSEEN_BATCH = 20`.
+- 새 기대 키: `must_judgment24`(standalone 또는 후속 답 종류), `earnings_quarter`("2026-3", 물은 분기). 새 지표: `judgment_first_rate`
+  (현재 판단 = 묶음 비중·국면(SQL)으로 다시 계산한 규칙 값, 결론 먼저, 판단 회피 첫 문장 없음, 묶음 비중·약한 우위, 예측력의 표본·95% 구간,
+  확률 지어냄·매수 권유 없음, 후속 6줄), `latest_earnings_rate`(최신 분기 = 정기보고서와 잠정실적 공시를 독립 파서로 다시 읽어 고른 분기,
+  값·전년 동기 대비·출처·발표일·접수번호, 발표 뒤 주가 SQL 검산, 없는 분기 안내), `data_status_rate`(답변 생성 시각·시세 기준일,
+  최신·미수집·수집 실패·휴장일 추정·종목만 누락을 SQL·수집 기록으로 다시 분류). `forecast_check.py` 24차 절, 앱 코드 import 없음.
+- 고정 뒤 변경 1건(holdout 측정 전): 전 종목 잠정치 점검에서 기준 미표기·별도 잠정치가 연결 확정치와 2~3배 달라, 잠정치 사용 조건
+  (같은 기준, 자기 설명 문장으로 기준 판별, 2~4분기 누적 일관성)을 앱과 같은 명세로 평가기에도 넣었다.
+- 결과: batch 20 수정 전 3/20(현재 판단 0/17, 최신 실적 0/3) → 수정 후 20/20(1회, unseen). batch 21 dev 10/10(dev21_05에서
+  "2분기"가 기간 3개월로 읽히던 것을 고침). 이전 holdout 293·dev 211 회귀: 새 실패 없음. 단, 23차 `must_short`가 판단 답 첫 문장과
+  확률 답 둘째 줄을 옛 문구로 기대해 b18 6·dev19 2가 형식 충돌로 실패한다(같은 답변이 24차 기준 8/8 통과, 기대값은 승인 없이 바꾸지 않음).
+  보고서 `reports/forecast_round4_20261104.md`.
+
+## 15차 라운드 (2026-11-04 저녁): 단기 방향과 국면 분리·첫 문장 방향·짧은 후속 답
+
+- batch 22(holdout 20, 측정 전 고정 c6cc2cc): 지시의 방향 질문 10개(SK하이닉스 대화), 하락 추세·상승 추세·중립·하락 우위 종목 후속, 단독 3, 실적·종목 되묻기 회귀.
+  batch 23(dev 10). `UNSEEN_BATCH = 22`.
+- 새 기대 키 `must_direction25`(standalone 또는 후속 답 종류), 새 지표 `direction_first_rate`(제목 줄 방향·신뢰도 = 묶음 비중으로 다시 계산한 값,
+  첫 내용 문장이 그 방향, 국면 SQL 검산, 모순·확률·"영업일 늦습니다" 금지, 종류별 줄 수), `direction_stable_rate`(다턴 앞 턴과 방향 일치,
+  run_eval이 앞 턴 답변을 `detail.turn_answers`에 남긴다). `forecast_check.py` 25차 절.
+- 고정 뒤 평가기 결함 1건(holdout 측정 전, dev23_05): 중립 문장("현재는 상승과 하락 중 …")을 상태 줄로 보고 건너뛰던 것을 고쳤다. 알려진 기준 설계 문제:
+  데이터 질문(dev23_09 등)에도 방향 먼저를 요구한다(기준은 그대로).
+- 결과: batch 22 수정 전 1/20 → 수정 후 20/20(1회, unseen, 방향 먼저 19/19, 방향 유지 19/19). dev 9/10(dev23_09). 이전 holdout 313·dev 221 회귀: 실제 회귀 0.
+  24차 `must_judgment24`(현재 판단 문구·국면 일치 규칙) 27건, dev15_03 옛 형식 1건이 새 기준 충돌이다(기대값은 바꾸지 않음). 과거 검증 95% 구간의 군집 수 문제는
+  보고서 6절. 보고서 `reports/forecast_round5_20261104.md`.
+
+## 16차 (2026-11-04 밤): 형식 기대값 조정(사용자 승인)
+
+- 승인 범위: 옛 답변 문구·섹션 순서·길이만 검사해 새 구조와 충돌하는 기대값. 숫자·안전·종목 정합성·방향 값 검사는 그대로.
+- 바꾼 문항 94: 단독 전망 `must_forecast` 47 → `must_forecast_v5`(첫 섹션 이름만 뺌) + `must_layout23` + `must_direction25`, 후속 `must_followup` 11 →
+  `must_direction25`, 23차 `must_short` 판단·확률 8 → `must_direction25`, 24차 `must_judgment24` 27 → `must_direction25` + `must_v24_content`
+  (24차 내용 검사만: 과거 검증 숫자, 최신 실적, 시세 상태), 25차 데이터 질문은 채점기가 "- 방향: " 줄을 본다. 목록·이유: `reports/forecast_round5_20261104.md` 부록 B.
+- 다시 측정: 94/94.
+
+## 17차 라운드 (2026-11-04 밤): 간결·상세 모드·첫 줄 방향·근거와 묶음 일치·뉴스·공시 날짜
+
+- batch 24(holdout 20, 측정 전 고정 fabf238): 간결 8(상승·하락·중립·국면 유보 종목), 상세 6(뉴스·공시·실적·지표, 종목명 없는 후속 2),
+  이유·신호 의미·데이터 기준일·공시 접수일·매수·방향 재확인 후속 6. batch 25(dev 10). `UNSEEN_BATCH = 24`.
+- 새 기대 키: `must_mode26`(brief/detail), `must_layout26`(제목 다음 첫 줄 방향, 국면 줄 따로, 상세는 첫 섹션 종합 판단 2~3문장, 국면·숫자·같은 사실 1표 검산 함께),
+  `must_evidence26`(상승 근거 = 상승 묶음, 하락 위험 = 하락 묶음, 엇갈린 묶음은 중립, 교차를 따로 세우지 않음), `must_dates26`(공시 = 접수번호 날짜,
+  뉴스 = 한국 시간 발행일, 같은 자료는 한 날짜), `must_consistency26`(간결·상세 근거 묶음 일치), `must_filing26`, `must_signal26`.
+  지표 `mode_rate`·`layout26_rate`·`evidence_consistency_rate`·`date_consistency_rate`·`mode_consistency_rate`.
+- 고정 뒤 채점기 결함 2건(수정 후 측정 전): 짧은 묶음 이름과 판정 상세 긴 이름 맞춤, 간접 뉴스 날짜를 종목 무관하게 확인.
+- 기대값 조정(사용자 승인, ef9d706): 이전 단독 전망 72문항 `must_layout23` → `must_layout26`+`must_mode26`, 간결 답이 된 49문항의 상세 전용 검사는
+  `detail_followup26`(run_eval이 같은 대화의 "자세히 분석해줘" 상세 답에 원래 기준 그대로). 숫자·안전·종목·방향 값 검사는 그대로.
+- 결과: batch 24 수정 전 4/20 → 수정 후 20/20(1회, unseen). dev 7/10 → 10/10. 이전 전망·후속 144/144, 이전 holdout 333·dev 231 회귀는
+  25차와 같은 비형식 실패뿐(실제 회귀 0). 보고서 `reports/forecast_round6_20261104.md`.
+
+## 한계
+
+- **숫자 검증 계층(서비스)의 한계**: 평가기와 같은 추출 규칙이라 같은 사각지대가 있다(숫자 없는 서술 오류, 뉴스·공시 내용의 사실 여부). 대상·맥락이 어긋난 숫자 문장은 6차 라운드에서 일부 지우게 됐다(규칙에 든 유형만). 맞는 숫자를 틀린 대상·날짜에 붙인 경우는 3차 라운드에서 일부 잡게 됐다(위 "숫자 검증기 독립 평가"의 못 잡는 유형 참고). '천' 합성 표기("17만 9천원")는 3차부터 검증 단계에서 합친 값으로 확인한다. 단순 계산은 두 시점 값의 차이·변화율만 허용한다.
+- **규칙 기반 채점의 한계**: 숫자 일치는 "그 숫자가 근거 어딘가에 있다"만 봅니다. 맞는 숫자를 틀린 대상에 붙인 경우(전일 거래량을 오늘 것으로)나
+  수치 없는 서술 오류("올랐다" ↔ 실제 하락)는 못 잡습니다. 도구 결과로 계산한 파생값(차이, 평균)은 근거에 없어서 불일치로 셉니다.
+  합성 표기는 큰 단위부터 이어 쓰고 뒤에 원/주가 붙은 경우("23만 7866주", "1조 2,345억원")만 한 숫자로 봅니다("3억 5천만원"은 나뉨). 답변 불가 판정은 문장 패턴이라 표현이 다르면 놓치고, 금지 표현은 열거한 패턴만 잡습니다.
+  ETF 고정 문구(`app/etf.py`)는 수치가 없어 숫자 채점에는 영향이 없습니다.
+- **표본 크기**: 카테고리당 5~20문항이라 한 문항이 5~20%p를 움직입니다. holdout은 더 작습니다(2~8문항). 작은 차이는 개선으로 보지 마세요.
+- **LLM 비결정성**: 같은 질문도 호출마다 도구 선택·답변이 달라집니다. live 기준선은 repeats 1이라 잡음이 큽니다.
+  튜닝 효과를 주장하려면 `--repeats 3` 이상으로 전후를 같은 조건에서 돌리세요.
+- **데이터 의존**: live는 dev DB의 현재 데이터를 씁니다. 데이터가 바뀌면 답변·숫자가 바뀝니다. 2026-10-28 기준선은 주가 2026-06-26~2026-10-28(10-15·10-16 수집 공백)에서 측정했고,
+  **2026-10-29 3년 백필 이후 주가는 2023-10-30부터**라서 "데이터 범위 밖"을 전제로 한 refusal 문항 중 dev(ref_05·08·10·11·13)는 2026-10-31에 고쳤고, seen holdout(ref_04·07·09·12)도 같은 날 5차 라운드에서 고쳤다(이전 기준선과 직접 비교할 수 없습니다). 상대 기간 문항(N년 전, 작년 같은 달, 연초, 올해 N분기)의 정규식과 값은 해가 바뀌면 다시 봐야 합니다.
+  ETF 구성종목 문항 중 TIGER(etf_04·07·09·13)는 `etf_holding`에 수집 데이터가 있어야 통과합니다(`python -m scripts.collect_etf_holdings`). KODEX(etf_03·06·08·11·12·16)는 데이터 유무로 기대가 갈립니다(5차 라운드 절).
+  live `period_days: "parser"`는 실행 날짜 기준이라 날짜가 바뀌면 기대값도 바뀝니다.
+- 평가 계정이 남는 경우(프로세스 강제 종료): `users`에서 `captest_` 접두어 계정을 지우면 리포트·tool_call_log도 CASCADE로 지워집니다.

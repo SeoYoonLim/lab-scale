@@ -1,0 +1,75 @@
+{
+  "generated_at": "2026-11-06T16:00:00+09:00",
+  "calc_version": "performance.v2",
+  "period": "3m",
+  "benchmark_code": "KS11",
+  "benchmark_name": "코스피",
+  "data_date": "2026-10-30",
+  "expected_date": "2026-10-30",
+  "data_lag_business_days": 0,
+  "initial_balance": 10000000,
+  "cash_flows": {
+    "supported": false,
+    "external_flow_count": 0,
+    "return_method": "simple"
+  },
+  "price_basis": {
+    "source": "stock_price.close_price",
+    "dividends_included": false,
+    "corporate_actions_adjusted": "not_verified"
+  },
+  "warnings": [
+    {
+      "kind": "history_mismatch",
+      "parts": [
+        "cash"
+      ],
+      "replayed_cash": 9000000,
+      "actual_cash": 8500000,
+      "message": "체결 내역을 다시 계산한 현금(9,000,000원)과 현재 현금(8,500,000원) 또는 보유 수량이 맞지 않습니다."
+    }
+  ],
+  "status": "history_unavailable",
+  "requested_start_date": null,
+  "start_date": null,
+  "end_date": "2026-10-30",
+  "summary": {
+    "current_cash": 8500000,
+    "start_value": null,
+    "end_value": null,
+    "profit_loss": null,
+    "period_return_pct": null,
+    "cumulative_return_pct": null
+  },
+  "metrics": {
+    "highest": null,
+    "lowest": null,
+    "max_drawdown": null,
+    "daily_volatility_pct": null,
+    "annualized_volatility_pct": null,
+    "annualized_return_pct": null,
+    "daily_return_count": 0,
+    "trading_days": 0,
+    "sample_rules": {
+      "volatility_min_returns": 20,
+      "annualized_return_min_returns": 252
+    }
+  },
+  "series": {
+    "points": [],
+    "total_points": 0,
+    "sampled": false,
+    "max_points": 400
+  },
+  "comparison": {
+    "status": "portfolio_unavailable",
+    "points": [],
+    "benchmark_name": "코스피",
+    "message": "포트폴리오 성과를 계산하지 못해 지수와 비교하지 않았습니다."
+  },
+  "estimated_dates": [],
+  "history_verified": false,
+  "locale": "ko-KR",
+  "message": "체결 내역으로 현재 계좌를 다시 만들 수 없어(현금 또는 보유 수량 불일치) 과거 성과를 계산하지 않았습니다. 현재 보유를 과거에 소급해 수익률을 만들지 않습니다.",
+  "disclaimer": "거래일 종가 기준의 가격 수익률입니다. 배당·분배금은 포함하지 않고, 분할·병합 등 기업행사를 따로 보정하지 않습니다. 외부 입출금 기능이 없어 단순 수익률이며 시간가중수익률과 같습니다. 과거 성과는 미래 성과를 보장하지 않으며 매수·매도 권유가 아닙니다. 이 서비스는 학습·시연용 모의투자와 AI 리서치입니다. 제공되는 분석과 의견은 투자 권유나 자문이 아니며, 투자 판단과 그에 따른 손익의 책임은 본인에게 있습니다. AI 응답에는 오류가 있을 수 있습니다."
+}

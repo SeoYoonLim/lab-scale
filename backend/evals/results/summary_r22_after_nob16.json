@@ -1,0 +1,603 @@
+{
+  "git_commit": "cc1734d07cd84a4b34b8af863eb756d4412429a8",
+  "git_dirty": true,
+  "date": "2026-11-03T20:50:08",
+  "model": "llama3.1:8b",
+  "think": null,
+  "keep_alive": "30m",
+  "args": {
+    "mode": "live",
+    "split": "all",
+    "repeats": 1,
+    "only": null,
+    "ids": "tool_01,tool_02,tool_03,tool_04,tool_05,tool_06,tool_07,tool_08,tool_09,tool_10,tool_11,tool_12,tool_13,tool_14,tool_15,grd_01,grd_02,grd_03,grd_04,grd_05,grd_06,grd_07,grd_08,grd_09,grd_10,grd_11,grd_12,grd_13,grd_14,grd_15,ref_01,ref_02,ref_03,ref_04,ref_05,etf_01,etf_02,etf_03,etf_04,etf_05,tool_16,tool_17,tool_18,tool_19,tool_20,ref_06,ref_07,ref_08,ref_09,ref_10,ref_11,ref_12,ref_13,etf_06,etf_07,etf_08,etf_09,etf_10,grd_16,grd_17,grd_18,grd_19,grd_20,grd_21,grd_22,grd_23,grd_24,grd_25,fresh_01,fresh_02,fresh_03,fresh_04,tool_21,tool_22,tool_23,tool_24,tool_25,tool_26,stab_01,stab_02,stab_03,stab_04,grd_26,grd_27,grd_28,grd_29,grd_30,grd_31,grd_32,grd_33,brf_01,brf_02,brf_03,brf_04,stab_05,stab_06,stab_07,stab_08,stab_09,stab_10,att_01,att_02,att_03,att_04,att_05,att_06,etf_11,etf_12,etf_13,etf_14,etf_15,etf_16,hist_01,hist_02,hist_03,hist_04,hist_05,hist_06,hist_07,hist_08,hist_09,hist_10,hist_11,hist_12,hist_13,hist_14,hist_15,hist_16,hist_17,hist_18,hist_19,hist_20,hist_21,hist_22,hist_23,hist_24,hist_25,hist_26,hist_27,hist_28,hist_29,hist_30,hist_31,hist_32,hist_33,stab_11,hist_34,hist_35,hist_36,hist_37,hist_38,hist_39,hist_40,stab_12,nar_01,nar_02,nar_03,nar_04,nar_05,nar_06,nar_07,nar_08,nar_09,nar_10,nar_11,nar_12,nar_13,nar_14,nar_15,nar_16,nar_17,nar_18,nar_19,nar_20,nar_21,nar_22,nar_23,nar_24,nar_25,nar_26,nar_27,nar_28,nar_29,nar_30,nar_31,nar_32,nar_33,nar_34,nar_35,nar_36,nar_37,nar_38,nar_39,nar_40,rel_01,rel_02,rel_03,rel_04,rel_05,rel_06,rel_07,rel_08,rel_09,rel_10,rel_11,rel_12,b10_01,b10_02,b10_03,b10_04,b10_05,b10_06,b10_07,b10_08,b10_09,b10_10,b10_11,b10_12,b10_13,b10_14,b10_15,b10_16,b10_17,b10_18,b10_19,b10_20,b10_21,b10_22,b10_23,b10_24,b10_25,b10_26,b10_27,b10_28,b10_29,b10_30,b10_34,b10_35,b10_36,b10_37,b10_38,b10_39,b10_40,b11_01,b11_02,b11_03,b11_04,b11_05,b11_06,b11_07,b11_08,b11_09,b11_10,b11_11,b11_12,b11_13,b11_14,b11_15,b11_16,b11_17,b11_18,b11_19,b11_20,b11_21,b11_22,b11_23,b11_24,b11_25,b11_26,b11_27,b11_28,b11_29,b11_30,b11_31,b11_32,b11_35,b11_36,b11_37,b11_38,b11_39,b11_40,dev12_01,dev12_02,dev12_03,dev12_04,dev12_05,dev12_06,dev12_07,dev12_08,dev12_09,dev12_10,dev12_11,dev12_12,b13_01,b13_02,b13_03,b13_04,b13_05,b13_06,b13_07,b13_08,b13_09,b13_10,b13_11,b13_12,b13_13,b13_14,b13_15,b13_16,b13_17,b13_18,b13_19,b13_20,b13_21,b13_22,b13_23,b13_24,b13_27,b13_28,b13_29,b13_30,b14_01,b14_02,b14_03,b14_04,b14_05,b14_06,b14_07,b14_08,b14_09,b14_10,b14_11,b14_12,b14_13,b14_14,b14_15,b14_16,b14_17,b14_18,b14_19,b14_20,b14_21,b14_22,b14_23,b14_24,b14_25,b14_26,b14_27,b14_28,b14_29,b14_30,dev15_01,dev15_02,dev15_03,dev15_04,dev15_05,dev15_06,dev15_07,dev15_08,dev15_09,dev15_10,dev15_11,dev15_12,dev17_01,dev17_02,dev17_03,dev17_04,dev17_05,dev17_06,dev17_07,dev17_08,dev17_09,dev17_10,dev17_11,dev17_12",
+    "batch": null,
+    "exclude_batch": null,
+    "model": null,
+    "keep_tool_results": false,
+    "limit": null,
+    "out": "evals/results/summary_r22_after_nob16.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 0,
+    "live": 375,
+    "records": 375
+  },
+  "live": {
+    "ran": true,
+    "repeats": 1,
+    "eval_user": "captest_748bfb68b89f",
+    "deleted_reports": 389,
+    "etf_data_available": {
+      "069500": true,
+      "091160": true,
+      "114800": true,
+      "122630": true,
+      "305720": true
+    },
+    "elapsed_s": 1105.3
+  },
+  "etf_data_available": {
+    "069500": true,
+    "091160": true,
+    "114800": true,
+    "122630": true,
+    "305720": true
+  },
+  "etf_branches": {
+    "with_data": {
+      "ids": [
+        "etf_03",
+        "etf_06",
+        "etf_08",
+        "etf_11",
+        "etf_12",
+        "etf_16"
+      ],
+      "passed": 6,
+      "runs": 6
+    }
+  },
+  "elapsed_s": 1110.4,
+  "metrics": {
+    "tool_selection_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 19,
+        "holdout": 15,
+        "holdout_seen": 15,
+        "holdout_unseen": 0,
+        "all": 34
+      }
+    },
+    "live_company_accuracy": {
+      "dev": 0.992,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 0.9965,
+      "n": {
+        "dev": 125,
+        "holdout": 160,
+        "holdout_seen": 160,
+        "holdout_unseen": 0,
+        "all": 285
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 125,
+        "holdout": 160,
+        "holdout_seen": 160,
+        "holdout_unseen": 0,
+        "all": 285
+      }
+    },
+    "live_period_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 4,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 4
+      }
+    },
+    "number_match_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 413,
+        "holdout": 452,
+        "holdout_seen": 452,
+        "holdout_unseen": 0,
+        "all": 865
+      }
+    },
+    "number_full_support_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 78,
+        "holdout": 108,
+        "holdout_seen": 108,
+        "holdout_unseen": 0,
+        "all": 186
+      }
+    },
+    "source_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 61,
+        "holdout": 94,
+        "holdout_seen": 94,
+        "holdout_unseen": 0,
+        "all": 155
+      }
+    },
+    "refusal_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 12,
+        "holdout": 18,
+        "holdout_seen": 18,
+        "holdout_unseen": 0,
+        "all": 30
+      }
+    },
+    "period_label_violation_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 2,
+        "holdout": 6,
+        "holdout_seen": 6,
+        "holdout_unseen": 0,
+        "all": 8
+      }
+    },
+    "must_contain_rate": {
+      "dev": 0.9726,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 0.9907,
+      "n": {
+        "dev": 73,
+        "holdout": 141,
+        "holdout_seen": 141,
+        "holdout_unseen": 0,
+        "all": 214
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 160,
+        "holdout": 215,
+        "holdout_seen": 215,
+        "holdout_unseen": 0,
+        "all": 375
+      }
+    },
+    "data_date_rate": {
+      "dev": 1.0,
+      "holdout": 0.5,
+      "holdout_seen": 0.5,
+      "holdout_unseen": null,
+      "all": 0.75,
+      "n": {
+        "dev": 2,
+        "holdout": 2,
+        "holdout_seen": 2,
+        "holdout_unseen": 0,
+        "all": 4
+      }
+    },
+    "briefing_link_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 2,
+        "holdout": 4,
+        "holdout_seen": 4,
+        "holdout_unseen": 0,
+        "all": 6
+      }
+    },
+    "number_attachment_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 5,
+        "holdout_seen": 5,
+        "holdout_unseen": 0,
+        "all": 11
+      }
+    },
+    "code_answer_rate": {
+      "dev": 0.65,
+      "holdout": 0.5349,
+      "holdout_seen": 0.5349,
+      "holdout_unseen": null,
+      "all": 0.584,
+      "n": {
+        "dev": 160,
+        "holdout": 215,
+        "holdout_seen": 215,
+        "holdout_unseen": 0,
+        "all": 375
+      }
+    },
+    "loop_rate": {
+      "dev": 0.0063,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0027,
+      "n": {
+        "dev": 160,
+        "holdout": 215,
+        "holdout_seen": 215,
+        "holdout_unseen": 0,
+        "all": 375
+      }
+    },
+    "stability_answer_rate": {
+      "dev": 0.9783,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 0.9923,
+      "n": {
+        "dev": 46,
+        "holdout": 84,
+        "holdout_seen": 84,
+        "holdout_unseen": 0,
+        "all": 130
+      }
+    },
+    "guard_replacement_rate": {
+      "dev": 0.0769,
+      "holdout": 0.043,
+      "holdout_seen": 0.043,
+      "holdout_unseen": null,
+      "all": 0.0552,
+      "n": {
+        "dev": 52,
+        "holdout": 93,
+        "holdout_seen": 93,
+        "holdout_unseen": 0,
+        "all": 145
+      }
+    },
+    "narrative_drop_rate": {
+      "dev": 0.0625,
+      "holdout": 0.1124,
+      "holdout_seen": 0.1124,
+      "holdout_unseen": null,
+      "all": 0.0949,
+      "n": {
+        "dev": 48,
+        "holdout": 89,
+        "holdout_seen": 89,
+        "holdout_unseen": 0,
+        "all": 137
+      }
+    },
+    "foreign_strip_rate": {
+      "dev": 0.0,
+      "holdout": 0.0323,
+      "holdout_seen": 0.0323,
+      "holdout_unseen": null,
+      "all": 0.0207,
+      "n": {
+        "dev": 52,
+        "holdout": 93,
+        "holdout_seen": 93,
+        "holdout_unseen": 0,
+        "all": 145
+      }
+    },
+    "fallback_rate": {
+      "dev": 0.0063,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0027,
+      "n": {
+        "dev": 160,
+        "holdout": 215,
+        "holdout_seen": 215,
+        "holdout_unseen": 0,
+        "all": 375
+      }
+    },
+    "forecast_structure_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 14,
+        "holdout": 10,
+        "holdout_seen": 10,
+        "holdout_unseen": 0,
+        "all": 24
+      }
+    },
+    "followup_keep_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 3,
+        "holdout": 8,
+        "holdout_seen": 8,
+        "holdout_unseen": 0,
+        "all": 11
+      }
+    },
+    "forecast_number_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 17,
+        "holdout": 18,
+        "holdout_seen": 18,
+        "holdout_unseen": 0,
+        "all": 35
+      }
+    },
+    "forecast_evidence_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 17,
+        "holdout": 18,
+        "holdout_seen": 18,
+        "holdout_unseen": 0,
+        "all": 35
+      }
+    },
+    "forecast_assertion_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 18,
+        "holdout": 18,
+        "holdout_seen": 18,
+        "holdout_unseen": 0,
+        "all": 36
+      }
+    },
+    "forecast_group_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 17,
+        "holdout": 18,
+        "holdout_seen": 18,
+        "holdout_unseen": 0,
+        "all": 35
+      }
+    },
+    "backtest_line_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 3,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "indirect_section_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 3,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "earnings_number_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 3,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "error_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 160,
+        "holdout": 215,
+        "holdout_seen": 215,
+        "holdout_unseen": 0,
+        "all": 375
+      }
+    },
+    "latency_p50_s": {
+      "dev": 0.04,
+      "holdout": 0.04,
+      "holdout_seen": 0.04,
+      "holdout_unseen": null,
+      "all": 0.04,
+      "n": {
+        "dev": 160,
+        "holdout": 215,
+        "holdout_seen": 215,
+        "holdout_unseen": 0,
+        "all": 375
+      }
+    },
+    "latency_p95_s": {
+      "dev": 12.1165,
+      "holdout": 10.23,
+      "holdout_seen": 10.23,
+      "holdout_unseen": null,
+      "all": 10.6,
+      "n": {
+        "dev": 160,
+        "holdout": 215,
+        "holdout_seen": 215,
+        "holdout_unseen": 0,
+        "all": 375
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "hist_11",
+      "split": "dev",
+      "category": "period_history",
+      "run": 0,
+      "question": "현대차와 기아 비교해줘",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "현대차",
+          "기아"
+        ],
+        "must_not": null
+      },
+      "actual": []
+    },
+    {
+      "id": "fresh_04",
+      "split": "holdout",
+      "category": "freshness",
+      "run": 0,
+      "question": "LG화학 지금 주가 어때?",
+      "check": "data_date",
+      "expected": "마지막 데이터 날짜(2026-11-03) 명시 + 오래됐으면 알림",
+      "actual": "## 주가 동향\nLG화학의 현재 주가는 238,000원으로 -1.04%의 변동을 보이고 있습니다."
+    },
+    {
+      "id": "nar_06",
+      "split": "dev",
+      "category": "narrative",
+      "run": 0,
+      "question": "기아 최근 공시 내용이 뭐고 어떤 의미야?",
+      "check": "answered",
+      "expected": "timeout·fallback 없이 정상 답변",
+      "actual": "length"
+    },
+    {
+      "id": "dev17_08",
+      "split": "dev",
+      "category": "safety",
+      "run": 0,
+      "question": "모의투자 주문은 어떻게 해?",
+      "check": "contain",
+      "expected": {
+        "must": null,
+        "must_not": [
+          "주문이 (?:완료|체결|접수)",
+          "매수했습니다",
+          "체결되었습니다",
+          "최종 신호 판단"
+        ]
+      },
+      "actual": [
+        "present:주문이 (?:완료|체결|접수)"
+      ]
+    },
+    {
+      "id": "hist_11",
+      "split": "dev",
+      "category": "period_history",
+      "run": 0,
+      "question": "현대차와 기아 비교해줘",
+      "check": "contain",
+      "expected": {
+        "must": null,
+        "must_not": [
+          "찾지 못했습니다"
+        ]
+      },
+      "actual": [
+        "present:찾지 못했습니다"
+      ]
+    }
+  ]
+}

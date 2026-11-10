@@ -1,0 +1,395 @@
+{
+  "git_commit": "7e392068b85fa31b23bc282764e7229e4d2a47b5",
+  "git_dirty": true,
+  "date": "2026-11-01T17:41:02",
+  "model": "llama3.1:8b",
+  "args": {
+    "mode": "live",
+    "split": "dev",
+    "repeats": 3,
+    "only": null,
+    "ids": null,
+    "limit": null,
+    "out": "evals/results/summary_after_r9_2026-11-01.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 0,
+    "live": 124,
+    "records": 372
+  },
+  "live": {
+    "ran": true,
+    "repeats": 3,
+    "eval_user": "captest_22b43b7aeec5",
+    "deleted_reports": 372,
+    "etf_data_available": {
+      "069500": true,
+      "091160": true,
+      "122630": true,
+      "305720": true
+    },
+    "elapsed_s": 1206.1
+  },
+  "etf_data_available": {
+    "069500": true,
+    "091160": true,
+    "122630": true,
+    "305720": true
+  },
+  "etf_branches": {
+    "with_data": {
+      "ids": [
+        "etf_03",
+        "etf_06",
+        "etf_08",
+        "etf_11",
+        "etf_16"
+      ],
+      "passed": 15,
+      "runs": 15
+    }
+  },
+  "elapsed_s": 1211.3,
+  "metrics": {
+    "tool_selection_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 57,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 57
+      }
+    },
+    "live_company_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 294,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 294
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 294,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 294
+      }
+    },
+    "live_period_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 12,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 12
+      }
+    },
+    "number_match_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 1119,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 1119
+      }
+    },
+    "number_full_support_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 200,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 200
+      }
+    },
+    "source_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 127,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 127
+      }
+    },
+    "refusal_accuracy": {
+      "dev": 0.9697,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.9697,
+      "n": {
+        "dev": 33,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 33
+      }
+    },
+    "period_label_violation_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 3,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "must_contain_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 162,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 162
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 372,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 372
+      }
+    },
+    "data_date_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 6
+      }
+    },
+    "briefing_link_accuracy": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 6
+      }
+    },
+    "number_attachment_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 18,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 18
+      }
+    },
+    "code_answer_rate": {
+      "dev": 0.6048,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.6048,
+      "n": {
+        "dev": 372,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 372
+      }
+    },
+    "loop_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 372,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 372
+      }
+    },
+    "stability_answer_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 114,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 114
+      }
+    },
+    "guard_replacement_rate": {
+      "dev": 0.078,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.078,
+      "n": {
+        "dev": 141,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 141
+      }
+    },
+    "narrative_drop_rate": {
+      "dev": 0.0231,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0231,
+      "n": {
+        "dev": 130,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 130
+      }
+    },
+    "fallback_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 372,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 372
+      }
+    },
+    "error_rate": {
+      "dev": 0.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 372,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 372
+      }
+    },
+    "latency_p50_s": {
+      "dev": 0.03,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 0.03,
+      "n": {
+        "dev": 372,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 372
+      }
+    },
+    "latency_p95_s": {
+      "dev": 12.379,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 12.379,
+      "n": {
+        "dev": 372,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 372
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "rel_03",
+      "split": "dev",
+      "category": "news_relevance",
+      "run": 1,
+      "question": "SK 최근 뉴스 요약해줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "SK 관련 뉴스가 없습니다."
+      }
+    }
+  ]
+}

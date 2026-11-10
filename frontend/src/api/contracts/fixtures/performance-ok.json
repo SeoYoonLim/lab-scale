@@ -1,0 +1,172 @@
+{
+  "generated_at": "2026-11-06T15:35:22.938111+09:00",
+  "calc_version": "performance.v2",
+  "locale": "ko-KR",
+  "status": "ok",
+  "message": null,
+  "history_verified": true,
+  "period": "3m",
+  "requested_start_date": "2026-08-03",
+  "start_date": "2026-08-31",
+  "end_date": "2026-11-03",
+  "data_date": "2026-11-03",
+  "expected_date": "2026-11-06",
+  "data_lag_business_days": 3,
+  "initial_balance": 10000000,
+  "benchmark_code": "KS11",
+  "benchmark_name": "코스피",
+  "summary": {
+    "current_cash": 4947460,
+    "start_value": 10000000,
+    "end_value": 9479960,
+    "profit_loss": -520040,
+    "period_return_pct": -5.2,
+    "cumulative_return_pct": -5.2,
+    "eval_amount": 4532500,
+    "cash_balance": 4947460
+  },
+  "metrics": {
+    "highest": {
+      "value": 10432140,
+      "date": "2026-09-23"
+    },
+    "lowest": {
+      "value": 9120480,
+      "date": "2026-10-15"
+    },
+    "max_drawdown": {
+      "pct": -12.57,
+      "peak_date": "2026-09-23",
+      "trough_date": "2026-10-15",
+      "recovery_date": null,
+      "duration_days": 12
+    },
+    "daily_volatility_pct": 1.6129,
+    "annualized_volatility_pct": 25.6044,
+    "annualized_return_pct": null,
+    "daily_return_count": 42,
+    "trading_days": 43,
+    "sample_rules": {
+      "volatility_min_returns": 20,
+      "annualized_return_min_returns": 252
+    }
+  },
+  "series": {
+    "points": [
+      {
+        "date": "2026-08-31",
+        "total_asset": 10000000,
+        "cash_balance": 10000000,
+        "eval_amount": 0,
+        "daily_return_pct": null,
+        "cumulative_return_pct": 0,
+        "portfolio_index": 100,
+        "estimated": false,
+        "estimated_tickers": []
+      },
+      {
+        "date": "2026-09-01",
+        "total_asset": 10000000,
+        "cash_balance": 7390000,
+        "eval_amount": 2610000,
+        "daily_return_pct": 0,
+        "cumulative_return_pct": 0,
+        "portfolio_index": 100,
+        "estimated": false,
+        "estimated_tickers": []
+      },
+      {
+        "date": "2026-11-03",
+        "total_asset": 9479960,
+        "cash_balance": 4947460,
+        "eval_amount": 4532500,
+        "daily_return_pct": -1.93,
+        "cumulative_return_pct": -5.2,
+        "portfolio_index": 94.7996,
+        "estimated": false,
+        "estimated_tickers": []
+      }
+    ],
+    "total_points": 43,
+    "sampled": false,
+    "max_points": 400
+  },
+  "comparison": {
+    "benchmark_code": "KS11",
+    "benchmark_name": "코스피",
+    "status": "ok",
+    "start_date": "2026-08-31",
+    "end_date": "2026-11-03",
+    "common_days": 43,
+    "benchmark_start_value": 6820.02,
+    "benchmark_end_value": 5637.63,
+    "benchmark_last_date": "2026-11-03",
+    "benchmark_lag_business_days": 3,
+    "portfolio_return_pct": -5.2,
+    "benchmark_return_pct": -17.34,
+    "excess_return_pp": 12.14,
+    "start_aligned": false,
+    "points": [
+      {
+        "date": "2026-08-31",
+        "portfolio_index": 100,
+        "benchmark_index": 100,
+        "benchmark_close": 6820.02,
+        "portfolio_return_pct": 0,
+        "benchmark_return_pct": 0,
+        "excess_return_pp": 0,
+        "estimated": false
+      },
+      {
+        "date": "2026-09-01",
+        "portfolio_index": 100,
+        "benchmark_index": 100.2314,
+        "benchmark_close": 6835.8,
+        "portfolio_return_pct": 0,
+        "benchmark_return_pct": 0.23,
+        "excess_return_pp": -0.23,
+        "estimated": false
+      },
+      {
+        "date": "2026-11-03",
+        "portfolio_index": 94.7996,
+        "benchmark_index": 82.663,
+        "benchmark_close": 5637.63,
+        "portfolio_return_pct": -5.2,
+        "benchmark_return_pct": -17.34,
+        "excess_return_pp": 12.14,
+        "estimated": false
+      }
+    ],
+    "total_points": 43,
+    "sampled": false,
+    "message": null
+  },
+  "estimated_dates": [],
+  "cash_flows": {
+    "supported": false,
+    "external_flow_count": 0,
+    "return_method": "simple"
+  },
+  "price_basis": {
+    "source": "stock_price.close_price",
+    "dividends_included": false,
+    "corporate_actions_adjusted": "not_verified"
+  },
+  "warnings": [
+    {
+      "kind": "data_delayed",
+      "date": "2026-11-03",
+      "expected": "2026-11-06",
+      "lag": 3,
+      "message": "마지막 종가는 2026-11-03이며 기대 거래일(2026-11-06)보다 3영업일 지연됐습니다. 오늘 시장 상황이 아닙니다."
+    },
+    {
+      "kind": "period_before_inception",
+      "requested": "2026-08-03",
+      "start": "2026-08-31",
+      "message": "요청한 기간 시작(2026-08-03)이 첫 체결 전이라 2026-08-31부터 계산했습니다."
+    }
+  ],
+  "disclaimer": "거래일 종가 기준의 가격 수익률입니다. 배당·분배금은 포함하지 않고, 분할·병합 등 기업행사를 따로 보정하지 않습니다. 외부 입출금 기능이 없어 단순 수익률이며 시간가중수익률과 같습니다. 과거 성과는 미래 성과를 보장하지 않으며 매수·매도 권유가 아닙니다. 이 서비스는 학습·시연용 모의투자와 AI 리서치입니다. 제공되는 분석과 의견은 투자 권유나 자문이 아니며, 투자 판단과 그에 따른 손익의 책임은 본인에게 있습니다. AI 응답에는 오류가 있을 수 있습니다."
+}

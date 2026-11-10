@@ -1,0 +1,655 @@
+{
+  "git_commit": "6ebf058ee755012f8e14e47b3cfecae462601a82",
+  "git_dirty": false,
+  "date": "2026-11-01T19:35:46",
+  "model": "llama3.1:8b",
+  "think": null,
+  "keep_alive": "30m",
+  "args": {
+    "mode": "all",
+    "split": "all",
+    "repeats": 1,
+    "only": null,
+    "ids": null,
+    "batch": "11",
+    "exclude_batch": null,
+    "model": null,
+    "keep_tool_results": true,
+    "limit": null,
+    "out": "evals/results/summary_b11_before_2026-11-02.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 2,
+    "live": 38,
+    "records": 40
+  },
+  "live": {
+    "ran": true,
+    "repeats": 1,
+    "eval_user": "captest_35019c38fa42",
+    "deleted_reports": 38,
+    "etf_data_available": {},
+    "elapsed_s": 169.3
+  },
+  "etf_data_available": {},
+  "etf_branches": {},
+  "elapsed_s": 174.5,
+  "metrics": {
+    "entity_default_accuracy": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 0,
+        "holdout_unseen": 2,
+        "all": 2
+      }
+    },
+    "entity_default_wrong_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 0,
+        "holdout_unseen": 2,
+        "all": 2
+      }
+    },
+    "entity_default_miss_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 0,
+        "holdout_unseen": 2,
+        "all": 2
+      }
+    },
+    "entity_default_ambiguous_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 0,
+        "holdout_unseen": 2,
+        "all": 2
+      }
+    },
+    "entity_strict_accuracy": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 0,
+        "holdout_unseen": 2,
+        "all": 2
+      }
+    },
+    "entity_strict_wrong_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 0,
+        "holdout_unseen": 2,
+        "all": 2
+      }
+    },
+    "entity_strict_miss_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 0,
+        "holdout_unseen": 2,
+        "all": 2
+      }
+    },
+    "entity_strict_ambiguous_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 0,
+        "holdout_unseen": 2,
+        "all": 2
+      }
+    },
+    "live_company_accuracy": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 27,
+        "holdout_seen": 0,
+        "holdout_unseen": 27,
+        "all": 27
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 27,
+        "holdout_seen": 0,
+        "holdout_unseen": 27,
+        "all": 27
+      }
+    },
+    "number_match_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 102,
+        "holdout_seen": 0,
+        "holdout_unseen": 102,
+        "all": 102
+      }
+    },
+    "number_full_support_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 26,
+        "holdout_seen": 0,
+        "holdout_unseen": 26,
+        "all": 26
+      }
+    },
+    "source_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 19,
+        "holdout_seen": 0,
+        "holdout_unseen": 19,
+        "all": 19
+      }
+    },
+    "refusal_accuracy": {
+      "dev": null,
+      "holdout": 0.6,
+      "holdout_seen": null,
+      "holdout_unseen": 0.6,
+      "all": 0.6,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 0,
+        "holdout_unseen": 5,
+        "all": 5
+      }
+    },
+    "period_label_violation_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 0,
+        "holdout_unseen": 2,
+        "all": 2
+      }
+    },
+    "must_contain_rate": {
+      "dev": null,
+      "holdout": 0.75,
+      "holdout_seen": null,
+      "holdout_unseen": 0.75,
+      "all": 0.75,
+      "n": {
+        "dev": 0,
+        "holdout": 36,
+        "holdout_seen": 0,
+        "holdout_unseen": 36,
+        "all": 36
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 38,
+        "holdout_seen": 0,
+        "holdout_unseen": 38,
+        "all": 38
+      }
+    },
+    "code_answer_rate": {
+      "dev": null,
+      "holdout": 0.3421,
+      "holdout_seen": null,
+      "holdout_unseen": 0.3421,
+      "all": 0.3421,
+      "n": {
+        "dev": 0,
+        "holdout": 38,
+        "holdout_seen": 0,
+        "holdout_unseen": 38,
+        "all": 38
+      }
+    },
+    "loop_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 38,
+        "holdout_seen": 0,
+        "holdout_unseen": 38,
+        "all": 38
+      }
+    },
+    "stability_answer_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 21,
+        "holdout_seen": 0,
+        "holdout_unseen": 21,
+        "all": 21
+      }
+    },
+    "guard_replacement_rate": {
+      "dev": null,
+      "holdout": 0.1739,
+      "holdout_seen": null,
+      "holdout_unseen": 0.1739,
+      "all": 0.1739,
+      "n": {
+        "dev": 0,
+        "holdout": 23,
+        "holdout_seen": 0,
+        "holdout_unseen": 23,
+        "all": 23
+      }
+    },
+    "narrative_drop_rate": {
+      "dev": null,
+      "holdout": 0.1053,
+      "holdout_seen": null,
+      "holdout_unseen": 0.1053,
+      "all": 0.1053,
+      "n": {
+        "dev": 0,
+        "holdout": 19,
+        "holdout_seen": 0,
+        "holdout_unseen": 19,
+        "all": 19
+      }
+    },
+    "foreign_strip_rate": {
+      "dev": null,
+      "holdout": 0.0435,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0435,
+      "all": 0.0435,
+      "n": {
+        "dev": 0,
+        "holdout": 23,
+        "holdout_seen": 0,
+        "holdout_unseen": 23,
+        "all": 23
+      }
+    },
+    "fallback_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 38,
+        "holdout_seen": 0,
+        "holdout_unseen": 38,
+        "all": 38
+      }
+    },
+    "error_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": null,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 38,
+        "holdout_seen": 0,
+        "holdout_unseen": 38,
+        "all": 38
+      }
+    },
+    "latency_p50_s": {
+      "dev": null,
+      "holdout": 3.865,
+      "holdout_seen": null,
+      "holdout_unseen": 3.865,
+      "all": 3.865,
+      "n": {
+        "dev": 0,
+        "holdout": 38,
+        "holdout_seen": 0,
+        "holdout_unseen": 38,
+        "all": 38
+      }
+    },
+    "latency_p95_s": {
+      "dev": null,
+      "holdout": 12.281,
+      "holdout_seen": null,
+      "holdout_unseen": 12.281,
+      "all": 12.281,
+      "n": {
+        "dev": 0,
+        "holdout": 38,
+        "holdout_seen": 0,
+        "holdout_unseen": 38,
+        "all": 38
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "b11_09",
+      "split": "holdout",
+      "category": "period_history",
+      "run": 0,
+      "question": "셀트리온 2025년 9월 1일부터 2025년 3월 3일까지 수익률 알려줘",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "셀트리온의 2025-09-01 종가는 161,847원입니다. 전일 대비 등락률은 +1.31%, 거래량은 298,292주입니다."
+      }
+    },
+    {
+      "id": "b11_10",
+      "split": "holdout",
+      "category": "period_history",
+      "run": 0,
+      "question": "LG전자를 2025년 1월 2일에 사서 2027년 1월 4일까지 들고 있으면 수익률은?",
+      "check": "refusal",
+      "expected": "못 찾음/데이터 없음 답변, 근거 없는 숫자 없음",
+      "actual": {
+        "refusal_phrase": false,
+        "unmatched": [],
+        "answer": "LG전자의 2025-01-02 종가는 84,000원입니다. 전일 대비 등락률은 +0.60%, 거래량은 257,663주입니다."
+      }
+    },
+    {
+      "id": "b11_01",
+      "split": "holdout",
+      "category": "period_history",
+      "run": 0,
+      "question": "삼성전자를 2024년 3월 4일에 사서 2025년 3월 4일까지 들고 있었으면 수익률이 얼마야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2024-03-04",
+          "74,900원",
+          "2025-03-04",
+          "54,500원",
+          "27.24%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2025-03-04",
+        "missing:54,500원",
+        "missing:27.24%"
+      ]
+    },
+    {
+      "id": "b11_02",
+      "split": "holdout",
+      "category": "period_history",
+      "run": 0,
+      "question": "SK하이닉스에 2024년 6월 3일 투자했다면 2025년 6월 2일에는 수익률이 어떻게 됐을까?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2024-06-03",
+          "194,200원",
+          "2025-06-02",
+          "207,500원",
+          "6.85%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2025-06-02",
+        "missing:207,500원",
+        "missing:6.85%"
+      ]
+    },
+    {
+      "id": "b11_03",
+      "split": "holdout",
+      "category": "period_history",
+      "run": 0,
+      "question": "현대차 2025년 2월 3일부터 2025년 8월 1일까지 얼마나 올랐어?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2025-02-03",
+          "202,000원",
+          "2025-08-01",
+          "210,000원",
+          "3.96%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:202,000원",
+        "missing:3.96%"
+      ]
+    },
+    {
+      "id": "b11_04",
+      "split": "holdout",
+      "category": "period_history",
+      "run": 0,
+      "question": "KODEX 200 2024년 1월 2일부터 2024년 12월 30일까지 수익률 알려줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2024-01-02",
+          "34,492원",
+          "2024-12-30",
+          "31,075원",
+          "9.91%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:34,492원",
+        "missing:9.91%"
+      ]
+    },
+    {
+      "id": "b11_05",
+      "split": "holdout",
+      "category": "period_history",
+      "run": 0,
+      "question": "TIGER 미국S&P500을 2025년 4월 1일에 사서 2026년 4월 1일까지 보유했으면 수익률은?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2025-04-01",
+          "20,137원",
+          "2026-04-01",
+          "24,370원",
+          "21.02%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2026-04-01",
+        "missing:24,370원",
+        "missing:21.02%"
+      ]
+    },
+    {
+      "id": "b11_06",
+      "split": "holdout",
+      "category": "period_history",
+      "run": 0,
+      "question": "NAVER를 2025년 3월 1일에 샀다면 2025년 9월 1일까지 수익률은 얼마야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2025-03-04",
+          "205,500원",
+          "2025-09-01",
+          "215,500원",
+          "4.87%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2025-03-04",
+        "missing:205,500원",
+        "missing:2025-09-01",
+        "missing:215,500원",
+        "missing:4.87%"
+      ]
+    },
+    {
+      "id": "b11_07",
+      "split": "holdout",
+      "category": "period_history",
+      "run": 0,
+      "question": "기아 2025년 5월 2일부터 2025년 10월 5일까지 수익률 계산해줘",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2025-05-02",
+          "89,400원",
+          "2025-10-02",
+          "104,200원",
+          "16.55%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:89,400원",
+        "missing:16.55%"
+      ]
+    },
+    {
+      "id": "b11_11",
+      "split": "holdout",
+      "category": "period_history",
+      "run": 0,
+      "question": "한화오션 2024년 7월 1일 대비 2025년 7월 1일 주가는 몇 퍼센트 변했어?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2024-07-01",
+          "31,450원",
+          "2025-07-01",
+          "78,800원",
+          "150.56%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2025-07-01",
+        "missing:78,800원",
+        "missing:150.56%"
+      ]
+    },
+    {
+      "id": "b11_12",
+      "split": "holdout",
+      "category": "period_history",
+      "run": 0,
+      "question": "HD현대중공업 25년 1월 2일에 사서 26년 1월 2일까지 들고 있었다면 수익률이 얼마야?",
+      "check": "contain",
+      "expected": {
+        "must": [
+          "2025-01-02",
+          "289,000원",
+          "2026-01-02",
+          "504,000원",
+          "74.39%"
+        ],
+        "must_not": null
+      },
+      "actual": [
+        "missing:2026-01-02",
+        "missing:504,000원",
+        "missing:74.39%"
+      ]
+    }
+  ]
+}

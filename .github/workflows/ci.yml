@@ -1,0 +1,290 @@
+name: CI
+
+# push(모든 브랜치)와 main 대상 PR마다 돈다. 같은 브랜치의 이전 실행은 새 실행이 시작되면 취소한다.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 백엔드 순수 테스트: DB와 Ollama 없이 통과해야 한다.
+  # DATABASE_URL을 닫힌 포트로 둬서, 순수 테스트가 몰래 DB를 쓰면 로컬이 아니라 여기서 바로 실패하게 한다.
+  # CI_FAIL_ON_SKIP=1: skip이 하나라도 있으면 실패(tests/ci_guard.py). 조용히 건너뛴 테스트가 통과처럼 보이지 않게 한다.
+  # ---------------------------------------------------------------------------
+  backend-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      JWT_SECRET: ci-dummy-jwt-secret-not-a-real-value
+      DATABASE_URL: postgresql+psycopg://ci:ci_dummy_pw@127.0.0.1:1/ci_db
+      CI_FAIL_ON_SKIP: "1"
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -m "not slow and not integration" -q --junitxml="$RUNNER_TEMP/junit.xml"
+      # 실패하면 어떤 테스트가 왜 실패했는지 어노테이션으로 남긴다(로그를 내려받을 권한이 없어도 Actions 화면/API에서 읽힌다).
+      - name: 실패한 테스트 어노테이션
+        if: failure()
+        run: python ../scripts/ci_junit_annotations.py "$RUNNER_TEMP/junit.xml"
+
+  # ---------------------------------------------------------------------------
+  # 시크릿 검사: 추적 파일 전체 + 이번 push/PR이 추가한 커밋의 변경 줄. 외부 서비스 없이 scripts/secret_scan.py만 쓴다.
+  # 로컬에서도 같은 명령: bash scripts/secret_scan.sh [--history 범위] [--env-file backend/.env]
+  # ---------------------------------------------------------------------------
+  secret-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 추적 파일 검사
+        run: bash scripts/secret_scan.sh
+      - name: 이번 변경이 추가한 커밋 검사
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            range="$PR_BASE..$PR_HEAD"
+          elif [ -n "$PUSH_BEFORE" ] && ! echo "$PUSH_BEFORE" | grep -qE '^0+$' && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+            range="$PUSH_BEFORE..$HEAD_SHA"
+          elif git rev-parse -q --verify origin/main >/dev/null; then
+            range="origin/main..$HEAD_SHA"   # 새 브랜치 첫 push: main에 없는 커밋 전부
+          else
+            range=""
+          fi
+          if [ -z "$range" ]; then
+            echo "검사할 커밋 범위를 정하지 못해 추적 파일 검사만 했습니다."
+          else
+            echo "커밋 범위: $range"
+            bash scripts/secret_scan.sh --history "$range"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # 프론트엔드: frontend/package.json이 있을 때만 돈다. feature/backend에는 frontend가 없어서 skipped가 정상이고,
+  # frontend가 들어 있는 브랜치(feature/frontend, 합쳐진 main)에서 동작한다.
+  # (hashFiles는 job 수준 if에서 쓸 수 없어서 감지 job을 따로 둔다.)
+  # ---------------------------------------------------------------------------
+  detect-frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      present: ${{ steps.detect.outputs.present }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: detect
+        run: |
+          if [ -f frontend/package.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+
+  frontend:
+    needs: detect-frontend
+    if: needs.detect-frontend.outputs.present == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      # Node 24: jsdom 30이 ^22.22.2 || ^24.15.0 || >=26, vitest 5가 ^22.12 || ^24, Vite 8이 ^20.19 || >=22.12를 요구한다.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: 타입 검사
+        run: npx tsc -b
+      - name: 린트
+        run: npm run lint --if-present
+      - name: 테스트
+        run: npx vitest run
+      - name: 빌드
+        run: npx vite build
+
+  # ---------------------------------------------------------------------------
+  # 백엔드 통합 테스트: 빈 pgvector DB에 alembic upgrade head + 종목 시드(scripts/ci_seed.py)만 올린 상태.
+  # 시세·뉴스·공시·ETF 시세·환율·시장 지수가 있어야 통과하는 테스트는 needs_collected_data 마커로 명시적으로 제외하고,
+  # 몇 개를 제외했는지 로그와 job summary에 숫자로 남긴다. 그 밖의 skip은 CI_FAIL_ON_SKIP=1 때문에 실패다.
+  # Ollama가 필요한 테스트는 통합 범위에 없다(실제 Ollama를 부르는 건 slow 마커 테스트뿐이고 CI는 slow를 돌리지 않는다).
+  # DB 비밀번호는 이 서비스 컨테이너 전용 더미 값이고, 개발 DB(.env)의 값과 다르다.
+  # migration-postgres: 마이그레이션 업그레이드/다운그레이드 왕복 테스트(tests/test_auth_revoke_devdb.py) 전용 서버.
+  # 테스트가 여기에 임시 DB를 만들고 지운다. 테스트 대상 DB(DATABASE_URL)와 같은 서버는 테스트가 거부하므로 따로 둔다.
+  # ---------------------------------------------------------------------------
+  backend-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci_dummy_pw
+          POSTGRES_DB: ci_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      migration-postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci_dummy_pw
+          POSTGRES_DB: ci_db
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      JWT_SECRET: ci-dummy-jwt-secret-not-a-real-value
+      DATABASE_URL: postgresql+psycopg://ci:ci_dummy_pw@localhost:5432/ci_db
+      MIGRATION_TEST_DATABASE_URL: postgresql+psycopg://ci:ci_dummy_pw@localhost:5433/ci_db
+      CI_FAIL_ON_SKIP: "1"
+      # needs_collected_data 마커로 제외하는 통합 테스트 수의 상한. 마커를 더 붙여 테스트를 슬그머니 빼지 못하게 한다.
+      # 늘려야 하면 이유와 함께 이 값과 README의 숫자를 같이 고친다.
+      # 2026-11-03 65 -> 71: 전망·후속 결론 경로 통합 테스트 6개(tests/test_outlook_devdb.py 5, test_evals_forecast_check.py 1)는
+      # 수집 시세·뉴스로 지표를 SQL 대조하고 근거 기사 종목을 확인해야 해서 시드만 있는 CI DB에서는 돌 수 없다.
+      # 2026-11-03 71 -> 76: 전망 2차 통합 테스트 5개(tests/test_outlook_round22_devdb.py: 업종 ETF 구성종목 업종 매핑, 업종·기초지수
+      # 간접 뉴스 분리 2, 실적 SQL 대조, 주문·전망 경로 구분)는 수집된 ETF 구성종목·뉴스·실적·시세가 있어야 해서 시드만 있는 CI DB에서는 돌 수 없다.
+      # 2026-11-04 76 -> 83: 전망 3차 통합 테스트 7개(tests/test_outlook_round23_devdb.py 6: SK하이닉스 2026-11-03 국면, 결론 먼저 답변의
+      # 숫자 SQL 대조, 짧은 후속 답 3종의 종목·기간 유지, 실적 분기·4분기 SQL 대조 / test_evals_forecast_check.py 1: 23차 채점기 변조 검출)는
+      # 수집 시세·뉴스·실적이 있어야 해서 시드만 있는 CI DB에서는 돌 수 없다.
+      # 2026-11-04 83 -> 92: 전망 4차 통합 테스트 9개(tests/test_outlook_round24_devdb.py: SK하이닉스 3분기 잠정실적·출처, 후속 결론 5종의
+      # 현재 판단, 실적·데이터 후속 답, 시세 상태 분류, 전 종목 잠정치 규칙)는 수집 시세·공시 원문·실적이 있어야 해서 시드만 있는 CI DB에서는 돌 수 없다.
+      # 2026-11-04 92 -> 94: 전망 5차 통합 테스트 2개(tests/test_outlook_round25_devdb.py: SK하이닉스 2026-11-03 방향이 국면과 분리돼
+      # 상승 쪽인지, 같은 대화 후속 답 4종의 방향 유지)는 수집 시세가 있어야 해서 시드만 있는 CI DB에서는 돌 수 없다.
+      # 2026-11-04 94 -> 98: 전망 6차 통합 테스트 4개(tests/test_outlook_round26_devdb.py: 잠정실적 공시 날짜가 답변 어디서나 같음,
+      # 간결·상세 답의 방향·근거 일치 2, 저장된 공시 날짜와 접수번호 일치)는 수집 시세·공시·실적이 있어야 해서 시드만 있는 CI DB에서는 돌 수 없다.
+      MAX_EXCLUDED: "98"
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - name: 스키마 (alembic upgrade head)
+        run: python -m alembic upgrade head
+      - name: 종목 시드 적재 (두 번 적재해서 멱등성 확인)
+        run: |
+          python -m scripts.ci_seed
+          python -m scripts.ci_seed | tee /dev/stderr | grep -q "새로 0개"
+      - name: 제외되는 통합 테스트 수
+        run: |
+          out=$(python -m pytest --collect-only -q -p no:cacheprovider -m "needs_collected_data and not slow" | tail -1)
+          n=$(echo "$out" | grep -oE '^[0-9]+' || echo 0)
+          msg="수집 데이터(시세·뉴스·공시·ETF 시세·환율·시장 지수)가 필요해 CI에서 제외한 통합 테스트: ${n}개 (마커 needs_collected_data, 로컬에서는 전부 실행됨)"
+          echo "$msg"
+          echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$n" -gt "$MAX_EXCLUDED" ]; then
+            echo "::error::제외된 테스트(${n}개)가 상한(${MAX_EXCLUDED}개)을 넘었습니다. 마커를 늘리려면 이유와 함께 ci.yml의 MAX_EXCLUDED와 README 숫자를 고치세요."
+            exit 1
+          fi
+      - name: 통합 테스트
+        run: python -m pytest -m "integration and not slow and not needs_collected_data" -q --junitxml="$RUNNER_TEMP/junit.xml"
+      - name: 실패한 테스트 어노테이션
+        if: failure()
+        run: python ../scripts/ci_junit_annotations.py "$RUNNER_TEMP/junit.xml"
+
+  # ---------------------------------------------------------------------------
+  # AI 평가 offline 게이트: 종목 시드만 올린 DB에서 entity / period / routing_gate 문항(59개)을 채점한다.
+  # 게이트: 종목 오매칭률(entity_default_wrong_rate, entity_strict_wrong_rate)이 0이 아니면 실패. 나머지 지표는 표로만 보여준다.
+  # 시드로 판정이 달라지는 문항은 없다(같은 문항을 개발 DB에서 돌린 결과와 모든 지표·실패 문항이 같다: backend/evals/README.md).
+  # 2026-11-07 품질 평가(evals.run_quality, docs/AI_QUALITY_EVALUATION.md): 같은 job에서 8개 영역 결정론 평가(제품 경로 + 판정기 검증)를 돌리고
+  # 기준선(evals/quality_baseline.json)과 비교한다. 새 회귀·기준선에 없는 실패·판정기 검증 실패·데이터셋 버전 불일치, 그리고 위 offline 평가의
+  # 실패가 기준선에 분류된 11건(엄격 모드 의도된 거절)과 다르면 실패. DB·Ollama를 쓰지 않는다(종목 식별은 같은 시드 파일을 메모리에서 쓴다).
+  # live 모드는 CI에서 돌리지 않는다: 실제 Ollama(llama3.1:8b)가 필요하고 느리며 비결정적이다. 로컬에서 python -m evals.run_eval --mode live,
+  # python -m evals.run_quality --mode live.
+  # ---------------------------------------------------------------------------
+  eval-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci_dummy_pw
+          POSTGRES_DB: ci_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      JWT_SECRET: ci-dummy-jwt-secret-not-a-real-value
+      DATABASE_URL: postgresql+psycopg://ci:ci_dummy_pw@localhost:5432/ci_db
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - name: 스키마와 종목 시드
+        run: |
+          python -m alembic upgrade head
+          python -m scripts.ci_seed
+      - name: 평가 실행 (offline, dev + holdout 전체)
+        run: python -m evals.run_eval --mode offline --split all --out "$RUNNER_TEMP/eval/summary_ci_offline.json"
+      - name: 게이트 (종목 오매칭률 0) 와 요약 표
+        run: |
+          set +e
+          python -m evals.ci_gate "$RUNNER_TEMP/eval/summary_ci_offline.json" > "$RUNNER_TEMP/eval/gate.md"
+          code=$?
+          cat "$RUNNER_TEMP/eval/gate.md"
+          cat "$RUNNER_TEMP/eval/gate.md" >> "$GITHUB_STEP_SUMMARY"
+          exit $code
+      - name: 품질 평가 (8개 영역 결정론 + 기준선 비교 + offline 실패 분류 대조)
+        run: |
+          set +e
+          python -m evals.run_quality --legacy-summary "$RUNNER_TEMP/eval/summary_ci_offline.json" --out "$RUNNER_TEMP/eval/quality_ci.json" > "$RUNNER_TEMP/eval/quality_stdout.txt"
+          code=$?
+          cat "$RUNNER_TEMP/eval/quality_ci.md"
+          cat "$RUNNER_TEMP/eval/quality_ci.md" >> "$GITHUB_STEP_SUMMARY"
+          exit $code
+      - name: 평가 결과 업로드
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-offline-results
+          path: ${{ runner.temp }}/eval/
+          if-no-files-found: warn
+          retention-days: 30

@@ -1,0 +1,2375 @@
+"""
+Ollama tool calling 기반 리서치 에이전트.
+
+scripts/test_tool_calling.py에서 검증했던 ask() 로직을 재사용 가능한 형태로 옮긴 것.
+FastAPI 라우트(app/api/research.py)와 CLI 스모크 테스트 스크립트가 이 모듈을 공유한다.
+"""
+
+import inspect
+import json
+import logging
+import os
+import re
+import threading
+import time
+from datetime import date, datetime, timedelta, timezone
+
+import httpx
+import ollama
+from sqlalchemy import func
+
+from app.db.session import SessionLocal
+from app.event_answer import (
+    EVENT_ANSWER_RULES,
+    check_event_answer,
+    compose_event_answer,
+    display_summary,
+    event_result_for_llm,
+    trim_result,
+)
+from app import briefing_text, code_answers, period_answers, period_scope
+from app.etf import (
+    ETF_ANSWER_RULES,
+    asks_constituents,
+    check_etf_answer,
+    comparison_sentence,
+    compose_etf_answer,
+    constituents_answer,
+    leverage_kind,
+    leverage_notice,
+    news_result_for_llm,
+    remove_empty_sections,
+)
+from app.answer_guard import (
+    ORIGINAL_LOG_CHARS,
+    code_summary,
+    freshness_note,
+    guard_answer,
+    is_simple_quote,
+    narrative_body_is_thin,
+    quote_answer,
+    strip_foreign_script,
+    strip_narrative_mismatch,
+    strip_untrusted_urls,
+)
+from app import answer_i18n, answer_tidy, earnings, evidence_answer, market_ranking, outlook, price_flow, quote_freshness, related_news
+from app import market_overview, request_safety
+from app.data_status import last_business_day
+from app.etf_holdings import constituents_chat_answer, requested_top_n
+from app.llm_settings import call_options, chat_model
+from app.etf_holdings_db import chat_views
+from app.glossary import comparison_answer, concept_answer, find_term, term_answer
+from app.models import Company, StockPrice
+from app.period_parser import KST, mentions_period, parse_period
+from app.price_history import last_row_before, market_has_rows, price_range, price_rows_between, recent_price_rows
+from app.reports import save_report as save_report_row
+from app.sources import build_sources
+from app.tools.company_resolver import MAX_CANDIDATES, extract_from_text, normalize_name, resolve_company
+from app.routing import (
+    event_keyword_for,
+    event_type_for,
+    briefing_scope,
+    explicitly_requested_tools,
+    is_cause_question,
+    is_trend_question,
+    mentions_own,
+    needs_briefing,
+    needs_discovery_tool,
+    needs_event_reaction_tool,
+    needs_fx_tool,
+    needs_market_tool,
+)
+from app.tools.disclosure_tool import disclosure_tool
+from app.tools.discovery_tool import discovery_tool
+from app.tools.event_reaction_tool import TITLE_KEYWORDS, event_reaction_tool
+from app.tools.fx_tool import fx_tool
+from app.tools.market_tool import market_data_is_current, market_tool
+from app.tools.news_tool import news_tool
+from app.tools.rag_search_tool import rag_search_tool
+from app.tools.stock_tool import stock_tool, summarize_period
+from app.utils import extract_answer_text
+
+# 벤치마크(scripts/benchmark_models.py, few-shot 오염 제거 후 재실행) 결과 llama3.1:8b로 확정:
+# 총점은 qwen2.5:7b-instruct가 근소하게 앞섰지만(10/15 vs 9/15), qwen은 multi_tool
+# 실패 시 tool 없이 가짜 등락률·가짜 뉴스 제목을 지어내는 hallucination을 보인 반면
+# llama는 no_tool 실패(불필요한 tool 호출) 시에도 답변 내용 자체는 사실 왜곡이 없어
+# 금융 정보 서비스 특성상 더 안전한 실패 모드로 판단.
+MODEL_NAME = chat_model()  # OLLAMA_CHAT_MODEL, 기본 llama3.1:8b(app/llm_settings.py)
+
+logger = logging.getLogger(__name__)
+
+# ---------- LLM 호출 안정성 (2026-10-27) ----------
+# 평가에서 설명형 ETF 질문(etf_02)이 120초 timeout을 냈고, 한 번은 약 18분 동안 뒤의 요청이 모두 막혔다. LLM 호출에 생성 길이
+# 제한과 요청 timeout이 없었다. 이제 호출마다 timeout(질문 전체 한도 안에서 남은 시간)과 num_predict를 두고, timeout·연결 오류면
+# 예외 대신 도구 결과의 코드 요약(없으면 LLM_TIMEOUT_ANSWER)으로 답한다. 클라이언트 timeout으로 연결을 끊으면 Ollama도 그 생성을 멈춘다.
+# 재현(2026-10-27): 설명형 ETF 질문의 최종 답변이 같은 문장을 반복하며 8192토큰·216초까지 생성됐다(3회 중 2회). 정상 답변은
+# 최대 381토큰·약 10초였다. 그래서 num_predict는 정상 최대치의 약 2.7배(1024, 약 27초)로 두고, 이 한도에서 잘린 답변은 반복 루프로
+# 보고 내보내지 않는다(도구 결과의 코드 요약으로 대체). Ollama는 요청을 하나씩 처리해서 긴 생성 하나가 뒤 요청을 모두 막는다.
+LLM_CALL_TIMEOUT_S = 45
+LLM_QUESTION_BUDGET_S = 90
+LLM_NUM_PREDICT = 1024
+LLM_TIMEOUT_ANSWER = "응답 생성이 지연되어 답변을 만들지 못했습니다. 잠시 후 다시 시도해주세요."
+_LIBRARY_CHAT = ollama.chat  # 테스트가 ollama.chat을 바꿔 두면 그 함수를 그대로 쓴다(_llm_chat)
+_STATE = threading.local()  # 요청(스레드)별 LLM 한도와 응답 메타. ask_question이 응답의 "meta"로 붙인다(API 응답 필드는 아님).
+
+
+class LLMUnavailable(Exception):
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def _reset_llm_state() -> None:
+    _STATE.deadline = time.monotonic() + LLM_QUESTION_BUDGET_S
+    _STATE.meta = {"fallback": None, "llm_truncated": False, "answer_guard": None}
+
+
+def _meta() -> dict:
+    if not hasattr(_STATE, "meta"):
+        _reset_llm_state()
+    return _STATE.meta
+
+
+def _llm_chat(**kwargs):
+    """ollama.chat에 호출별 timeout(질문 한도 안의 남은 시간)과 num_predict를 붙여 부른다.
+    timeout·연결 오류는 LLMUnavailable로 바꾼다. 생성이 num_predict에서 끊기면 meta.llm_truncated를 남긴다."""
+    deadline = getattr(_STATE, "deadline", None) or time.monotonic() + LLM_QUESTION_BUDGET_S
+    remaining = deadline - time.monotonic()
+    if remaining < 2:
+        raise LLMUnavailable("question_budget")
+    kwargs["options"] = {**(kwargs.get("options") or {}), "num_predict": LLM_NUM_PREDICT}
+    kwargs.update(call_options())
+    try:
+        if ollama.chat is _LIBRARY_CHAT:
+            resp = ollama.Client(timeout=min(LLM_CALL_TIMEOUT_S, remaining)).chat(**kwargs)
+        else:
+            resp = ollama.chat(**kwargs)
+    except httpx.TimeoutException:
+        raise LLMUnavailable("timeout") from None
+    except (ConnectionError, httpx.TransportError):
+        raise LLMUnavailable("connection") from None
+    except ollama.ResponseError:
+        # Ollama가 생성을 중단한 경우("token repeat limit reached" 등). 잘린 반복 루프처럼 도구 결과의 코드 요약으로 답한다(nar_15, 2026-11-01)
+        raise LLMUnavailable("response_error") from None
+    try:
+        done_reason = resp["done_reason"]
+    except (KeyError, TypeError):
+        done_reason = None
+    if done_reason == "length":
+        _meta()["llm_truncated"] = True
+        logger.warning("LLM 답변이 num_predict(%s)에서 잘림", LLM_NUM_PREDICT)
+    return resp
+
+SYSTEM_PROMPT = (
+    "너는 한국 주식 투자자를 돕는 리서치 어시스턴트다. "
+    "반드시 한국어로만 답변하고 다른 언어를 절대 섞지 마라. "
+    "주가·등락률·거래량 등 수치 조회가 필요한 질문에는 stock_tool을 호출하고, "
+    "최근 이슈나 '왜 올랐는지/내렸는지' 같이 뉴스가 필요한 질문에는 news_tool을 호출하라. "
+    "최근에 올라온 공시 목록(예: '최근 공시 뭐 있어?')이 필요한 질문에는 disclosure_tool을 호출하라. "
+    "news_tool/disclosure_tool은 '최신순으로 N건 그대로' 가져오는 조회용이다. 반면 공시나 뉴스에 담긴 내용을 "
+    "특정 주제로 찾아야 하는 질문, 즉 '공시 내용', '자세히', '구체적으로', '근거'처럼 목록이 아니라 내용을 묻는 "
+    "질문에는 disclosure_tool이 아니라 rag_search_tool을 호출하라(예: '삼성전자 반도체 업황 관련 근거 찾아줘', "
+    "'~ 관련 공시 내용 자세히 알려줘'). "
+    "여러 종류의 정보가 필요한 질문이면 해당하는 tool들을 한 번의 응답에서 함께(동시에) 호출하라. "
+    "일반적인 용어 설명이나 개념 질문에는 절대 tool을 호출하지 말고 바로 답변하라. "
+    "답변은 절대 JSON 형식으로 하지 말고, 자연스러운 문장으로 답하라. "
+    "아래 대화 예시의 판단 기준(멀티 tool 동시 호출 / 개념 질문은 tool 미호출)을 그대로 따르라."
+)
+
+# 실제 Ollama tool-calling 메시지 포맷(assistant.tool_calls / role=tool)을 그대로 흉내낸
+# few-shot 예시. system prompt만으로는 "여러 tool을 한 번에 호출"하거나 "개념 질문엔
+# tool을 아예 안 쓴다"는 판단이 불안정해서, 대화 기록 형태의 예시를 실제 요청 메시지에
+# 섞어 넣어 모델이 패턴을 그대로 모방하도록 유도한다.
+#
+# 주의: 여기 쓰는 질문 문구/종목명은 실제 서비스 질문이나 벤치마크 테스트 질문과
+# 겹치면 안 된다. 겹치면 모델이 "이미 답변한 질문"으로 인식해 tool을 호출하지 않고
+# 이 few-shot 안의 가짜 데이터를 그대로 베껴서 답하는 현상이 있었다
+# (scripts/benchmark_models.py 1차 실행에서 qwen2.5:7b-instruct가 5/5 재현, 자세한
+# 내용은 해당 스크립트 상단 주석 참고).
+# 예시에는 실제 종목과 복사할 만한 헤드라인/수치를 넣지 않는다. 실제 종목(SK하이닉스)과 그럴듯한
+# 헤드라인("HBM 수주 확대 소식에 매수세 유입")을 넣었을 때, 모델이 실제 데이터가 빈약하면 예시를 실제 뉴스처럼
+# 베껴 답변에 넣었다(SK네트웍스 질문에 DB에 없는 "SK네트웍스, HBM 수주 확대 소식에 매수세 유입"을 지어내거나,
+# KCC 질문에 "SK하이닉스는 최근 뉴스…"라고 답한 사례).
+# 종목명만 가상("가상전자")으로 바꾸고 가상 헤드라인을 남기면 오염이 그대로였다: 모델이 헤드라인을 회사명만
+# 바꿔 베꼈고("KCC, 신규 공장 증설 계획 발표"), 예시의 가상 수치·종목명이 답변에 그대로 출력되기도 했다
+# (오염 5/135, 종목별 25회 반복 측정). 원인은 이름이 아니라 "예시에 복사 가능한 헤드라인이 있다"는 점이라서,
+# 예시의 뉴스 결과를 헤드라인 없는 "수집된 뉴스 없음" 사례로 바꿨다 (오염 0/135, p=0.03).
+# 시스템 프롬프트에 "지어내지 마라" 지침 문장을 추가해서 오염을 막는 것도 시도했으나, 이는 multi_tool
+# (주가+뉴스 동시 호출) 성공률을 87%→62%까지 떨어뜨려(30회 측정) 제외했다. 오염 방지는 few-shot의
+# 뉴스 결과를 found=false로 만드는 것만으로 충분하다.
+# 종목명은 실제 상장사이면서 이 프로젝트 DB(company 테이블, 300종목 백필)에는 없는 롯데칠성을 쓴다.
+# 애초 후보였던 SK하이닉스는 그사이 300종목 백필에 포함돼 DB에 실제 주가·뉴스가 존재하게 되어(예시의
+# found=false가 실제 조회 결과와 모순되므로) 제외했다. 롯데칠성은 company 테이블에 아예 없어서
+# resolve_company()가 stock_tool/news_tool 모두에 대해 동일하게 "종목을 찾지 못했습니다" found=false를
+# 돌려준다(실제 호출로 확인). 그래서 예시의 두 tool 결과도 그 실제 메시지를 그대로 쓴다 — 가짜 수치나
+# 가짜 헤드라인이 전혀 없다. 문구도 실제 테스트 케이스(benchmark_models.py의 CASE_*, 삼성전자 기준)와
+# 다르게 구성한다.
+FEW_SHOT_MESSAGES = [
+    # 예시 1: 여러 정보가 필요한 질문 -> stock_tool + news_tool을 한 응답에서 동시에 호출
+    {
+        "role": "user",
+        "content": "롯데칠성 요즘 흐름이 심상치 않던데, 주가 움직임이랑 관련 소식 같이 정리해줄 수 있어?",
+    },
+    {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {
+                "function": {
+                    "name": "stock_tool",
+                    "arguments": {"ticker": "롯데칠성", "period_days": 1},
+                }
+            },
+            {
+                "function": {
+                    "name": "news_tool",
+                    "arguments": {"company_name": "롯데칠성", "limit": 5},
+                }
+            },
+        ],
+    },
+    {
+        "role": "tool",
+        "content": json.dumps(
+            {
+                "ticker": "롯데칠성",
+                "period_days": 1,
+                "found": False,
+                "message": "'롯데칠성' 종목을 찾지 못했습니다. company 테이블에 등록된 종목명 또는 종목코드를 지정해주세요.",
+            },
+            ensure_ascii=False,
+        ),
+    },
+    {
+        "role": "tool",
+        "content": json.dumps(
+            {
+                "company_name": "롯데칠성",
+                "limit": 5,
+                "found": False,
+                "message": "'롯데칠성' 종목을 찾지 못했습니다. company 테이블에 등록된 종목명 또는 종목코드를 지정해주세요.",
+            },
+            ensure_ascii=False,
+        ),
+    },
+    {
+        "role": "assistant",
+        "content": (
+            "죄송합니다. '롯데칠성'은 현재 등록된 종목 목록에서 찾지 못해 주가와 뉴스 모두 "
+            "확인할 수 없었습니다. 정확한 종목명이나 종목코드를 알려주시면 다시 확인해드리겠습니다."
+        ),
+    },
+    # 예시 2: DB 조회가 필요 없는 일반 개념 질문 -> tool 호출 없이 바로 답변
+    {
+        "role": "user",
+        "content": "공모주 청약이 뭔지 쉽게 설명해줘.",
+    },
+    {
+        "role": "assistant",
+        "content": (
+            "공모주 청약은 기업이 상장하기 전에 일반 투자자에게 정해진 가격으로 주식을 미리 "
+            "배정받을 수 있게 하는 절차입니다. 특정 종목의 실시간 데이터 조회가 필요 없는 "
+            "일반 지식이라 tool 호출 없이 바로 답변했습니다."
+        ),
+    },
+]
+
+# Ollama에게 알려줄 tool 스펙 (OpenAI function calling과 동일한 형식)
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "stock_tool",
+            "description": (
+                "DB에 저장된 실제 데이터 기준으로, 특정 종목의 최근 N일간 주가"
+                "(등락률, 거래량, 종가 등)를 조회한다. 아직 주가가 수집되지 않은"
+                "종목이거나 데이터가 없는 경우 found=false와 함께 그 사유를 담은"
+                "message를 반환한다."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ticker": {
+                        "type": "string",
+                        "description": (
+                            "종목코드가 아니라 종목명(예: 삼성전자, SK하이닉스)."
+                            " company 테이블의 name 컬럼으로 조회한다."
+                        ),
+                    },
+                    "period_days": {
+                        "type": "integer",
+                        "description": (
+                            "조회할 기간(일). 기본값 1. 2 이상이면 응답의 prices"
+                            "리스트에 날짜별(등락률/거래량/종가) 데이터가 여러 건 담긴다."
+                        ),
+                    },
+                },
+                "required": ["ticker"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "news_tool",
+            "description": (
+                "DB에 저장된 실제 데이터 기준으로, 특정 종목과 관련된 최신 뉴스를"
+                "조회한다. 뉴스가 필요한 질문에만 호출한다 (예: 최근 이슈, 왜 올랐는지"
+                "/내렸는지, 관련 소식 등). 단순 주가·등락률·거래량 수치만 필요한"
+                "질문에는 호출하지 않는다. 아직 뉴스가 수집되지 않은 종목이거나"
+                "등록되지 않은 종목인 경우 found=false와 함께 그 사유를 담은"
+                "message를 반환한다."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "company_name": {
+                        "type": "string",
+                        "description": (
+                            "종목명 또는 종목코드(예: 삼성전자, 005930)."
+                            " company 테이블의 name 또는 ticker 컬럼으로 조회한다."
+                        ),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "조회할 최근 뉴스 건수. 기본값 5.",
+                    },
+                },
+                "required": ["company_name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "disclosure_tool",
+            "description": (
+                "DB에 저장된 실제 데이터 기준으로, 특정 종목의 '최근 공시 목록'(DART 전자공시)을 최신순으로 N건 그대로 "
+                "조회한다. 최근에 어떤 공시가 올라왔는지 목록을 볼 때만 호출한다 (예: 최근 공시 뭐 있어?, 오늘 올라온 공시, "
+                "최신 공시 목록). 공시에 담긴 구체적인 내용·조건·금액을 특정 주제로 찾아야 하는 질문에는 호출하지 말고 "
+                "rag_search_tool을 호출한다. 단순 주가 수치나 일반 뉴스 질문에도 호출하지 않는다. 아직 공시가 수집되지 "
+                "않은 종목이거나 등록되지 않은 종목인 경우 found=false와 함께 그 사유를 담은 message를 반환한다."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "company_name": {
+                        "type": "string",
+                        "description": (
+                            "종목명 또는 종목코드(예: 삼성전자, 005930)."
+                            " company 테이블의 name 또는 ticker 컬럼으로 조회한다."
+                        ),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "조회할 최근 공시 건수. 기본값 5.",
+                    },
+                },
+                "required": ["company_name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "rag_search_tool",
+            "description": (
+                "공시와 뉴스의 '내용'을 의미(semantic) 기준으로 검색해, 질문과 관련도가 높은 문서 top-k를 찾는다. "
+                "특정 주제(전환사채 발행, 임상시험, 사업 양수도 등)에 대해 공시·뉴스에 담긴 구체적인 내용, 조건, 금액 "
+                "같은 근거를 찾을 때 호출한다 (예: '전환사채 발행 공시에 나온 조건 알려줘', '임상시험 결과 공시 내용을 "
+                "자세히 알려줘', '~ 관련 근거 찾아줘'). 단순히 최신순 목록이 필요한 질문에는 호출하지 않는다. 임베딩이 아직 "
+                "채워지지 않았거나 일치하는 문서가 없으면 found=false를 반환한다."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "검색하려는 주제/맥락을 자연어 문장으로 표현한 질의.",
+                    },
+                    "company_name": {
+                        "type": "string",
+                        "description": (
+                            "종목명 또는 종목코드로 검색 범위를 좁힐 때만 지정한다"
+                            " (예: 삼성전자, 005930). 특정 종목에 한정하지 않으면 생략한다."
+                        ),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "반환할 최대 문서 건수. 기본값 5.",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+]
+
+# market_tool은 TOOLS(기본 tool 목록)에 넣지 않는다. 5번째 tool을 LLM에 상시 노출하면 stock_tool+news_tool 동시
+# 호출(multi)이 깨져서(60%->36%, n=96) 코드에서 질문 문구로 판단해(app/routing.py) 시장 비교 질문일 때만 그 요청의
+# tool 목록과 시스템 프롬프트에 추가한다. 그 외 질문은 4-tool 프롬프트가 이전과 완전히 같다.
+MARKET_TOOL_SPEC = {
+    "type": "function",
+    "function": {
+        "name": "market_tool",
+        "description": (
+            "DB에 저장된 실제 데이터 기준으로, 특정 종목의 최근 N거래일 등락률을 그 종목이 상장된 시장"
+            "(코스피/코스닥) 전체 지수의 같은 기간 등락률과 비교한다. 종목 주가 변동이 종목 개별 요인인지 "
+            "시장 전체 흐름 때문인지 가릴 때, 또는 시장 지수 대비 성과를 물을 때 호출한다. 종목 등락률, 시장 "
+            "등락률, 그 차이(%p)를 돌려준다. 단순 주가·등락률·거래량 수치만 필요한 질문에는 호출하지 않는다"
+            "(그때는 stock_tool). 업종(섹터) 지수와의 비교는 지원하지 않는다. 등록되지 않은 종목이거나 "
+            "주가·지수 데이터가 없으면 found=false와 함께 그 사유를 담은 message를 반환한다."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ticker": {
+                    "type": "string",
+                    "description": (
+                        "종목명 또는 종목코드(예: 삼성전자, 005930)."
+                        " company 테이블의 name 또는 ticker 컬럼으로 조회한다."
+                    ),
+                },
+                "period_days": {
+                    "type": "integer",
+                    "description": "비교할 기간(거래일 수, 달력 일수가 아님). 기본값 5. 일주일이면 5, 한 달이면 20.",
+                },
+            },
+            "required": ["ticker"],
+        },
+    },
+}
+
+_MARKET_HINT_ANCHOR = "최근 이슈나 '왜 올랐는지/내렸는지' 같이 뉴스가 필요한 질문에는 news_tool을 호출하라. "
+MARKET_HINT = (
+    "종목의 움직임이 그 종목만의 요인 때문인지 시장 전체 흐름 때문인지 구분해야 하거나 코스피·코스닥 지수와 "
+    "비교하는 질문에는 market_tool도 함께 호출하라. "
+)
+
+# fx_tool도 market_tool과 같은 이유로 기본 TOOLS에 넣지 않는다(상시 노출 시 multi 호출이 깨지는 문제,
+# app/routing.py의 needs_fx_tool이 환율 질문일 때만 추가한다).
+FX_TOOL_SPEC = {
+    "type": "function",
+    "function": {
+        "name": "fx_tool",
+        "description": (
+            "DB에 저장된 실제 데이터 기준으로, 최근 N거래일 원/달러(USD/KRW) 환율의 현재가·전일대비 등락률· "
+            "기간 추세를 조회한다. 환율 수준이나 최근 추이를 묻거나, 환율 변동이 종목(특히 수출입 비중이 큰 "
+            "종목)에 미치는 영향을 분석해야 하는 질문에서 호출한다(예: '요즘 환율 어때?', '환율이 많이 올랐는데 "
+            "삼성전자 주가에 영향 있어?'). 특정 수치 조회 없이 환율 관련 개념만 설명하면 되는 질문(예: '환율이 "
+            "오르면 왜 수출주가 유리해?')에는 호출하지 않는다. 종목이 아니라서 ticker 인자가 없다. 환율 데이터가 "
+            "아직 수집되지 않았으면 found=false와 함께 그 사유를 담은 message를 반환한다."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "period_days": {
+                    "type": "integer",
+                    "description": "조회할 기간(거래일 수, 달력 일수가 아님). 기본값 5. 일주일이면 5, 한 달이면 20.",
+                },
+            },
+            "required": [],
+        },
+    },
+}
+
+FX_HINT = (
+    "환율 수준이나 최근 추이, 환율 변동이 종목에 미치는 영향을 분석해야 하는 질문에는 fx_tool도 함께 호출하라. "
+)
+
+# discovery_tool도 market_tool/fx_tool과 같은 이유로 기본 TOOLS에 넣지 않는다(상시 노출 시 multi 호출이 깨지는
+# 문제, app/routing.py의 needs_discovery_tool이 종목을 특정하지 않는 탐색 질문일 때만 추가한다).
+DISCOVERY_TOOL_SPEC = {
+    "type": "function",
+    "function": {
+        "name": "discovery_tool",
+        "description": (
+            "DB에 저장된 실제 데이터 기준으로, 특정 종목을 지정하지 않고 시장 전체에서 오늘(최근 거래일) 기준 "
+            "관심 가질 만한 종목을 찾는다. 등락률 상위(급등), 등락률 하위(급락), 거래량이 평소보다 크게 늘어난 "
+            "종목(거래량 급증) 중 하나를 고른다. '요즘 뜨는 종목', '오늘 급등한 종목', '거래량 많이 늘어난 종목', "
+            "'오늘의 관심종목 추천해줘'처럼 종목을 특정하지 않는 질문에서 호출한다. 이미 특정 종목이 언급된 "
+            "질문에는 호출하지 않는다(그때는 stock_tool). 순수 등락률·거래량 수치 기준이라 뉴스·공시 같은 "
+            "질적 이유는 담지 않는다. 주가 데이터가 아직 없으면 found=false와 사유를 담은 message를 반환한다."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "enum": ["gainers", "losers", "volume_surge"],
+                    "description": "gainers=등락률 상위(급등), losers=등락률 하위(급락), volume_surge=거래량 급증. 기본값 gainers.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "조회할 종목 수. 기본값 10.",
+                },
+            },
+            "required": [],
+        },
+    },
+}
+
+DISCOVERY_HINT = (
+    "특정 종목을 지정하지 않고 시장 전체에서 급등/급락/거래량 급증 종목을 찾는 질문에는 discovery_tool을 호출하라. "
+)
+
+AVAILABLE_FUNCTIONS = {
+    "stock_tool": stock_tool,
+    "news_tool": news_tool,
+    "disclosure_tool": disclosure_tool,
+    "rag_search_tool": rag_search_tool,
+    "market_tool": market_tool,
+    "fx_tool": fx_tool,
+    "discovery_tool": discovery_tool,
+}
+
+# 질문 -> (프롬프트 힌트, tool 스펙)을 주는 게이트들. 전부 기본 TOOLS 상시 노출 시 multi 호출이 깨지는 문제 때문에
+# 코드가 질문 문구로 먼저 판단해서 필요한 요청에만 추가한다(app/routing.py).
+_GATES = [
+    (needs_market_tool, MARKET_HINT, MARKET_TOOL_SPEC),
+    (needs_fx_tool, FX_HINT, FX_TOOL_SPEC),
+    (needs_discovery_tool, DISCOVERY_HINT, DISCOVERY_TOOL_SPEC),
+]
+
+
+def build_request(question: str) -> tuple[str, list[dict]]:
+    """질문에 맞는 (시스템 프롬프트, tool 목록)을 만든다. 어느 게이트도 안 걸리면 기본값 그대로(같은 객체)다.
+
+    게이트가 걸린 tool들은 기본 TOOLS에는 없고, 각자의 게이트가 True인 요청에만 해당 tool과 프롬프트 힌트를
+    추가한다. 한 질문에서 여러 게이트가 걸리면(예: "환율 때문에 코스피 전체가 빠졌어?") 전부 추가된다."""
+    matched = [(hint, spec) for gate, hint, spec in _GATES if gate(question)]
+    if not matched:
+        return SYSTEM_PROMPT, TOOLS
+    hints = "".join(hint for hint, _ in matched)
+    extra_tools = [spec for _, spec in matched]
+    prompt = SYSTEM_PROMPT.replace(_MARKET_HINT_ANCHOR, _MARKET_HINT_ANCHOR + hints, 1)
+    return prompt, [*TOOLS, *extra_tools]
+
+
+FALLBACK_ANSWER = "죄송합니다. 요청을 처리하는 중 문제가 발생했습니다. 종목명을 포함해 질문을 조금 더 구체적으로 다시 해주세요."
+
+# FR-11(답변 구조화): tool 결과를 종합하는 최종 답변 생성 단계에만 추가하는 안내. SYSTEM_PROMPT/TOOLS는 건드리지
+# 않으므로 1차 호출(tool 선택)에는 전혀 영향이 없다 - scripts/benchmark_routing.py가 측정하는 경로
+# (build_request + _first_call)는 이 상수를 아예 거치지 않는다.
+ANSWER_STRUCTURE_INSTRUCTION = (
+    "이제 위 조회 결과를 바탕으로 최종 답변을 작성하라. 질문이 여러 tool 결과를 종합해야 하는 질문이면, "
+    "답변을 줄글이나 글머리 기호(-, *) 목록이 아니라 '## 섹션 제목' 형식의 마크다운 소제목으로 된 섹션들로 "
+    "나눠서 작성하라(각 섹션 제목 줄은 반드시 '## '로 시작한다. 예: '## 주가 동향\\n삼성전자는 ...'). "
+    "쓸 수 있는 섹션은 아래 다섯 개뿐이고, 실제로 호출한 tool의 결과가 뒷받침하는 섹션만 쓴다 - 호출하지 "
+    "않은 tool에 해당하는 섹션은 아예 쓰지 말고 데이터 없이 지어내지 마라: "
+    "## 주가 동향(stock_tool 결과가 있을 때), "
+    "## 원인 분석(뉴스·공시·시장 비교 등 변동 원인과 관련된 결과가 있을 때), "
+    "## 뉴스·공시 근거(news_tool/disclosure_tool/rag_search_tool 결과가 있을 때), "
+    "## 시장 상황(market_tool 결과가 있을 때), "
+    "## 위험요인(조회된 데이터에서 실제로 유의할 만한 신호가 보일 때만, 없으면 생략). "
+    "반대로 질문이 단순 수치 하나만 묻는 등 짧은 조회성 질문이면 섹션 제목 없이 자연스러운 한두 문장으로만 "
+    "답하라 - 이 경우에는 섹션을 억지로 만들지 마라."
+)
+
+_TOOL_NAME_RE = re.compile(r'"name"\s*:\s*"(?:%s)"' % "|".join(AVAILABLE_FUNCTIONS))
+
+
+def _mentions_tool_call(content: str) -> bool:
+    """모델이 tool_calls 대신 tool 호출 JSON을 본문 텍스트로 내보낸 경우인지 판별한다."""
+    return bool(content) and bool(_TOOL_NAME_RE.search(content))
+
+
+def _recover_text_tool_calls(content: str) -> list[dict]:
+    """본문에 텍스트로 나온 tool 호출 JSON({"name":..., "parameters":{...}})을 tool_calls 형태로 복구한다.
+    JSON이 깨져 있으면(모델이 잘못된 이스케이프를 내보내는 경우) 빈 리스트를 반환한다."""
+    decoder = json.JSONDecoder()
+    calls, idx = [], 0
+    while idx < len(content):
+        if content[idx] in " \t\r\n,;":
+            idx += 1
+            continue
+        try:
+            obj, idx = decoder.raw_decode(content, idx)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(obj, dict) or obj.get("name") not in AVAILABLE_FUNCTIONS:
+            return []
+        params = obj.get("parameters", obj.get("arguments", {}))
+        if not isinstance(params, dict):
+            return []
+        calls.append({"function": {"name": obj["name"], "arguments": params}})
+    return calls
+
+
+def _as_args(fn_args) -> dict:
+    """tool 인자를 dict로 맞춘다(JSON 문자열이거나 깨져 있으면 빈 dict)."""
+    if isinstance(fn_args, str):
+        try:
+            fn_args = json.loads(fn_args)
+        except json.JSONDecodeError:
+            return {}
+    return fn_args if isinstance(fn_args, dict) else {}
+
+
+# tool별로 종목명/티커를 받는 인자 이름
+_COMPANY_ARG = {
+    "stock_tool": "ticker",
+    "market_tool": "ticker",
+    "news_tool": "company_name",
+    "disclosure_tool": "company_name",
+    "rag_search_tool": "company_name",
+}
+
+
+_COMPARE_QUESTION_RE = re.compile(code_answers._COMPARE_RE.pattern + r"|차이")
+
+
+def _add_missing_compared(db, calls: list[dict], named: list, tools: tuple[str, ...] | None = None) -> list[dict]:
+    """종목 인자를 받는 호출마다(tools를 주면 그 도구만), 질문의 종목 중 그 도구로 조회하지 않은 종목의 호출을 바로 뒤에 덧붙인다."""
+    called: dict[str, set[int]] = {}
+    for call in calls:
+        key = _COMPANY_ARG.get(call["function"]["name"])
+        if tools is not None and call["function"]["name"] not in tools:
+            key = None
+        company = resolve_company(db, _as_args(call["function"]["arguments"]).get(key)).company if key else None
+        if company is not None:
+            called.setdefault(call["function"]["name"], set()).add(company.id)
+    out = []
+    for call in calls:
+        out.append(call)
+        fn_name = call["function"]["name"]
+        key = _COMPANY_ARG.get(fn_name)
+        if fn_name in called:
+            args = _as_args(call["function"]["arguments"])
+            for c in named:
+                if c.id not in called[fn_name]:
+                    called[fn_name].add(c.id)
+                    out.append({"function": {"name": fn_name, "arguments": {**args, key: c.name}}})
+    return out
+
+
+def _expand_multi_company_calls(calls: list[dict], question: str, named: list | None) -> None:
+    """질문의 종목(named: _question_companies의 결과)으로 모델의 종목 인자를 바로잡는다(calls를 직접 수정).
+    종목이 하나이고 모델이 종목 필터 없이 RAG를 검색했으면 그 종목으로 채운다(stab_07 "삼성전자에 투자할 때 위험 요인").
+    종목이 둘 이상이고 모델이 한 호출에 종목을 묶었으면 종목별 호출로 나눈다.
+
+    "현대차와 기아의 사업 구조 차이" 질문에서 모델이 company_name="현대차, 기아"로 넘겨 종목을 못 찾았다고 답하거나(stab_10,
+    종목 이름 자체는 정확히 해석된다), 종목 필터 없이 RAG를 검색해 두 회사 문서를 고르지 못했다. 나눈 인자는 질문·인자에서 찾은 등록명이다.
+    비교 질문("현대차와 기아 비교해줘")에서 모델이 한 종목만 호출했으면 같은 도구를 나머지 종목에도 호출한다."""
+    if not named or not any(_COMPANY_ARG.get(call["function"]["name"]) for call in calls):
+        return
+    if len(named) == 1:
+        for call in calls:
+            args = _as_args(call["function"]["arguments"])
+            if call["function"]["name"] == "rag_search_tool" and not normalize_name(args.get("company_name")):
+                call["function"]["arguments"] = {**args, "company_name": named[0].name}
+        return
+    try:
+        db = SessionLocal()
+    except Exception:
+        return
+    try:
+        expanded = []
+        for call in calls:
+            fn_name = call["function"]["name"]
+            key = _COMPANY_ARG.get(fn_name)
+            args = _as_args(call["function"]["arguments"])
+            raw = args.get(key) if key else None
+            targets = None
+            if key and not normalize_name(raw):
+                targets = named if fn_name == "rag_search_tool" else None
+            elif key and resolve_company(db, raw).company is None:
+                found = extract_from_text(db, str(raw))
+                targets = found if len(found) >= 2 else None
+            if targets is None:
+                expanded.append(call)
+            else:
+                expanded.extend({"function": {"name": fn_name, "arguments": {**args, key: c.name}}} for c in targets)
+        if _COMPARE_QUESTION_RE.search(question):
+            expanded = _add_missing_compared(db, expanded, named)
+        else:
+            # 문서 검색은 비교 질문이 아니어도 질문의 종목을 모두 찾는다("삼성전자와 SK하이닉스 위험 요인"에 한 종목만 검색하던 stab_11)
+            expanded = _add_missing_compared(db, expanded, named, ("rag_search_tool",))
+        calls[:] = expanded
+    except Exception:
+        return  # DB를 읽지 못하면 모델이 만든 호출 그대로 간다
+    finally:
+        db.close()
+
+
+def _repair_company_args(calls: list[dict], question: str, previous_question: str | None = None,
+                         previous_company: str | None = None) -> dict[int, str]:
+    """모델이 만든 종목 인자가 DB 종목으로 해석되지 않으면, 질문 원문에서 회사명을 찾아 대신 넣는다.
+
+    모델이 질문 속 회사명을 JSON 인자로 옮기다 엉뚱한 문자열로 깨뜨리는 경우를 위한 fallback이다.
+    같은 tool로 이미 정상 해석된 회사는 후보에서 빼고, 남은 후보와 실패한 호출이 일대일로 맞을 때만
+    (질문 등장 순서대로) 채운다. 임의로 고르지 않으므로 애매하면 그대로 두어 not-found 응답이 나간다.
+    후속 질문("그럼 최근 뉴스는?")처럼 이번 질문에 회사명이 하나도 없을 때만 직전 질문(previous_question)에서 찾는다.
+    또 그런 후속 질문에서 직전 질문에 회사가 정확히 하나면, 모델이 채운 회사가 그 종목이 아닐 때 직전 종목으로 바꾼다:
+    모델은 회사명이 없는 질문에 "삼성전자" 같은 유효한 이름을 기본값처럼 채우는데(직전 종목이 카카오/현대차/네이버일 때
+    후속 뉴스 조회의 60~80%가 다른 회사로 갔다), 해석이 되는 이름이라 위 보정이 손대지 못하기 때문이다.
+    직전 질문에도 회사명이 없으면(직전이 "그래서 결론이 뭐야?" 같은 후속 질문) 직전 리포트의 종목(previous_company)을 쓴다. 이렇게
+    직전 리포트의 종목으로 이어받은 경우에만 종목 없이 부른 rag_search_tool에도 그 종목을 넣는다(2026-11-03: 종목 없는 의미 검색이 다른 회사 기사를 근거로 붙였다).
+    calls를 직접 수정하고, {호출 인덱스: 모델이 만든 원래 인자}를 돌려준다."""
+    targets = []
+    for i, call in enumerate(calls):
+        fn_name = call["function"]["name"]
+        key = _COMPANY_ARG.get(fn_name)
+        if key is None:
+            continue
+        args = _as_args(call["function"]["arguments"])
+        call["function"]["arguments"] = args
+        targets.append((i, fn_name, key, args))
+    if not targets:
+        return {}
+
+    db = SessionLocal()
+    try:
+        resolved_names: dict[str, set[str]] = {}
+        resolved = []
+        failed = []
+        rag_unfiltered = []
+        for i, fn_name, key, args in targets:
+            raw = args.get(key)
+            # 종목 필터 없이 검색하려는 rag 호출(인자 없음/null)은 후속 대상이 정해질 때만 채운다(아래)
+            if fn_name == "rag_search_tool" and not normalize_name(raw):
+                rag_unfiltered.append((i, key, args, raw))
+                continue
+            res = resolve_company(db, raw)
+            if res.company is not None:
+                resolved_names.setdefault(fn_name, set()).add(res.company.name)
+                resolved.append((i, key, args, raw, res.company))
+            else:
+                failed.append((i, fn_name, key, args, raw))
+        if not failed and not previous_question and not previous_company:
+            return {}
+
+        candidates = extract_from_text(db, question)
+        follow_up_subject = None
+        if not candidates and previous_question:
+            candidates = extract_from_text(db, previous_question)
+            if len(candidates) == 1:
+                follow_up_subject = candidates[0]
+        chained = False
+        if not candidates and previous_company:
+            candidates = db.query(Company).filter(Company.name == previous_company).all()
+            if len(candidates) == 1:
+                follow_up_subject, chained = candidates[0], True
+        repaired: dict[int, str] = {}
+        for fn_name in {f[1] for f in failed}:
+            fails = [f for f in failed if f[1] == fn_name]
+            remaining = [c for c in candidates if c.name not in resolved_names.get(fn_name, set())]
+            if len(remaining) != len(fails):
+                continue
+            for (i, _, key, args, raw), company in zip(fails, remaining):
+                args[key] = company.name
+                repaired[i] = "" if raw is None else str(raw)
+        if follow_up_subject is not None:
+            for i, key, args, raw, company in resolved:
+                if company.id != follow_up_subject.id:
+                    args[key] = follow_up_subject.name
+                    repaired[i] = "" if raw is None else str(raw)
+            for i, key, args, raw in (rag_unfiltered if chained else []):
+                args[key] = follow_up_subject.name
+                repaired[i] = "" if raw is None else str(raw)
+        return repaired
+    finally:
+        db.close()
+
+
+# tool별로 기간(period_days)을 받는 인자 이름. news_tool/disclosure_tool/rag_search_tool은 기간 인자 자체가
+# 없어서(README "FR-01 인수조건별 검증" 참고) 여기 없고, 손대지 않는다.
+_PERIOD_ARG = {"stock_tool": "period_days", "market_tool": "period_days", "fx_tool": "period_days"}
+
+
+def _apply_period_override(calls: list[dict], question: str) -> dict[int, object]:
+    """질문에서 app.period_parser.parse_period가 기간 표현을 인식했으면, 기간 인자를 받는 tool 호출의
+    period_days를 그 값으로 덮어써서 LLM이 추론한(종종 틀리는) 값보다 우선하게 한다.
+
+    인식하지 못하면(parse_period가 None) 아무것도 하지 않는다 - 이전처럼 LLM이 추론한 값을 그대로 쓴다.
+    calls를 직접 수정하고, {호출 인덱스: 덮어쓰기 전 원래 값(없었으면 None)}을 돌려준다."""
+    parsed = parse_period(question)
+    if parsed is None:
+        return {}
+
+    overridden: dict[int, object] = {}
+    for i, call in enumerate(calls):
+        key = _PERIOD_ARG.get(call["function"]["name"])
+        if key is None:
+            continue
+        args = _as_args(call["function"]["arguments"])
+        call["function"]["arguments"] = args
+        overridden[i] = args.get(key)
+        args[key] = parsed.period_days
+    return overridden
+
+
+def _apply_past_window(calls: list[dict], question: str) -> None:
+    """최근 N거래일 창으로 답할 수 없는 기간("2024년 3월 주가와 뉴스")이면 stock_tool·market_tool에 같은 날짜 범위를 넘긴다(LLM이 정한
+    period_days로 최근 시세를 조회해 그 기간의 값처럼 답하던 문제, 종목과 지수의 구간이 어긋나던 문제, 2026-10-31).
+    LLM 스키마에는 없는 인자다. calls를 직접 수정한다."""
+    today = datetime.now(KST).date()
+    requested = period_scope.requested_period(question, today)
+    if not period_answers.needs_date_lookup(requested, parse_period(question), today):
+        return
+    for call in calls:
+        if call["function"]["name"] in ("stock_tool", "market_tool"):
+            args = _as_args(call["function"]["arguments"])
+            call["function"]["arguments"] = args
+            args["start_date"], args["end_date"] = requested.start.isoformat(), requested.end.isoformat()
+
+
+# 기간을 말하지 않은 흐름 질문에서 stock_tool에 채우는 기본 기간(거래일 수). 진단의 20거래일 수익률,
+# market_tool 설명의 "한 달이면 20"과 같은 약 한 달이다.
+DEFAULT_TREND_PERIOD_DAYS = 20
+
+
+def _apply_default_period(calls: list[dict], question: str) -> dict[int, object]:
+    """기간을 말하지 않고 주가의 흐름/추이(또는 '최근 주가')나 등락의 원인을 묻는 질문이면 stock_tool의
+    period_days를 DEFAULT_TREND_PERIOD_DAYS로 맞춘다.
+
+    모델은 이런 질문에 period_days를 1로 채우거나(→ "최근 1일 동안 -2.23%" 같은 답) 호출마다 다른 값을 추측한다.
+    사용자가 기간을 말한 질문(app.period_parser.mentions_period)과 흐름·원인 질문이 아닌 질문(app.routing.
+    is_trend_question, is_cause_question)은 건드리지 않는다 - 그때는 이전처럼 파서가 인식한 값 또는 LLM이 추론한
+    값이 쓰인다.
+    market_tool/fx_tool은 기본값이 이미 5거래일이라 흐름 질문에서는 대상이 아니다. 다만 원인 질문("왜 떨어졌어?")
+    에서는 market_tool도 같은 기간으로 맞춘다: 한 답변 안에서 종목 등락(20거래일)과 시장 대비(5거래일)의 구간이
+    다르면 "떨어진 게 시장 때문인지"를 비교할 수 없다.
+    calls를 직접 수정하고, {호출 인덱스: 바꾸기 전 원래 값(없었으면 None)}을 돌려준다."""
+    if mentions_period(question):
+        return {}
+    if is_cause_question(question):
+        targets = {"stock_tool", "market_tool"}
+    elif is_trend_question(question):
+        targets = {"stock_tool"}
+    else:
+        return {}
+
+    changed: dict[int, object] = {}
+    for i, call in enumerate(calls):
+        if call["function"]["name"] not in targets:
+            continue
+        args = _as_args(call["function"]["arguments"])
+        call["function"]["arguments"] = args
+        if args.get("period_days") == DEFAULT_TREND_PERIOD_DAYS:
+            continue
+        changed[i] = args.get("period_days")
+        args["period_days"] = DEFAULT_TREND_PERIOD_DAYS
+    return changed
+
+
+# 질문이 이름으로 요청한 정보(app.routing.explicitly_requested_tools)를 이미 채워주는 tool들. 공시/뉴스는
+# rag_search_tool(내용 검색)로도, 주가는 market_tool(시장 비교)로도 답이 되므로 그 경우에는 덧붙이지 않는다.
+_SATISFIED_BY = {
+    "stock_tool": {"stock_tool", "market_tool"},
+    "news_tool": {"news_tool", "rag_search_tool"},
+    "disclosure_tool": {"disclosure_tool", "rag_search_tool"},
+    "market_tool": {"market_tool"},
+}
+
+# 등락의 원인을 묻는 질문(app.routing.is_cause_question)에서 뉴스와 함께 봐야 하는 tool. 모델은 이런 질문에 news_tool만
+# 부르는데(25/25), 주가가 실제로 어떻게 움직였는지와 시장 전체가 같이 움직였는지를 모르면 원인을 가릴 수 없다.
+_CAUSE_QUESTION_TOOLS = ["stock_tool", "market_tool"]
+
+
+def _wanted_tools(question: str) -> list[str]:
+    """이 질문에 있어야 하는 tool: 이름으로 요청한 것 + 원인 질문이면 주가·시장 비교."""
+    wanted = list(explicitly_requested_tools(question))
+    if is_cause_question(question):
+        wanted += [name for name in _CAUSE_QUESTION_TOOLS if name not in wanted]
+    return wanted
+
+
+def _market_comparison_available(company: str) -> bool:
+    """market_tool을 코드가 덧붙여도 되는지(그 종목 시장의 지수가 최신 주가 날짜까지 수집돼 있는지).
+    확인 중 오류가 나면(DB 문제 등) 덧붙이지 않는 쪽으로 처리한다 - 없어도 답변은 만들 수 있다."""
+    try:
+        return market_data_is_current(company)
+    except Exception:
+        return False
+
+
+def _add_requested_tools(calls: list[dict], question: str) -> list[int]:
+    """질문에 있어야 하는 tool(_wanted_tools)을 모델이 일부만 호출했으면, 빠진 tool 호출을 덧붙인다.
+
+    두 경우를 메운다. (1) 주가·뉴스·공시 중 둘 이상을 이름으로 요청한 질문: "삼성전자 최근 상황을 종합해서 알려줘.
+    주가, 뉴스, 공시를 같이 확인해줘."에 모델이 stock_tool만 부르는 경우(10번에 1~2번). (2) 등락의 원인을 묻는
+    질문: "카카오는 왜 떨어졌어?"에 모델이 news_tool만 부르는 경우(25번 중 25번) - stock_tool을 덧붙이고, 시장 지수가
+    최신이면 market_tool도 덧붙인다(지수가 뒤처져 있거나 코스피/코스닥 종목이 아니면 붙이지 않는다).
+    모델이 이미 부른 호출들의 종목이 정확히 하나일 때만 그 종목으로 덧붙이고, 종목이 없거나 둘 이상이면(어느 종목의
+    뉴스인지 코드가 정할 수 없다) 아무것도 하지 않는다.
+    기존 호출은 건드리지 않고 calls 끝에만 추가한다. 추가한 호출의 인덱스 목록을 돌려준다."""
+    wanted = _wanted_tools(question)
+    if not wanted:
+        return []
+    called = {call["function"]["name"] for call in calls}
+    missing = [name for name in wanted if not called & _SATISFIED_BY[name]]
+    if not missing:
+        return []
+
+    companies = set()
+    for call in calls:
+        key = _COMPANY_ARG.get(call["function"]["name"])
+        value = normalize_name(_as_args(call["function"]["arguments"]).get(key)) if key else None
+        if value:
+            companies.add(value)
+    if len(companies) != 1:
+        return []
+    company = companies.pop()
+
+    if "market_tool" in missing and not _market_comparison_available(company):
+        missing.remove("market_tool")
+
+    added = []
+    for name in missing:
+        added.append(len(calls))
+        calls.append({"function": {"name": name, "arguments": {_COMPANY_ARG[name]: company}}})
+    return added
+
+
+# llama3.1 채팅 템플릿의 역할 헤더("<|start_header_id|>assistant<|end_header_id|>\n\n")가 본문으로 새어 나온 것.
+# 특수 토큰은 Ollama가 지우고 "assistant\n\n"만 남는다. 뒤에 줄바꿈이 올 때만(또는 특수 토큰이 그대로 남은 경우만)
+# 접두어로 본다 - "assistant는 ..."처럼 같은 줄에서 문장이 이어지는 정상 본문은 건드리지 않는다.
+_ROLE_PREFIX_RE = re.compile(
+    r"\A\s*(?:<\|start_header_id\|>\s*assistant\s*<\|end_header_id\|>\s*|assistant[ \t]*:?[ \t]*\r?\n\s*)",
+    re.IGNORECASE,
+)
+
+
+def strip_role_prefix(content):
+    """답변 맨 앞에 붙은 역할 접두어('assistant' + 줄바꿈)를 떼어낸다. 그 외 본문은 그대로 돌려준다.
+
+    원인: _answer()는 최종 답변 호출 직전에 구조화 안내(ANSWER_STRUCTURE_INSTRUCTION)를 system 메시지로 덧붙이는데,
+    llama3.1 템플릿은 마지막 메시지가 user/tool일 때만 assistant 헤더를 붙여준다. 마지막이 system이면 헤더가 없어서
+    모델이 헤더를 직접 생성하고, 그 글자가 답변 앞에 남는다(실측 5/5). 메시지 구성을 바꾸면 최종 답변 프롬프트가
+    달라지므로 여기서는 출력만 정리한다. 문자열이 아니면(extract_answer_text가 다른 타입을 돌려준 경우) 그대로 둔다."""
+    if not isinstance(content, str):
+        return content
+    return _ROLE_PREFIX_RE.sub("", content, count=1)
+
+
+def _run_tool(fn_name: str, fn_args) -> dict:
+    """tool을 안전하게 실행한다. 모르는 tool/인자, 필수 인자 누락, 실행 중 예외도 예외 대신 결과로 돌려준다."""
+    fn = AVAILABLE_FUNCTIONS.get(fn_name)
+    if fn is None:
+        return {"found": False, "error": f"unknown tool: {fn_name}"}
+
+    fn_args = _as_args(fn_args)
+
+    params = inspect.signature(fn).parameters
+    kwargs = {k: v for k, v in fn_args.items() if k in params}
+    missing = [
+        n for n, p in params.items() if p.default is inspect.Parameter.empty and kwargs.get(n) in (None, "")
+    ]
+    if missing:
+        return {"found": False, "message": f"{fn_name} 호출에 필요한 인자가 없습니다: {', '.join(missing)}"}
+
+    try:
+        return fn(**kwargs)
+    except Exception as e:
+        return {"found": False, "error": f"{fn_name} 실행 중 오류: {e}"}
+
+
+def _first_call(model: str, messages: list[dict], tools: list[dict] | None = None):
+    """1차 호출. tool 호출 JSON이 본문 텍스트로 새어 나오면 복구하고, 복구 불가면 한 번 재시도한다.
+
+    tools를 생략하면 기본 TOOLS를 쓴다.
+    Returns: (assistant message, tool_calls 또는 None). 끝내 실패하면 (None, None).
+    """
+    for _ in range(2):
+        msg = _llm_chat(model=model, messages=messages, tools=TOOLS if tools is None else tools)["message"]
+        tool_calls = msg.get("tool_calls")
+        if tool_calls:
+            return msg, tool_calls
+
+        content = msg.get("content") or ""
+        if not _mentions_tool_call(content):
+            return msg, None
+
+        recovered = _recover_text_tool_calls(content)
+        if recovered:
+            return {"role": "assistant", "content": "", "tool_calls": recovered}, recovered
+    return None, None
+
+
+# 후속 질문에 넘기는 직전 답변의 최대 길이. 저장된 답변은 보통 수백 자(dev DB 최대 314자)라서 대부분 그대로 들어가고,
+# 뉴스 목록처럼 긴 답변만 잘린다. 대화 맥락은 "무슨 종목/주제였는지"를 잇는 용도라 앞부분이면 충분하다.
+MAX_PREVIOUS_ANSWER_CHARS = 800
+
+
+def _previous_turn(previous: dict | None) -> list[dict]:
+    """직전 보고서의 질문/답변을 대화 기록(user, assistant 메시지)으로 만든다. 없으면 빈 리스트.
+
+    직전 답변을 만들 때 쓴 tool 호출/결과는 넣지 않는다(질문과 최종 답변 텍스트만)."""
+    if not previous:
+        return []
+    answer = (previous.get("answer") or "").strip()
+    if len(answer) > MAX_PREVIOUS_ANSWER_CHARS:
+        answer = answer[: MAX_PREVIOUS_ANSWER_CHARS - 1] + "…"
+    return [
+        {"role": "user", "content": previous["question"]},
+        {"role": "assistant", "content": answer},
+    ]
+
+
+# ---------- ETF 질문 ----------
+# ETF 질문에서는 (1) 가격 흐름(stock_tool)과 뉴스(news_tool)를 둘 다 보고, (2) 기간을 말하지 않았으면 기본 20거래일을 보고,
+# (3) 뉴스 기사 속 수치는 LLM에 넘기지 않고(같은 계열 다른 상품의 수치가 섞여 있다), (4) 최종 답변에 ETF 규칙(app.etf.
+# ETF_ANSWER_RULES)을 더하고, (5) 주가 조회 결과에 없는 등락률 문장은 지우고, (6) 레버리지/인버스면 고정 설명을 붙인다.
+# 주식만 나오는 질문은 이 경로를 타지 않는다(메시지·tool·후처리가 이전과 같다. 빈 섹션 정리만 공통).
+MAX_ETF_SUBJECTS = 3
+
+
+def _question_subjects(question: str, calls: list[dict]) -> list[tuple[str, str]]:
+    """질문에 나온 종목들 [(이름, asset_type)] (등장 순서). 질문에서 못 찾으면 tool 호출 인자의 종목.
+    DB 오류가 나면 빈 리스트(ETF 처리를 하지 않고 이전과 같은 경로로 간다)."""
+    try:
+        db = SessionLocal()
+        try:
+            found = [(c.name, c.asset_type) for c in extract_from_text(db, question)]
+            if not found:
+                seen = set()
+                for call in calls:
+                    key = _COMPANY_ARG.get(call["function"]["name"])
+                    raw = _as_args(call["function"]["arguments"]).get(key) if key else None
+                    company = resolve_company(db, raw).company if normalize_name(raw) else None
+                    if company is not None and company.id not in seen:
+                        seen.add(company.id)
+                        found.append((company.name, company.asset_type))
+            return found[:MAX_ETF_SUBJECTS]
+        finally:
+            db.close()
+    except Exception:
+        return []
+
+
+def _called_companies(calls: list[dict], tool: str) -> set[str]:
+    """tool 호출들이 가리키는 종목 이름(DB 등록명). 해석이 안 되는 인자는 정규화한 원문 그대로 넣는다."""
+    names = set()
+    db = SessionLocal()
+    try:
+        for call in calls:
+            if call["function"]["name"] != tool:
+                continue
+            raw = _as_args(call["function"]["arguments"]).get(_COMPANY_ARG[tool])
+            company = resolve_company(db, raw).company if normalize_name(raw) else None
+            names.add(company.name if company is not None else normalize_name(raw))
+    finally:
+        db.close()
+    return names
+
+
+def _add_etf_tools(calls: list[dict], subjects: list[tuple[str, str]]) -> list[int]:
+    """ETF 질문: 질문 속 종목마다 stock_tool, ETF마다 news_tool이 있게 한다(빠진 것만 끝에 덧붙인다). 덧붙인 인덱스 목록."""
+    added = []
+    have = {tool: _called_companies(calls, tool) for tool in ("stock_tool", "news_tool")}
+    for name, asset_type in subjects:
+        wanted = ["stock_tool"] + (["news_tool"] if asset_type == "etf" else [])
+        for tool in wanted:
+            if name in have[tool]:
+                continue
+            added.append(len(calls))
+            if tool == "stock_tool":
+                args = {"ticker": name, "period_days": DEFAULT_TREND_PERIOD_DAYS}
+            else:
+                args = {"company_name": name, "limit": 5}
+            calls.append({"function": {"name": tool, "arguments": args}})
+            have[tool].add(name)
+    return added
+
+
+def _to_period(value) -> int | None:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _apply_etf_period(calls: list[dict], question: str) -> dict[int, object]:
+    """ETF 질문의 stock_tool 기간: 기간을 말하지 않았으면 DEFAULT_TREND_PERIOD_DAYS(ETF는 하루 등락보다 흐름으로 보는 상품이고,
+    "KODEX 200이랑 삼성전자 중 어느 게 더 올랐어?"는 같은 기간으로 비교해야 한다). 기간을 말했는데 호출마다 기간이 다르면
+    (파서가 값으로 못 바꾼 "한 달" 등) 가장 긴 값으로 맞춘다. {호출 인덱스: 바꾸기 전 값}."""
+    stock = []
+    for i, call in enumerate(calls):
+        if call["function"]["name"] == "stock_tool":
+            args = _as_args(call["function"]["arguments"])
+            call["function"]["arguments"] = args
+            stock.append((i, args))
+    if not stock:
+        return {}
+    if not mentions_period(question):
+        target = DEFAULT_TREND_PERIOD_DAYS
+    else:
+        values = {_to_period(a.get("period_days")) for _, a in stock}
+        known = [v for v in values if v is not None]
+        if len(values) <= 1:
+            return {}
+        target = max(known) if known else DEFAULT_TREND_PERIOD_DAYS
+    changed = {}
+    for i, args in stock:
+        if _to_period(args.get("period_days")) != target:
+            changed[i] = args.get("period_days")
+            args["period_days"] = target
+    return changed
+
+
+def _company_names() -> list[str]:
+    """DB의 모든 종목명(질문에 없는 종목에 수치를 붙인 문장을 찾는 데 쓴다). DB 오류면 빈 리스트."""
+    try:
+        db = SessionLocal()
+        try:
+            return [n for (n,) in db.query(Company.name)]
+        finally:
+            db.close()
+    except Exception:
+        return []
+
+
+def _finish_etf_answer(answer: str, records: list[dict], subjects: list[tuple[str, str]]) -> str:
+    """ETF 답변 후처리(app.etf): LLM 답변에서 조회 결과와 맞지 않는 문장을 지우고(check_etf_answer), 가격·뉴스 섹션은 코드가
+    조회 결과로 쓰고(compose_etf_answer), 두 종목 이상이면 코드가 계산한 비교 문장, 레버리지/인버스 ETF면 고정 설명을 붙인다."""
+    prices = [
+        {**r["result"], "company_name": r["result"].get("company_name") or r["arguments"].get("ticker")}
+        for r in records
+        if r["tool_name"] == "stock_tool" and isinstance(r["result"], dict) and r["result"].get("found")
+    ]
+    news = [r["result"] for r in records if r["tool_name"] == "news_tool" and isinstance(r["result"], dict)]
+    answer, _ = check_etf_answer(answer, {p["company_name"]: p for p in prices}, _company_names())
+    answer = compose_etf_answer(remove_empty_sections(answer), prices, news).strip() or FALLBACK_ANSWER
+    extra = [comparison_sentence(prices)]
+    extra += [leverage_notice(name, kind) for name, t in subjects if t == "etf" and (kind := leverage_kind(name))]
+    return "\n\n".join([answer, *[e for e in extra if e]])
+
+
+# ---------- 사건(뉴스·공시) 이후 주가 반응 질문 ----------
+# app/routing.py의 needs_event_reaction_tool 게이트를 통과하고 종목이 하나로 특정되면, 1차 호출(tool 선택)을 하지 않고 코드가
+# event_reaction_tool을 실행한다. 사건별 수치·요약·면책 문구는 코드가 쓰고(app/event_answer.py), LLM은 해석 두세 문장만 쓰며
+# 그 문장은 결과와 대조해 맞지 않으면 지운다. 게이트를 통과하지 않은 질문은 이 경로를 전혀 타지 않는다(프롬프트·tool 선택·
+# 기간 처리가 이전과 같다).
+# LLM이 고른 stock_tool/news_tool 결과를 함께 쓰지 않는 이유: 사건 구간과 무관한 기간의 수치와 기사 본문(수치·"~때문에 상승"
+# 같은 주장)이 해석 문장으로 섞여 들어와 검증해야 할 범위가 커진다. 이 질문의 답에 필요한 수치는 event_reaction_tool에 다 있다.
+EVENT_TOOL_LIMIT = 5
+# 사건 반응 답변의 LLM 해석(## 해석)은 기본으로 끈다: 검증을 통과한 해석 문장이 30회 중 3~6회만 남고, 남아도 한 줄의 주의 문구 수준이며
+# 어색한 문장이 통과하는 일도 있었다(README "알려진 한계"). 켜려면 환경변수를 1/true/on으로 설정한다. 꺼져 있으면 Ollama를 호출하지 않으므로
+# 이 경로의 답변은 Ollama 없이도 나오고 응답이 빠르다(질문 이해와 tool 선택은 코드 게이트가 한다).
+EVENT_LLM_INTERPRETATION_ENV = "EVENT_REACTION_LLM_INTERPRETATION"
+
+
+def event_llm_interpretation_enabled() -> bool:
+    return os.environ.get(EVENT_LLM_INTERPRETATION_ENV, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _event_subject(question: str, previous: dict | None = None) -> str | None:
+    """사건 반응 질문이면 대상 종목 이름(DB 등록명), 아니면 None. 질문에서 종목이 정확히 하나일 때만 정한다(둘 이상이면 어느
+    종목의 사건인지 정할 수 없어 기존 경로로 간다). 질문에 종목이 없고 후속 질문이면 직전 질문의 종목이 하나일 때 그 종목.
+    DB 오류면 None(기존 경로)."""
+    if not needs_event_reaction_tool(question):
+        return None
+    try:
+        db = SessionLocal()
+        try:
+            found = extract_from_text(db, question)
+            if not found and previous:
+                found = extract_from_text(db, previous.get("question") or "")
+            return found[0].name if len(found) == 1 else None
+        finally:
+            db.close()
+    except Exception:
+        return None
+
+
+def _answer_event(question: str, model: str, company: str, previous: dict | None = None) -> tuple[dict, list[dict]]:
+    """사건 반응 질문의 답변. 코드가 event_reaction_tool을 실행하고 섹션·요약·면책 문구를 쓴다.
+    LLM 해석은 EVENT_REACTION_LLM_INTERPRETATION이 켜진 경우에만 만들고(기본 꺼짐) 검증(check_event_answer)을 통과한 문장만 붙인다.
+    대상 사건이 없거나 계산된 수익률이 하나도 없으면 켜져 있어도 LLM을 부르지 않는다. Ollama가 응답하지 않아도 코드가 쓴 섹션만으로 답한다."""
+    args = {
+        "company_name": company,
+        "event_type": event_type_for(question),
+        "limit": EVENT_TOOL_LIMIT,
+        "keyword": event_keyword_for(question, TITLE_KEYWORDS),
+    }
+    called_at = datetime.now(timezone.utc)
+    started = time.perf_counter()
+    try:
+        result = event_reaction_tool(**args)
+    except Exception as e:
+        result = {"found": False, "message": f"event_reaction_tool 실행 중 오류: {type(e).__name__}"}
+    result = trim_result(result)  # 답변에 쓰는 사건만(같은 날짜 뉴스 묶기 후 항목 수 제한)
+    result.setdefault("called_via", "event_reaction_gate")
+    record = {
+        "tool_name": "event_reaction_tool",
+        "arguments": args,
+        "result": result,
+        "called_at": called_at,
+        "elapsed_ms": round((time.perf_counter() - started) * 1000),
+    }
+
+    interpretation = ""
+    # 계산된 수익률이 하나도 없으면(사건이 모두 너무 최근) 해석할 수치가 없어서 모델을 부르지 않는다. 이때 모델은 "다른 정보를
+    # 제공해드리겠습니다" 같은 내용 없는 문장이나 기사 관련성 추측만 썼다(slow 측정).
+    if event_llm_interpretation_enabled() and result.get("found") and (display_summary(result).get("with_d1") or 0) > 0:
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            *FEW_SHOT_MESSAGES,
+            *_previous_turn(previous),
+            {"role": "user", "content": question},
+            {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "event_reaction_tool", "arguments": args}}]},
+            {"role": "tool", "content": json.dumps(event_result_for_llm(result), ensure_ascii=False)},
+            {"role": "system", "content": EVENT_ANSWER_RULES},
+        ]
+        try:
+            final = ollama.chat(model=model, messages=messages, **call_options())
+            text = strip_role_prefix(extract_answer_text(final["message"]["content"]))
+            if isinstance(text, str) and not _mentions_tool_call(text):
+                interpretation, dropped = check_event_answer(remove_empty_sections(text), result, _company_names())
+                result.setdefault("dropped_sentences", [{"sentence": s, "reason": r} for s, r in dropped])
+        except (ConnectionError, ollama.ResponseError):
+            interpretation = ""
+
+    notices = []
+    if result.get("asset_type") == "etf" and (kind := leverage_kind(result.get("company_name") or "")):
+        notices.append(leverage_notice(result["company_name"], kind))
+    answer = compose_event_answer(interpretation, result, notices)
+    response = {
+        "answer": answer,
+        "used_tools": ["event_reaction_tool"],
+        "sources": build_sources([("event_reaction_tool", result)]),
+    }
+    return response, [record]
+
+
+# ---------- LLM 전에 코드가 답을 만드는 질문 ----------
+# 평가 기준선(backend/evals, 2026-10-27)에서 LLM이 숫자·정의를 지어낸 유형은 LLM을 부르지 않고 코드가 답한다:
+# (C) 종목 없는 용어 정의 질문 -> app/glossary.py, (B) ETF 구성종목·비중 질문 -> 수집한 운용사 공시 PDF가 있으면 코드 템플릿,
+# 없으면 제공하지 않음 안내(2026-10-29: KODEX·TIGER만 수집, app/etf_holdings.py),
+# (A) 보유 시세보다 앞선 기간의 시세 질문 -> 범위 밖 안내 또는 겹치는 구간만 코드가 요약(app/period_scope.py).
+# 셋 다 해당하지 않는 질문은 이전과 같은 흐름이다(사건 반응 경로가 이보다 먼저다).
+
+
+def _code_answer(answer: str, records: list[dict] | None = None) -> tuple[dict, list[dict]]:
+    records = records or []
+    response = {
+        "answer": answer,
+        "used_tools": [r["tool_name"] for r in records],
+        "sources": build_sources((r["tool_name"], r["result"]) for r in records),
+    }
+    return response, records
+
+
+def _question_companies(question: str) -> list | None:
+    """질문 원문의 종목들. DB 오류면 None(코드 답변 경로를 모두 건너뛰고 기존 흐름으로 간다)."""
+    try:
+        db = SessionLocal()
+        try:
+            return extract_from_text(db, question)
+        finally:
+            db.close()
+    except Exception:
+        return None
+
+
+def _answer_concept(question: str, companies: list | None):
+    """(C) 종목이 없는 정의 질문("PER이 뭐야?")은 용어 사전으로 답한다. 사전에 없는 용어면 모른다고 답한다."""
+    if companies is None or companies:
+        return None
+    text = concept_answer(question)
+    return _code_answer(text) if text else None
+
+
+def _answer_order_command(question: str):
+    """주문 실행 요청 문장("삼성전자 10주 사줘")은 LLM에 보내지 않고 고정 안내로 답한다. 채팅은 주문을 실행하지 않는다.
+    질문에서 종목이 정확히 하나면(질문 추출은 정확 이름·별칭만) 단순 시세와 같은 방식으로 현재가 한 줄을 붙인다."""
+    if not outlook.is_order_command(question):
+        return None
+    companies = _question_companies(question) or []
+    records = []
+    answer = outlook.ORDER_GUIDE_ANSWER
+    if len(companies) == 1:
+        called_at = datetime.now(timezone.utc)
+        started = time.perf_counter()
+        args = {"ticker": companies[0].name, "period_days": 1}
+        result = code_answers.latest_of(_run_tool("stock_tool", {**args, "period_days": 2}), datetime.now(KST))
+        quote = quote_answer(result)
+        if quote is not None:
+            if isinstance(result, dict):
+                result.setdefault("called_via", "order_command")
+            answer += "\n\n참고 시세: " + quote
+            # 2026-11-07(35차): 참고 시세는 저장된 종가다. 기준일·기대 거래일·지연을 밝힌다(주문 체결 가격과는 별개, 체결 로직 불변)
+            if (line := _quote_freshness_line(result)) is not None:
+                answer += "\n" + line
+            records.append({"tool_name": "stock_tool", "arguments": args, "result": result, "called_at": called_at,
+                            "elapsed_ms": round((time.perf_counter() - started) * 1000)})
+    return _code_answer(answer, records)
+
+
+def _quote_price_status(base, now: datetime) -> dict | None:
+    """지연(1영업일 이상)일 때만 전망 답과 같은 늦은 이유를 추정한다(app.outlook.price_status: 휴장일 달력 대신 수집 기록).
+    조회에 실패해도 답은 이유 없이 그대로 나간다."""
+    if quote_freshness.status(base, now)["lag"] < 1:
+        return None
+    db = SessionLocal()
+    try:
+        return outlook.price_status(db, base, now)
+    except Exception as e:  # noqa: BLE001 - 이유 추정은 부가 정보다
+        logger.warning("시세 지연 이유 조회 실패: %s", e)
+        return None
+    finally:
+        db.close()
+
+
+def _quote_freshness_line(result) -> str | None:
+    """(35차) 저장 종가 답(단순 시세·주문 참고 시세·확정 요청 참고 시세)의 기준일·지연 줄. 늦은 이유는 결과에 price_status로 남겨
+    언어별 템플릿·번역 실패 폴백(app.quote_i18n)이 같은 문장을 다시 만든다."""
+    base = quote_freshness.base_of(result)
+    if base is None:
+        return None
+    now = datetime.now(KST)
+    st = _quote_price_status(base, now)
+    if st is not None and isinstance(result, dict):
+        result["price_status"] = st
+    return quote_freshness.line(base, now, price_status=st)
+
+
+def _latest_quote_record(company, called_via: str):
+    """저장된 최근 종가(장중이면 직전 거래일) 한 건의 (stock_tool 기록, 한 줄 답). 시세가 없으면 (None, None)."""
+    called_at = datetime.now(timezone.utc)
+    started = time.perf_counter()
+    args = {"ticker": company.name, "period_days": 1}
+    result = code_answers.latest_of(_run_tool("stock_tool", {**args, "period_days": 2}), datetime.now(KST))
+    quote = quote_answer(result)
+    if quote is None:
+        return None, None
+    if isinstance(result, dict):
+        result.setdefault("called_via", called_via)
+    record = {"tool_name": "stock_tool", "arguments": args, "result": result, "called_at": called_at,
+              "elapsed_ms": round((time.perf_counter() - started) * 1000)}
+    return record, quote
+
+
+def _answer_request_safety(question: str):
+    """(35차) 목표주가 확정·특정 시점 가격·수익 보장·매수 시점 일반 질문은 LLM 없이 요청 종류별 안내로 답한다(app/request_safety).
+    종목이 정확히 하나면 저장된 최근 종가와 기준일·지연 안내를 참고 정보로 붙인다. 목표가·확률·기대수익률은 쓰지 않는다."""
+    companies = _question_companies(question) or []
+    kind = request_safety.classify(question, has_company=bool(companies))
+    if kind is None:
+        return None
+    company = companies[0] if len(companies) == 1 else None
+    records, reference = [], None
+    if company is not None:
+        record, quote = _latest_quote_record(company, "request_safety")
+        if record is not None:
+            line = _quote_freshness_line(record["result"])
+            reference = "참고 시세: " + quote + ("\n" + line if line else "")
+            records.append(record)
+    return _code_answer(request_safety.answer(kind, company.name if company else None, reference), records)
+
+
+_NO_SUBJECT_ANSWER = ("어떤 종목의 주가를 볼지 알 수 없습니다. 종목 이름이나 종목코드를 넣어 다시 물어봐 주세요. "
+                      "예: \"삼성전자 현재가 알려줘\", \"005930 최근 종가 알려줘\". 시장 전체는 \"지금 시장 상황이 어때?\"로 물어볼 수 있습니다.")
+
+
+# 종목 없는 시세 질문을 이루는 일반어(앞부분 일치). 이것 말고 남는 단어가 있으면 종목 이름(오타·음차 포함)일 수 있다
+_QUOTE_STOPWORDS = ("오늘", "지금", "현재", "요즘", "최근", "어제", "이번", "주가", "주식", "가격", "시세", "종가", "시가", "얼마", "몇",
+                    "알려", "보여", "말해", "줘", "주세요", "좀", "혹시", "이거", "이것", "그거", "해당", "종목", "원", "어때", "어떻", "궁금")
+
+
+def _has_only_quote_words(question: str) -> bool:
+    tokens = re.findall(r"[0-9A-Za-z가-힣]+", question or "")
+    return bool(tokens) and all(t.startswith(_QUOTE_STOPWORDS) for t in tokens)
+
+
+def _answer_missing_subject(question: str, companies: list | None):
+    """(35차) 종목 없이 시세만 묻는 질문("오늘 주가가 얼마야?")은 종목을 정하지 않고 되묻는다. 33~35차 live에서 LLM이 임의로 삼성전자를
+    조회해 답했다(질문에 없는 종목). 시장·환율·탐색 질문은 is_simple_quote가 이미 뺀다.
+    질문 추출(정확 이름·별칭)이 못 찾았어도 일반어 밖의 단어가 있으면("삼성잔자 주가 알려줘") 기존 흐름이다: LLM 경로의 리졸버가
+    후보를 되묻는다(2026-11-08, 이 처리가 오타 질문까지 막던 것을 고침)."""
+    if companies is None or companies or market_overview.is_overview_question(question):
+        return None
+    if not _has_only_quote_words(question):
+        return None
+    if not is_simple_quote(question, mentions_period(question), _period_text(question)):
+        return None
+    return _code_answer(_NO_SUBJECT_ANSWER)
+
+
+def _answer_market_overview(question: str, companies: list | None):
+    """(35차) 종목 없는 시장 상황 질문은 저장된 지수·상승 하락 종목 수로 코드가 정리한다(app/market_overview)."""
+    if companies is None or companies or not market_overview.is_overview_question(question):
+        return None
+    called_at = datetime.now(timezone.utc)
+    started = time.perf_counter()
+    db = SessionLocal()
+    try:
+        data = market_overview.compute(db)
+    finally:
+        db.close()
+    result = {"found": bool(data["indexes"]), "indexes": {k: {**v, "date": v["date"].isoformat()} for k, v in data["indexes"].items()},
+              "breadth": {**data["breadth"], "date": data["breadth"]["date"].isoformat()} if data.get("breadth") else None,
+              "called_via": "market_overview"}
+    record = {"tool_name": "market_overview", "arguments": {}, "result": result, "called_at": called_at,
+              "elapsed_ms": round((time.perf_counter() - started) * 1000)}
+    return _code_answer(market_overview.answer(data, datetime.now(KST)), [record])
+
+
+def _answer_market_ranking(question: str, companies: list | None):
+    """(35차) 종목을 특정하지 않은 거래량 상위·거래량 급증 질문은 저장된 시세로 코드가 순위를 답한다(app/market_ranking)."""
+    if companies is None or companies:
+        return None
+    kind = market_ranking.kind_of(question)
+    if kind is None:
+        return None
+    from app.discovery import get_trending
+
+    market, limit = market_ranking.market_of(question), market_ranking.limit_of(question)
+    called_at = datetime.now(timezone.utc)
+    started = time.perf_counter()
+    db = SessionLocal()
+    try:
+        result = get_trending(db, kind, limit, market=market)
+    finally:
+        db.close()
+    record = {"tool_name": "discovery_tool", "arguments": {"category": kind, "limit": limit, "market": market}, "result": result,
+              "called_at": called_at, "elapsed_ms": round((time.perf_counter() - started) * 1000)}
+    return _code_answer(market_ranking.answer(result, kind, market, datetime.now(KST)), [record])
+
+
+def _forecast_subject(question: str, previous: dict | None):
+    """전망·후속 결론 경로의 (종목, 기간 표식, 모드). 이 경로가 아니면 None, 종목을 되물어야 하면 (None, None, "ask").
+
+    모드: "forecast"(전체 분석) 또는 followup_kind(verdict/pick/compare/probability/buy/risk), 또는 직전 분석에 이어 실적 반영·시세
+    기준일을 묻는 "earnings"/"data"(2026-11-04). 종목은 질문에서 정확히 1개, 없으면 직전 리포트의 종목(previous["company_name"],
+    저장 시 도구 결과의 종목이 정확히 1개일 때만 채워진다)을 이어받는다. 여러 개면 기존 흐름이다."""
+    special = outlook.special_followup_kind(question)
+    marker = outlook.marker_of(previous.get("answer")) if previous else None
+    if special == "detail":
+        special = "forecast"  # 26차: "전체적으로 자세히 분석해 줘" -> 직전 종목·기간의 상세 리서치
+    if special and marker:
+        # "최신 실적까지 반영해서 다시 판단해줘", "최신 주가 데이터가 없으면?": 직전 분석(표식)이 있을 때만 이 경로다
+        companies = _question_companies(question)
+        if companies is None or len(companies) > 1:
+            return None
+        prev_name = (previous or {}).get("company_name") or marker.get("name")
+        if companies and companies[0].name != prev_name:
+            return None
+        if companies:
+            return companies[0], marker, special
+        db = SessionLocal()
+        try:
+            company = db.query(Company).filter(Company.name == prev_name).first()
+        finally:
+            db.close()
+        return (company, marker, special) if company is not None else None
+    forecast = outlook.is_forecast_question(question)
+    verdict = outlook.is_followup_verdict_question(question)
+    if not (forecast or verdict):
+        return None
+    companies = _question_companies(question)
+    if companies is None or len(companies) > 1:
+        return None
+    prev_name = (previous or {}).get("company_name") or (marker or {}).get("name")
+    if companies:
+        company = companies[0]
+        if verdict and not forecast and marker and company.name == prev_name:
+            return company, marker, outlook.followup_kind(question)
+        return (company, marker if marker and company.name == prev_name else None, _forecast_mode(question)) if forecast else None
+    if prev_name:
+        db = SessionLocal()
+        try:
+            company = db.query(Company).filter(Company.name == prev_name).first()
+        finally:
+            db.close()
+        if company is not None:
+            # 25차: 직전 분석과 같은 기간을 다시 묻는 방향 질문("상승할까 하락할까?", "지금 사면 일주일 뒤 오를까?")도 전체 분석을
+            # 다시 찍지 않고 짧은 후속 답이다. 기간이 다르면(예: "한 달 뒤는?") 그 기간의 전체 분석이다.
+            if marker and (verdict or outlook.period_in(question) in (None, marker.get("period"))):
+                return company, marker, outlook.followup_kind(question)
+            if forecast:
+                return company, marker, _forecast_mode(question)
+            return None
+    return (None, None, "ask") if outlook.asks_subject(question) else None
+
+
+def _forecast_mode(question: str) -> str:
+    """전망 질문의 모드(26차): 상세 요청("자세히", "분석해줘", "리포트", "뉴스와 공시까지 …")이면 "forecast"(상세 리서치), 아니면 "brief"(간결)."""
+    return "forecast" if outlook.wants_detail(question) else "brief"
+
+
+def _answer_forecast(question: str, previous: dict | None):
+    """전망·방향·매수 가부 질문과 후속 결론 질문(app/outlook.py). LLM 없이 코드가 계산하고 문장도 코드가 만든다."""
+    found = _forecast_subject(question, previous)
+    if found is None:
+        return None
+    company, marker, mode = found
+    if mode == "ask":
+        return _code_answer(outlook.ASK_SUBJECT_ANSWER)
+    label = outlook.period_in(question) or (marker or {}).get("period") or outlook.DEFAULT_PERIOD
+    period = outlook.PERIODS[label]
+    now = datetime.now(KST)
+    called_at = datetime.now(timezone.utc)
+    started = time.perf_counter()
+    db = SessionLocal()
+    try:
+        res = outlook.analyze(db, company, period, now)
+        if res is None:
+            return _code_answer(outlook.no_data_answer(company))
+        news, disclosures = outlook.evidence(db, company, period, now) if mode == "forecast" else ([], [])
+        fx = outlook.fx_summary(db, period, res["indicators"]["base_date"]) if mode == "forecast" else None
+        indirect, earnings_rows, extra = None, None, {}
+        if mode == "signal":
+            extra = {"term": outlook.signal_term(question)}
+        if mode in ("earnings", "filing"):
+            # 실적 후속 답: 최근 분기(잠정 포함)와, 최신 실적 발표(접수)일 직전 거래일 종가 -> 기준일 종가
+            rows_e = earnings.recent_for_answer(db, company, n=8)
+            extra = {"earnings": rows_e, "quarter": outlook.quarter_in(question, now)}
+            if rows_e:
+                before = (db.query(StockPrice.price_date, StockPrice.close_price)
+                          .filter(StockPrice.company_id == company.id,
+                                  StockPrice.price_date < date.fromisoformat(rows_e[0]["disclosed_date"]))
+                          .order_by(StockPrice.price_date.desc()).first())
+                if before is not None:
+                    extra["reaction"] = {"before_date": before[0].isoformat(), "before_close": float(before[1]),
+                                         "base_date": res["indicators"]["base_date"], "base_close": res["indicators"]["close"]}
+        if mode == "forecast":
+            # 간접 관련 뉴스(업종·기초지수)는 직접 관련 섹션과 따로 보이고 신호 판정에 쓰지 않는다. 실적도 참고 정보다(2026-11-03).
+            indirect = related_news.indirect_news(db, company, now - timedelta(days=period.news_days),
+                                                  exclude_urls=[n.get("url") for n in news])
+            earnings_rows = earnings.recent_for_answer(db, company)
+    finally:
+        db.close()
+    elapsed = round((time.perf_counter() - started) * 1000)
+    args = {"ticker": company.name, "period": period.label}
+    result = {"company_name": company.name, "ticker": company.ticker, "found": True, "called_via": f"forecast_{mode}",
+              "period": period.label, "label": res["label"], "indicators": res["indicators"], "signals": res["signals"],
+              "data": res["data"]}
+    records = [{"tool_name": "stock_tool", "arguments": args, "result": result, "called_at": called_at, "elapsed_ms": elapsed}]
+    rel = res["indicators"].get("relative")
+    if rel:
+        records.append({"tool_name": "market_tool", "arguments": args, "called_at": called_at, "elapsed_ms": 0,
+                        "result": {"company_name": company.name, "found": True, "called_via": f"forecast_{mode}", **rel}})
+    if mode == "forecast":
+        if news or company.asset_type != "etf":
+            records.append({"tool_name": "news_tool", "arguments": {"company_name": company.name, "since_days": period.news_days},
+                            "called_at": called_at, "elapsed_ms": 0,
+                            "result": {"company_name": company.name, "found": bool(news), "news": news, "called_via": "forecast"}})
+        if company.asset_type != "etf":
+            records.append({"tool_name": "disclosure_tool", "arguments": {"company_name": company.name, "since_days": period.news_days},
+                            "called_at": called_at, "elapsed_ms": 0,
+                            "result": {"company_name": company.name, "found": bool(disclosures), "disclosures": disclosures,
+                                       "called_via": "forecast"}})
+        answer = outlook.forecast_answer(company, period, res, news, disclosures, fx, now, indirect, earnings_rows)
+    elif mode == "brief":
+        answer = outlook.brief_answer(company, period, res, now)
+    else:
+        answer = outlook.followup_answer(company, period, res, mode, now, extra)
+    return _code_answer(answer, records)
+
+
+def _answer_price_flow(question: str, companies: list | None):
+    """최근 N거래일 주가 흐름(수익률·이동평균·거래량·국면) 질문, 종목 하나(app/price_flow, 2026-11-06). LLM 없이 코드가 계산한다.
+
+    기간 해석이 "1일·5일·20일 수익률"의 "1일"을 조회 기간으로 읽어 1일 시세만 조회하던 질문이다. 기간 질문 경로보다 먼저 본다."""
+    if not companies or len(companies) != 1 or not price_flow.is_price_flow_question(question):
+        return None
+    company = companies[0]
+    w = price_flow.windows(question)
+    now = datetime.now(KST)
+    called_at = datetime.now(timezone.utc)
+    started = time.perf_counter()
+    db = SessionLocal()
+    try:
+        rows = outlook.price_rows(db, company, now)
+        res = outlook.analyze(db, company, outlook.PERIODS[outlook.DEFAULT_PERIOD], now, rows=rows)
+    finally:
+        db.close()
+    if res is None:
+        return _code_answer(outlook.no_data_answer(company))
+    flow = price_flow.compute(rows, w)
+    result = {"company_name": company.name, "ticker": company.ticker, "found": True, "called_via": "price_flow",
+              "windows": {k: list(v) if isinstance(v, tuple) else v for k, v in w.items()}, "flow": flow,
+              "label": res["label"], "indicators": res["indicators"], "signals": res["signals"], "data": res["data"]}
+    records = [{"tool_name": "stock_tool", "arguments": {"ticker": company.name, "period_days": w["window"]}, "result": result,
+                "called_at": called_at, "elapsed_ms": round((time.perf_counter() - started) * 1000)}]
+    return _code_answer(price_flow.answer(company, flow, res, now), records)
+
+
+def _answer_etf_constituents(question: str, companies: list | None):
+    """(B) ETF 구성종목·편입 비중 질문. 수집한 구성종목(운용사 공시 PDF)이 있는 ETF는 코드 템플릿으로 답하고(LLM을 부르지 않는다),
+    데이터가 없는 ETF는 제공하지 않는다고 답한다(구성종목을 지어내지 않는다). DB를 읽지 못해도 제공하지 않음 답변으로 돌아간다."""
+    etf_companies = [c for c in companies or [] if getattr(c, "asset_type", None) == "etf"]
+    if not etf_companies or not asks_constituents(question):
+        return None
+    names = [c.name for c in etf_companies]
+    try:
+        db = SessionLocal()
+        try:
+            views, missing = chat_views(db, etf_companies)
+        finally:
+            db.close()
+    except Exception:
+        return _code_answer(constituents_answer(names))
+    if not views:
+        return _code_answer(constituents_answer(names))
+    return _code_answer(constituents_chat_answer(views, missing, constituents_answer, requested_top_n(question)))
+
+
+def _price_dict(row) -> dict:
+    return {
+        "price_date": row.price_date.isoformat(),
+        "close_price": float(row.close_price),
+        "volume": row.volume,
+        "change_pct": float(row.change_pct) if row.change_pct is not None else None,
+    }
+
+
+def _period_scope_parts(company, requested) -> tuple[str, dict] | None:
+    """요청 기간이 그 종목의 보유 시세보다 앞서거나 걸치면 (답변 문장, stock_tool 모양의 결과). 범위 안이거나 읽지 못하면 None."""
+    try:
+        db = SessionLocal()
+        try:
+            data_start, data_end = (
+                db.query(func.min(StockPrice.price_date), func.max(StockPrice.price_date))
+                .filter(StockPrice.company_id == company.id)
+                .one()
+            )
+            scope = period_scope.classify(requested, data_start, data_end)
+            if scope is None:
+                return None
+            result = {
+                "found": True,
+                "ticker": company.ticker,
+                "company_name": company.name,
+                "requested_start": requested.start.isoformat(),
+                "requested_end": requested.end.isoformat(),
+                "data_start": data_start.isoformat(),
+                "data_end": data_end.isoformat(),
+                "scope": scope.kind,
+                "called_via": "period_scope",
+            }
+            if scope.kind == "outside":
+                row = (
+                    db.query(StockPrice).filter(StockPrice.company_id == company.id)
+                    .order_by(StockPrice.price_date.desc()).first()
+                )
+                latest = _price_dict(row) if row is not None else None
+                result["latest"] = latest
+                answer = period_scope.outside_answer(company.name, scope, latest)
+            else:
+                rows = (
+                    db.query(StockPrice)
+                    .filter(StockPrice.company_id == company.id,
+                            StockPrice.price_date >= max(requested.start, data_start),
+                            StockPrice.price_date <= min(requested.end, data_end))
+                    .order_by(StockPrice.price_date).all()
+                )
+                prices = [_price_dict(r) for r in rows]
+                if not prices:
+                    return None
+                summary = summarize_period(company.name, prices)
+                result.update({**summary, "prices": prices})
+                text = summary.get("summary") or (
+                    f"{company.name}의 {prices[-1]['price_date']} 종가는 {prices[-1]['close_price']:,.0f}원입니다."
+                )
+                answer = period_scope.partial_answer(company.name, scope, prices, text)
+        finally:
+            db.close()
+    except Exception:
+        return None
+    return answer, result
+
+
+def _answer_period_scope(question: str, companies: list | None, today=None):
+    """(A) 질문에 명시한 기간이 그 종목의 보유 시세보다 앞서면 코드가 답한다. 범위 안이거나 기간이 없으면 None(기존 흐름).
+
+    종목이 정확히 하나이고 시세를 묻는 질문일 때만 본다. 기록은 stock_tool 이름으로 남기되 result.called_via="period_scope"다."""
+    if not companies or len(companies) != 1 or not period_scope.PRICE_INTENT_RE.search(question or ""):
+        return None
+    requested = period_scope.requested_period(question, today or datetime.now(KST).date())
+    if requested is None:
+        return None
+    company = companies[0]
+    called_at = datetime.now(timezone.utc)
+    parts = _period_scope_parts(company, requested)
+    if parts is None:
+        return None
+    answer, result = parts
+    if getattr(company, "asset_type", None) == "etf" and (kind := leverage_kind(company.name)):
+        answer += "\n\n" + leverage_notice(company.name, kind)
+    record = {
+        "tool_name": "stock_tool",
+        "arguments": {"ticker": company.name, "start_date": requested.start.isoformat(),
+                      "end_date": requested.end.isoformat()},
+        "result": result,
+        "called_at": called_at,
+        "elapsed_ms": 0,
+    }
+    return _code_answer(answer, [record])
+
+
+def _period_text(question: str) -> str | None:
+    parsed = parse_period(question)
+    return parsed.matched_text if parsed else None
+
+
+def _with_freshness(answer: str, question: str, records: list[dict]) -> str:
+    """(C) 현재 시점 시세 질문인데 마지막 데이터가 오래됐으면 "마지막 데이터는 YYYY-MM-DD 기준입니다."를 붙인다."""
+    note = freshness_note(question, records, datetime.now(KST).date(), _period_text(question))
+    return f"{answer}\n\n{note}" if note else answer
+
+
+def _answer_simple_quote(question: str, companies: list | None):
+    """(B) 단일 종목의 현재가·등락률·거래량만 묻는 질문은 LLM 없이 stock_tool 결과로 코드가 답한다.
+    원인·흐름·비교·뉴스·기간 등이 섞인 질문은 기존 흐름이다(app/answer_guard.is_simple_quote)."""
+    if not companies or len(companies) != 1:
+        return None
+    if not is_simple_quote(question, mentions_period(question), _period_text(question)):
+        return None
+    company = companies[0]
+    called_at = datetime.now(timezone.utc)
+    started = time.perf_counter()
+    args = {"ticker": company.name, "period_days": 1}
+    # 2026-10-28부터 2일치를 읽어, 장중(평일 15:30 전)에는 오늘 행(장중 값)을 종가로 쓰지 않고 직전 거래일 종가로 답한다
+    # (app.code_answers.latest_of, 브리핑과 같은 장중 규칙). 기록·답변은 1일 결과다. LLM 경로의 stock_tool은 그대로다.
+    result = code_answers.latest_of(_run_tool("stock_tool", {**args, "period_days": 2}), datetime.now(KST))
+    answer = quote_answer(result)
+    if answer is None:
+        return None
+    if isinstance(result, dict):
+        result.setdefault("called_via", "simple_quote")
+    if getattr(company, "asset_type", None) == "etf" and (kind := leverage_kind(company.name)):
+        answer += "\n\n" + leverage_notice(company.name, kind)
+    record = {"tool_name": "stock_tool", "arguments": args, "result": result, "called_at": called_at,
+              "elapsed_ms": round((time.perf_counter() - started) * 1000)}
+    # 2026-11-07(35차): "오늘·지금"이 없는 시세 질문에도 기준일·저장 종가·지연을 밝힌다(이전에는 현재 시점 질문 + 2영업일 지연일 때만)
+    line = _quote_freshness_line(result)
+    if line is not None:
+        answer += "\n\n" + line
+    else:
+        answer = _with_freshness(answer, question, [record])
+    return _code_answer(_with_intraday_note(answer, [record]), [record])
+
+
+def _with_intraday_note(answer: str, records: list[dict]) -> str:
+    """장중이라 오늘 행(장중 값)을 빼고 답했으면 그 사실을 밝힌다(왜 오늘이 아니라 직전 거래일 종가인지)."""
+    note = code_answers.intraday_note(records)
+    return f"{answer}\n\n{note}" if note else answer
+
+
+# 기간 창을 만들 때 시작일 이전(기준 종가)과 연휴로 빈 날을 감안해 더 읽는 행 수
+_WINDOW_SLACK_ROWS = 20
+
+
+def _load_price_rows(company, limit: int) -> list:
+    """종목의 최근 limit개 시세 행(최신순). stock_tool은 60거래일 상한이 있어 기간 템플릿("3개월")은 이 함수로 읽는다."""
+    db = SessionLocal()
+    try:
+        return recent_price_rows(db, company.id, limit)
+    finally:
+        db.close()
+
+
+def _price_window(company, period_days: int, start, end=None) -> dict | None:
+    """start~end의 날짜 창으로 만든 stock_tool 결과 모양의 dict(장중 규칙 적용). 실패하면 None(기존 흐름으로 간다)."""
+    try:
+        rows = _load_price_rows(company, period_days + _WINDOW_SLACK_ROWS)
+    except Exception:
+        return None
+    return code_answers.window_result(company, rows, start, datetime.now(KST), "period_quote", end=end)
+
+
+def _answer_period_quote(question: str, companies: list | None):
+    """(B, 2026-10-28) 기간 수익률·기간 최고/최저가(종목 1개), 같은 기간 두 종목 비교는 LLM 없이 코드가 답한다(app/code_answers.py).
+    유형이 애매하거나 두 종목의 시세 날짜가 맞지 않으면 None(기존 LLM 흐름)."""
+    if not companies:
+        return None
+    parsed = parse_period(question)
+    kind = code_answers.classify(question, len(companies), parsed is not None)
+    if kind is None:
+        return None
+    called_at = datetime.now(timezone.utc)
+    results = [_price_window(c, parsed.period_days, parsed.start_date, parsed.end_date) for c in companies]
+    if any(r is None for r in results):
+        return None
+    if kind == code_answers.KIND_COMPARE:
+        compared = code_answers.compare(results[0], results[1])
+        if compared is None:
+            return None
+        answer, diff = compared
+        for r in results:
+            r["compared_diff_pct_point"] = diff  # 비교 문장의 %p 값도 기록(평가·검증의 근거)에 남긴다
+    else:
+        answer = code_answers.single_answer(kind, results[0])
+    for c in companies:
+        if getattr(c, "asset_type", None) == "etf" and (lk := leverage_kind(c.name)):
+            answer += "\n\n" + leverage_notice(c.name, lk)
+    records = [{"tool_name": "stock_tool", "arguments": {"ticker": c.name, "period_days": parsed.period_days},
+                "result": r, "called_at": called_at, "elapsed_ms": 0} for c, r in zip(companies, results)]
+    return _code_answer(_with_intraday_note(answer, records), records)
+
+
+def _history_day_parts(db, company, day, requested, data_end, question: str) -> tuple[str, dict] | None:
+    """특정 하루의 답(거래일이면 그날 값, 아니면 사유와 직전 거래일 값)."""
+    rows = price_rows_between(db, company.id, day, day)
+    base = {"ticker": company.ticker, "company_name": company.name, "found": True, "called_via": "period_history",
+            "requested_start": requested.start.isoformat(), "requested_end": requested.end.isoformat()}
+    if rows:
+        row = {**_price_dict(rows[0]), "open_price": float(rows[0].open_price) if rows[0].open_price is not None else None,
+               "high_price": float(rows[0].high_price) if rows[0].high_price is not None else None,
+               "low_price": float(rows[0].low_price) if rows[0].low_price is not None else None}
+        result = {**base, "period_days": 1, "change_pct": row["change_pct"], "volume": row["volume"], "prices": [row]}
+        return period_answers.day_text(company.name, row, question), result
+    previous_row = last_row_before(db, company.id, day)
+    if previous_row is None:
+        return None
+    reason = period_answers.closed_reason(day, market_has_rows(db, day), data_end)
+    previous = _price_dict(previous_row)
+    result = {**base, "period_days": 1, "closed_reason": reason, "change_pct": previous["change_pct"],
+              "volume": previous["volume"], "prices": [previous]}
+    latest_note = None
+    prev_day = date.fromisoformat(str(previous["price_date"])[:10])
+    # 2026-11-08: 직전 시세가 이 종목의 마지막 저장 시세이고 그날의 직전 평일보다 앞서면 "직전 거래일"이 아니라 수집 지연이다
+    if prev_day == data_end and prev_day < last_business_day(day - timedelta(days=1)):
+        latest_note = _quote_freshness_line(result)
+    return period_answers.closed_day_text(company.name, day, reason, previous, latest_note), result
+
+
+def _history_parts(company, requested, now, question: str) -> tuple[str, dict] | None:
+    """종목 하나의 과거 기간 답(문장, stock_tool 모양의 결과). 시세가 없거나 읽지 못하면 None(기존 흐름). requested가 None이면 보유 데이터 전체."""
+    db = SessionLocal()
+    try:
+        data_start, data_end = price_range(db, company.id)
+        if data_start is None:
+            return None
+        if requested is None:
+            requested = period_scope.RequestedPeriod(data_start, data_end, period_answers.ALL_TIME_LABEL)
+        elif period_scope.classify(requested, data_start, data_end) is not None:
+            return _period_scope_parts(company, requested)
+        if requested.start == requested.end:
+            return _history_day_parts(db, company, requested.start, requested, data_end, question)
+        if requested.start > data_end:
+            text = period_answers.after_data_text(company.name, requested, data_start, data_end)
+            return text, {"ticker": company.ticker, "company_name": company.name, "found": True, "called_via": "period_history",
+                          "requested_start": requested.start.isoformat(), "requested_end": requested.end.isoformat(),
+                          "data_start": data_start.isoformat(), "data_end": data_end.isoformat()}
+        rows = price_rows_between(db, company.id, requested.start, requested.end)
+        previous_row = last_row_before(db, company.id, requested.start)
+        rows_desc = list(reversed(rows)) + ([previous_row] if previous_row is not None else [])
+        result = code_answers.window_result(company, rows_desc, requested.start, now, "period_history", end=requested.end,
+                                            require_base=False)
+        if result is None:
+            # 창에 거래일이 하나뿐이거나 없는 경우(연휴 등): 하루 답으로 간다
+            return _history_day_parts(db, company, rows[0].price_date if len(rows) == 1 else requested.start, requested,
+                                      data_end, question)
+
+        result.update(period_answers.volume_stats(result["prices"]), requested_start=requested.start.isoformat(),
+                      requested_end=requested.end.isoformat())
+        return period_answers.window_text(result, requested, data_end, question), result
+    finally:
+        db.close()
+
+
+def _holding_part(company, start: date, end: date, now: datetime) -> tuple[str, dict] | None:
+    """종목 하나의 두 시점 수익률(문장, stock_tool 모양의 결과). 시세가 없으면 None(기존 흐름)."""
+    db = SessionLocal()
+    try:
+        data_start, data_end = price_range(db, company.id)
+        if data_start is None:
+            return None
+        meta = {"ticker": company.ticker, "company_name": company.name, "found": True, "called_via": "holding_return",
+                "requested_start": start.isoformat(), "requested_end": end.isoformat(),
+                "data_start": data_start.isoformat(), "data_end": data_end.isoformat()}
+        refused = period_answers.holding_invalid_text(company.name, start, end, now.date(), data_start, data_end)
+        if refused is not None:
+            return refused, meta
+        rows = price_rows_between(db, company.id, start, end)
+        # 시작 행을 기준 종가로 삼으려고 창을 그 다음 날부터 잡는다(code_answers.window_result는 창 직전 행을 기준으로 쓴다)
+        result = code_answers.window_result(company, list(reversed(rows)), rows[0].price_date + timedelta(days=1), now, "holding_return",
+                                            end=end) if rows else None
+        if result is None:
+            return f"요청하신 기간에 {company.name}의 거래일이 둘 이상 없어 수익률을 확인할 수 없습니다. 보유한 데이터는 {data_start.isoformat()}부터 {data_end.isoformat()}까지입니다.", meta
+        result.update(meta, base_date=rows[0].price_date.isoformat(), base_close=float(rows[0].close_price))
+        return period_answers.holding_text(company.name, start, end, result), result
+    finally:
+        db.close()
+
+
+def _answer_holding_return(question: str, companies: list | None):
+    """(2026-11-02) 두 시점 사이 수익률은 LLM 없이 코드가 답한다: "2025년 1월 2일에 사서 2026년 1월 2일까지 들고 있었으면".
+    requested_period는 첫 기간만 돌려줘서, 전에는 시작일 종가만 답했다(b10_20). 시장 비교·원인 질문은 기존 흐름이다."""
+    if (not companies or len(companies) > 2 or not period_answers.is_holding_return_question(question)
+            or needs_market_tool(question)):
+        return None
+    now = datetime.now(KST)
+    pair = period_scope.date_pair(question, now.date())
+    if pair is None:
+        return None
+    called_at = datetime.now(timezone.utc)
+    try:
+        parts = [_holding_part(c, pair[0], pair[1], now) for c in companies]
+    except Exception:
+        return None
+    if any(p is None for p in parts):
+        return None
+    answer = "\n\n".join(text for text, _ in parts)
+    for c in companies:
+        if getattr(c, "asset_type", None) == "etf" and (lk := leverage_kind(c.name)):
+            answer += "\n\n" + leverage_notice(c.name, lk)
+    records = [{"tool_name": "stock_tool",
+                "arguments": {"ticker": c.name, "start_date": pair[0].isoformat(), "end_date": pair[1].isoformat()},
+                "result": r, "called_at": called_at, "elapsed_ms": 0} for c, (_, r) in zip(companies, parts)]
+    return _code_answer(answer, records)
+
+
+def _answer_market_period(question: str, companies: list | None):
+    """(2026-10-31) "2024년 코스피 대비 삼성전자 수익률"처럼 날짜로 조회해야 하는 기간의 시장 비교는 코드가 답한다: 종목과 지수의 같은 구간.
+    뉴스·원인을 함께 묻거나 ETF·여러 종목이면 기존 흐름이다(LLM 경로의 market_tool에도 같은 구간을 넘긴다)."""
+    if (not companies or len(companies) != 1 or getattr(companies[0], "asset_type", None) == "etf"
+            or not needs_market_tool(question) or not period_answers.is_market_period_question(question)):
+        return None
+    today = datetime.now(KST).date()
+    requested = period_scope.requested_period(question, today)
+    parsed = parse_period(question)
+    if not period_answers.code_answers_period(requested, parsed, today):
+        return None
+    company = companies[0]
+    called_at = datetime.now(timezone.utc)
+    args = {"ticker": company.name, "period_days": parsed.period_days if parsed else 1,
+            "start_date": requested.start.isoformat(), "end_date": requested.end.isoformat()}
+    result = market_tool(**args)
+    if not isinstance(result, dict) or not result.get("found"):
+        message = (result or {}).get("message") if isinstance(result, dict) else None
+        if not message:
+            return None
+        answer = message
+    else:
+        answer = period_answers.market_text(result, requested)
+    record = {"tool_name": "market_tool", "arguments": args, "result": result, "called_at": called_at, "elapsed_ms": 0}
+    return _code_answer(answer, [record])
+
+
+def _answer_period_history(question: str, companies: list | None):
+    """(2026-10-31) 날짜로 조회해야 하는 과거 시세 질문은 LLM 없이 코드가 답한다(app/period_answers.py): 특정 날짜 종가, 휴장일 안내,
+    "2024년 등락률", "2025년 3분기 수익률", "작년 같은 달", "역대 최고가", 같은 기간 두 종목 비교. 대상이 아니면 None(기존 흐름)."""
+    if not companies or len(companies) > 2 or not period_answers.is_history_question(question):
+        return None
+    now = datetime.now(KST)
+    requested = period_scope.requested_period(question, now.date())
+    parsed = parse_period(question)
+    all_time = requested is None and bool(period_answers.ALL_TIME_RE.search(question))
+    if not all_time and not period_answers.code_answers_period(requested, parsed, now.date()):
+        return None
+    called_at = datetime.now(timezone.utc)
+    try:
+        parts = [_history_parts(c, requested, now, question) for c in companies]
+    except Exception:
+        return None
+    if any(p is None for p in parts):
+        return None
+    results = [r for _, r in parts]
+    answer = "\n\n".join(text for text, _ in parts)
+    if len(results) == 2 and all(r.get("period_change_pct") is not None for r in results):
+        compared = code_answers.compare(results[0], results[1])
+        if compared is not None:
+            answer, diff = compared
+            for r in results:
+                r["compared_diff_pct_point"] = diff
+    for c in companies:
+        if getattr(c, "asset_type", None) == "etf" and (lk := leverage_kind(c.name)):
+            answer += "\n\n" + leverage_notice(c.name, lk)
+    records = [{"tool_name": "stock_tool",
+                "arguments": {"ticker": c.name, "period_days": parsed.period_days if parsed else r.get("period_days"),
+                              "start_date": r.get("requested_start"), "end_date": r.get("requested_end")},
+                "result": r, "called_at": called_at, "elapsed_ms": 0} for c, r in zip(companies, results)]
+    return _code_answer(_with_intraday_note(answer, records), records)
+
+
+def _asks_etf_constituents_not_my_holdings(question: str) -> bool:
+    """"KODEX 200 보유종목 비중 알려줘"처럼 ETF 이름이 있고 "내/나의" 같은 소유 표현이 없으면 그 ETF의 구성종목을 묻는 질문이다.
+    "보유종목"이라는 낱말 때문에 브리핑(내 보유종목)으로 가지 않게 브리핑 분기가 먼저 이것을 본다."""
+    if not asks_constituents(question) or mentions_own(question):
+        return False
+    return any(getattr(c, "asset_type", None) == "etf" for c in _question_companies(question) or [])
+
+
+def _answer_briefing(question: str, user_id: int | None):
+    """(D, 2026-10-28) "오늘 브리핑", "내 보유종목 어때", "관심종목 변화"는 GET /api/briefing과 같은 계산(app.briefing_db)을
+    코드가 문장으로 바꿔 답한다(LLM 없음). 로그인하지 않은 요청은 로그인 안내만 한다. 소유자는 로그인 사용자 본인(user:{id})뿐이다."""
+    if not needs_briefing(question) or _asks_etf_constituents_not_my_holdings(question):
+        return None
+    if user_id is None:
+        return _code_answer(briefing_text.LOGIN_REQUIRED)
+    from app.auth import CurrentUser
+    from app.briefing_db import get_briefing
+
+    called_at = datetime.now(timezone.utc)
+    scope = briefing_scope(question)
+    db = SessionLocal()
+    try:
+        brief = get_briefing(db, CurrentUser(id=user_id, username="").owner_key, 3)
+    finally:
+        db.close()
+    record = {"tool_name": "briefing", "arguments": {"scope": scope, "news_limit": 3}, "result": brief,
+              "called_at": called_at, "elapsed_ms": 0}
+    return _code_answer(briefing_text.render(brief, scope), [record])
+
+
+def _llm_fallback(err: LLMUnavailable, records: list[dict], etf_subjects=None) -> tuple[dict, list[dict]]:
+    """(A) LLM이 timeout·연결 오류로 답하지 못했을 때: 도구 결과가 있으면 코드 요약, 없으면 LLM_TIMEOUT_ANSWER."""
+    _meta()["fallback"] = err.reason
+    logger.warning("LLM 응답 실패(%s): %s", err.reason, "코드 요약으로 답함" if records else "지연 안내로 답함")
+    answer = None
+    if records:
+        answer = _finish_etf_answer("", records, etf_subjects) if etf_subjects else code_summary(records)
+    if not answer or answer == FALLBACK_ANSWER:
+        answer = LLM_TIMEOUT_ANSWER
+    return _code_answer(answer, records)
+
+
+def _guard(answer: str, records: list[dict], question: str) -> str:
+    """(B) 답변 숫자 검증: 도구 결과·질문·단순 계산으로 설명되지 않는 숫자가 있으면 코드 요약으로 바꾼다(app/answer_guard)."""
+    guarded, log = guard_answer(answer, records, question)
+    # 근거 링크가 아닌 URL이 든 문장은 지운다(프롬프트 인젝션으로 들어온 피싱 링크 방지, 2026-10-30)
+    guarded, log["untrusted_url_sentences"] = strip_untrusted_urls(guarded, records)
+    # 질문·도구 결과에 없는 일본어·중국어가 든 문장을 지운다. 남는 내용이 없으면 코드 요약으로 바꾼다(2026-10-31)
+    before_strip = guarded
+    guarded, log["foreign_script_sentences"] = strip_foreign_script(guarded, records, question)
+    if log["foreign_script_sentences"]:
+        log["foreign_script_original"] = before_strip[:ORIGINAL_LOG_CHARS]  # 내부 기록(오탐 분석용, API 응답에 나가지 않는다)
+        guarded = remove_empty_sections(guarded)
+        if not guarded.strip():
+            guarded = code_summary(records) or ""
+    # 대상·맥락이 어긋난 문장을 지운다(다른 회사, 날짜 없는 기사 시세, 지표-단위 불일치). 남는 글이 부족하면 코드 요약으로 바꾼다(2026-11-01)
+    if not log["replaced"]:
+        before_strip = guarded
+        guarded, reasons = strip_narrative_mismatch(guarded, records, question)
+        log["narrative_sentences"] = len(reasons)
+        if reasons:
+            log["narrative_reasons"] = reasons
+            log["narrative_original"] = before_strip[:ORIGINAL_LOG_CHARS]  # 내부 기록(오탐 분석용, API 응답에 나가지 않는다)
+            guarded = remove_empty_sections(guarded)
+            if narrative_body_is_thin(guarded):
+                guarded = code_summary(records) or guarded
+    # 2026-11-07(35차): 원시 숫자 표기(1414000.0원)와 같은 문단·문장 반복을 정리한다(값·뜻은 그대로, app/answer_tidy)
+    guarded, log["repeats_removed"] = answer_tidy.tidy(guarded)
+    _meta()["answer_guard"] = log
+    if log["replaced"]:
+        logger.info("답변 숫자 검증: %s로 대체(설명되지 않는 숫자 %s)", log["mode"], log["violations"])
+    return guarded or FALLBACK_ANSWER
+
+
+def _guard_etf_aware(answer: str, records: list[dict], question: str, etf_subjects) -> str:
+    """_guard와 같다. 다만 ETF 답변을 코드 요약으로 바꾸면 레버리지·인버스 설명이 사라지므로(etf_05, 2026-11-02) 코드가 쓴 ETF 답변으로 대신한다."""
+    guarded = _guard(answer, records, question)
+    if etf_subjects and (_meta()["answer_guard"] or {}).get("replaced"):
+        return _finish_etf_answer("", records, etf_subjects) or guarded
+    return guarded
+
+
+UNRESOLVED_COMPANY_ANSWER = "해당 종목을 찾지 못했습니다. 종목명 또는 종목코드를 정확히 입력해주세요."
+
+
+def _evidence_tool_args(name: str, company, question: str) -> dict:
+    if name in ("stock_tool", "market_tool"):
+        return {"ticker": company.name, "period_days": DEFAULT_TREND_PERIOD_DAYS}
+    if name == "rag_search_tool":
+        return {"query": question, "company_name": company.name, "limit": 5}
+    return {"company_name": company.name, "limit": 5}
+
+
+def _answer_evidence(question: str, companies: list | None, model: str):
+    """(2026-11-02) 설명형·원인형 질문은 근거 우선으로 답한다(app/evidence_answer.py): 조회는 코드가 고르고, 시세·기사 목록은 코드가 쓰고,
+    LLM은 번호 붙은 근거를 바꿔 말하는 문장만 쓴다(호출 1회). 근거가 없으면 LLM을 부르지 않는다. ETF, 기간을 말한 질문은 기존 흐름이다."""
+    if not companies or len(companies) > 2 or any(getattr(c, "asset_type", None) == "etf" for c in companies):
+        return None
+    cause = is_cause_question(question)
+    today = datetime.now(KST).date()
+    if (not evidence_answer.is_narrative_question(question, cause) or parse_period(question) is not None
+            or period_scope.requested_period(question, today) is not None or needs_market_tool(question) and not cause):
+        return None
+    names = [c.name for c in companies]
+    records = []
+    for company in companies:
+        for name in evidence_answer.wanted_tools(question, cause):
+            if name == "market_tool" and not _market_comparison_available(company.name):
+                continue
+            args = _evidence_tool_args(name, company, question)
+            called_at = datetime.now(timezone.utc)
+            started = time.perf_counter()
+            result = _run_tool(name, args)
+            records.append({"tool_name": name, "arguments": args, "result": result, "called_at": called_at,
+                            "elapsed_ms": round((time.perf_counter() - started) * 1000)})
+    price_lines = []
+    for rec in records:
+        r = rec["result"]
+        if isinstance(r, dict) and r.get("found") and r.get("summary") and rec["tool_name"] in ("stock_tool", "market_tool"):
+            price_lines.append(r["summary"])
+            if rec["tool_name"] == "stock_tool" and len(companies) == 1 and (note := evidence_answer.premise_note(question, r.get("period_change_pct"))):
+                price_lines.append(note)
+    items = evidence_answer.collect_items(records, names)
+    sentences: list[str] = []
+    if items:
+        guard_log = {"replaced": False, "violations": [], "mode": None}
+        try:
+            final = _llm_chat(model=model, messages=[{"role": "system", "content": evidence_answer.SYSTEM_PROMPT},
+                                                     {"role": "user", "content": evidence_answer.user_prompt(question, items)}])
+        except LLMUnavailable as e:
+            _meta()["fallback"] = e.reason
+        else:
+            if _meta()["llm_truncated"]:
+                _meta()["fallback"] = "length"
+            else:
+                text = str(strip_role_prefix(extract_answer_text(final["message"]["content"])) or "")
+                kept, dropped = evidence_answer.check_sentences(text, items, names)
+                checked = _guard(" ".join(kept), records, question) if kept else ""
+                guard_log = _meta()["answer_guard"] or guard_log
+                sentences = [] if guard_log.get("replaced") or not checked.strip() or checked == FALLBACK_ANSWER else [checked]
+                guard_log.update(evidence_dropped=dropped, evidence_original=text[:ORIGINAL_LOG_CHARS])
+        _meta()["answer_guard"] = guard_log
+    answer = evidence_answer.compose(price_lines, items, sentences, cause)
+    return _code_answer(_with_freshness(answer, question, records), records)
+
+
+def _unresolved_company_answer(calls: list[dict], question: str = "") -> str | None:
+    """(F) 종목을 받는 호출만 있고 그 종목 인자가 하나도 DB 종목으로 해석되지 않으면(보정 후에도) 코드가 답할 문장, 아니면 None.
+
+    모델이 깨진 문자열("한뫸입해")을 넘기거나 없는 종목("롯데칠성")을 조회한 뒤 "종목코드를 알려주시면"처럼 되묻기만 하던
+    경우다. 종목 인자가 없는 호출(환율·시장 탐색, 종목 필터 없는 RAG 검색)이 하나라도 있으면 기존 흐름이다."""
+    raws = []
+    for call in calls:
+        fn_name = call["function"]["name"]
+        key = _COMPANY_ARG.get(fn_name)
+        raw = _as_args(call["function"]["arguments"]).get(key) if key else None
+        if key is None or (fn_name == "rag_search_tool" and not normalize_name(raw)):
+            return None
+        raws.append(raw)
+    if not raws:
+        return None
+    try:
+        db = SessionLocal()
+        try:
+            results = [resolve_company(db, raw) for raw in raws]
+        finally:
+            db.close()
+    except Exception:
+        return None
+    if any(r.company is not None for r in results):
+        return None
+    # (D) 모델이 용어를 종목 인자로 넘긴 경우(stock_tool(ticker="PBR")): 종목을 못 찾았다고 하지 않고 용어 사전으로 답한다
+    terms = list(dict.fromkeys(find_term(normalize_name(raw)) for raw in raws))
+    if terms and all(terms):
+        return concept_answer(question) or (comparison_answer(terms) if len(terms) > 1 else term_answer(terms[0]))
+    candidates = list(dict.fromkeys(c for r in results for c in (r.candidates or [])))[:MAX_CANDIDATES]
+    text = UNRESOLVED_COMPANY_ANSWER
+    if len(candidates) == 1:
+        text += f" 혹시 {candidates[0]}인가요?"
+    elif candidates:
+        text += f" 혹시 {', '.join(candidates)} 중 하나인가요?"
+    return text
+
+
+def _answer(question: str, model: str, previous: dict | None = None) -> tuple[dict, list[dict]]:
+    """답변을 만든다. (응답 dict, tool 실행 기록 목록)을 돌려준다.
+
+    previous={"question", "answer", ...}가 있으면 후속 질문으로 보고 그 질문/답변을 few-shot 뒤, 이번 질문 앞에
+    대화 기록으로 넣는다. 없으면 메시지 구성이 이전과 완전히 같다.
+    tool 실행 기록: {"tool_name", "arguments", "result", "called_at", "elapsed_ms"} (실행 순서대로)."""
+    # 주문 실행 요청은 가장 먼저 고정 안내로 답한다(채팅은 주문하지 않는다, 2026-11-03).
+    order = _answer_order_command(question)
+    if order is not None:
+        return order
+    # 목표주가 확정·가격 단정·수익 보장 요청은 전망·시세 경로보다 먼저다(35차: 목표주가 요청이 단순 시세로 갔다)
+    safety = _answer_request_safety(question)
+    if safety is not None:
+        return safety
+    briefing = _answer_briefing(question, getattr(_STATE, "user_id", None))
+    if briefing is not None:
+        return briefing
+    # 전망·후속 결론(app/outlook.py)은 사건 반응·용어 사전·기간 질문보다 먼저다: "그래서 결론이 뭐야?"를 용어 사전이 가로챘다(2026-11-03).
+    forecast = _answer_forecast(question, previous)
+    if forecast is not None:
+        return forecast
+    # 사건 이후 주가 반응 질문(게이트 + 종목 하나)만 별도 경로로 간다. 그 밖의 질문은 아래 기존 경로 그대로다.
+    event_company = _event_subject(question, previous)
+    if event_company is not None:
+        return _answer_event(question, model, event_company, previous)
+
+    _reset_llm_state()
+    companies = _question_companies(question)
+    # 시장 비교(_answer_market_period)는 범위 안내(_answer_period_scope)보다 먼저다: 종목 값만 답하면 지수 비교가 빠진다
+    # 거래량 순위는 용어 사전보다 먼저다("거래량"이 사전 용어라 "거래량 많은 종목"이 정의 답이 된다)
+    for handler in (_answer_market_ranking, _answer_market_overview, _answer_concept, _answer_missing_subject, _answer_price_flow, _answer_etf_constituents, _answer_holding_return, _answer_market_period, _answer_period_scope, _answer_simple_quote,
+                    _answer_period_quote, _answer_period_history):
+        handled = handler(question, companies)
+        if handled is not None:
+            return handled
+
+    if previous is None and evidence_answer.enabled():
+        handled = _answer_evidence(question, companies, model)
+        if handled is not None:
+            return handled
+
+    system_prompt, tools = build_request(question)
+    messages = [
+        {"role": "system", "content": system_prompt},
+        *FEW_SHOT_MESSAGES,
+        *_previous_turn(previous),
+        {"role": "user", "content": question},
+    ]
+
+    # 1차 호출: 모델이 tool을 쓸지 말지 스스로 판단
+    try:
+        msg, tool_calls = _first_call(model, messages, tools)
+    except LLMUnavailable as e:
+        return _llm_fallback(e, [])
+
+    if msg is None:
+        return {"answer": FALLBACK_ANSWER, "used_tools": [], "sources": []}, []
+
+    etf_added: list[int] = []
+    if not tool_calls:
+        # 모델이 tool 없이 바로 답한 경우. 다만 ETF가 나오는 질문("KODEX 인버스는 어떤 상품이야?")은 개념 질문처럼 보여도
+        # 조회 없이 답하면 상품 구조·추종지수를 지어낼 수 있어서, 가격·뉴스를 조회한 뒤 답한다.
+        subjects = _question_subjects(question, [])
+        if not any(t == "etf" for _, t in subjects):
+            answer = remove_empty_sections(strip_role_prefix(extract_answer_text(msg["content"])))
+            return {"answer": _guard(answer, [], question), "used_tools": [], "sources": []}, []
+        tool_calls = []
+        etf_added = _add_etf_tools(tool_calls, subjects)
+        msg = {"role": "assistant", "content": "", "tool_calls": tool_calls}
+
+    messages.append(msg)
+    records = []
+
+    # 2. 모델이 만든 종목 인자가 깨졌으면 질문 원문에서 회사명을 찾아 보정한 뒤, tool을 실제로 실행하고
+    #    결과를 다시 넘겨줌. 질문이 이름으로 요청한 tool이 빠졌으면 덧붙이고(보정된 종목 인자를 쓰도록 보정 뒤에),
+    #    기간은 질문에서 인식한 값 > 흐름 질문의 기본 기간 > LLM 추론값 순으로 정한다.
+    _expand_multi_company_calls(tool_calls, question, companies)
+    repaired = _repair_company_args(tool_calls, question, previous["question"] if previous else None,
+                                    (previous or {}).get("company_name"))
+    added = set(_add_requested_tools(tool_calls, question)) | set(etf_added)
+    subjects = _question_subjects(question, tool_calls)
+    etf_mode = any(t == "etf" for _, t in subjects)
+    if etf_mode:
+        added |= set(_add_etf_tools(tool_calls, subjects))
+    period_overrides = _apply_period_override(tool_calls, question)
+    _apply_past_window(tool_calls, question)
+    period_defaults = _apply_default_period(tool_calls, question)
+    etf_periods = _apply_etf_period(tool_calls, question) if etf_mode else {}
+    unresolved = _unresolved_company_answer(tool_calls, question)
+    if unresolved is not None:
+        return _code_answer(unresolved)
+    for idx, call in enumerate(tool_calls):
+        fn_name = call["function"]["name"]
+        fn_args = _as_args(call["function"]["arguments"])
+
+        called_at = datetime.now(timezone.utc)
+        started = time.perf_counter()
+        result = _run_tool(fn_name, fn_args)
+        elapsed_ms = round((time.perf_counter() - started) * 1000)
+
+        if idx in repaired and isinstance(result, dict):
+            result.setdefault("corrected_from", repaired[idx])
+            result.setdefault("corrected_via", "question_text")
+        if idx in period_overrides and isinstance(result, dict):
+            result.setdefault("period_days_corrected_from", period_overrides[idx])
+            result.setdefault("period_days_corrected_via", "period_parser")
+        if idx in period_defaults and isinstance(result, dict):
+            result.setdefault("period_days_corrected_from", period_defaults[idx])
+            result.setdefault("period_days_corrected_via", "default_trend_period")
+        if idx in etf_periods and isinstance(result, dict):
+            result.setdefault("period_days_corrected_from", etf_periods[idx])
+            result.setdefault("period_days_corrected_via", "etf_default_period")
+        if idx in added and isinstance(result, dict):
+            result.setdefault("called_via", "question_keywords")
+
+        records.append(
+            {
+                "tool_name": fn_name,
+                "arguments": fn_args,
+                "result": result,
+                "called_at": called_at,
+                "elapsed_ms": elapsed_ms,
+            }
+        )
+        # ETF 질문이면 뉴스 기사 속 수치는 LLM에 넘기지 않는다(기록·출처에는 원문이 남는다)
+        llm_result = news_result_for_llm(result) if etf_mode and fn_name == "news_tool" else result
+        messages.append(
+            {
+                "role": "tool",
+                "content": json.dumps(llm_result, ensure_ascii=False),
+            }
+        )
+
+    # 3. tool 결과를 반영한 최종 답변 생성. 구조화 안내(FR-11)는 이 호출 직전에만 추가한다. ETF 질문이면 ETF 규칙을 덧붙인다.
+    instruction = ANSWER_STRUCTURE_INSTRUCTION + (" " + ETF_ANSWER_RULES if etf_mode else "")
+    messages.append({"role": "system", "content": instruction})
+    try:
+        final = _llm_chat(model=model, messages=messages)
+    except LLMUnavailable as e:
+        return _llm_fallback(e, records, subjects if etf_mode else None)
+    if _meta()["llm_truncated"]:
+        # num_predict에서 잘렸다 = 정상 답변 길이를 크게 넘었다(반복 루프). 잘린 글은 내보내지 않는다.
+        return _llm_fallback(LLMUnavailable("length"), records, subjects if etf_mode else None)
+    answer = strip_role_prefix(extract_answer_text(final["message"]["content"]))
+    if _mentions_tool_call(answer):
+        # 모델이 답 대신 호출 JSON을 글로 썼다. 도구 결과가 있으면 "죄송합니다" 대신 코드 요약으로 답한다(hist_11, 2026-10-31)
+        answer = (_finish_etf_answer("", records, subjects) if etf_mode else code_summary(records)) or FALLBACK_ANSWER
+    else:
+        # 결과가 없는 섹션에 "(이 섹션은 ... 빈칸입니다.)" 같은 자리표시만 쓴 경우 그 섹션을 지운다
+        answer = remove_empty_sections(answer)
+        if etf_mode:
+            answer = _finish_etf_answer(answer, records, subjects)
+        answer = _with_freshness(_guard_etf_aware(answer, records, question, subjects if etf_mode else None), question, records)
+    response = {
+        "answer": answer,
+        "used_tools": [r["tool_name"] for r in records],
+        "sources": build_sources((r["tool_name"], r["result"]) for r in records),
+    }
+    return response, records
+
+
+def ask_question(
+    question: str,
+    model: str = MODEL_NAME,
+    save_report: bool = True,
+    previous: dict | None = None,
+    user_id: int | None = None,
+    locale: str | None = None,
+) -> dict:
+    """질문을 받아 필요한 tool을 호출하고 최종 답변을 생성한다.
+
+    previous는 후속 질문일 때 이어받을 직전 보고서({"report_id", "question", "answer"}, get_report()의 결과)다.
+    바로 직전 1개만 잇고 그보다 앞선 체인은 따라가지 않는다. 새 보고서의 previous_report_id로 저장된다.
+
+    model은 기본값(MODEL_NAME) 외에 다른 모델로도 같은 로직을 검증할 수 있도록
+    (scripts/benchmark_models.py) 파라미터로 열어둔 것이다.
+
+    save_report=True이면 질문/답변을 research_report에, tool 실행 이력을 tool_call_log에 저장한다.
+    저장이 실패해도 답변은 정상 반환하고 report_id만 None이 된다. 벤치마크/스모크 스크립트는
+    DB를 오염시키지 않도록 save_report=False로 호출한다. user_id는 저장할 리포트의 소유자다.
+    previous가 같은 사용자의 리포트인지는 호출측(라우터)이 확인한다.
+
+    Returns:
+        {"answer": str, "used_tools": list[str], "sources": list[dict], "report_id": int | None,
+         "previous_report_id": int | None}
+        sources는 tool 결과에서 뽑은 근거 문서(news/disclosure) 목록이다.
+
+    locale(2026-11-05)이 ko-KR이 아니면 위와 똑같이 한국어 답을 만든 뒤(검증 전부 적용) 그 언어로 바꾼다(app/answer_i18n).
+    리포트에는 바뀐 답(content)과 한국어 원문(original_content), locale, 번역 결과를 저장한다. None·ko-KR이면 예전과 같다.
+    """
+    previous_id = previous["report_id"] if previous else None
+    _reset_llm_state()
+    _STATE.user_id = user_id  # 채팅 브리핑(_answer_briefing)의 소유자. 요청(스레드)마다 덮어쓴다
+    response, records = _answer(question, model, previous)
+    # 내부 메타(대체·fallback·잘림). API 응답 모델(ResearchResponse)에는 없는 키라 응답에 나가지 않는다.
+    response["meta"] = dict(_meta())
+    extra = {}
+    if locale is not None and locale != "ko-KR":
+        original = response["answer"]
+        response["answer"], status = answer_i18n.localize_answer(
+            question, original, records, locale,
+            {"fallback_answer": FALLBACK_ANSWER, "timeout_answer": LLM_TIMEOUT_ANSWER},
+        )
+        response["meta"].update(locale=locale, translation_status=status)
+        extra = {"locale": locale, "original_content": original, "translation_status": status}
+    response["report_id"] = (
+        save_report_row(question, response["answer"], records, previous_report_id=previous_id, user_id=user_id, **extra)
+        if save_report
+        else None
+    )
+    response["previous_report_id"] = previous_id
+    return response

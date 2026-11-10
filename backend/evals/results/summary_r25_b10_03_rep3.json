@@ -1,0 +1,280 @@
+{
+  "git_commit": "e0c8b705780c2be916b177a023ffc80b7289d4cb",
+  "git_dirty": true,
+  "date": "2026-11-04T19:12:09",
+  "model": "llama3.1:8b",
+  "think": null,
+  "keep_alive": "30m",
+  "args": {
+    "mode": "live",
+    "split": "all",
+    "repeats": 3,
+    "only": null,
+    "ids": "b10_03",
+    "batch": null,
+    "exclude_batch": null,
+    "model": null,
+    "keep_tool_results": false,
+    "limit": null,
+    "out": "evals/results/summary_r25_b10_03_rep3.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 0,
+    "live": 1,
+    "records": 3
+  },
+  "live": {
+    "ran": true,
+    "repeats": 3,
+    "eval_user": "captest_8372c6de2881",
+    "deleted_reports": 3,
+    "etf_data_available": {},
+    "elapsed_s": 33.5
+  },
+  "etf_data_available": {},
+  "etf_branches": {},
+  "elapsed_s": 38.6,
+  "metrics": {
+    "live_company_accuracy": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 3,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 3,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "number_match_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 11
+      }
+    },
+    "number_full_support_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 3,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "source_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 3,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "must_contain_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 3,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 3,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "code_answer_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 3,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "loop_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 3,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "stability_answer_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 3,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "guard_replacement_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 3,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "narrative_drop_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 3,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "foreign_strip_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 3,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "fallback_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 3,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "error_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 3,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "latency_p50_s": {
+      "dev": null,
+      "holdout": 10.25,
+      "holdout_seen": 10.25,
+      "holdout_unseen": null,
+      "all": 10.25,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 3,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "latency_p95_s": {
+      "dev": null,
+      "holdout": 12.788,
+      "holdout_seen": 12.788,
+      "holdout_unseen": null,
+      "all": 12.788,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 3,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    }
+  },
+  "failures": []
+}

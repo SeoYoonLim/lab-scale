@@ -1,0 +1,410 @@
+import pytest
+
+import app.agent as agent
+from app.routing import (
+    explicitly_requested_tools,
+    is_cause_question,
+    is_trend_question,
+    needs_discovery_tool,
+    needs_fx_tool,
+    needs_market_tool,
+)
+from scripts.benchmark_routing import CASES
+
+BASE_TOOLS = ["stock_tool", "news_tool", "disclosure_tool", "rag_search_tool"]
+
+# 키워드를 정할 때 보지 않고 따로 쓴 질문(첫 실행 결과: 12/14 잡힘, '장세'만 뒤에 패턴 추가).
+# 마지막 둘은 키워드가 전혀 없는 표현이라 못 잡는 것이 정상이다.
+FRESH_MARKET = [
+    "삼성전자 오늘 하락이 코스피 전체가 빠져서 그런 거야?",
+    "네이버가 시장 수익률보다 많이 올랐는지 궁금해",
+    "SK하이닉스 지난주 낙폭이 증시 전반 약세 때문인가?",
+    "현대차가 지수 상승률만큼 올랐어?",
+    "카카오 주가가 시장 분위기랑 따로 노는 것 같은데 비교해줘",
+    "셀트리온 최근 한 달 성과를 시장 평균과 비교해줘",
+    "POSCO홀딩스 급락이 전체 장세 탓인지 알려줘",
+    "알테오젠이 코스닥 대비 얼마나 올랐어?",
+    "삼성바이오로직스 이번 주 지수보다 나았어?",
+    "기아 주가가 시장 전체가 아니라 자기 요인으로 움직인 건지 확인해줘",
+    "두산에너빌리티 상승이 시장 베타 때문인지 개별 이슈 때문인지",
+    "크래프톤 이번 주에 시장 대비 아웃퍼폼했어?",
+    "한화에어로스페이스 벤치마크 대비 성과 알려줘",
+]
+KNOWN_MISSES = ["LG화학이 다른 종목들보다 더 빠진 거야, 아니면 다 같이 빠진 거야?"]
+
+# 시장/지수라는 단어가 들어 있지만 비교 질문이 아닌 것. 이 중 뒤의 셋은 키워드 방식이 구분 못 하는 알려진 오탐이다.
+FRESH_NOT_MARKET = [
+    "삼성전자 시장 점유율이 어떻게 돼?",
+    "카카오 해외 시장 진출 관련 공시 내용 자세히 알려줘",
+    "공포 탐욕 지수가 뭐야?",
+    "소비자물가지수가 오르면 금리는 어떻게 돼?",
+    "현대차 전기차 시장에서 점유율 관련 뉴스 알려줘",
+    "삼성전자 공장 전체 가동률 관련 공시 알려줘",
+    "네이버 최근 뉴스 알려줘",
+    "LG에너지솔루션 시장 조사 기관 전망 관련 공시 내용",
+    "SK하이닉스 지수 편입 이슈 알려줘",
+    "배당 성향이 뭐야?",
+    "카카오 지수 산정 방식이 바뀌었어?",
+    "증시 용어 중 서킷브레이커가 뭐야?",
+]
+KNOWN_FALSE_POSITIVES = [
+    "PER이 시장 전체 평균보다 높으면 고평가야?",
+    "코스피 200이 뭐야?",
+    "코스닥 상장 요건 알려줘",
+]
+
+
+@pytest.mark.parametrize("group", ["market", "market_ho"])
+def test_all_benchmark_market_questions_match(group):
+    missed = [q for q in CASES[group] if not needs_market_tool(q)]
+    assert missed == []
+
+
+def test_no_false_positive_on_other_benchmark_groups():
+    total = 0
+    hits = []
+    for group, questions in CASES.items():
+        if group.startswith("market"):
+            continue
+        total += len(questions)
+        hits += [q for q in questions if needs_market_tool(q)]
+    assert total >= 38 and hits == []
+
+
+@pytest.mark.parametrize("q", FRESH_MARKET)
+def test_fresh_market_questions_match(q):
+    assert needs_market_tool(q)
+
+
+@pytest.mark.parametrize("q", KNOWN_MISSES)
+def test_known_misses_have_no_keyword(q):
+    assert not needs_market_tool(q)
+
+
+@pytest.mark.parametrize("q", FRESH_NOT_MARKET)
+def test_non_comparison_questions_do_not_match(q):
+    assert not needs_market_tool(q)
+
+
+@pytest.mark.parametrize("q", KNOWN_FALSE_POSITIVES)
+def test_known_false_positives(q):
+    # 오탐이어도 tool 목록이 5개가 될 뿐이라 허용하지만, 동작이 바뀌면 알 수 있게 고정해 둔다.
+    assert needs_market_tool(q)
+
+
+@pytest.mark.parametrize("q", ["", None, "   "])
+def test_empty_question(q):
+    assert not needs_market_tool(q)
+    assert not needs_fx_tool(q)
+    assert not needs_discovery_tool(q)
+
+
+# fx_tool 게이트(needs_fx_tool). market_tool과 같은 패턴: 벤치마크 질문(CASES["fx"]/["fx_ho"])으로 커버리지를,
+# 다른 그룹 전체로 오탐이 없는지를 본다.
+FRESH_FX = [
+    "원화 환율이 요즘 급등했는데 수준이 어느 정도야?",
+    "달러 환율 최근 흐름 좀 알려줘",
+    "환율 변동 때문에 수출주 전망이 어떻게 되는지 데이터로 보여줘",
+]
+# "환율" 단어 자체가 걸려서 실제 데이터가 필요 없는 개념 질문도 fx_tool 후보에 들어간다(market_tool의
+# KNOWN_FALSE_POSITIVES와 같은 성격). 오탐의 비용은 tool 목록이 하나 늘어나는 정도라 허용한다.
+FX_KNOWN_FALSE_POSITIVES = [
+    "환율이 오르면 왜 수출주가 유리해?",
+    "환율이 뭔지 쉽게 설명해줘.",
+]
+
+
+@pytest.mark.parametrize("group", ["fx", "fx_ho"])
+def test_all_benchmark_fx_questions_match(group):
+    missed = [q for q in CASES[group] if not needs_fx_tool(q)]
+    assert missed == []
+
+
+def test_no_fx_false_positive_on_other_benchmark_groups():
+    total = 0
+    hits = []
+    for group, questions in CASES.items():
+        if group.startswith("fx"):
+            continue
+        total += len(questions)
+        hits += [q for q in questions if needs_fx_tool(q)]
+    assert total >= 38 and hits == []
+
+
+@pytest.mark.parametrize("q", FRESH_FX)
+def test_fresh_fx_questions_match(q):
+    assert needs_fx_tool(q)
+
+
+@pytest.mark.parametrize("q", FX_KNOWN_FALSE_POSITIVES)
+def test_fx_known_false_positives(q):
+    # 오탐이어도 tool 목록이 하나 늘어날 뿐이라 허용하지만, 동작이 바뀌면 알 수 있게 고정해 둔다.
+    assert needs_fx_tool(q)
+
+
+# discovery_tool 게이트(needs_discovery_tool). market_tool/fx_tool과 같은 패턴: 벤치마크 질문
+# (CASES["discovery"]/["discovery_ho"])으로 커버리지를, 다른 그룹 전체로 오탐이 없는지를 본다.
+FRESH_DISCOVERY = [
+    "요즘 급등세인 종목 좀 찾아줘",
+    "오늘 거래량이 폭증한 종목 찾아줘",
+    "최근에 많이 오른 종목 리스트 보여줘",
+]
+# "관심 종목"이 멀리 떨어져 나오는 구어체 표현은 못 잡는다(키워드 방식의 알려진 한계, market_tool의
+# KNOWN_MISSES와 같은 성격).
+DISCOVERY_KNOWN_MISSES = ["관심 가질 만한 종목 추천해줘"]
+# "급등"/"급락"이 "종목" 없이 특정 종목 질문에 쓰이면 걸리지 않아야 한다(실측으로 발견: 처음엔 bare 단어만
+# 봐서 "LG화학 주가 급등한 이유" 같은 multi 그룹 질문도 잘못 걸렸다 - 아래 테스트로 고정해 둔다).
+DISCOVERY_SPECIFIC_STOCK_QUESTIONS = [
+    "LG화학 주가 급등한 이유가 뭐야? 주가랑 뉴스 둘 다 확인해줘",
+    "환율이 최근 급등했는데 어느 정도 올랐어?",
+    "POSCO홀딩스 급락이 전체 장세 탓인지 알려줘",
+]
+
+
+@pytest.mark.parametrize("group", ["discovery", "discovery_ho"])
+def test_all_benchmark_discovery_questions_match(group):
+    missed = [q for q in CASES[group] if not needs_discovery_tool(q)]
+    assert missed == DISCOVERY_KNOWN_MISSES or missed == []
+
+
+def test_no_discovery_false_positive_on_other_benchmark_groups():
+    total = 0
+    hits = []
+    for group, questions in CASES.items():
+        if group.startswith("discovery"):
+            continue
+        total += len(questions)
+        hits += [q for q in questions if needs_discovery_tool(q)]
+    assert total >= 38 and hits == []
+
+
+@pytest.mark.parametrize("q", FRESH_DISCOVERY)
+def test_fresh_discovery_questions_match(q):
+    assert needs_discovery_tool(q)
+
+
+@pytest.mark.parametrize("q", DISCOVERY_KNOWN_MISSES)
+def test_discovery_known_misses_have_no_keyword(q):
+    assert not needs_discovery_tool(q)
+
+
+@pytest.mark.parametrize("q", DISCOVERY_SPECIFIC_STOCK_QUESTIONS)
+def test_discovery_does_not_fire_on_specific_stock_questions(q):
+    assert not needs_discovery_tool(q)
+
+
+class TestBuildRequest:
+    def test_default_request_is_unchanged_for_non_market_question(self):
+        prompt, tools = agent.build_request("삼성전자 최근 3일 등락률이랑 거래량 알려줘.")
+        assert prompt is agent.SYSTEM_PROMPT
+        assert tools is agent.TOOLS
+        assert [t["function"]["name"] for t in tools] == BASE_TOOLS
+
+    def test_market_tool_is_never_in_default_tools(self):
+        assert "market_tool" not in [t["function"]["name"] for t in agent.TOOLS]
+
+    def test_market_question_adds_tool_and_hint_without_mutating_defaults(self):
+        prompt, tools = agent.build_request("현대차가 코스피보다 더 올랐어?")
+        assert [t["function"]["name"] for t in tools] == BASE_TOOLS + ["market_tool"]
+        assert agent.MARKET_HINT in prompt and prompt != agent.SYSTEM_PROMPT
+        assert prompt.replace(agent.MARKET_HINT, "", 1) == agent.SYSTEM_PROMPT
+        assert [t["function"]["name"] for t in agent.TOOLS] == BASE_TOOLS
+
+    def test_market_tool_runs_through_the_agent_dispatch(self):
+        assert agent.AVAILABLE_FUNCTIONS["market_tool"] is not None
+        assert agent._COMPANY_ARG["market_tool"] == "ticker"
+        spec = agent.MARKET_TOOL_SPEC["function"]
+        assert spec["name"] == "market_tool" and spec["parameters"]["required"] == ["ticker"]
+
+    def test_answer_passes_gated_tools_to_the_llm(self, monkeypatch):
+        seen = {}
+
+        def fake_first_call(model, messages, tools=None):
+            seen["tools"] = [t["function"]["name"] for t in tools]
+            seen["system"] = messages[0]["content"]
+            return {"role": "assistant", "content": "답변"}, None
+
+        monkeypatch.setattr(agent, "_first_call", fake_first_call)
+        agent._answer("셀트리온 주가 빠진 게 장 전체가 약해서야?", "m")
+        assert seen["tools"][-1] == "market_tool" and agent.MARKET_HINT in seen["system"]
+        agent._answer("삼성전자 최근 뉴스 알려줘", "m")
+        assert seen["tools"] == BASE_TOOLS and agent.MARKET_HINT not in seen["system"]
+
+    def test_fx_tool_is_never_in_default_tools(self):
+        assert "fx_tool" not in [t["function"]["name"] for t in agent.TOOLS]
+
+    def test_fx_question_adds_tool_and_hint_without_mutating_defaults(self):
+        prompt, tools = agent.build_request("요즘 환율 어때?")
+        assert [t["function"]["name"] for t in tools] == BASE_TOOLS + ["fx_tool"]
+        assert agent.FX_HINT in prompt and prompt != agent.SYSTEM_PROMPT
+        assert prompt.replace(agent.FX_HINT, "", 1) == agent.SYSTEM_PROMPT
+        assert [t["function"]["name"] for t in agent.TOOLS] == BASE_TOOLS
+
+    def test_fx_tool_runs_through_the_agent_dispatch(self):
+        assert agent.AVAILABLE_FUNCTIONS["fx_tool"] is not None
+        assert "fx_tool" not in agent._COMPANY_ARG  # 종목이 아니라서 ticker/company_name 인자가 없다
+        assert agent._PERIOD_ARG["fx_tool"] == "period_days"
+        spec = agent.FX_TOOL_SPEC["function"]
+        assert spec["name"] == "fx_tool" and spec["parameters"]["required"] == []
+
+    def test_both_gates_fire_together_and_tool_order_is_market_then_fx(self):
+        # "환율 때문에 코스피 전체가 빠졌어?"는 두 게이트 다 걸린다.
+        prompt, tools = agent.build_request("환율 때문에 코스피 전체가 빠졌어?")
+        assert [t["function"]["name"] for t in tools] == BASE_TOOLS + ["market_tool", "fx_tool"]
+        assert agent.MARKET_HINT in prompt and agent.FX_HINT in prompt
+        assert prompt.replace(agent.MARKET_HINT, "", 1).replace(agent.FX_HINT, "", 1) == agent.SYSTEM_PROMPT
+
+    def test_discovery_tool_is_never_in_default_tools(self):
+        assert "discovery_tool" not in [t["function"]["name"] for t in agent.TOOLS]
+
+    def test_discovery_question_adds_tool_and_hint_without_mutating_defaults(self):
+        prompt, tools = agent.build_request("요즘 급등하는 종목 뭐 있어?")
+        assert [t["function"]["name"] for t in tools] == BASE_TOOLS + ["discovery_tool"]
+        assert agent.DISCOVERY_HINT in prompt and prompt != agent.SYSTEM_PROMPT
+        assert prompt.replace(agent.DISCOVERY_HINT, "", 1) == agent.SYSTEM_PROMPT
+        assert [t["function"]["name"] for t in agent.TOOLS] == BASE_TOOLS
+
+    def test_discovery_tool_runs_through_the_agent_dispatch(self):
+        assert agent.AVAILABLE_FUNCTIONS["discovery_tool"] is not None
+        assert "discovery_tool" not in agent._COMPANY_ARG  # 종목을 특정하지 않는 tool이라 company 인자가 없다
+        assert "discovery_tool" not in agent._PERIOD_ARG  # 기간 인자도 없다(limit만 받음)
+        spec = agent.DISCOVERY_TOOL_SPEC["function"]
+        assert spec["name"] == "discovery_tool" and spec["parameters"]["required"] == []
+
+    def test_all_three_gates_fire_together(self):
+        # 시장/환율/탐색 세 키워드가 전부 걸리는 (다소 작위적이지만) 질문.
+        prompt, tools = agent.build_request("환율 때문에 코스피 전체가 흔들리는데, 요즘 급등하는 종목 뭐 있어?")
+        assert [t["function"]["name"] for t in tools] == BASE_TOOLS + [
+            "market_tool", "fx_tool", "discovery_tool",
+        ]
+        for hint in (agent.MARKET_HINT, agent.FX_HINT, agent.DISCOVERY_HINT):
+            assert hint in prompt
+        stripped = prompt
+        for hint in (agent.MARKET_HINT, agent.FX_HINT, agent.DISCOVERY_HINT):
+            stripped = stripped.replace(hint, "", 1)
+        assert stripped == agent.SYSTEM_PROMPT
+
+
+# ---- 흐름 질문 판단(is_trend_question)과 이름으로 요청한 tool(explicitly_requested_tools) ----
+# 둘 다 build_request(1차 호출의 프롬프트/tool 목록)에는 쓰이지 않고, 1차 호출이 끝난 뒤의 보정에만 쓰인다.
+
+BUTTON_QUESTION = "삼성전자 최근 상황을 종합해서 알려줘. 주가, 뉴스, 공시를 같이 확인해줘."
+
+
+@pytest.mark.parametrize(
+    "q",
+    [
+        "삼성전자 최근 주가 흐름 알려줘", "현대차 주가 추이 좀 보여줘", "SK하이닉스 주가 추세가 어때?",
+        "카카오 주가 동향 알려줘", "LG화학 주가 움직임 어때?", "카카오 요즘 주가 어때?", "한화오션 최근 주가랑 등락률 알려줘.",
+        "네이버 요새 시세 알려줘", BUTTON_QUESTION, "현대차 요즘 왜 이렇게 빠져? 주가 흐름이랑 뉴스 같이 봐줘",
+    ],
+)
+def test_trend_questions(q):
+    assert is_trend_question(q)
+
+
+@pytest.mark.parametrize(
+    "q",
+    [
+        "삼성전자 주가 알려줘", "삼성전자 거래량 얼마야?", "삼성전자 최근 뉴스 알려줘", "삼성전자 최근 공시 뭐 있어?",
+        "삼성전자 최근 왜 올랐어? 뉴스도 같이 확인해줘", "카카오는 왜 떨어졌어?", "PER이 뭐야?", "", None,
+    ],
+)
+def test_non_trend_questions(q):
+    assert not is_trend_question(q)
+
+
+def test_trend_judgement_does_not_change_the_first_call_request():
+    """흐름 질문이어도 1차 호출의 프롬프트와 tool 목록은 기본값 그대로다(같은 객체)."""
+    prompt, tools = agent.build_request("삼성전자 최근 주가 흐름 알려줘")
+    assert prompt is agent.SYSTEM_PROMPT and tools is agent.TOOLS
+    prompt, tools = agent.build_request(BUTTON_QUESTION)
+    assert prompt is agent.SYSTEM_PROMPT and tools is agent.TOOLS
+
+
+@pytest.mark.parametrize(
+    "q, expected",
+    [
+        (BUTTON_QUESTION, ["stock_tool", "news_tool", "disclosure_tool"]),
+        ("카카오 주가랑 뉴스 같이 봐줘", ["stock_tool", "news_tool"]),
+        ("에코프로비엠 뉴스하고 공시 확인해줘", ["news_tool", "disclosure_tool"]),
+        ("공시랑 주가 같이 알려줘", ["stock_tool", "disclosure_tool"]),  # 순서는 질문이 아니라 고정 순서
+        # 하나만 요청한 질문은 모델 판단에 맡긴다
+        ("삼성전자 최근 공시 뭐 있어?", []),
+        ("삼성전자 주가 알려줘", []),
+        ("삼성전자 최근 뉴스 알려줘", []),
+        ("삼성전자 반도체 업황 관련 공시 내용 자세히 알려줘", []),
+        # 일부를 빼달라는 질문은 낱말만으로 판단할 수 없어 손대지 않는다
+        ("삼성전자 뉴스 말고 주가만 알려줘", []),
+        ("주가랑 뉴스만, 공시는 빼고", []),
+        ("공시 제외하고 주가, 뉴스 알려줘", []),
+        ("뉴스 없이 주가랑 공시만", []),
+        ("", []),
+        (None, []),
+    ],
+)
+def test_explicitly_requested_tools(q, expected):
+    assert explicitly_requested_tools(q) == expected
+
+
+def test_requested_tools_fire_only_on_the_multi_benchmark_group():
+    """벤치마크 질문 중 둘 이상을 이름으로 요청한 것은 multi 그룹뿐이다. 그 그룹은 원래 두 tool을 함께 불러야 정답이다."""
+    hit = {(group, q) for group, qs in CASES.items() for q in qs if explicitly_requested_tools(q)}
+    assert {g for g, _ in hit} == {"multi"}
+    assert all(explicitly_requested_tools(q) == ["stock_tool", "news_tool"] for _, q in hit)
+    # 공시 목록/공시 내용(rag)/개념 질문에는 하나도 걸리지 않는다
+    for group in ("rag", "rag_ho", "disc_list", "disc_ho", "no_tool", "no_tool_ho", "stock", "news"):
+        assert not any(explicitly_requested_tools(q) for q in CASES[group]), group
+
+
+# ---- 등락 원인 질문 판단(is_cause_question): 원인 표현과 등락 표현이 함께 있어야 한다 ----
+
+
+@pytest.mark.parametrize(
+    "q",
+    [
+        "카카오는 왜 떨어졌어?", "삼성전자 왜 올랐어?", "SK하이닉스 하락 이유가 뭐야?", "에코프로비엠 급등한 원인 알려줘",
+        "삼성전자 최근 주가 하락 원인 알려줘", "현대차 요즘 왜 이렇게 빠져?", "LG화학 주가 급등한 이유가 뭐야?",
+        "카카오 급락 때문에 걱정인데 이유가 뭐야?", "네이버 주가 왜 이렇게 올라?", "셀트리온 폭락 원인", "한화오션 상승 이유",
+        "삼성전자가 오른 까닭이 뭐야?", "카카오 주가가 떨어지는 이유", "삼성전자 주가 왜 내렸어?",
+        "카카오 요즘 주가 하락이 시장 전체 흐름 때문인지 궁금해",
+    ],
+)
+def test_cause_questions(q):
+    assert is_cause_question(q)
+
+
+@pytest.mark.parametrize(
+    "q",
+    [
+        # 원인 표현만
+        "PER이 왜 중요해?", "삼성전자 공시가 왜 이렇게 많아?", "배당을 하는 이유가 뭐야?", "카카오 실적 부진 원인",
+        "삼성전자 최근 올라온 공시가 왜 이렇게 많아?", "어제 올라왔던 공시 때문에 물어봐",
+        # 등락 표현만
+        "오늘 많이 오른 종목 알려줘", "요즘 급등하는 종목 뭐 있어?", "카카오 많이 떨어졌어?", "삼성전자 최근 3일 등락률 알려줘",
+        "현대차가 코스피보다 더 올랐어?", "삼성전자 상승률 알려줘",
+        # 둘 다 없음
+        "삼성전자 주가 알려줘", "삼성전자 최근 뉴스 알려줘", "삼성전자 지난주 주가 알려줘", "", None,
+    ],
+)
+def test_non_cause_questions(q):
+    assert not is_cause_question(q)
+
+
+def test_cause_judgement_does_not_change_the_first_call_request():
+    """원인 질문이어도 1차 호출(모델의 tool 선택)에 넘기는 프롬프트와 tool 목록은 기본값 그대로다(같은 객체).
+    market_tool은 여전히 시장 비교 표현이 있는 질문에만 모델에게 보인다."""
+    for q in ("카카오는 왜 떨어졌어?", "삼성전자 왜 올랐어?", "에코프로비엠 급등한 원인 알려줘"):
+        prompt, tools = agent.build_request(q)
+        assert prompt is agent.SYSTEM_PROMPT and tools is agent.TOOLS
+        assert not needs_market_tool(q) and not needs_discovery_tool(q) and not needs_fx_tool(q)
+
+
+def test_cause_questions_in_the_benchmark_are_only_in_multi_and_market_groups():
+    """벤치마크 질문 중 원인 질문은 주가+뉴스(multi)와 시장 비교(market) 그룹에만 있다. 공시 목록/내용(rag)/개념/
+    환율/탐색 질문에는 하나도 없어서, 그 그룹들의 tool 호출은 이번 보완의 영향을 받지 않는다."""
+    hit = {group for group, qs in CASES.items() for q in qs if is_cause_question(q)}
+    assert hit == {"multi", "market"}
+    for group in ("rag", "rag_ho", "disc_list", "disc_ho", "no_tool", "no_tool_ho", "stock", "news", "fx", "fx_ho",
+                  "discovery", "discovery_ho", "market_ho"):
+        assert not any(is_cause_question(q) for q in CASES[group]), group

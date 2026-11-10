@@ -1,0 +1,535 @@
+{
+  "git_commit": "e5f8cd03dcf97451078cda3267564ceed2acbb11",
+  "git_dirty": false,
+  "date": "2026-10-27T19:26:54",
+  "model": "llama3.1:8b",
+  "args": {
+    "mode": "all",
+    "split": "all",
+    "repeats": 3,
+    "only": null,
+    "limit": null,
+    "out": "C:/project/lab-scale/backend/evals/results/summary_after_r4_2026-10-27.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 52,
+    "live": 82,
+    "records": 298
+  },
+  "live": {
+    "ran": true,
+    "repeats": 3,
+    "eval_user": "captest_584ba82fc158",
+    "deleted_reports": 246,
+    "elapsed_s": 529.9
+  },
+  "elapsed_s": 532.2,
+  "metrics": {
+    "entity_default_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "entity_default_wrong_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "entity_default_miss_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "entity_default_ambiguous_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "entity_strict_accuracy": {
+      "dev": 0.6471,
+      "holdout": 0.5455,
+      "holdout_seen": 0.5455,
+      "holdout_unseen": null,
+      "all": 0.6071,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "entity_strict_wrong_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "entity_strict_miss_rate": {
+      "dev": 0.1765,
+      "holdout": 0.3636,
+      "holdout_seen": 0.3636,
+      "holdout_unseen": null,
+      "all": 0.25,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "entity_strict_ambiguous_rate": {
+      "dev": 0.1765,
+      "holdout": 0.0909,
+      "holdout_seen": 0.0909,
+      "holdout_unseen": null,
+      "all": 0.1429,
+      "n": {
+        "dev": 17,
+        "holdout": 11,
+        "holdout_seen": 11,
+        "holdout_unseen": 0,
+        "all": 28
+      }
+    },
+    "period_parse_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 8,
+        "holdout": 6,
+        "holdout_seen": 6,
+        "holdout_unseen": 0,
+        "all": 14
+      }
+    },
+    "routing_gate_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 4,
+        "holdout_seen": 4,
+        "holdout_unseen": 0,
+        "all": 10
+      }
+    },
+    "tool_selection_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 54,
+        "holdout": 36,
+        "holdout_seen": 30,
+        "holdout_unseen": 6,
+        "all": 90
+      }
+    },
+    "live_company_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 84,
+        "holdout": 57,
+        "holdout_seen": 33,
+        "holdout_unseen": 24,
+        "all": 141
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 84,
+        "holdout": 57,
+        "holdout_seen": 33,
+        "holdout_unseen": 24,
+        "all": 141
+      }
+    },
+    "live_period_rate": {
+      "dev": 1.0,
+      "holdout": null,
+      "holdout_seen": null,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 12,
+        "holdout": 0,
+        "holdout_seen": 0,
+        "holdout_unseen": 0,
+        "all": 12
+      }
+    },
+    "number_match_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 139,
+        "holdout": 86,
+        "holdout_seen": 50,
+        "holdout_unseen": 36,
+        "all": 225
+      }
+    },
+    "number_full_support_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 45,
+        "holdout": 30,
+        "holdout_seen": 18,
+        "holdout_unseen": 12,
+        "all": 75
+      }
+    },
+    "source_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 18,
+        "holdout": 21,
+        "holdout_seen": 15,
+        "holdout_unseen": 6,
+        "all": 39
+      }
+    },
+    "refusal_accuracy": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 36,
+        "holdout": 24,
+        "holdout_seen": 24,
+        "holdout_unseen": 0,
+        "all": 60
+      }
+    },
+    "period_label_violation_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 15,
+        "holdout": 9,
+        "holdout_seen": 9,
+        "holdout_unseen": 0,
+        "all": 24
+      }
+    },
+    "must_contain_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 39,
+        "holdout": 24,
+        "holdout_seen": 18,
+        "holdout_unseen": 6,
+        "all": 63
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 147,
+        "holdout": 99,
+        "holdout_seen": 69,
+        "holdout_unseen": 30,
+        "all": 246
+      }
+    },
+    "data_date_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 6,
+        "holdout_seen": 0,
+        "holdout_unseen": 6,
+        "all": 12
+      }
+    },
+    "stability_answer_rate": {
+      "dev": 1.0,
+      "holdout": 1.0,
+      "holdout_seen": null,
+      "holdout_unseen": 1.0,
+      "all": 1.0,
+      "n": {
+        "dev": 6,
+        "holdout": 6,
+        "holdout_seen": 0,
+        "holdout_unseen": 6,
+        "all": 12
+      }
+    },
+    "guard_replacement_rate": {
+      "dev": 0.0,
+      "holdout": 0.0625,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.2222,
+      "all": 0.0244,
+      "n": {
+        "dev": 50,
+        "holdout": 32,
+        "holdout_seen": 23,
+        "holdout_unseen": 9,
+        "all": 82
+      }
+    },
+    "fallback_rate": {
+      "dev": 0.0068,
+      "holdout": 0.0101,
+      "holdout_seen": 0.0145,
+      "holdout_unseen": 0.0,
+      "all": 0.0081,
+      "n": {
+        "dev": 147,
+        "holdout": 99,
+        "holdout_seen": 69,
+        "holdout_unseen": 30,
+        "all": 246
+      }
+    },
+    "error_rate": {
+      "dev": 0.0,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": 0.0,
+      "all": 0.0,
+      "n": {
+        "dev": 147,
+        "holdout": 99,
+        "holdout_seen": 69,
+        "holdout_unseen": 30,
+        "all": 246
+      }
+    },
+    "latency_p50_s": {
+      "dev": 0.02,
+      "holdout": 0.02,
+      "holdout_seen": 0.02,
+      "holdout_unseen": 0.02,
+      "all": 0.02,
+      "n": {
+        "dev": 147,
+        "holdout": 99,
+        "holdout_seen": 69,
+        "holdout_unseen": 30,
+        "all": 246
+      }
+    },
+    "latency_p95_s": {
+      "dev": 7.939,
+      "holdout": 8.732,
+      "holdout_seen": 8.136,
+      "holdout_unseen": 8.807,
+      "all": 8.155,
+      "n": {
+        "dev": 147,
+        "holdout": 99,
+        "holdout_seen": 69,
+        "holdout_unseen": 30,
+        "all": 246
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "ent_08",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "JB금융",
+      "check": "entity_strict",
+      "expected": "JB금융지주",
+      "actual": "ambiguous: ['JB금융지주']"
+    },
+    {
+      "id": "ent_14",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "셀트리언",
+      "check": "entity_strict",
+      "expected": "셀트리온",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '셀트리언'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_15",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "카카오뱅쿠",
+      "check": "entity_strict",
+      "expected": "카카오뱅크",
+      "actual": "ambiguous: ['카카오뱅크', '카카오']"
+    },
+    {
+      "id": "ent_17",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "엘지전자",
+      "check": "entity_strict",
+      "expected": "LG전자",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '엘지전자'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_21",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "엘지화학",
+      "check": "entity_strict",
+      "expected": "LG화학",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '엘지화학'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_22",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "케이비금융",
+      "check": "entity_strict",
+      "expected": "KB금융",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '케이비금융'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_23",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "에스케이텔레콤",
+      "check": "entity_strict",
+      "expected": "SK텔레콤",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '에스케이텔레콤'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_24",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "지에스건설",
+      "check": "entity_strict",
+      "expected": "GS건설",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '지에스건설'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_25",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "씨제이제일제당",
+      "check": "entity_strict",
+      "expected": "CJ제일제당",
+      "actual": "not_found: 정확한 종목을 찾지 못했습니다. '씨제이제일제당'에 해당하는 종목명 또는 종목코드를 정확히 입력해주세요."
+    },
+    {
+      "id": "ent_26",
+      "split": "dev",
+      "category": "entity",
+      "run": 0,
+      "question": "한미반도",
+      "check": "entity_strict",
+      "expected": "한미반도체",
+      "actual": "ambiguous: ['한미반도체']"
+    },
+    {
+      "id": "ent_27",
+      "split": "holdout",
+      "category": "entity",
+      "run": 0,
+      "question": "현대모비수",
+      "check": "entity_strict",
+      "expected": "현대모비스",
+      "actual": "ambiguous: ['현대모비스']"
+    }
+  ]
+}

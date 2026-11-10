@@ -1,0 +1,357 @@
+{
+  "git_commit": "d1c3a6534b3311be7955afc221110cd3afb36552",
+  "git_dirty": true,
+  "date": "2026-11-02T19:10:10",
+  "model": "llama3.1:8b",
+  "think": null,
+  "keep_alive": "30m",
+  "args": {
+    "mode": "live",
+    "split": "all",
+    "repeats": 5,
+    "only": null,
+    "ids": "fresh_04,b10_03",
+    "batch": null,
+    "exclude_batch": null,
+    "model": null,
+    "keep_tool_results": true,
+    "limit": null,
+    "out": "evals/results/summary_p19_wobble_off.json",
+    "from_raw": null,
+    "note": null
+  },
+  "n_items": {
+    "offline": 0,
+    "live": 2,
+    "records": 10
+  },
+  "live": {
+    "ran": true,
+    "repeats": 5,
+    "eval_user": "captest_a691b46c2d2c",
+    "deleted_reports": 10,
+    "etf_data_available": {},
+    "elapsed_s": 62.6
+  },
+  "etf_data_available": {},
+  "etf_branches": {},
+  "elapsed_s": 67.8,
+  "metrics": {
+    "live_company_accuracy": {
+      "dev": null,
+      "holdout": 0.8,
+      "holdout_seen": 0.8,
+      "holdout_unseen": null,
+      "all": 0.8,
+      "n": {
+        "dev": 0,
+        "holdout": 10,
+        "holdout_seen": 10,
+        "holdout_unseen": 0,
+        "all": 10
+      }
+    },
+    "live_company_wrong_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 10,
+        "holdout_seen": 10,
+        "holdout_unseen": 0,
+        "all": 10
+      }
+    },
+    "number_match_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 4,
+        "holdout_seen": 4,
+        "holdout_unseen": 0,
+        "all": 4
+      }
+    },
+    "number_full_support_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 2,
+        "holdout_seen": 2,
+        "holdout_unseen": 0,
+        "all": 2
+      }
+    },
+    "source_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 3,
+        "holdout_seen": 3,
+        "holdout_unseen": 0,
+        "all": 3
+      }
+    },
+    "must_contain_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 5,
+        "holdout_unseen": 0,
+        "all": 5
+      }
+    },
+    "forbidden_violation_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 10,
+        "holdout_seen": 10,
+        "holdout_unseen": 0,
+        "all": 10
+      }
+    },
+    "data_date_rate": {
+      "dev": null,
+      "holdout": 0.4,
+      "holdout_seen": 0.4,
+      "holdout_unseen": null,
+      "all": 0.4,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 5,
+        "holdout_unseen": 0,
+        "all": 5
+      }
+    },
+    "code_answer_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 10,
+        "holdout_seen": 10,
+        "holdout_unseen": 0,
+        "all": 10
+      }
+    },
+    "loop_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 10,
+        "holdout_seen": 10,
+        "holdout_unseen": 0,
+        "all": 10
+      }
+    },
+    "stability_answer_rate": {
+      "dev": null,
+      "holdout": 1.0,
+      "holdout_seen": 1.0,
+      "holdout_unseen": null,
+      "all": 1.0,
+      "n": {
+        "dev": 0,
+        "holdout": 5,
+        "holdout_seen": 5,
+        "holdout_unseen": 0,
+        "all": 5
+      }
+    },
+    "guard_replacement_rate": {
+      "dev": null,
+      "holdout": 0.125,
+      "holdout_seen": 0.125,
+      "holdout_unseen": null,
+      "all": 0.125,
+      "n": {
+        "dev": 0,
+        "holdout": 8,
+        "holdout_seen": 8,
+        "holdout_unseen": 0,
+        "all": 8
+      }
+    },
+    "narrative_drop_rate": {
+      "dev": null,
+      "holdout": 0.1429,
+      "holdout_seen": 0.1429,
+      "holdout_unseen": null,
+      "all": 0.1429,
+      "n": {
+        "dev": 0,
+        "holdout": 7,
+        "holdout_seen": 7,
+        "holdout_unseen": 0,
+        "all": 7
+      }
+    },
+    "foreign_strip_rate": {
+      "dev": null,
+      "holdout": 0.125,
+      "holdout_seen": 0.125,
+      "holdout_unseen": null,
+      "all": 0.125,
+      "n": {
+        "dev": 0,
+        "holdout": 8,
+        "holdout_seen": 8,
+        "holdout_unseen": 0,
+        "all": 8
+      }
+    },
+    "fallback_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 10,
+        "holdout_seen": 10,
+        "holdout_unseen": 0,
+        "all": 10
+      }
+    },
+    "error_rate": {
+      "dev": null,
+      "holdout": 0.0,
+      "holdout_seen": 0.0,
+      "holdout_unseen": null,
+      "all": 0.0,
+      "n": {
+        "dev": 0,
+        "holdout": 10,
+        "holdout_seen": 10,
+        "holdout_unseen": 0,
+        "all": 10
+      }
+    },
+    "latency_p50_s": {
+      "dev": null,
+      "holdout": 2.925,
+      "holdout_seen": 2.925,
+      "holdout_unseen": null,
+      "all": 2.925,
+      "n": {
+        "dev": 0,
+        "holdout": 10,
+        "holdout_seen": 10,
+        "holdout_unseen": 0,
+        "all": 10
+      }
+    },
+    "latency_p95_s": {
+      "dev": null,
+      "holdout": 16.1445,
+      "holdout_seen": 16.1445,
+      "holdout_unseen": null,
+      "all": 16.1445,
+      "n": {
+        "dev": 0,
+        "holdout": 10,
+        "holdout_seen": 10,
+        "holdout_unseen": 0,
+        "all": 10
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "b10_03",
+      "split": "holdout",
+      "category": "narrative",
+      "run": 2,
+      "question": "셀트리온과 삼성바이오로직스 최근 흐름 차이를 해석해줘",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "셀트리온",
+          "삼성바이오로직스"
+        ],
+        "must_not": null
+      },
+      "actual": []
+    },
+    {
+      "id": "b10_03",
+      "split": "holdout",
+      "category": "narrative",
+      "run": 3,
+      "question": "셀트리온과 삼성바이오로직스 최근 흐름 차이를 해석해줘",
+      "check": "company",
+      "expected": {
+        "companies": [
+          "셀트리온",
+          "삼성바이오로직스"
+        ],
+        "must_not": null
+      },
+      "actual": []
+    },
+    {
+      "id": "fresh_04",
+      "split": "holdout",
+      "category": "freshness",
+      "run": 2,
+      "question": "LG화학 지금 주가 어때?",
+      "check": "data_date",
+      "expected": "마지막 데이터 날짜(2026-10-30) 명시 + 오래됐으면 알림",
+      "actual": "## 주가 동향\nLG화학의 현재 주가는 230,500 원으로, 1일 전보다 1.5% 떨어졌습니다. 거래량은 18.67 만 주입니다."
+    },
+    {
+      "id": "fresh_04",
+      "split": "holdout",
+      "category": "freshness",
+      "run": 3,
+      "question": "LG화학 지금 주가 어때?",
+      "check": "data_date",
+      "expected": "마지막 데이터 날짜(2026-10-30) 명시 + 오래됐으면 알림",
+      "actual": "## 주가 동향\n\nLG화학의 현재 주가는 230,500 원으로, 최근 1일간 -1.5%의 변동률을 보입니다."
+    },
+    {
+      "id": "fresh_04",
+      "split": "holdout",
+      "category": "freshness",
+      "run": 4,
+      "question": "LG화학 지금 주가 어때?",
+      "check": "data_date",
+      "expected": "마지막 데이터 날짜(2026-10-30) 명시 + 오래됐으면 알림",
+      "actual": "## 주가 동향\n\nLG화학의 주가는 최근 1일간 -1.5% 감소했습니다."
+    }
+  ]
+}

@@ -1,0 +1,210 @@
+import secrets
+
+import pytest
+from sqlalchemy import text
+
+import ci_guard
+from app.models import Company
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item, call):
+    """CI_FAIL_ON_SKIP=1이면 skip을 실패로 바꾼다(tests/ci_guard.py). 환경변수가 없으면 아무것도 하지 않는다."""
+    report = yield
+    ci_guard.skip_to_failure(report)
+    return report
+
+
+@pytest.fixture(autouse=True)
+def rate_limit_off(monkeypatch):
+    """테스트끼리 레이트 리밋에 걸리지 않게 기본은 끈다(RATE_LIMIT_ENABLED=0). 켠 상태는 tests/test_rate_limit.py가
+    이 픽스처의 설정을 덮어써(setenv 1) 따로 검증한다. 메모리 카운터는 테스트마다 비운다."""
+    from app import rate_limit
+
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "0")
+    rate_limit.reset_all()
+    yield
+    rate_limit.reset_all()
+
+
+@pytest.fixture(autouse=True)
+def block_external_http(monkeypatch):
+    """테스트에서 requests로 나가는 실제 HTTP를 막는다(2026-11-08, 37차). 주문·포트폴리오·진단은 app.realtime_price가
+    네이버 실시간 시세를 먼저 부르는데(실패하면 DB 종가 폴백), 이 함수를 가짜로 바꾸지 않은 테스트가 실제로 외부에 요청하고 있었다.
+    연결 오류로 막으면 원래 설계대로 DB 종가 폴백이 쓰인다. requests.get 등을 직접 가짜로 바꾸는 테스트는 그 교체가 이보다 뒤라 그대로 돈다.
+    TestClient(httpx)·Ollama 클라이언트(httpx)·DB 연결은 requests가 아니라 영향이 없다."""
+    import requests
+
+    def _blocked(self, method, url, *args, **kwargs):
+        raise requests.ConnectionError(f"테스트에서 외부 HTTP 차단: {method} {url}")
+
+    monkeypatch.setattr(requests.sessions.Session, "request", _blocked)
+
+
+@pytest.fixture(autouse=True)
+def mail_outbox(monkeypatch):
+    """모든 테스트의 메일 발송기를 메모리 보관함으로 바꾼다(실제 SMTP 연결·backups/dev_mail.log 쓰기를 하지 않는다).
+    보관함(MemoryMailer)을 돌려주므로 테스트는 mail_outbox.outbox로 보낸 메일을 확인한다. SMTP 관련 환경변수도 지운다."""
+    from app import mailer
+
+    for name in ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "MAIL_FROM", "FRONTEND_BASE_URL"):
+        monkeypatch.delenv(name, raising=False)
+    box = mailer.MemoryMailer()
+    monkeypatch.setattr(mailer, "get_mailer", lambda: box)
+    return box
+
+
+@pytest.fixture(autouse=True)
+def oauth_env_clean(monkeypatch):
+    """소셜 로그인 키·주소 환경변수를 모든 테스트에서 지운다(.env의 값과 무관하게 '키 없음'에서 시작). 공급자 HTTP는
+    tests/test_oauth*.py가 가짜로 바꾼다. 실수로 실제 구글·네이버에 요청하지 않게 기본 HTTP도 막아 둔다."""
+    from app import oauth_providers
+
+    for name in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "NAVER_LOGIN_CLIENT_ID", "NAVER_LOGIN_CLIENT_SECRET", "OAUTH_REDIRECT_BASE"):
+        monkeypatch.delenv(name, raising=False)
+
+    class _Blocked:
+        def post(self, url, data):
+            raise AssertionError("테스트에서 실제 공급자에 요청하려 했다")
+
+        def get(self, url, headers):
+            raise AssertionError("테스트에서 실제 공급자에 요청하려 했다")
+
+    monkeypatch.setattr(oauth_providers, "HTTP", _Blocked())
+
+
+@pytest.fixture(autouse=True)
+def jwt_secret(monkeypatch):
+    """모든 테스트에 테스트마다 새로 만든 임의 JWT_SECRET을 넣는다(.env의 실제 값을 쓰지 않는다)."""
+    secret = secrets.token_urlsafe(48)
+    monkeypatch.setenv("JWT_SECRET", secret)
+    return secret
+
+
+@pytest.fixture
+def login_as():
+    """라우터 테스트용: get_current_user를 가짜 사용자로 바꾼다(토큰/DB 없이). 테스트가 끝나면 원래대로 돌린다."""
+    from app.api.deps import get_current_user
+    from app.auth import CurrentUser
+    from app.main import app
+
+    def _login(user_id: int = 1, username: str = "tester") -> CurrentUser:
+        user = CurrentUser(id=user_id, username=username)
+        app.dependency_overrides[get_current_user] = lambda: user
+        return user
+
+    yield _login
+    app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.fixture
+def signup(dev_db):
+    """실제 /api/auth/signup으로 가입하고 {"id","username","password","headers"}를 돌려준다. 끝나면 정리한다(통합 테스트용).
+
+    정리: 관심종목/모의투자는 소유자 키(`user:{id}`)로, 리포트는 users FK CASCADE로 지운다.
+    """
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.models import User, VirtualAccount, Watchlist
+
+    client = TestClient(app, raise_server_exceptions=False)
+    created = []
+
+    def _signup(username: str | None = None):
+        username = username or f"pt_{secrets.token_hex(6)}"
+        password = secrets.token_urlsafe(12)
+        r = client.post("/api/auth/signup", json={"username": username, "password": password})
+        assert r.status_code == 201, r.text
+        body = r.json()
+        created.append(body["user"]["id"])
+        return {
+            **body["user"],
+            "password": password,
+            "headers": {"Authorization": f"Bearer {body['access_token']}"},
+        }
+
+    yield _signup
+
+    dev_db.rollback()
+    for user_id in created:
+        key = f"user:{user_id}"
+        dev_db.query(Watchlist).filter(Watchlist.device_id == key).delete()
+        dev_db.query(VirtualAccount).filter(VirtualAccount.device_id == key).delete()
+        dev_db.query(User).filter(User.id == user_id).delete()
+    dev_db.commit()
+
+
+@pytest.fixture
+def make_user(dev_db):
+    """dev DB에 테스트용 사용자를 만들고 테스트가 끝나면 지운다(리포트는 FK CASCADE, 관심종목/모의투자는 owner key로 정리).
+
+    반환: (CurrentUser, 평문 비밀번호). username은 `pt_` 접두어 + 임의값.
+    """
+    from app.auth import create_user
+    from app.db.session import SessionLocal
+    from app.models import User, VirtualAccount, Watchlist
+
+    created = []
+
+    def _make():
+        password = secrets.token_urlsafe(12)
+        db = SessionLocal()
+        try:
+            user = create_user(db, f"pt_{secrets.token_hex(6)}", password)
+        finally:
+            db.close()
+        created.append(user)
+        return user, password
+
+    yield _make
+
+    dev_db.rollback()
+    for user in created:
+        dev_db.query(Watchlist).filter(Watchlist.device_id == user.owner_key).delete()
+        # holding/trade는 virtual_account FK ON DELETE CASCADE로 함께 지워진다.
+        dev_db.query(VirtualAccount).filter(VirtualAccount.device_id == user.owner_key).delete()
+        dev_db.query(User).filter(User.id == user.id).delete()
+    dev_db.commit()
+
+
+class FakeQuery:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def all(self):
+        return list(self._rows)
+
+
+class FakeDB:
+    """resolve_company/extract_from_text가 쓰는 db.query(Company).all()만 흉내낸다."""
+
+    def __init__(self, companies):
+        self._companies = companies
+
+    def query(self, model):
+        assert model is Company
+        return FakeQuery(self._companies)
+
+
+@pytest.fixture
+def make_db():
+    def _make(*names):
+        companies = [Company(id=i, name=n, ticker=f"{i:06d}") for i, n in enumerate(names, start=1)]
+        return FakeDB(companies)
+
+    return _make
+
+
+@pytest.fixture(scope="session")
+def dev_db():
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception as e:
+        db.close()
+        pytest.skip(f"dev DB에 연결할 수 없음: {type(e).__name__}")
+    yield db
+    db.close()

@@ -1,0 +1,277 @@
+"""POST /api/portfolio/diagnosis 라우트. DB 조회(load_inputs)와 LLM 호출(_chat)을 mock으로 바꿔 끼운다."""
+
+import json
+
+import httpx
+import ollama
+import pytest
+from fastapi.testclient import TestClient
+
+import app.api.portfolio as portfolio_api
+import app.diagnosis as d
+import app.diagnosis_history as history
+from app.agent import MODEL_NAME
+from app.diagnosis import HoldingInput
+from app.disclaimer import DISCLAIMER
+from app.main import app
+
+client = TestClient(app, raise_server_exceptions=False)
+
+INPUTS = {
+    "user:7": (4_000_000.0, [
+        HoldingInput("005930", "삼성전자", "KOSPI", 10, 280000.0, 271250.0, True, -2.31),
+        HoldingInput("035720", "카카오", "KOSPI", 20, 45000.0, 38000.0, True, None),
+    ]),
+    "user:8": (9_000_000.0, [HoldingInput("247540", "에코프로비엠", "KOSDAQ", 5, 150000.0, 160500.0, False, 12.5)]),
+}
+GOOD = {
+    "summary": "총자산은 7,472,500원이고 현금 비중은 53.53%입니다.",
+    "strengths": ["삼성전자 비중은 36.3%입니다."],
+    "risks": ["카카오의 손익률이 -15.56%로 기준(-10%) 이하입니다."],
+    "suggestions": ["카카오를 보유한 이유를 다시 점검해볼 수 있습니다."],
+}
+BODY_KEYS = {"generated_at", "source", "model", "metrics", "holdings", "flags", "summary", "strengths", "risks",
+             "suggestions", "notes", "disclaimer", "look_through"}  # look_through: ETF 실질 노출 스냅샷(2026-11-06 추가, 기존 필드는 그대로)
+TOP_KEYS = BODY_KEYS | {"diagnosis_id", "created_at"}  # 저장 이력 도입으로 두 필드가 추가됐다(기존 필드는 그대로)
+
+
+@pytest.fixture(autouse=True)
+def setup(monkeypatch, login_as):
+    login_as(7)
+    monkeypatch.setattr(portfolio_api, "SessionLocal", lambda: type("S", (), {"close": lambda self: None})())
+    seen_keys = []
+
+    def fake_load(db, owner_key):
+        seen_keys.append(owner_key)
+        return INPUTS.get(owner_key, (10_000_000.0, []))
+
+    monkeypatch.setattr(d, "load_inputs", fake_load)
+    return seen_keys
+
+
+@pytest.fixture(autouse=True)
+def saves(monkeypatch):
+    """저장(DB)을 가짜로 바꾸고 (user_id, 본문) 호출 기록을 돌려준다. 이 파일의 테스트는 DB에 아무것도 쓰지 않는다."""
+    calls = []
+
+    def fake_save(user_id, response):
+        calls.append((user_id, response))
+        return {"id": 100 + len(calls), "created_at": "2026-10-14T01:00:00+00:00"}
+
+    monkeypatch.setattr(history, "save_diagnosis", fake_save)
+    return calls
+
+
+def llm(monkeypatch, *responses):
+    """_chat을 순서대로 responses를 돌려주는(예외면 raise) 가짜로 바꾸고 호출 기록을 돌려준다."""
+    calls = []
+
+    def fake(messages):
+        calls.append(messages)
+        r = responses[min(len(calls), len(responses)) - 1]
+        if isinstance(r, Exception):
+            raise r
+        return r if isinstance(r, str) else json.dumps(r, ensure_ascii=False)
+
+    monkeypatch.setattr(d, "_chat", fake)
+    return calls
+
+
+def post():
+    return client.post("/api/portfolio/diagnosis")
+
+
+class TestAuth:
+    def test_no_token_is_401(self, monkeypatch):
+        app.dependency_overrides.clear()
+        calls = llm(monkeypatch, GOOD)
+        r = post()
+        assert r.status_code == 401 and r.headers["www-authenticate"] == "Bearer"
+        assert calls == []
+
+
+class TestLlmPaths:
+    def test_valid_json_is_used(self, monkeypatch):
+        calls = llm(monkeypatch, GOOD)
+        r = post()
+        assert r.status_code == 200
+        body = r.json()
+        assert set(body) == TOP_KEYS
+        assert body["source"] == "llm" and body["model"] == MODEL_NAME
+        # LLM이 쓴 것은 summary와 suggestions뿐이고, strengths/risks는 코드가 만든 사실 문장이다
+        assert body["summary"] == GOOD["summary"] and body["suggestions"] == GOOD["suggestions"]
+        facts = d.fact_sentences(body["holdings"], body["metrics"], body["flags"])
+        assert body["strengths"] == facts["strengths"] and body["risks"] == facts["risks"]
+        assert body["risks"][:3] == [f["message"] for f in body["flags"]]
+        assert body["risks"][3:] == ["삼성전자는 총자산의 36.3%이고, 최근 20거래일 주가 등락률은 -2.31%입니다."]
+        assert GOOD["strengths"][0] not in body["strengths"]
+        assert body["disclaimer"] == DISCLAIMER
+        assert body["metrics"]["total_asset"] == 7_472_500 and body["metrics"]["holding_count"] == 2
+        assert [h["ticker"] for h in body["holdings"]] == ["005930", "035720"]
+        assert {f["code"] for f in body["flags"]} == {"FEW_HOLDINGS", "BIG_LOSS", "MARKET_SKEW"}
+        assert len(calls) == 1
+        assert not any("규칙 기반" in n for n in body["notes"])
+
+    def test_broken_json_retries_once_then_falls_back(self, monkeypatch):
+        calls = llm(monkeypatch, "{not json", "still not json")
+        body = post().json()
+        assert body["source"] == "rule_based" and body["model"] is None
+        assert len(calls) == 2
+        assert body["risks"] == [f["message"] for f in body["flags"]]
+        assert any("규칙 기반 문장" in n for n in body["notes"])
+
+    def test_broken_then_valid_uses_llm(self, monkeypatch):
+        calls = llm(monkeypatch, "{not json", GOOD)
+        body = post().json()
+        assert body["source"] == "llm" and len(calls) == 2
+
+    def test_invented_number_falls_back(self, monkeypatch):
+        bad = {**GOOD, "summary": "총자산은 7,500,000원입니다."}
+        calls = llm(monkeypatch, bad, bad)
+        body = post().json()
+        assert body["source"] == "rule_based" and len(calls) == 2
+        assert "7,500,000" not in json.dumps(body, ensure_ascii=False)
+
+    def test_missing_key_falls_back(self, monkeypatch):
+        bad = {k: v for k, v in GOOD.items() if k != "suggestions"}
+        llm(monkeypatch, bad, bad)
+        assert post().json()["source"] == "rule_based"
+
+    def test_summary_and_suggestions_alone_are_enough(self, monkeypatch):
+        """새 출력 형식(summary, suggestions만). 예전 형식에서 strengths/risks가 빠져도 폴백하지 않는다."""
+        calls = llm(monkeypatch, {"summary": GOOD["summary"], "suggestions": GOOD["suggestions"]})
+        body = post().json()
+        assert body["source"] == "llm" and len(calls) == 1
+        assert body["strengths"] and body["risks"] and set(body) == TOP_KEYS
+
+    @pytest.mark.parametrize(
+        "field, text",
+        [
+            ("summary", "카카오 비중은 36.3%입니다."),  # 36.3은 삼성전자의 비중
+            ("summary", "삼성전자의 손익률이 -15.56%입니다."),  # -15.56은 카카오의 손익률
+            ("suggestions", ["SK하이닉스를 함께 살펴볼 수 있습니다."]),  # 보유하지 않은 종목
+            ("suggestions", ["비중이 가장 큰 종목은 카카오이니 점검해볼 수 있습니다."]),  # 1위는 삼성전자
+        ],
+        ids=["other_holdings_weight", "other_holdings_loss", "unknown_company", "wrong_top_holding"],
+    )
+    def test_wrong_company_and_number_combination_falls_back(self, monkeypatch, field, text):
+        bad = {**GOOD, field: text}
+        calls = llm(monkeypatch, bad, bad)
+        body = post().json()
+        assert body["source"] == "rule_based" and len(calls) == 2
+        wrong = text if isinstance(text, str) else text[0]
+        assert wrong not in json.dumps(body, ensure_ascii=False)
+
+    def test_wrong_combination_then_valid_uses_llm(self, monkeypatch):
+        calls = llm(monkeypatch, {**GOOD, "summary": "카카오 비중은 36.3%입니다."}, GOOD)
+        body = post().json()
+        assert body["source"] == "llm" and body["summary"] == GOOD["summary"] and len(calls) == 2
+        assert "종목명과 맞지 않는 숫자" in calls[1][-1]["content"]
+
+    def test_direct_trade_instruction_falls_back(self, monkeypatch):
+        bad = {**GOOD, "suggestions": ["카카오를 매도하세요."]}
+        llm(monkeypatch, bad, bad)
+        body = post().json()
+        assert body["source"] == "rule_based" and "매도하세요" not in json.dumps(body, ensure_ascii=False)
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            ollama.ResponseError("model 'nope' not found", 404),
+            ConnectionError("Failed to connect to Ollama"),
+            httpx.ReadTimeout("timed out"),
+            httpx.ConnectError("refused"),
+        ],
+        ids=["response_error", "connection", "timeout", "httpx_connect"],
+    )
+    def test_ollama_failure_falls_back_without_retry(self, monkeypatch, exc):
+        calls = llm(monkeypatch, exc, GOOD)
+        r = post()
+        assert r.status_code == 200  # 503/502가 아니라 폴백
+        body = r.json()
+        assert body["source"] == "rule_based" and len(calls) == 1
+        assert body["summary"] and body["strengths"] and body["risks"] and body["suggestions"]
+
+
+class TestNoHoldings:
+    def test_400_and_llm_not_called(self, monkeypatch, login_as):
+        login_as(99)  # INPUTS에 없음 → 보유 없음
+        calls = llm(monkeypatch, GOOD)
+        r = post()
+        assert r.status_code == 400
+        assert r.json() == {"detail": "보유 종목이 없습니다. 모의투자 주문 후 진단할 수 있어요."}
+        assert calls == []
+
+
+class TestIsolationAndPrompt:
+    def test_each_user_gets_only_own_holdings(self, monkeypatch, login_as, setup):
+        llm(monkeypatch, GOOD)
+        a = post().json()
+        login_as(8)
+        llm(monkeypatch, {"summary": "현금 비중은 91.82%입니다.", "strengths": ["a"], "risks": ["b"], "suggestions": ["c"]})
+        b = post().json()
+        assert setup == ["user:7", "user:8"]
+        assert [h["ticker"] for h in a["holdings"]] == ["005930", "035720"]
+        assert [h["ticker"] for h in b["holdings"]] == ["247540"]
+        assert b["metrics"]["cash_balance"] == 9_000_000
+
+    def test_prompt_has_numbers_but_no_identity(self, monkeypatch, login_as):
+        login_as(7, username="secret_name")
+        calls = llm(monkeypatch, GOOD)
+        post()
+        sent = json.dumps(calls[0], ensure_ascii=False)
+        assert "secret_name" not in sent and "user:7" not in sent
+        payload = json.loads(calls[0][1]["content"])
+        assert set(payload) == {"metrics", "flags", "holdings", "return_window_days"}
+        assert [h["company_name"] for h in payload["holdings"]] == ["삼성전자", "카카오"]  # 비중 큰 순(36.3%, 10.17%)
+        assert payload["metrics"]["total_asset"] == 7_472_500
+
+    def test_price_unavailable_is_reported(self, monkeypatch):
+        INPUTS["user:7"][1].append(HoldingInput("000660", "SK하이닉스", "KOSPI", 1, 1_800_000.0, None))
+        try:
+            llm(monkeypatch, GOOD)
+            body = post().json()
+        finally:
+            INPUTS["user:7"][1].pop()
+        h = body["holdings"][-1]
+        assert h["price_unavailable"] is True and h["eval_amount"] is None
+        assert body["metrics"]["holding_count"] == 3 and body["metrics"]["priced_holding_count"] == 2
+        assert any("SK하이닉스의 현재가를 가져오지 못해" in n for n in body["notes"])
+
+
+class TestSaving:
+    def test_response_carries_id_and_created_at(self, monkeypatch, saves):
+        llm(monkeypatch, GOOD)
+        body = post().json()
+        assert body["diagnosis_id"] == 101 and body["created_at"] == "2026-10-14T01:00:00+00:00"
+        assert set(body) == TOP_KEYS
+
+    def test_saves_the_whole_body_without_the_added_fields_for_the_logged_in_user(self, monkeypatch, saves):
+        llm(monkeypatch, GOOD)
+        body = post().json()
+        assert len(saves) == 1
+        user_id, stored = saves[0]
+        assert user_id == 7  # users.id(owner key "user:7"가 아니다)
+        assert set(stored) == BODY_KEYS
+        assert stored == {k: v for k, v in body.items() if k in BODY_KEYS}
+
+    def test_fallback_result_is_saved_too(self, monkeypatch, saves):
+        llm(monkeypatch, ConnectionError("down"))
+        assert post().json()["source"] == "rule_based"
+        assert saves[0][1]["source"] == "rule_based"
+
+    def test_no_holdings_is_not_saved(self, monkeypatch, login_as, saves):
+        login_as(99)
+        llm(monkeypatch, GOOD)
+        assert post().status_code == 400
+        assert saves == []
+
+    def test_save_failure_still_returns_the_diagnosis(self, monkeypatch):
+        """저장 함수는 실패해도 예외를 내지 않고 None을 돌려준다(진단 응답을 막지 않는다)."""
+        monkeypatch.setattr(history, "save_diagnosis", lambda user_id, response: None)
+        llm(monkeypatch, GOOD)
+        r = post()
+        assert r.status_code == 200
+        body = r.json()
+        assert body["diagnosis_id"] is None and body["created_at"] is None
+        assert set(body) == TOP_KEYS and body["source"] == "llm" and body["metrics"]["total_asset"] == 7_472_500
