@@ -2,6 +2,7 @@ import type { Api } from './index'
 import { baseMockApi } from './mock'
 import { briefingMock } from './mock-briefing'
 import { etfMock, exposureMock } from './mock-exposure'
+import { accountMock } from './mock-account'
 import { historyMock } from './mock-history'
 import { marketMock } from './mock-market'
 import { performanceMock } from './mock-performance'
@@ -16,4 +17,5 @@ export const mockApi: Api = {
   ...briefingMock,
   ...historyMock,
   ...marketMock,
+  ...accountMock,
 }

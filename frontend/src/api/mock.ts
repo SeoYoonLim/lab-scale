@@ -76,10 +76,15 @@ import {
 
 // ---------- 인증 (로그인 전이면 모든 보호된 API가 여기서 막힌다) ----------
 
-interface MockUser {
+export interface MockUser {
   id: number
   username: string
   password: string
+  // 이메일 복구 mock(mock-account.ts). 없으면 이메일을 등록하지 않은 계정이다
+  email?: string | null
+  emailVerified?: boolean
+  // 이 시각 전에 발급한 토큰은 무효다(비밀번호 변경·재설정 = 실제 서버의 token_version 증가)
+  tokensValidFrom?: number
 }
 
 // 계정만 localStorage에 같이 저장해서 새로고침해도 로그인이 유지되게 한다(실제 요구사항이자
@@ -102,9 +107,10 @@ function loadUsers(): { users: MockUser[]; nextUserId: number } {
 
 const loaded = loadUsers()
 const users: MockUser[] = loaded.users
+export const mockUsers = users
 let nextUserId = loaded.nextUserId
 
-function saveUsers(): void {
+export function saveUsers(): void {
   try {
     localStorage.setItem(MOCK_USERS_KEY, JSON.stringify({ users, nextUserId }))
   } catch {
@@ -128,7 +134,7 @@ function validateUsername(raw: string): string {
 // 흔한 비밀번호 목록 전체는 서버에 있고, mock은 대표적인 몇 개만 막는다(실제 서버에서 "password123"이 거부되는 걸 확인했다).
 const COMMON_PASSWORDS = ['password', 'password1', 'password123', '12345678', '123456789', 'qwerty123', 'iloveyou', 'abc12345']
 
-function validatePassword(password: string, username?: string): void {
+export function validatePassword(password: string, username?: string): void {
   if (password.length < 8 || password.length > 128) {
     throw new ApiError('비밀번호는 8~128자여야 해요.', 422)
   }
@@ -149,12 +155,17 @@ function validatePassword(password: string, username?: string): void {
 // 깨지지 않는다. 발급 시각은 실제 JWT처럼 24시간 만료를 흉내 내는 데 쓴다.
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000 // backend/API.md: access token은 24시간 만료
 
-function issueToken(userId: number): string {
+export function issueToken(userId: number): string {
   return `mock.${userId}.${Date.now()}.${Math.random().toString(36).slice(2)}`
 }
 
-function toUserOut(user: MockUser): User {
+export function toUserOut(user: MockUser): User {
   return { id: user.id, username: user.username }
+}
+
+// GET /auth/me는 이메일 상태까지 준다(가입·로그인 응답의 user에는 없다)
+function toMeOut(user: MockUser): User {
+  return { ...toUserOut(user), email: user.email ?? null, email_verified: user.emailVerified ?? false }
 }
 
 // 보호된 API 진입점마다 호출한다. 토큰이 없거나 모르는 형식이거나 발급 24시간이 지났으면 실제
@@ -166,7 +177,11 @@ export function currentUserId(): number {
   const userId = match ? Number(match[1]) : undefined
   const issuedAt = match ? Number(match[2]) : undefined
   const expired = issuedAt != null && Date.now() - issuedAt > TOKEN_TTL_MS
-  if (userId == null || expired) {
+  // 비밀번호를 바꾸거나 재설정하면 그 전에 발급한 토큰은 모두 무효다(실제 서버의 token_version)
+  const owner = users.find((u) => u.id === userId)
+  const revoked = issuedAt != null && issuedAt < (owner?.tokensValidFrom ?? 0)
+  // 탈퇴로 지워진 계정의 토큰도 무효다(실제 서버: 지운 뒤 그 사용자의 모든 JWT는 401)
+  if (userId == null || !owner || expired || revoked) {
     clearToken()
     window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
     throw unauthorized()
@@ -200,7 +215,7 @@ async function me(): Promise<User> {
   const userId = currentUserId()
   const user = users.find((u) => u.id === userId)
   if (!user) throw unauthorized()
-  return toUserOut(user)
+  return toMeOut(user)
 }
 
 // ---------- 사용자별 데이터 (2026-10-07 로그인 도입 — 사용자마다 따로 분리) ----------

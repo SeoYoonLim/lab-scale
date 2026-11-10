@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { ApiError } from './errors'
 import { httpApi } from './http'
-import { clearToken, setToken } from '../utils/token'
+import { clearToken, getToken, setToken } from '../utils/token'
 
 // 실제 백엔드에 붙여 보는 통합 테스트(기본은 건너뜀). 모든 응답은 httpApi가 zod 스키마로 검증하므로, 서버 응답이 우리가 기대한
 // 모양(backend/API.md와 핸드오프 문서)과 다르면 ApiError(502, 응답 형식 오류)로 여기서 먼저 걸린다.
@@ -65,6 +65,65 @@ describe.skipIf(!enabled)('실제 백엔드 통합(httpApi + zod 검증)', () =>
     await expect(httpApi.updatePreferences({ preferred_locale: 'fr-FR' })).rejects.toMatchObject({ status: 422 })
     const reset = await httpApi.updatePreferences({ preferred_locale: 'ko-KR', preferred_timezone: null })
     expect(reset.effective_timezone).toBe('Asia/Seoul')
+  })
+
+  it('계정 복구: 이메일 등록(현재 비밀번호 필수)·같은 응답의 찾기 API·잘못된 링크·비밀번호 변경(새 토큰)', { timeout: TIMEOUT }, async () => {
+    // 비밀번호를 바꾸면 이 계정의 토큰이 무효가 되므로 따로 가입한 계정으로 한다(다른 테스트의 토큰은 그대로 둔다)
+    const mainToken = getToken()
+    const username = `ac${Math.random().toString(36).slice(2, 10)}`
+    const password = 'Zk9-dummy-pw1'
+    setToken((await httpApi.signup(username, password)).access_token)
+    try {
+      const fresh = await httpApi.me()
+      expect(fresh.email ?? null).toBeNull()
+      expect(fresh.email_verified).toBe(false)
+
+      await expect(httpApi.setEmail(`${username}@example.com`, 'wrong-dummy-pw-1')).rejects.toMatchObject({ status: 422 })
+      const email = `${username}@example.com`
+      const saved = await httpApi.setEmail(email, password)
+      expect(saved).toMatchObject({ email, email_verified: false, verification_sent: true })
+      expect(await httpApi.me()).toMatchObject({ email, email_verified: false })
+
+      // 이메일이 있든 없든(인증 전이든) 같은 200 + 같은 문장이다 - 계정 존재 여부를 드러내지 않는다
+      const known = await httpApi.forgotPassword(email)
+      const unknown = await httpApi.forgotPassword(`nobody${Math.random().toString(36).slice(2, 10)}@example.com`)
+      expect(known).toEqual(unknown)
+      expect(await httpApi.findUsername(email)).toEqual(unknown)
+      // 잘못된 링크 토큰은 400(일반 문장)이다
+      await expect(httpApi.verifyEmail('not-a-real-token')).rejects.toMatchObject({ status: 400 })
+      await expect(httpApi.resetPassword('not-a-real-token', 'New-pass-Phrase-77')).rejects.toMatchObject({ status: 400 })
+
+      // 현재 비밀번호가 틀린 것은 401이 아니라 422라서 로그인이 유지된다
+      await expect(httpApi.changePassword('wrong-dummy-pw-1', 'Brand-new-pass-1')).rejects.toMatchObject({ status: 422 })
+      expect((await httpApi.me()).username).toBe(username)
+      const changed = await httpApi.changePassword(password, 'Brand-new-pass-1')
+      // 기존 토큰은 이 기기 것도 무효이고, 응답의 새 토큰으로 이어 간다
+      await expect(httpApi.me()).rejects.toMatchObject({ status: 401 })
+      setToken(changed.access_token)
+      expect((await httpApi.me()).username).toBe(username)
+    } finally {
+      if (mainToken) setToken(mainToken)
+    }
+  })
+
+  it('회원 탈퇴: 비밀번호 필수(422)·잘못된 확인 링크(400)·탈퇴하면 로그인도 옛 토큰도 안 된다', { timeout: TIMEOUT }, async () => {
+    const mainToken = getToken()
+    const username = `de${Math.random().toString(36).slice(2, 10)}`
+    const password = 'Zk9-dummy-pw1'
+    setToken((await httpApi.signup(username, password)).access_token)
+    try {
+      await expect(httpApi.deleteAccount({})).rejects.toMatchObject({ status: 422 })
+      await expect(httpApi.deleteAccount({ current_password: 'wrong-dummy-pw-1' })).rejects.toMatchObject({ status: 422 })
+      expect((await httpApi.me()).username).toBe(username) // 422라서 계정과 로그인은 그대로다
+      await expect(httpApi.confirmDeleteAccount('not-a-real-token')).rejects.toMatchObject({ status: 400 })
+
+      const done = await httpApi.deleteAccount({ current_password: password })
+      expect(done).toMatchObject({ ok: true, status: 'deleted' })
+      await expect(httpApi.login(username, password)).rejects.toMatchObject({ status: 401 })
+      await expect(httpApi.me()).rejects.toMatchObject({ status: 401 })
+    } finally {
+      if (mainToken) setToken(mainToken)
+    }
   })
 
   it('포트폴리오: 빈 상태의 성과·노출 -> 주문 -> 성과·노출·진단(look_through)·이력·비교', { timeout: TIMEOUT }, async () => {

@@ -13,6 +13,11 @@ export interface AuthContextValue {
   login: (username: string, password: string) => Promise<void>
   signup: (username: string, password: string) => Promise<void>
   logout: () => void
+  // 계정이 이미 지워졌을 때처럼 서버에 알릴 필요가 없을 때 이 기기의 로그인 상태만 비운다(logout은 서버에도 알린다).
+  // notice는 로그인 화면이 한 번 보여줄 안내다(회원 탈퇴 완료 문장 등).
+  endSession: (notice?: string) => void
+  // endSession이 남긴 안내. 로그인·가입에 성공하면 사라진다.
+  notice: string | null
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)

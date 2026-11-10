@@ -14,6 +14,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [initError, setInitError] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
+  // 로그인 화면이 보여줄 안내(회원 탈퇴 완료 등). 라우터 state로 넘기면 로그인 상태를 비우는 순간 RequireAuth의 이동이 덮어써서
+  // 사라지므로 여기에 둔다.
+  const [notice, setNotice] = useState<string | null>(null)
   // 쿼리 캐시 키에는 사용자 구분이 없어서(['portfolio'] 등), 로그아웃·토큰 만료·계정 전환 때 비우지 않으면 다음 사람이
   // 이전 사용자의 포트폴리오·기록·브리핑을 잠깐 보게 된다.
   const queryClient = useQueryClient()
@@ -68,6 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await api.login(username, password)
     queryClient.clear()
     setToken(res.access_token)
+    setNotice(null)
     setUser(res.user)
   }
 
@@ -75,6 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await api.signup(username, password)
     queryClient.clear()
     setToken(res.access_token)
+    setNotice(null)
     setUser(res.user)
   }
 
@@ -89,8 +94,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }
 
+  // 회원 탈퇴가 끝났을 때: 계정이 없으니 서버 로그아웃을 부르면 401만 난다. 이 기기의 토큰·캐시·로그인 상태만 비운다.
+  function endSession(message?: string) {
+    clearToken()
+    queryClient.clear()
+    setNotice(message ?? null)
+    setUser(null)
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, initError, retryInit, login, signup, logout }}>
+    <AuthContext.Provider value={{ user, loading, initError, retryInit, login, signup, logout, endSession, notice }}>
       {children}
     </AuthContext.Provider>
   )

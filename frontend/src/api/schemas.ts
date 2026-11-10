@@ -55,6 +55,8 @@ export const assetTypeSchema = z.enum(['stock', 'etf']) satisfies z.ZodType<Asse
 export const userSchema = z.object({
   id: z.number(),
   username: z.string(),
+  email: z.string().nullish(),
+  email_verified: z.boolean().optional(),
 }) satisfies z.ZodType<User>
 
 export const authResponseSchema = z.object({

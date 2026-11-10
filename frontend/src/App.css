@@ -3096,6 +3096,77 @@ body {
   min-width: 130px;
 }
 
+/* 설정: 카드를 세로로 쌓고, 이메일 상태·샘플 메일함·링크 버튼 */
+.settings-page {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.settings-page .page-title {
+  margin-bottom: 0;
+}
+
+.account-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  overflow-wrap: anywhere;
+}
+
+.account-actions {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.mock-mailbox {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px dashed var(--rule);
+  border-radius: 10px;
+}
+
+.mock-mailbox ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* <Link>를 로그인 버튼과 같은 크기로 보이게 한다(가운데 정렬, 밑줄 없음) */
+.auth-link-button {
+  display: block;
+  text-align: center;
+  text-decoration: none;
+}
+
+/* 설정 카드: 항목 사이 간격, 버튼은 내용 크기 */
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-card > .send {
+  align-self: flex-start;
+}
+
+/* 회원 탈퇴: 되돌릴 수 없는 동작이라 붉은 버튼과 옅은 붉은 테두리로 구분한다 */
+.danger-zone {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--rule));
+}
+
+.send.danger-button {
+  background: var(--danger);
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
 /* 오늘의 시장: 상승·하락 종목 막대(수집 대상 주식 기준) */
 .market-breadth {
   margin-bottom: 10px;
