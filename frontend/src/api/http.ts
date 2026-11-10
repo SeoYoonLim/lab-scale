@@ -9,6 +9,8 @@ import { lookThroughViewSchema } from './contracts/exposure'
 import type { LookThroughView } from './contracts/exposure'
 import { historySearchSchema } from './contracts/history'
 import type { HistorySearchResponse } from './contracts/history'
+import { marketOverviewSchema } from './contracts/market'
+import type { MarketOverview } from './contracts/market'
 import { performanceViewSchema } from './contracts/performance'
 import type { PerformanceView } from './contracts/performance'
 import { preferencesSchema } from './contracts/preferences'
@@ -450,6 +452,7 @@ export const httpApi: Api = {
       {},
       { schema: etfHoldingsSchema },
     ),
+  getMarketOverview: () => request<MarketOverview>('/market/overview', {}, { schema: marketOverviewSchema }),
   getDisclaimer: () =>
     request<{ text: string }>('/disclaimer', {}, { schema: disclaimerResponseSchema }).then((res) => res.text),
 }

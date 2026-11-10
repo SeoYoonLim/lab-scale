@@ -28,8 +28,9 @@ import type { BriefingApi } from './domains/briefing'
 import type { EtfApi } from './domains/etf'
 import type { ExposureApi } from './domains/exposure'
 import type { HistoryApi } from './domains/history'
-import type { RecoveryApi } from './domains/recovery'
+import type { MarketApi } from './domains/market'
 import type { PerformanceApi } from './domains/performance'
+import type { RecoveryApi } from './domains/recovery'
 import { httpApi } from './http'
 import { mockApi } from './mockApi'
 
@@ -96,6 +97,7 @@ export type Api = AuthApi &
   BriefingApi &
   HistoryApi &
   EtfApi &
+  MarketApi &
   RecoveryApi
 
 // 예전부터 있던 영역(이 파일의 위 네 인터페이스)만. mock.ts가 이것만 구현하고, mockApi.ts가 영역별 mock을 합친다.

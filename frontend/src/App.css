@@ -3167,4 +3167,44 @@ body {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 16px;
+/* 오늘의 시장: 상승·하락 종목 막대(수집 대상 주식 기준) */
+.market-breadth {
+  margin-bottom: 10px;
+}
+
+.breadth-bar {
+  display: flex;
+  height: 12px;
+  margin: 6px 0;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+
+.breadth-seg {
+  display: block;
+  height: 100%;
+}
+
+.breadth-seg-up {
+  background: var(--up);
+}
+
+.breadth-seg-flat {
+  background: var(--ink-muted);
+  opacity: 0.55;
+}
+
+.breadth-seg-down {
+  background: var(--down);
+}
+
+.breadth-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0 0 4px;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
 }

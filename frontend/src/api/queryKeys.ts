@@ -31,6 +31,7 @@ export const queryKeys = {
   historySearch: (params: HistorySearchParams) => ['historySearch', params] as const,
   reportRecord: (reportId: number) => ['reportRecord', reportId] as const,
   etfHoldings: (ticker: string, limit: number) => ['etfHoldings', ticker, limit] as const,
+  marketOverview: ['marketOverview'] as const,
   priceHistory: (ticker: string, days: number) => ['priceHistory', ticker, days] as const,
   status: ['status'] as const,
   eventReactions: (ticker: string, eventType: EventTypeFilter) => ['eventReactions', ticker, eventType] as const,

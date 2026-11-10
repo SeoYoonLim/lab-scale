@@ -33,6 +33,11 @@ describe.skipIf(!enabled)('실제 백엔드 통합(httpApi + zod 검증)', () =>
       expect(t.category).toBe(category)
     }
 
+    // 데이터가 없어도 200이고 status로 구분한다(스키마가 통과하는지가 핵심)
+    const market = await httpApi.getMarketOverview()
+    expect(['ok', 'partial', 'no_data']).toContain(market.status)
+    expect(market.indices.map((i) => i.code)).toEqual(['KS11', 'KQ11'])
+
     const history = await httpApi.getPriceHistory('005930', 30)
     expect(history.count).toBe(history.items.length)
     expect(history.items[0].date <= history.items.at(-1)!.date).toBe(true)
