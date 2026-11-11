@@ -276,3 +276,15 @@ def test_news_step_keeps_disclosures_by_default(monkeypatch):
     monkeypatch.setattr(rd, "_call_script", lambda main, argv, timeout: calls.append(argv) or "")
     next(s for s in rd.build_steps(10, 1) if s.key == "news").run()
     assert calls[0] == ["--universe", "universe_top300.json"]
+
+
+# ---------- 45차(2026-11-11): 주가 종가 기준을 refresh_data에서 고를 수 있다(기본은 그대로 source) ----------
+def test_prices_step_passes_close_basis(monkeypatch):
+    from scripts import collect_prices
+
+    seen = []
+    monkeypatch.setattr(rd, "_call_script", lambda fn, argv, timeout: seen.append(argv) or "{\"targets\": 1, \"failures\": 0}")
+    next(s for s in rd.build_steps(10, 1) if s.key == "prices").run()
+    next(s for s in rd.build_steps(10, 1, close_basis="official") if s.key == "prices").run()
+    assert [a[a.index("--close-basis") + 1] for a in seen] == ["source", "source", "official", "official"]
+    assert collect_prices.main  # 실제 스크립트 진입점이 있다

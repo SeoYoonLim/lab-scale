@@ -8,6 +8,13 @@
 - 다음 거래일의 기준가(= 전일 정규장 종가)는 네이버 일별 시세의 `closePrice - compareToPreviousClosePrice`로 복원된다.
   42·43차 실데이터 대조: 2025-02-21~2026-09-11 주식 2종목 불일치 0일, 2026-09-14 이후 32·37일 불일치.
 
+## 45차(2026-11-11) 저장 기준: 공식 종가를 원천의 수정주가 체계로
+- 저장 종가 = 공식 종가 x (원천 FDR 종가 / 네이버 실제 종가). FDR은 기업 이벤트(무상증자·분할)와 ETF 분배 뒤 과거 전체를
+  조정한다. 실제 종가로 덮어쓰면 교정 구간 경계에 가짜 급등락이 생기고(엘앤씨바이오 2026-09-14 +93%), 저장 전 검증이 일부를
+  격리해 기준이 섞인다(커버드콜 ETF 38~58% 차이). 그래서 조정 체계는 원천을 따르고, 애프터마켓 차이만 고친다.
+- ETF는 애프터마켓 대상이 아니라 공식 종가 = 실제 종가이므로 결과는 원천(FDR) 값 그대로다(44차의 "ETF = 실제 종가"는 바꿨다).
+- 한계: 조정 계수는 FDR 것을 쓴다(기업 이벤트일에 KRX 기준가 계수와 조금 다를 수 있다. 엘앤씨바이오 10-26 -17.69% vs 기준가 -18.08%).
+
 ## 이 모듈이 하지 않는 것
 - 공식 원천(KRX 정보데이터마켓플레이스, 공공데이터포털 금융위원회_주식시세정보)은 인증키·라이선스가 필요해 쓰지 않는다.
 - 기준가가 조정되는 날(분할·병합·권리락·ETF 분배락)은 복원값이 그날 종가가 아니다. 그날은 원천 종가를 그대로 둔다.
@@ -16,13 +23,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, time
 
 from app import http_retry
 
 NAVER_DAILY_URL = "https://m.stock.naver.com/api/stock/{ticker}/price"
 PAGE_SIZE = 60  # 이보다 크면 400(2026-11-11 확인)
-MAX_PAGES = 10
+MAX_PAGES = 40  # 2,400거래일(약 10년). 45차: 10이면 600행에서 멈춰 ETF 전체 기간(약 750행)의 앞부분이 수정주가로 남았다
+REGULAR_CLOSE = time(15, 30)  # 이 시각 전 당일 행은 장중 값이다
 REQUEST_TIMEOUT_S = 10
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
@@ -78,50 +86,72 @@ def fetch_daily(ticker: str, since: date, get=None) -> list[dict]:
     get = get or (lambda url, params: http_retry.get(url, params=params, headers=HEADERS, timeout=REQUEST_TIMEOUT_S,
                                                        label="naver daily price").json())
     rows: list[dict] = []
+    reached = False
     for page in range(1, MAX_PAGES + 1):
         batch = get(NAVER_DAILY_URL.format(ticker=ticker), {"pageSize": PAGE_SIZE, "page": page})
         if not isinstance(batch, list):
             raise ValueError("unexpected naver daily price payload")
         rows += batch
         if len(batch) < PAGE_SIZE or (batch and batch[-1]["localTradedAt"][:10] < since.isoformat()):
+            reached = True  # 원천의 끝(상장일)까지 왔거나 since 앞까지 읽었다
             break
+    if not reached:
+        # 45차: 페이지 한도에서 멈추면 since까지 못 읽은 채 조용히 끝났다. 앞부분이 옛 값으로 남지 않게 실패로 알린다
+        raise ValueError(f"naver daily price did not reach {since.isoformat()} within {MAX_PAGES} pages")
     # since 하루 전 거래일 1행은 남긴다(since 날의 공식 종가는 다음 날로 복원하지만, 전일 종가가 등락률 계산에 필요)
     keep = sorted({r["localTradedAt"][:10]: r for r in rows}.values(), key=lambda r: r["localTradedAt"])
     first = next((i for i, r in enumerate(keep) if r["localTradedAt"][:10] >= since.isoformat()), len(keep))
     return keep[max(0, first - 1):]
 
 
-def official_records(ticker: str, asset_type: str, start: date, rows: list[dict] | None = None) -> tuple[list[dict], dict]:
+def official_records(ticker: str, asset_type: str, start: date, rows: list[dict] | None = None,
+                     now: datetime | None = None, source: dict | None = None) -> tuple[list[dict], dict]:
     """공식 종가 기준의 stock_price 레코드(start 이후)와 분류 통계. rows를 주면 네트워크를 쓰지 않는다(테스트).
 
     - 종가: 주식은 복원한 공식 종가, ETF는 네이버 일별 시세의 실제 종가(FDR 일봉은 분배락 뒤 과거 전체를 조정한 수정주가다).
     - 시가·고가·저가·거래량: 같은 네이버 일별 시세 행(완료된 날은 정규장 값, 2026-11-11 fchart와 같음을 확인).
     - 주식의 최신 거래일은 쓰지 않는다: 다음 거래일 기준가가 아직 없고, 당일 행은 NXT까지 합친 통합 값이다.
     - 등락률은 저장하는 공식 종가끼리 다시 계산한다(원천의 전일 대비를 쓰지 않는다).
+    - ETF의 최신 거래일은 그날 15:30(KST) 뒤에만 쓴다(now는 KST 시각, 없으면 쓴다). 장중에는 그 행이 장중 값이다(45차).
+    - source(45차, 권장): {날짜: 원천(FDR) 레코드}. 주면 원천 행(수정주가 체계의 시가·고가·저가·거래량)을 그대로 쓰고 종가만
+      공식 종가 x (원천 종가 / 네이버 실제 종가)로 바꾼다. FDR은 기업 이벤트·ETF 분배 뒤 과거 전체를 조정하므로, 실제 종가를 그대로
+      쓰면 교정 구간 경계에 가짜 급등락이 생긴다(엘앤씨바이오 2026-09-14 +93%). ETF는 공식 종가 = 실제 종가라 원천 값 그대로다.
+      원천에 없는 날은 쓰지 않는다(no_source). stats["after_market_dates"]는 애프터마켓 차이로 바뀐 날(저장 전 충돌 검사 제외용).
     """
     rows = rows if rows is not None else fetch_daily(ticker, start)
     by_day = {date.fromisoformat(r["localTradedAt"][:10]): r for r in rows}
     out: list[dict] = []
-    stats: dict[str, int] = {}
+    stats: dict = {"after_market_dates": []}
     prev = None
     for d in classify(rows, asset_type):
         close = d.official_close
         if d.kind == PROVISIONAL and asset_type == "etf":
-            close = d.source_close  # ETF는 애프터마켓 대상이 아니다. 최신일 거래량은 장 마감 뒤 조금 늘 수 있다
+            intraday = now is not None and d.day >= now.date() and now.time() < REGULAR_CLOSE
+            # ETF는 애프터마켓 대상이 아니다. 최신일 거래량은 장 마감 뒤 조금 늘 수 있다. 장중이면 쓰지 않는다
+            close = None if intraday else d.source_close
         if close is None:
             stats["skipped_provisional"] = stats.get("skipped_provisional", 0) + 1
             continue
+        if source is not None:
+            src = source.get(d.day)
+            if src is None:
+                stats["no_source"] = stats.get("no_source", 0) + 1
+                prev = None  # 끊긴 날 다음의 등락률은 계산하지 않는다(섞인 기준끼리 비교하지 않게)
+                continue
+            close = round(close * (float(src["close_price"]) / d.source_close), 2)
         stats[d.kind] = stats.get(d.kind, 0) + 1
+        if d.kind == AFTER_MARKET:
+            stats["after_market_dates"].append(d.day.isoformat())
         r = by_day[d.day]
         if d.day >= start:
-            out.append({
+            base = dict(src) if source is not None else {
                 "price_date": d.day,
                 "open_price": _num(r["openPrice"]),
                 "high_price": _num(r["highPrice"]),
                 "low_price": _num(r["lowPrice"]),
-                "close_price": close,
                 "volume": int(_num(r["accumulatedTradingVolume"])),
-                "change_pct": round((close / prev - 1) * 100, 2) if prev else None,
-            })
+            }
+            out.append({**base, "price_date": d.day, "close_price": close,
+                        "change_pct": round((close / prev - 1) * 100, 2) if prev else None})
         prev = close
     return out, stats

@@ -343,13 +343,20 @@ def fetch_and_save_stock(
         from app import official_close
 
         try:
-            records, basis_stats = official_close.official_records(ticker, asset_type, date.fromisoformat(start_date))
+            # 45차: 원천(FDR) 행을 같은 기간(+ 직전 거래일) 함께 읽어, 공식 종가를 원천의 수정주가 체계로 맞춘다(연속성 유지)
+            src_start = (date.fromisoformat(start_date) - timedelta(days=14)).isoformat()
+            df = _read_fdr(fdr.DataReader, ticker, src_start, end_date)
+            source = ({i.date(): _price_row(i, r) for i, r in df.dropna(subset=["Close"]).iterrows()}
+                      if df is not None and not df.empty else {})
+            records, basis_stats = official_close.official_records(ticker, asset_type, date.fromisoformat(start_date),
+                                                                       now=today.replace(tzinfo=None), source=source)
         except Exception as e:
             msg = _safe_error(e)
             print(f"오류 발생(공식 종가 조회): {msg}")
             return CollectResult(ok=False, error=msg)
         records = [r for r in records if r["price_date"] <= date.fromisoformat(end_date)]
-        print(f"공식 종가 분류: {basis_stats}")
+        after_market_dates = {date.fromisoformat(x) for x in basis_stats.pop("after_market_dates", [])}
+        print(f"공식 종가 분류: {basis_stats}, 애프터마켓 교정일 {len(after_market_dates)}건")
         if not records:
             msg = f"'{ticker}'의 {start_date}~{end_date} 공식 종가를 확정할 수 있는 날이 없습니다(최신 거래일은 다음 거래일에 확정)."
             print(msg)
@@ -400,7 +407,10 @@ def fetch_and_save_stock(
         prev = db.query(StockPrice.close_price).filter(
             StockPrice.company_id == company.id, StockPrice.price_date < records[0]["price_date"]
         ).order_by(StockPrice.price_date.desc()).limit(1).scalar()
-        checked = V.check_prices(ticker, records, {d: v[3] for d, v in existing.items()},
+        # 45차: 공식 종가 모드에서 애프터마켓 교정일은 "기존 값과 충돌" 검사에서 뺀다(차이의 이유가 확인된 교정이다.
+        # 예: 펩트론 2026-10-07 정규장 130,600 vs 저장된 애프터마켓 종료가 96,900, +34.8%). 직전 종가 대비 급변 검사는 그대로다.
+        skip_conflict = after_market_dates if close_basis == CLOSE_BASIS_OFFICIAL else set()
+        checked = V.check_prices(ticker, records, {d: v[3] for d, v in existing.items() if d not in skip_conflict},
                                  float(prev) if prev is not None else None, today.date())
         keep, bad = V.split(checked)
         warned = sum(c.status == V.WARNING for c in keep)

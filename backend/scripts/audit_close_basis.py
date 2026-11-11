@@ -1,4 +1,5 @@
-"""저장 종가가 공식 종가(KRX 정규장 종가)와 같은지 읽기 전용으로 감사한다(2026-11-11, 44차). DB에 쓰지 않는다.
+"""저장 종가가 공식 종가(KRX 정규장 종가) 기준인지 읽기 전용으로 감사한다(2026-11-11, 44·45차). DB에 쓰지 않는다.
+45차부터 기대값은 공식 종가 x (원천 FDR 종가 / 네이버 실제 종가)다(원천의 수정주가 체계 유지, ETF는 원천 값 그대로).
 
   python -m scripts.audit_close_basis --tickers 005930,000660,069500,102110,360750 --since 2025-09-01 \
       --dbs ai_investment,ai_investment_verify --dates 2026-09-11,2026-09-14,2026-11-02,2026-11-10,2026-11-11 --out <폴더>
@@ -78,11 +79,14 @@ def main():
         time.sleep(a.delay)
         fdr_close = {i.date(): float(r["Close"]) for i, r in fdr.DataReader(t, a.since).iterrows()}
         kinds = Counter(d.kind for d in days)
+        # 45차 기준: 저장 기대값 = 공식 종가 x (원천 FDR 종가 / 네이버 실제 종가). 원천의 수정주가 체계(기업 이벤트·ETF 분배 조정)는 유지한다
+        expected = {d.day: round(d.official_close * fdr_close[d.day] / d.source_close, 2) for d in days
+                    if d.official_close is not None and d.day in fdr_close}
         per_db = {}
         for name, v in dbs.items():
             stored = v["rows"]
-            diff = [(d.day.isoformat(), stored[d.day][0], d.official_close, d.kind) for d in days
-                    if d.official_close is not None and d.day in stored and abs(stored[d.day][0] - d.official_close) >= 0.5]
+            diff = [(d.day.isoformat(), stored[d.day][0], expected[d.day], d.kind) for d in days
+                    if d.day in expected and d.day in stored and abs(stored[d.day][0] - expected[d.day]) >= 0.5]
             per_db[name] = {"rows": len(stored), "latest": max(stored).isoformat() if stored else None,
                             "differs_from_official": len(diff), "first": diff[:3], "last": diff[-3:],
                             "by_kind": dict(Counter(x[3] for x in diff))}
@@ -90,7 +94,8 @@ def main():
         for fd in focus:
             d = next((x for x in days if x.day == fd), None)
             table.append({"date": fd.isoformat(), "naver_chart_close": d.source_close if d else None,
-                          "official_close": d.official_close if d else None, "kind": d.kind if d else "no trading/row",
+                          "official_close": d.official_close if d else None, "expected_stored": expected.get(fd),
+                          "kind": d.kind if d else "no trading/row",
                           "fdr_close": fdr_close.get(fd), **{f"db_{n}": (v["rows"].get(fd) or (None,))[0] for n, v in dbs.items()}})
         report["tickers"][t] = {"asset_type": asset_type, "naver_days": len(days), "kinds": dict(kinds),
                                 "after_market_days": [d.day.isoformat() for d in days if d.kind == oc.AFTER_MARKET],
