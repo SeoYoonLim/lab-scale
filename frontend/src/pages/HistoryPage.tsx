@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Fragment, useState } from 'react'
-import type { FormEvent } from 'react'
+import { Fragment, useEffect, useId, useRef, useState } from 'react'
+import type { FormEvent, KeyboardEvent } from 'react'
 import { api } from '../api'
 import { groupHeaderIndexes } from '../api/contracts/history'
 import type { HistoryItem, HistorySort, HistoryType } from '../api/contracts/history'
@@ -108,7 +108,20 @@ function DiagnosisRecord({ diagnosisId }: { diagnosisId: number }) {
 function HistoryCard({ item, terms, onDelete, deleting }: { item: HistoryItem; terms: string[]; onDelete: () => void; deleting: boolean }) {
   const { t, locale } = useLocale()
   const [open, setOpen] = useState(false)
+  // 삭제는 되돌릴 수 없어서 한 번 더 묻는다. 브라우저 기본 confirm 대신 카드 안에 확인 영역을 펼친다(디자인·접근성·테스트 모두 낫다).
+  // 펼치면 "취소"에 포커스를 둬서 Enter를 잘못 눌러도 지워지지 않고, Esc로 닫을 수 있다.
+  const [confirming, setConfirming] = useState(false)
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  const confirmId = useId()
   const itemLocale = toLocale(item.locale)
+  const question =
+    item.kind === 'research'
+      ? t('history.delete_research_confirm', { fallback: '이 리포트를 삭제할까요? 되돌릴 수 없어요.' })
+      : t('diagnosis.delete_confirm', { fallback: '이 진단을 삭제할까요? 되돌릴 수 없어요.' })
+
+  useEffect(() => {
+    if (confirming) cancelRef.current?.focus()
+  }, [confirming])
 
   return (
     <article className="history-card">
@@ -171,14 +184,37 @@ function HistoryCard({ item, terms, onDelete, deleting }: { item: HistoryItem; t
         </div>
       )}
 
-      <div className="history-card-actions">
-        <button type="button" className="diagnosis-history-toggle" onClick={() => setOpen((v) => !v)}>
-          {open ? t('common.close') : t('history.open_detail')}
-        </button>
-        <button type="button" className="delete-report" onClick={onDelete} disabled={deleting}>
-          {t('common.delete', { fallback: '삭제' })}
-        </button>
-      </div>
+      {confirming ? (
+        <div
+          className="history-confirm"
+          role="alertdialog"
+          aria-labelledby={confirmId}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' && !deleting) setConfirming(false)
+          }}
+        >
+          <p id={confirmId} className="history-confirm-text">
+            {question}
+          </p>
+          <div className="history-confirm-actions">
+            <button ref={cancelRef} type="button" className="btn" onClick={() => setConfirming(false)} disabled={deleting}>
+              {t('common.cancel')}
+            </button>
+            <button type="button" className="btn btn-danger-solid" onClick={onDelete} disabled={deleting}>
+              {deleting ? t('common.loading') : t('common.delete', { fallback: '삭제' })}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="history-card-actions">
+          <button type="button" className="btn" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+            {open ? t('common.close') : t('history.open_detail')}
+          </button>
+          <button type="button" className="btn btn-danger" onClick={() => setConfirming(true)}>
+            {t('common.delete', { fallback: '삭제' })}
+          </button>
+        </div>
+      )}
 
       {open && (item.kind === 'research' ? <ResearchRecord reportId={item.id} /> : <DiagnosisRecord diagnosisId={item.id} />)}
     </article>
@@ -223,12 +259,8 @@ export default function HistoryPage() {
     },
   })
 
+  // 삭제 확인은 카드 안의 확인 영역이 이미 했다
   function handleDelete(item: HistoryItem) {
-    const question =
-      item.kind === 'research'
-        ? t('history.delete_research_confirm', { fallback: '이 리포트를 삭제할까요? 되돌릴 수 없어요.' })
-        : t('diagnosis.delete_confirm', { fallback: '이 진단을 삭제할까요? 되돌릴 수 없어요.' })
-    if (!confirm(question)) return
     remove.mutate(item)
   }
 
@@ -248,11 +280,28 @@ export default function HistoryPage() {
     { value: 'diagnosis', label: t('history.tab_diagnosis'), count: data?.counts.diagnosis },
   ]
 
+  const tabRefs = useRef<Partial<Record<HistoryType, HTMLButtonElement | null>>>({})
+  // WAI-ARIA 탭 패턴: 방향키로 옮기면 그 탭이 선택되고 포커스가 따라간다(선택된 탭만 Tab 키 순서에 든다)
+  function handleTabKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    const order = tabs.map((tab) => tab.value)
+    const current = order.indexOf(type)
+    let next = current
+    if (e.key === 'ArrowRight') next = (current + 1) % order.length
+    else if (e.key === 'ArrowLeft') next = (current - 1 + order.length) % order.length
+    else if (e.key === 'Home') next = 0
+    else if (e.key === 'End') next = order.length - 1
+    else return
+    e.preventDefault()
+    setType(order[next])
+    setPage(1)
+    tabRefs.current[order[next]]?.focus()
+  }
+
   return (
     <div className="container container-wide page history-page">
       <h1 className="page-title">{t('history.title')}</h1>
 
-      <form className="history-filters card" onSubmit={handleSearch}>
+      <form className="history-filters card" onSubmit={handleSearch} role="search">
         <div className="history-search-row">
           <input
             type="search"
@@ -266,16 +315,39 @@ export default function HistoryPage() {
           </button>
         </div>
         <div className="history-filter-row">
-          <label className="inline-select">
-            <span className="muted small">{t('history.date_from')}</span>
-            <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1) }} />
+          <label className="history-field">
+            <span>{t('history.date_from')}</span>
+            <input
+              type="date"
+              value={dateFrom}
+              aria-invalid={dateError}
+              onChange={(e) => {
+                setDateFrom(e.target.value)
+                setPage(1)
+              }}
+            />
           </label>
-          <label className="inline-select">
-            <span className="muted small">{t('history.date_to')}</span>
-            <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1) }} />
+          <label className="history-field">
+            <span>{t('history.date_to')}</span>
+            <input
+              type="date"
+              value={dateTo}
+              aria-invalid={dateError}
+              onChange={(e) => {
+                setDateTo(e.target.value)
+                setPage(1)
+              }}
+            />
           </label>
-          <label className="inline-select">
-            <select value={sort} onChange={(e) => { setSort(e.target.value as HistorySort); setPage(1) }} aria-label={t('history.sort_newest')}>
+          <label className="history-field history-field-sort">
+            <span>{t('history.sort_label', { fallback: '정렬' })}</span>
+            <select
+              value={sort}
+              onChange={(e) => {
+                setSort(e.target.value as HistorySort)
+                setPage(1)
+              }}
+            >
               <option value="created_at,desc">{t('history.sort_newest')}</option>
               <option value="created_at,asc">{t('history.sort_oldest')}</option>
             </select>
@@ -283,7 +355,7 @@ export default function HistoryPage() {
           {filtered && (
             <button
               type="button"
-              className="link-button"
+              className="btn history-reset"
               onClick={() => {
                 setKeywordInput('')
                 setKeyword('')
@@ -296,18 +368,39 @@ export default function HistoryPage() {
             </button>
           )}
         </div>
-        {dateError && <p className="notice notice-error">{t('history.error_date_range')}</p>}
+        {dateError && (
+          <p className="notice notice-error" role="alert">
+            {t('history.error_date_range')}
+          </p>
+        )}
       </form>
 
-      <div className="history-tabs" role="tablist">
+      <div className="history-tabs" role="tablist" aria-label={t('history.tabs_aria', { fallback: '기록 유형' })} onKeyDown={handleTabKeyDown}>
         {tabs.map((tab) => (
-          <button key={tab.value} type="button" role="tab" aria-selected={type === tab.value} className={type === tab.value ? 'history-tab active' : 'history-tab'} onClick={() => { setType(tab.value); setPage(1) }}>
-            {tab.label}
+          <button
+            key={tab.value}
+            ref={(node) => {
+              tabRefs.current[tab.value] = node
+            }}
+            id={`history-tab-${tab.value}`}
+            type="button"
+            role="tab"
+            aria-selected={type === tab.value}
+            aria-controls="history-panel"
+            tabIndex={type === tab.value ? 0 : -1}
+            className={type === tab.value ? 'history-tab active' : 'history-tab'}
+            onClick={() => {
+              setType(tab.value)
+              setPage(1)
+            }}
+          >
+            <span>{tab.label}</span>
             {tab.count != null && <span className="history-tab-count num">{tab.count}</span>}
           </button>
         ))}
       </div>
 
+      <div id="history-panel" role="tabpanel" aria-labelledby={`history-tab-${type}`}>
       {search.isPending && !dateError && <p className="muted">{t('common.loading')}</p>}
       {search.error && <ErrorNotice error={search.error} onRetry={() => void search.refetch()} fallback={t('history.error_load')} />}
       {remove.error && <ErrorNotice error={remove.error} />}
@@ -323,7 +416,12 @@ export default function HistoryPage() {
           {items.map((item, index) => (
             <Fragment key={`${item.kind}-${item.id}`}>
               {headers.has(index) && <h2 className="date-group-header">{t(`date_group.${item.date_group}`)}</h2>}
-              <HistoryCard item={item} terms={data?.terms ?? []} onDelete={() => handleDelete(item)} deleting={remove.isPending} />
+              <HistoryCard
+                item={item}
+                terms={data?.terms ?? []}
+                onDelete={() => handleDelete(item)}
+                deleting={remove.isPending && remove.variables?.kind === item.kind && remove.variables?.id === item.id}
+              />
             </Fragment>
           ))}
         </div>
@@ -335,6 +433,7 @@ export default function HistoryPage() {
           <Pagination offset={(page - 1) * PAGE_SIZE} pageSize={PAGE_SIZE} total={data.total} onChange={(offset) => setPage(offset / PAGE_SIZE + 1)} />
         </>
       )}
+      </div>
       <p className="muted small center">{timezone}</p>
     </div>
   )

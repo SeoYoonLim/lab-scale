@@ -220,6 +220,8 @@ export const EXTRA_ZH: Record<string, string> = {
   'footer.refresh_failed': '最近一次数据更新中有步骤失败',
 
   'history.delete_research_confirm': '要删除此报告吗？此操作无法撤销。',
+  'history.sort_label': '排序',
+  'history.tabs_aria': '记录类型',
 
   'holdings.avg_price': '均价 {price}',
   'holdings.buy': '买入',
