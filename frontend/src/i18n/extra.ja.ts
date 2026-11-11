@@ -220,6 +220,8 @@ export const EXTRA_JA: Record<string, string> = {
   'footer.refresh_failed': '直近のデータ更新で失敗した段階があります',
 
   'history.delete_research_confirm': 'このレポートを削除しますか？元に戻せません。',
+  'history.sort_label': '並べ替え',
+  'history.tabs_aria': '記録の種類',
 
   'holdings.avg_price': '平均 {price}',
   'holdings.buy': '買い',

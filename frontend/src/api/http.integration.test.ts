@@ -1,4 +1,5 @@
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import type { EtfHoldings } from './contracts/etf'
 import { ApiError } from './errors'
 import { httpApi } from './http'
 import { clearToken, getToken, setToken } from '../utils/token'
@@ -13,12 +14,60 @@ import { clearToken, getToken, setToken } from '../utils/token'
 const enabled = import.meta.env.VITE_REAL_BACKEND === '1'
 const TIMEOUT = 120_000
 
+// 이 테스트가 만든 임시 계정. 끝나면(성공·실패와 상관없이) afterAll이 로그인해서 탈퇴시킨다 - 서버가 그 계정의 주문·진단·기록 같은
+// 모든 데이터도 같이 지우므로 DB에 테스트 흔적이 남지 않는다. 비밀번호를 바꾸는 테스트는 바꾼 직후 account.password를 갱신한다.
+interface TempAccount {
+  username: string
+  password: string
+  deleted: boolean
+}
+const accounts: TempAccount[] = []
+
+async function createAccount(prefix: string): Promise<TempAccount> {
+  const account: TempAccount = {
+    username: `${prefix}${Math.random().toString(36).slice(2, 10)}`,
+    password: 'Zk9-dummy-pw1',
+    deleted: false,
+  }
+  const res = await httpApi.signup(account.username, account.password)
+  accounts.push(account) // 가입이 끝난 계정만 정리 대상이다
+  setToken(res.access_token)
+  return account
+}
+
+// ETF 구성종목은 그 DB에 수집됐는지에 따라 다르다. 수집했으면 items가 있고 message는 null, 수집하지 않았으면 items: [] + 안내 message다
+// (200). 어느 DB 상태든 서로 모순되지 않는 응답인지만 본다.
+function expectHoldingsConsistent(holdings: EtfHoldings, ticker: string): void {
+  expect(holdings.ticker).toBe(ticker)
+  if (holdings.items.length === 0) {
+    expect(holdings.message).toBeTruthy()
+  } else {
+    expect(holdings.message).toBeNull()
+    expect(holdings.holding_count).toBeGreaterThanOrEqual(holdings.items.length)
+  }
+}
+
 describe.skipIf(!enabled)('실제 백엔드 통합(httpApi + zod 검증)', () => {
   beforeAll(async () => {
     clearToken()
-    const username = `it${Math.random().toString(36).slice(2, 10)}`
-    const res = await httpApi.signup(username, 'Zk9-verify-pw')
-    setToken(res.access_token)
+    await createAccount('it')
+  }, TIMEOUT)
+
+  afterAll(async () => {
+    const leftovers: string[] = []
+    for (const account of accounts) {
+      if (account.deleted) continue
+      try {
+        const login = await httpApi.login(account.username, account.password)
+        setToken(login.access_token)
+        await httpApi.deleteAccount({ current_password: account.password })
+        account.deleted = true
+      } catch {
+        leftovers.push(account.username)
+      }
+    }
+    clearToken()
+    if (leftovers.length > 0) console.warn(`정리하지 못한 임시 계정 ${leftovers.length}개: ${leftovers.join(', ')}`)
   }, TIMEOUT)
 
   it('공개 API: 상태·면책·종목·급등락·시세 차트·사건 반응·ETF 구성종목', { timeout: TIMEOUT }, async () => {
@@ -40,16 +89,14 @@ describe.skipIf(!enabled)('실제 백엔드 통합(httpApi + zod 검증)', () =>
 
     const history = await httpApi.getPriceHistory('005930', 30)
     expect(history.count).toBe(history.items.length)
-    expect(history.items[0].date <= history.items.at(-1)!.date).toBe(true)
+    if (history.items.length > 0) expect(history.items[0].date <= history.items.at(-1)!.date).toBe(true)
     const reactions = await httpApi.getEventReactions('005930')
     expect(reactions.ticker).toBe('005930')
 
-    const etf = await httpApi.getEtfHoldings('069500', 5)
-    expect(etf.items.length).toBeGreaterThan(0)
-    // 수집하지 않은 ETF는 200 + items: [] + message
-    const none = await httpApi.getEtfHoldings('360750', 5)
-    expect(none.items).toEqual([])
-    expect(none.message).toBeTruthy()
+    // 어떤 ETF의 구성종목이 수집됐는지는 DB마다 다르다 - 수집했으면 items, 아니면 []+message. 어느 쪽이든 모순이 없어야 한다
+    for (const ticker of ['069500', '360750']) {
+      expectHoldingsConsistent(await httpApi.getEtfHoldings(ticker, 5), ticker)
+    }
     await expect(httpApi.getEtfHoldings('없는종목123')).rejects.toMatchObject({ status: 404 })
 
     // 종목 뉴스·공시 목록(41차): 데이터가 없으면 items가 []일 뿐 오류가 아니다. 모양은 zod가 확인한다
@@ -91,9 +138,10 @@ describe.skipIf(!enabled)('실제 백엔드 통합(httpApi + zod 검증)', () =>
   it('계정 복구: 이메일 등록(현재 비밀번호 필수)·같은 응답의 찾기 API·잘못된 링크·비밀번호 변경(새 토큰)', { timeout: TIMEOUT }, async () => {
     // 비밀번호를 바꾸면 이 계정의 토큰이 무효가 되므로 따로 가입한 계정으로 한다(다른 테스트의 토큰은 그대로 둔다)
     const mainToken = getToken()
-    const username = `ac${Math.random().toString(36).slice(2, 10)}`
-    const password = 'Zk9-dummy-pw1'
-    setToken((await httpApi.signup(username, password)).access_token)
+    const account = await createAccount('ac')
+    const { username, password } = account
+    // 바꿀 값(가짜). 세 곳이 같은 값을 쓴다
+    const replacement = 'Brand-dummy-pass-1'
     try {
       const fresh = await httpApi.me()
       expect(fresh.email ?? null).toBeNull()
@@ -115,9 +163,10 @@ describe.skipIf(!enabled)('실제 백엔드 통합(httpApi + zod 검증)', () =>
       await expect(httpApi.resetPassword('not-a-real-token', 'New-pass-Phrase-77')).rejects.toMatchObject({ status: 400 })
 
       // 현재 비밀번호가 틀린 것은 401이 아니라 422라서 로그인이 유지된다
-      await expect(httpApi.changePassword('wrong-dummy-pw-1', 'Brand-new-pass-1')).rejects.toMatchObject({ status: 422 })
+      await expect(httpApi.changePassword('wrong-dummy-pw-1', replacement)).rejects.toMatchObject({ status: 422 })
       expect((await httpApi.me()).username).toBe(username)
-      const changed = await httpApi.changePassword(password, 'Brand-new-pass-1')
+      const changed = await httpApi.changePassword(password, replacement)
+      account.password = replacement // 정리(afterAll)가 새 비밀번호로 로그인한다
       // 기존 토큰은 이 기기 것도 무효이고, 응답의 새 토큰으로 이어 간다
       await expect(httpApi.me()).rejects.toMatchObject({ status: 401 })
       setToken(changed.access_token)
@@ -129,9 +178,8 @@ describe.skipIf(!enabled)('실제 백엔드 통합(httpApi + zod 검증)', () =>
 
   it('회원 탈퇴: 비밀번호 필수(422)·잘못된 확인 링크(400)·탈퇴하면 로그인도 옛 토큰도 안 된다', { timeout: TIMEOUT }, async () => {
     const mainToken = getToken()
-    const username = `de${Math.random().toString(36).slice(2, 10)}`
-    const password = 'Zk9-dummy-pw1'
-    setToken((await httpApi.signup(username, password)).access_token)
+    const account = await createAccount('de')
+    const { username, password } = account
     try {
       await expect(httpApi.deleteAccount({})).rejects.toMatchObject({ status: 422 })
       await expect(httpApi.deleteAccount({ current_password: 'wrong-dummy-pw-1' })).rejects.toMatchObject({ status: 422 })
@@ -140,6 +188,7 @@ describe.skipIf(!enabled)('실제 백엔드 통합(httpApi + zod 검증)', () =>
 
       const done = await httpApi.deleteAccount({ current_password: password })
       expect(done).toMatchObject({ ok: true, status: 'deleted' })
+      account.deleted = true
       await expect(httpApi.login(username, password)).rejects.toMatchObject({ status: 401 })
       await expect(httpApi.me()).rejects.toMatchObject({ status: 401 })
     } finally {
@@ -178,19 +227,28 @@ describe.skipIf(!enabled)('실제 백엔드 통합(httpApi + zod 검증)', () =>
       else expect(perf.summary.period_return_pct).toBeNull()
     }
 
+    // 시세가 없는 DB에서는 숫자 대신 no_prices 안내가 온다. 시세가 있을 때만 숫자·표를 확인한다
     const exposure = await httpApi.getLookThroughExposure({ limit: 10 })
-    expect(exposure.status).toBe('ok')
-    expect(exposure.summary.total_asset).toBeGreaterThan(0)
-    const leveraged = exposure.etfs.find((e) => e.ticker === '122630')
-    expect(leveraged?.status).toBe('not_decomposed')
-    expect(exposure.companies.length).toBeGreaterThan(0)
+    expect(['ok', 'no_prices']).toContain(exposure.status)
+    if (exposure.status === 'ok') {
+      expect(exposure.summary.total_asset).toBeGreaterThan(0)
+      const leveraged = exposure.etfs.find((e) => e.ticker === '122630')
+      expect(leveraged?.status).toBe('not_decomposed')
+      // 기업별 표는 KODEX 200의 구성종목이 그 DB에 수집돼 있을 때만 채워진다
+      const kodex200 = await httpApi.getEtfHoldings('069500', 5)
+      if (kodex200.items.length > 0) expect(exposure.companies.length).toBeGreaterThan(0)
+    }
 
     // Ollama가 없으면 진단은 규칙 기반 문장으로 폴백한다(200)
     const diagnosis = await httpApi.getDiagnosis()
     expect(diagnosis.diagnosis_id).not.toBeNull()
-    expect(diagnosis.look_through?.status).toBe('ok')
+    expect(['ok', 'no_prices']).toContain(diagnosis.look_through?.status)
     const detail = await httpApi.getDiagnosisDetail(diagnosis.diagnosis_id!)
-    expect(detail.look_through?.summary.total_asset).toBe(diagnosis.look_through?.summary.total_asset)
+    // 저장된 스냅샷은 다시 열어도 같다
+    expect(detail.look_through?.status).toBe(diagnosis.look_through?.status)
+    if (diagnosis.look_through?.status === 'ok') {
+      expect(detail.look_through?.summary.total_asset).toBe(diagnosis.look_through?.summary.total_asset)
+    }
 
     const second = await httpApi.getDiagnosis()
     const compare = await httpApi.compareDiagnosis(second.diagnosis_id!)

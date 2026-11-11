@@ -220,6 +220,8 @@ export const EXTRA_EN: Record<string, string> = {
   'footer.refresh_failed': 'Some steps of the last data refresh failed',
 
   'history.delete_research_confirm': 'Delete this report? This cannot be undone.',
+  'history.sort_label': 'Sort',
+  'history.tabs_aria': 'Record types',
 
   'holdings.avg_price': 'Avg. {price}',
   'holdings.buy': 'Buy',
