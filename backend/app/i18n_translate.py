@@ -158,13 +158,22 @@ def _sub_outside(regex: re.Pattern, repl, text_: str) -> str:
     return "".join(part if i % 2 else regex.sub(repl, part) for i, part in enumerate(parts))
 
 
+# 보호 문자열 경계(43차): 앞 글자가 한글이 아니고, 뒤 글자가 한글이 아니거나 조사·서술격 조사의 첫 글자일 때만 보호한다.
+_JOSA_FIRST = "은는이가을를의에와과도로으만보처까부나라랑께입"
+_TERM_BEFORE = r"(?<![가-힣])"
+_TERM_AFTER = rf"(?=[^가-힣]|[{_JOSA_FIRST}]|$)"
+
+
 def mask(source: str, locale: str, terms: list[str]) -> Masked:
     """URL → 보호 문자열(긴 것부터) → 금액 → 날짜 → 시각 → 숫자 순서로 자리표시자로 바꾼다."""
     m = Masked(text=source)
     m.text = _sub_outside(_URL_RE, lambda x: m.token(x.group(0)), m.text)
     present = [t for t in terms if t in m.text]
     if present:
-        alt = re.compile("|".join(re.escape(t) for t in present))
+        # 43차(2026-11-11): 단어 안의 부분 문자열은 가리지 않는다. 앞에 한글이 붙지 않고, 뒤가 한글이 아니거나 조사로 시작할 때만.
+        # 전에는 "반도체 테스트"의 '테스'(등록 종목명)까지 가려 "⟦n⟧트"가 되었고, 번역 뒤 되돌리면 한국어 조각 '테스'가 남았다
+        # (중국어 답 "半导体테스的…"가 translated로 통과).
+        alt = re.compile(_TERM_BEFORE + "(?:" + "|".join(re.escape(t) for t in present) + ")" + _TERM_AFTER)
         m.text = _sub_outside(alt, lambda x: m.token(x.group(0)), m.text)
 
     def money(x):
