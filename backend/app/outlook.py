@@ -429,7 +429,10 @@ def compute_indicators(rows: list[tuple], period: Period, index_rows: list[tuple
     out["rsi"] = rsi(closes)
     out["macd"] = macd(closes)
     out["volatility"] = volatility(closes)
-    window = list(zip(days, closes))[-(period.range_days + 1):]
+    # 최고·최저 종가(2026-11-11 42차): "최근 N거래일"은 기준일을 포함한 최근 N개 종가다(app/price_flow·stock_tool.summarize_period와
+    # 같은 정의). 전에는 N+1개(수익률의 비교 기준일 종가까지)에서 골라, 같은 "최근 20거래일"인데 주가 흐름 답과 최고·최저가 달랐다
+    # (SK하이닉스 2026-11-03: 전망 1,842,000원(10-02, 21번째 종가) vs 주가 흐름 1,784,000원(10-06)). 비교 기준일은 수익률에만 쓴다.
+    window = list(zip(days, closes))[-period.range_days:]
     hi_d, hi = max(window, key=lambda x: (x[1], x[0]))
     lo_d, lo = min(window, key=lambda x: (x[1], -x[0].toordinal()))
     out["range"] = {"days": len(window), "from_date": window[0][0].isoformat(), "to_date": window[-1][0].isoformat(),
@@ -439,8 +442,9 @@ def compute_indicators(rows: list[tuple], period: Period, index_rows: list[tuple
     if volumes[-1] is not None and len(prior) == VOLUME_AVG_DAYS and sum(prior) > 0:
         avg = sum(prior) / VOLUME_AVG_DAYS
         out["volume"] = {"value": int(volumes[-1]), "avg": round(avg), "ratio": round(volumes[-1] / avg, 2)}
-    # 52주 기준(최근 RANGE52_DAYS거래일 전 종가부터). 분석 기간 기준(range)과 이름·조회 기간을 따로 붙여 보인다(2026-11-04).
-    w52 = list(zip(days, closes))[-(RANGE52_DAYS + 1):]
+    # 52주 기준(기준일을 포함한 최근 RANGE52_DAYS개 종가, 42차에 range와 같은 정의로). 분석 기간 기준(range)과 이름·조회 기간을
+    # 따로 붙여 보인다(2026-11-04).
+    w52 = list(zip(days, closes))[-RANGE52_DAYS:]
     h52_d, h52 = max(w52, key=lambda x: (x[1], x[0]))
     l52_d, l52 = min(w52, key=lambda x: (x[1], -x[0].toordinal()))
     out["range52"] = {"days": len(w52), "from_date": w52[0][0].isoformat(), "to_date": w52[-1][0].isoformat(),
@@ -452,7 +456,7 @@ def compute_indicators(rows: list[tuple], period: Period, index_rows: list[tuple
         ri[f"ma{n}"] = round(ma, 2) if ma is not None else None
         ri[f"r{n}"] = _pct(close, closes[-1 - n]) if len(closes) > n else None
         ri[f"r{n}_from"] = (days[-1 - n].isoformat(), closes[-1 - n]) if len(closes) > n else None
-    low20 = min(closes[-21:])
+    low20 = min(closes[-20:])  # 최근 20거래일(기준일 포함 20개 종가) 최저, 42차에 range와 같은 정의로
     ri["from_low20_pct"] = _pct(close, low20)
     out["regime_inputs"] = ri
     if index_rows:
@@ -930,7 +934,7 @@ def backtest_line(period: Period, label: str) -> str:
 def _range_text(rg: dict, kind: str, basis: str) -> str:
     """최고·최저 종가 한 줄의 괄호: 조회 기간, 기준 이름(분석 기간/52주)과 거래일 수, 값과 날짜."""
     word = "최고" if kind == "high" else "최저"
-    return (f"(조회 기간 {rg['from_date']}~{rg['to_date']}, {basis} 기준 최근 {rg['days'] - 1}거래일, "
+    return (f"(조회 기간 {rg['from_date']}~{rg['to_date']}, {basis} 기준 최근 {rg['days']}거래일, "
             f"{word} 종가 {_won(rg[kind])}, {rg[kind + '_date']})")
 
 
@@ -1299,7 +1303,7 @@ def check_items(ind: dict, res: dict, regime: str, period: Period, is_etf: bool)
     if parts:
         lines.append("- 이동평균: " + ", ".join(parts))
     rg = ind["range"]
-    window = f"분석 기간(최근 {rg['days'] - 1}거래일, {rg['from_date']}~{rg['to_date']})"
+    window = f"분석 기간(최근 {rg['days']}거래일, {rg['from_date']}~{rg['to_date']})"
     lines.append(f"- {window} 최저 종가 {_won(rg['low'])}({rg['low_date']}) 아래로 내려가는지, "
                  f"같은 기간 최고 종가 {_won(rg['high'])}({rg['high_date']}) 위로 올라서는지")
     vol = ind.get("volume")
@@ -1615,9 +1619,9 @@ def followup_answer(company, period: Period, res: dict, kind: str, now: datetime
         if (ri := ind.get("regime_inputs") or {}).get("ma20") is not None:
             pos = "아래" if ind["close"] < ri["ma20"] else "위"
             levels.append(f"20일선 {_won(round(ri['ma20']))}(종가가 {pos})")
-        levels.append(f"분석 기간 최저 종가 {_won(rg['low'])}({rg['low_date']}, 최근 {rg['days'] - 1}거래일 기준)")
+        levels.append(f"분석 기간 최저 종가 {_won(rg['low'])}({rg['low_date']}, 최근 {rg['days']}거래일 기준)")
         if r52:
-            levels.append(f"52주 최저 종가 {_won(r52['low'])}({r52['low_date']}, 최근 {r52['days'] - 1}거래일 기준)")
+            levels.append(f"52주 최저 종가 {_won(r52['low'])}({r52['low_date']}, 최근 {r52['days']}거래일 기준)")
         lines.append("- 확인할 가격대: " + ", ".join(levels))
         return _blocks([[head], [first], lines])
     if kind == "probability":

@@ -90,7 +90,8 @@ def expected(db, company_name: str, period: str, base_date: str) -> dict:
     out["macd"] = (round(float(line.iloc[-1]), 2), round(float(line.ewm(span=9, adjust=False).mean().iloc[-1]), 2))
     rets = [(b / a - 1) * 100 for a, b in zip(closes[-21:-1], closes[-20:])]
     out["volatility"] = round(statistics.stdev(rets), 2)
-    win = rows[-(spec["range"] + 1):]
+    # 42차(2026-11-11): 최고·최저는 기준일을 포함한 최근 N개 종가(app/price_flow·quality_fixtures와 같은 한 정의)
+    win = rows[-spec["range"]:]
     hi, lo = max(c for _, c, _ in win), min(c for _, c, _ in win)
     out["range"] = {"from": win[0][0].isoformat(), "high": hi, "low": lo,
                     "from_high": round((closes[-1] / hi - 1) * 100, 2), "from_low": round((closes[-1] / lo - 1) * 100, 2)}
@@ -337,7 +338,7 @@ def regime_expected(db, company_name: str, base_date: str, hold: bool = False) -
     close = closes[-1]
     r = {n: (close / closes[-1 - n] - 1) * 100 for n in (5, 20, 60)}
     ma = {n: sum(closes[-n:]) / n for n in (5, 20, 60)}
-    low20 = (close / min(closes[-21:]) - 1) * 100
+    low20 = (close / min(closes[-20:]) - 1) * 100  # 최근 20거래일 = 기준일 포함 20개 종가(42차)
     big_drop = r[20] <= -10 or r[60] <= -15
     rebound = r[5] > 0 or ma[5] > ma[20] or low20 >= 5
     if big_drop and rebound and (close < ma[20] or close < ma[60]):
@@ -508,23 +509,23 @@ def check_numbers23(db, answer: str, company_name: str) -> list[str]:
                      r"(?:최고|최저) 종가 ([\d,]+)원, (\S+?)\)")
     for kind, pct, a, b, n, v, d in rng.findall(answer):
         win = _closes_between(db, company_name, a, b)
-        if len(win) != int(n) + 1 or b != base:
-            errs.append(f"{kind} 조회 기간 {a}~{b} 거래일 {len(win) - 1} != {n}")
+        if len(win) != int(n) or b != base:
+            errs.append(f"{kind} 조회 기간 {a}~{b} 거래일 {len(win)} != {n}")
             continue
         pick = (max if kind == "최고" else min)(c for _, c in win)
         days = [dd.isoformat() for dd, c in win if c == pick]
         if abs(_num(v) - pick) > 0.5 or d not in days or abs(float(pct) - round((closes[-1] / pick - 1) * 100, 2)) > 0.011:
             errs.append(f"{kind} 종가 {v}({d}) {pct}% != {pick}({days})")
     def last_window(n):
-        return [(d, c) for d, c, _ in rows[-(n + 1):]]
+        return [(d, c) for d, c, _ in rows[-n:]]
 
     checks = [(kind, v, d, last_window(int(n))) for _, kind, v, d, n in
               re.findall(r"(분석 기간|52주) (최고|최저) 종가 ([\d,]+)원\((\S+?), 최근 (\d+)거래일 기준\)", answer)]
     for n, a, b, v, d, v2, d2 in re.findall(r"분석 기간\(최근 (\d+)거래일, (\S+?)~(\S+?)\) 최저 종가 ([\d,]+)원\((\S+?)\)[^\n]*?"
                                             r"같은 기간 최고 종가 ([\d,]+)원\((\S+?)\)", answer):
         win = _closes_between(db, company_name, a, b)
-        if len(win) != int(n) + 1:
-            errs.append(f"확인할 사항 조회 기간 {a}~{b} 거래일 {len(win) - 1} != {n}")
+        if len(win) != int(n):
+            errs.append(f"확인할 사항 조회 기간 {a}~{b} 거래일 {len(win)} != {n}")
         checks += [("최저", v, d, win), ("최고", v2, d2, win)]
     for kind, v, d, win in checks:
         pick = (max if kind == "최고" else min)(c for _, c in win)

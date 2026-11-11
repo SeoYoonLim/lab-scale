@@ -81,7 +81,7 @@ def price_truth(rows: list[tuple], window: int = 20, volume_avg: int = 20, windo
     inside = seg[1:] or seg
     v[("high", None)] = max(inside)
     v[("low", None)] = min(inside)
-    v[("from_low", 20)] = _pct(c, min(closes[-21:]))
+    v[("from_low", 20)] = _pct(c, min(closes[-20:]))  # 국면 입력 "최근 20거래일 최저"(기준일 포함 20개 종가, 42차)
     return Truth(v, {r[0].isoformat(): float(r[1]) for r in rows}, rows[-1][0].isoformat())
 
 
