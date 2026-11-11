@@ -28,6 +28,8 @@ def main():
     ap.add_argument("--days", type=int, default=90, help="조회 기간(달력 기준 일)")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--report", default=None, help="결과 JSON 저장 경로")
+    ap.add_argument("--close-basis", choices=["source", "official"], default="source",
+                    help="종가 기준. source(기본): FinanceDataReader 값 그대로. official: 공식 종가(KRX 정규장, 44차, app/official_close.py)")
     args = ap.parse_args()
 
     universe = json.loads((UNIVERSE_DIR / args.universe).read_text(encoding="utf-8"))["universe"]
@@ -50,7 +52,8 @@ def main():
             print(f"[{i}/{len(targets)}] {name}({ticker}) 회사 등록 실패: {err}")
             continue
 
-        res, sec = _timed(fetch_and_save_stock, ticker, name, days=args.days, dry_run=args.dry_run)
+        res, sec = _timed(fetch_and_save_stock, ticker, name, days=args.days, dry_run=args.dry_run,
+                          close_basis=args.close_basis, asset_type=t.get("asset_type", "stock"))
         time.sleep(args.delay)
         row.update(ok=res.ok, saved=res.saved, fetched=res.fetched, error=res.error, sec=round(sec, 2))
         rows.append(row)

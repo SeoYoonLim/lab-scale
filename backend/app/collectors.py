@@ -12,7 +12,7 @@ import re
 import xml.etree.ElementTree as ET
 import zipfile
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
@@ -320,29 +320,56 @@ def _price_values(record: dict) -> tuple:
 
 # FinanceDataReader(KRX 로그인 불필요)로 주가 수집 후 DB에 upsert하는 함수.
 # 이미 있는 날짜는 최신 값으로 갱신한다. 장 마감 전에 저장된 행(거래량 등)이 남지 않게 하기 위해서다.
+CLOSE_BASIS_SOURCE = "source"  # 기본: FinanceDataReader(네이버 일봉) 값 그대로
+CLOSE_BASIS_OFFICIAL = "official"  # 44차 옵트인: 공식 종가(KRX 정규장) 기준. app/official_close.py
+
+
 def fetch_and_save_stock(
-    ticker: str, name: str, days: int = 7, dry_run: bool = False, start_date: str | None = None, end_date: str | None = None
+    ticker: str, name: str, days: int = 7, dry_run: bool = False, start_date: str | None = None, end_date: str | None = None,
+    close_basis: str = CLOSE_BASIS_SOURCE, asset_type: str = "stock",
 ) -> CollectResult:
-    """start_date/end_date(YYYY-MM-DD)를 주면 days 대신 그 기간을 받는다(scripts/backfill_history.py가 장기 이력에 쓴다)."""
+    """start_date/end_date(YYYY-MM-DD)를 주면 days 대신 그 기간을 받는다(scripts/backfill_history.py가 장기 이력에 쓴다).
+
+    close_basis="official"(2026-11-11 44차, 기본은 아님): 주식 종가를 공식 종가(다음 거래일 기준가로 복원)로, ETF 종가를 실제 종가
+    (FDR 일봉은 분배락 뒤 과거 전체를 조정한 수정주가)로 저장한다. 주식의 최신 거래일은 확정할 수 없어 저장하지 않는다.
+    """
     today = datetime.now(KST)
     start_date = start_date or (today - timedelta(days=days)).strftime("%Y-%m-%d")
     end_date = end_date or today.strftime("%Y-%m-%d")
 
-    print(f"[{name}({ticker})] {start_date} ~ {end_date} 주가 데이터 수집 중...")
+    print(f"[{name}({ticker})] {start_date} ~ {end_date} 주가 데이터 수집 중... (종가 기준: {close_basis})")
 
-    try:
-        df = _read_fdr(fdr.DataReader, ticker, start_date, end_date)
-    except Exception as e:
-        msg = _safe_error(e)
-        print(f"오류 발생: {msg}")
-        return CollectResult(ok=False, error=msg)
+    if close_basis == CLOSE_BASIS_OFFICIAL:
+        from app import official_close
 
-    if df is None or df.empty:
-        msg = f"FinanceDataReader가 '{ticker}'의 {start_date}~{end_date} 주가 데이터를 반환하지 않았습니다."
-        print(msg)
-        return CollectResult(ok=False, error=msg)
+        try:
+            records, basis_stats = official_close.official_records(ticker, asset_type, date.fromisoformat(start_date))
+        except Exception as e:
+            msg = _safe_error(e)
+            print(f"오류 발생(공식 종가 조회): {msg}")
+            return CollectResult(ok=False, error=msg)
+        records = [r for r in records if r["price_date"] <= date.fromisoformat(end_date)]
+        print(f"공식 종가 분류: {basis_stats}")
+        if not records:
+            msg = f"'{ticker}'의 {start_date}~{end_date} 공식 종가를 확정할 수 있는 날이 없습니다(최신 거래일은 다음 거래일에 확정)."
+            print(msg)
+            return CollectResult(ok=True, saved=0, fetched=0)
+    elif close_basis != CLOSE_BASIS_SOURCE:
+        return CollectResult(ok=False, error=f"알 수 없는 close_basis: {close_basis}")
+    else:
+        try:
+            df = _read_fdr(fdr.DataReader, ticker, start_date, end_date)
+        except Exception as e:
+            msg = _safe_error(e)
+            print(f"오류 발생: {msg}")
+            return CollectResult(ok=False, error=msg)
 
-    records = [_price_row(i, r) for i, r in df.dropna(subset=["Close"]).iterrows()]
+        if df is None or df.empty:
+            msg = f"FinanceDataReader가 '{ticker}'의 {start_date}~{end_date} 주가 데이터를 반환하지 않았습니다."
+            print(msg)
+            return CollectResult(ok=False, error=msg)
+
+        records = [_price_row(i, r) for i, r in df.dropna(subset=["Close"]).iterrows()]
     if not V.valid_ticker(ticker):
         # 2026-11-08(36차): 잘못된 종목코드로 회사를 새로 만들지 않는다. 받은 시세는 전부 격리한다
         checked = V.check_prices(ticker, records)
@@ -398,6 +425,19 @@ def fetch_and_save_stock(
             set_={col: stmt.excluded[col] for col in _STOCK_PRICE_COLUMNS},
         )
         db.execute(stmt)
+        if close_basis == CLOSE_BASIS_OFFICIAL:
+            # 확정 범위 뒤의 기존 행(예: 이전 실행이 저장한 최신일): 종가는 확인할 수 없어 그대로 두고(다음 거래일 실행에서 확정),
+            # 등락률만 저장 종가로 다시 계산한다. 그대로 두면 그 행의 저장 등락률이 옛 전일 종가 기준으로 남아 차트(종가로 계산)와
+            # 실시간 대체 카드(저장 등락률)가 서로 다른 값을 보인다(2026-11-11 검증 DB: +3.57% vs +4.41%).
+            last = max(r["price_date"] for r in records)
+            prev = next(r["close_price"] for r in records if r["price_date"] == last)
+            later = (db.query(StockPrice).filter(StockPrice.company_id == company.id, StockPrice.price_date > last)
+                     .order_by(StockPrice.price_date).all())
+            for row in later:
+                row.change_pct = round((float(row.close_price) / prev - 1) * 100, 2)
+                prev = float(row.close_price)
+            if later:
+                summary += f", 확정 전 최신 행 {len(later)}건(종가 유지, 등락률만 다시 계산)"
         db.commit()
         print(f"DB 저장 완료: {summary}")
         return CollectResult(ok=True, saved=len(new), fetched=fetched, quarantined=len(bad), warned=warned)
