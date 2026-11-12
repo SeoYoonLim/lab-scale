@@ -55,7 +55,8 @@ def main():
         res, sec = _timed(fetch_and_save_stock, ticker, name, days=args.days, dry_run=args.dry_run,
                           close_basis=args.close_basis, asset_type=t.get("asset_type", "stock"))
         time.sleep(args.delay)
-        row.update(ok=res.ok, saved=res.saved, fetched=res.fetched, error=res.error, sec=round(sec, 2))
+        row.update(ok=res.ok, saved=res.saved, fetched=res.fetched, error=res.error, sec=round(sec, 2),
+                   held_dates=res.held_dates)  # 46차: 공식 종가 모드에서 교정하지 않은 날(원천 값 유지)
         rows.append(row)
         print(f"[{i}/{len(targets)}] {name}({ticker}) {'OK' if res.ok else 'FAIL'} 조회 {res.fetched}건 / 신규 {res.saved}건 ({row['sec']}s)")
 
@@ -69,6 +70,7 @@ def main():
         "sec_per_ticker": round(elapsed / max(len(targets), 1), 2),
         "rows_fetched": sum(r["fetched"] for r in rows),
         "rows_new": sum(r["saved"] for r in rows),
+        "held_rows": [(r["ticker"], d) for r in rows for d in r.get("held_dates") or []],
     }
     print("\n===== 요약 =====")
     print(json.dumps(summary, ensure_ascii=False, indent=2))

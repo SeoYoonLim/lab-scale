@@ -78,6 +78,7 @@ def main():
         days = oc.classify(oc.fetch_daily(t, since), asset_type)
         time.sleep(a.delay)
         fdr_close = {i.date(): float(r["Close"]) for i, r in fdr.DataReader(t, a.since).iterrows()}
+        days = oc.mark_event_boundaries(days, fdr_close)  # 46차: 수집기와 같은 규칙(기업 이벤트 경계일은 원천 값)
         kinds = Counter(d.kind for d in days)
         # 45차 기준: 저장 기대값 = 공식 종가 x (원천 FDR 종가 / 네이버 실제 종가). 원천의 수정주가 체계(기업 이벤트·ETF 분배 조정)는 유지한다
         expected = {d.day: round(d.official_close * fdr_close[d.day] / d.source_close, 2) for d in days
@@ -99,7 +100,7 @@ def main():
                           "fdr_close": fdr_close.get(fd), **{f"db_{n}": (v["rows"].get(fd) or (None,))[0] for n, v in dbs.items()}})
         report["tickers"][t] = {"asset_type": asset_type, "naver_days": len(days), "kinds": dict(kinds),
                                 "after_market_days": [d.day.isoformat() for d in days if d.kind == oc.AFTER_MARKET],
-                                "other_adjusted_days": [(d.day.isoformat(), d.kind) for d in days if d.kind in (oc.DISTRIBUTION, oc.BASE_ADJUSTED)],
+                                "other_adjusted_days": [(d.day.isoformat(), d.kind) for d in days if d.kind in (oc.DISTRIBUTION, oc.BASE_ADJUSTED, oc.EVENT_BOUNDARY)],
                                 "fdr_equals_naver_chart": sum(1 for d in days if d.day in fdr_close and abs(fdr_close[d.day] - d.source_close) < 0.5),
                                 "fdr_overlap": sum(1 for d in days if d.day in fdr_close),
                                 "per_db": per_db, "focus": table}

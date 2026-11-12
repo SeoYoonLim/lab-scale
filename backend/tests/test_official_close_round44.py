@@ -158,3 +158,64 @@ def test_with_source_missing_day_is_skipped_not_mixed():
     rows = [_row("2026-11-09", 187000, 0), _row("2026-11-10", 197300, 7400), _row("2026-11-11", 205000, 6100)]
     recs, stats = oc.official_records("005930", "stock", date(2026, 11, 10), rows=rows, source={date(2026, 11, 9): _src("2026-11-09", 187000)})
     assert recs == [] and stats["no_source"] == 1
+
+
+# ---------- 46차: 원천 조정 비율이 다음 날 바뀐 애프터마켓 분류일(기업 이벤트 경계)은 교정하지 않는다 ----------
+def test_event_boundary_inside_after_market_band_keeps_source():
+    """삼성바이오로직스(207940) 2026-11-12 조회 실제 값. 10-02에 원천(FDR)이 과거를 0.9923배 조정했다(기준가 조정).
+    10-01 실제 종가 1,428,000과 10-02 기준가 1,418,000의 차이(0.7%)가 제한폭 안이라 애프터마켓으로 보이지만, 기준가가 조정된 값이므로
+    공식 종가 x 비율(1,407,083)은 조정을 두 번 적용한 값이다. 원천 값(1,417,007)을 그대로 둔다."""
+    rows = [_row("2026-09-30", 1394000, 9000), _row("2026-10-01", 1428000, 37000), _row("2026-10-02", 1366000, -52000),
+            _row("2026-10-06", 1318000, -36000), _row("2026-10-07", 1320000, 2000)]
+    source = {date(2026, 9, 30): _src("2026-09-30", 1383268), date(2026, 10, 1): _src("2026-10-01", 1417007),
+              date(2026, 10, 2): _src("2026-10-02", 1366000), date(2026, 10, 6): _src("2026-10-06", 1318000)}
+    recs, stats = oc.official_records("207940", "stock", date(2026, 10, 1), rows=rows, source=source)
+    by = {r["price_date"].isoformat(): r["close_price"] for r in recs}
+    assert by["2026-10-01"] == 1417007.0  # 원천 그대로(교정하지 않음)
+    assert stats.get("event_boundary") == 1 and "2026-10-01" not in stats["after_market_dates"]
+    assert stats["event_boundary_dates"] == ["2026-10-01"]  # 승인 조건: 교정하지 않은 행을 따로 남긴다
+    # 비율이 같은 다른 날은 그대로 교정된다(10-02: 10-06 기준가 1,318,000 + 36,000 = 1,354,000 vs 실제 1,366,000)
+    assert by["2026-10-02"] == 1354000.0 and "2026-10-02" in stats["after_market_dates"]
+
+
+def test_event_boundary_uses_one_for_last_row_so_intraday_noise_does_not_block_correction():
+    """마지막 행(오늘 장중)은 FDR과 네이버를 다른 시각에 읽어 비율이 흔들린다(2026-11-12 주성엔지니어링 1.0 vs 0.9966).
+    그 앞날(완료된 날, 비율 1)의 애프터마켓 교정은 막지 않는다."""
+    rows = [_row("2026-11-10", 50000, 0), _row("2026-11-11", 51000, 1000), _row("2026-11-12", 52000, 1500)]
+    source = {date(2026, 11, 10): _src("2026-11-10", 50000), date(2026, 11, 11): _src("2026-11-11", 51000),
+              date(2026, 11, 12): _src("2026-11-12", 51800)}  # 장중이라 FDR 값이 네이버와 다르다
+    recs, stats = oc.official_records("036930", "stock", date(2026, 11, 11), rows=rows, source=source)
+    assert [(r["price_date"].isoformat(), r["close_price"]) for r in recs] == [("2026-11-11", 50500.0)]
+    assert "event_boundary" not in stats
+
+
+def test_event_boundary_is_not_triggered_by_source_rounding():
+    """수정주가 구간(비율 0.5025)에서 FDR 원 단위 반올림만으로는 경계로 보지 않는다."""
+    days = oc.classify([_row("2026-10-12", 64700, 0), _row("2026-10-13", 56700, -200), _row("2026-10-14", 57000, 300)], "stock")
+    src = {date(2026, 10, 12): 32512.0, date(2026, 10, 13): 28491.0}  # 64,700 x 0.50250 = 32,511.75, 56,700 x 0.50250 = 28,491.75
+    out = oc.mark_event_boundaries(days, src)
+    assert out[0].kind == oc.AFTER_MARKET
+
+
+def test_collect_prices_report_lists_held_rows(monkeypatch, tmp_path):
+    """46차 승인 조건: 교정하지 않고 원천 값을 둔 행(이벤트 경계)을 수집 보고서에 따로 남긴다."""
+    import json
+    import sys
+
+    from app.collectors import CollectResult
+    from scripts import collect_prices
+
+    (tmp_path / "u.json").write_text(json.dumps({"universe": [{"rank": 1, "ticker": "207940", "name": "삼성바이오로직스"},
+                                                              {"rank": 2, "ticker": "005930", "name": "삼성전자"}]}), encoding="utf-8")
+    monkeypatch.setattr(collect_prices, "UNIVERSE_DIR", tmp_path)
+    monkeypatch.setattr(collect_prices, "_register", lambda *a, **k: None)
+    monkeypatch.setattr(collect_prices.time, "sleep", lambda s: None)
+    held = {"207940": ["2026-10-01"], "005930": []}
+    monkeypatch.setattr(collect_prices, "fetch_and_save_stock",
+                        lambda t, *a, **k: CollectResult(ok=True, saved=0, fetched=1, held_dates=held[t]))
+    out = tmp_path / "r.json"
+    monkeypatch.setattr(sys, "argv", ["collect_prices", "--universe", "u.json", "--close-basis", "official", "--report", str(out)])
+    collect_prices.main()
+    rep = json.loads(out.read_text(encoding="utf-8"))
+    assert rep["summary"]["held_rows"] == [["207940", "2026-10-01"]]
+    assert [r["held_dates"] for r in rep["rows"]] == [["2026-10-01"], []]

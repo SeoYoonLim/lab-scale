@@ -246,6 +246,8 @@ class CollectResult:
     source: str | None = None
     quarantined: int = 0
     warned: int = 0
+    # 46차: 공식 종가 모드에서 교정하지 않고 원천 값을 둔 날(기업 이벤트 경계, app.official_close.EVENT_BOUNDARY). 주가 수집만 채운다
+    held_dates: list = field(default_factory=list)
 
 
 _API_KEY_RE = re.compile(r"(crtfc_key=)[^&\s]+")
@@ -356,7 +358,9 @@ def fetch_and_save_stock(
             return CollectResult(ok=False, error=msg)
         records = [r for r in records if r["price_date"] <= date.fromisoformat(end_date)]
         after_market_dates = {date.fromisoformat(x) for x in basis_stats.pop("after_market_dates", [])}
-        print(f"공식 종가 분류: {basis_stats}, 애프터마켓 교정일 {len(after_market_dates)}건")
+        held_dates = [x for x in basis_stats.pop("event_boundary_dates", []) if x <= end_date]
+        print(f"공식 종가 분류: {basis_stats}, 애프터마켓 교정일 {len(after_market_dates)}건"
+              + (f", 교정 보류(원천 값 유지) {held_dates}" if held_dates else ""))
         if not records:
             msg = f"'{ticker}'의 {start_date}~{end_date} 공식 종가를 확정할 수 있는 날이 없습니다(최신 거래일은 다음 거래일에 확정)."
             print(msg)
@@ -364,6 +368,7 @@ def fetch_and_save_stock(
     elif close_basis != CLOSE_BASIS_SOURCE:
         return CollectResult(ok=False, error=f"알 수 없는 close_basis: {close_basis}")
     else:
+        held_dates = []
         try:
             df = _read_fdr(fdr.DataReader, ticker, start_date, end_date)
         except Exception as e:
@@ -423,11 +428,11 @@ def fetch_and_save_stock(
 
         if dry_run:
             print(f"[dry-run] {summary} (조회 {fetched}건)")
-            return CollectResult(ok=True, saved=len(new), fetched=fetched, quarantined=len(bad), warned=warned)
+            return CollectResult(ok=True, saved=len(new), fetched=fetched, quarantined=len(bad), warned=warned, held_dates=held_dates)
         quarantine.record("stock_price", checked, {"ticker": ticker})
         if not records:
             print(f"DB 저장 없음: {summary}")
-            return CollectResult(ok=True, saved=0, fetched=fetched, quarantined=len(bad), warned=warned)
+            return CollectResult(ok=True, saved=0, fetched=fetched, quarantined=len(bad), warned=warned, held_dates=held_dates)
 
         stmt = pg_insert(StockPrice).values([{**r, "company_id": company.id} for r in records])
         stmt = stmt.on_conflict_do_update(
@@ -450,7 +455,7 @@ def fetch_and_save_stock(
                 summary += f", 확정 전 최신 행 {len(later)}건(종가 유지, 등락률만 다시 계산)"
         db.commit()
         print(f"DB 저장 완료: {summary}")
-        return CollectResult(ok=True, saved=len(new), fetched=fetched, quarantined=len(bad), warned=warned)
+        return CollectResult(ok=True, saved=len(new), fetched=fetched, quarantined=len(bad), warned=warned, held_dates=held_dates)
     except Exception as e:
         db.rollback()
         msg = _safe_error(e)
