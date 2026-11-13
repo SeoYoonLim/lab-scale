@@ -468,7 +468,7 @@ def resolve_days(days: int | None, today: date) -> tuple[int, str]:
 
 
 def build_steps(days: int, timeout_min: float, news_only: bool = False, news_state: str | None = None,
-                close_basis: str = "source") -> list[Step]:
+                close_basis: str = "official") -> list[Step]:
     from app.data_status import _kst_date
 
     def prices():
@@ -598,7 +598,7 @@ def write_log(res: StepResult, run_id: int | None = None) -> None:
         db.close()
 
 
-def print_plan(selected: list[str], days: int, timeout_min: float, close_basis: str = "source"):
+def print_plan(selected: list[str], days: int, timeout_min: float, close_basis: str = "official"):
     print("[dry-run] 실제 호출·DB 기록 없이 계획만 출력합니다.")
     plan = {
         "prices": f"collect_prices x2 (universe_top300 + universe_etf50, --days {days}, --close-basis {close_basis})",
@@ -638,8 +638,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--prune-logs", action="store_true", help="오래된 갱신 기록 정리(--keep-days, --dry-run이면 세기만)")
     ap.add_argument("--keep-days", type=int, default=180, help="--prune-logs 보관 기간(일, 30 이상)")
     ap.add_argument("--trigger", default="manual", choices=["manual", "scheduler"], help="실행 기록에 남길 실행 주체")
-    ap.add_argument("--close-basis", choices=["source", "official"], default="source",
-                    help="주가 종가 기준(45차). source(기본): FinanceDataReader 그대로. official: 공식 종가(app/official_close.py)")
+    ap.add_argument("--close-basis", choices=["source", "official"], default="official",
+                    help="주가 종가 기준. official(기본, 47차): 공식 종가(app/official_close.py). source: FinanceDataReader 그대로"
+                         "(주식 2026-09-14 이후 행은 collect_prices가 저장하지 않는다)")
     ap.add_argument("--days", type=int, default=None,
                     help=f"주가/지수/환율 조회 기간(달력 일). 생략하면 DB의 마지막 시세 날짜·최근 빈 평일부터 오늘까지 + {DAYS_SLACK}일"
                          f"(최소 {DAYS_MIN}, 상한 {DAYS_CAP})")

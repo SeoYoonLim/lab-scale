@@ -44,7 +44,8 @@ def test_skhynix_regime_on_2026_11_03_is_a_rebound_attempt(dev_db):
     ind = outlook.compute_indicators(rows, p, index_rows)
     sig = outlook.classify_signals(ind, p)
     label = outlook.judge(sig, {"hold": False})
-    assert ind["regime_inputs"]["r20"] == -23.24 and ind["day_change_pct"] == -4.46
+    # 47차 공식 종가 교정(2026-11-13) 뒤 값. 교정 전(애프터마켓 혼입 종가)은 r20 -23.24, 하루 -4.46
+    assert ind["regime_inputs"]["r20"] == -24.06 and ind["day_change_pct"] == -5.03
     assert outlook.classify_regime(ind, label) == outlook.REGIME_REBOUND
     votes = outlook.group_votes(sig)
     assert votes["중기 추세"] == outlook.NEUTRAL  # 골든크로스와 5일선 > 20일선이 2표가 되지 않는다

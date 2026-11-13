@@ -219,3 +219,34 @@ def test_collect_prices_report_lists_held_rows(monkeypatch, tmp_path):
     rep = json.loads(out.read_text(encoding="utf-8"))
     assert rep["summary"]["held_rows"] == [["207940", "2026-10-01"]]
     assert [r["held_dates"] for r in rep["rows"]] == [["2026-10-01"], []]
+
+
+
+# ---------- 47차: source 모드 보호(교정된 공식 종가를 애프터마켓 종료가로 덮어쓰지 않는다) ----------
+def test_source_guard_blocks_stock_rows_after_after_market_start():
+    from app.collectors import source_after_market_guard
+
+    recs = [{"price_date": date(2026, 9, 11)}, {"price_date": date(2026, 9, 14)}, {"price_date": date(2026, 11, 3)}]
+    keep, blocked = source_after_market_guard(recs, "stock", allow=False)
+    assert [r["price_date"] for r in keep] == [date(2026, 9, 11)] and blocked == [date(2026, 9, 14), date(2026, 11, 3)]
+    assert source_after_market_guard(recs, "etf", allow=False) == (recs, [])  # ETF는 애프터마켓 대상이 아니다
+    assert source_after_market_guard(recs, "stock", allow=True) == (recs, [])  # 명시 옵션으로만 푼다
+
+
+def test_fetch_and_save_stock_defaults_to_official_and_uses_stored_asset_type(monkeypatch):
+    import inspect
+
+    from app import collectors
+
+    assert inspect.signature(collectors.fetch_and_save_stock).parameters["close_basis"].default == "official"
+    seen = {}
+
+    def fake_records(ticker, asset_type, start, now=None, source=None, rows=None):
+        seen["asset_type"] = asset_type
+        raise RuntimeError("stop")  # 분류에 쓰는 자산 구분만 확인하고 멈춘다(네트워크·DB 쓰기 없음)
+
+    monkeypatch.setattr(collectors, "_stored_asset_type", lambda t: "etf")
+    monkeypatch.setattr(collectors, "_read_fdr", lambda *a, **k: None)
+    monkeypatch.setattr("app.official_close.official_records", fake_records)
+    r = collectors.fetch_and_save_stock("069500", "KODEX 200", start_date="2026-11-02", end_date="2026-11-05")
+    assert not r.ok and seen["asset_type"] == "etf"  # 인자를 주지 않아도(backfill_history) DB 등록값 etf로 분류한다

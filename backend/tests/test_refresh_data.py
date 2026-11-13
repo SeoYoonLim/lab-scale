@@ -278,13 +278,37 @@ def test_news_step_keeps_disclosures_by_default(monkeypatch):
     assert calls[0] == ["--universe", "universe_top300.json"]
 
 
-# ---------- 45차(2026-11-11): 주가 종가 기준을 refresh_data에서 고를 수 있다(기본은 그대로 source) ----------
+# ---------- 45차: 주가 종가 기준을 refresh_data에서 고를 수 있다. 47차(개발 DB 교정 뒤): 기본은 official ----------
 def test_prices_step_passes_close_basis(monkeypatch):
     from scripts import collect_prices
 
     seen = []
     monkeypatch.setattr(rd, "_call_script", lambda fn, argv, timeout: seen.append(argv) or "{\"targets\": 1, \"failures\": 0}")
     next(s for s in rd.build_steps(10, 1) if s.key == "prices").run()
-    next(s for s in rd.build_steps(10, 1, close_basis="official") if s.key == "prices").run()
-    assert [a[a.index("--close-basis") + 1] for a in seen] == ["source", "source", "official", "official"]
+    next(s for s in rd.build_steps(10, 1, close_basis="source") if s.key == "prices").run()
+    assert [a[a.index("--close-basis") + 1] for a in seen] == ["official", "official", "source", "source"]
     assert collect_prices.main  # 실제 스크립트 진입점이 있다
+
+
+def test_cli_default_close_basis_is_official(monkeypatch):
+    """47차: refresh_data·collect_prices·backfill_history의 --close-basis 기본은 official이다(교정된 가격을 source로 덮어쓰지 않게)."""
+    import argparse
+
+    from scripts import backfill_history, collect_prices
+
+    captured = {}
+    real = argparse.ArgumentParser.parse_args
+
+    def grab(self, *a, **k):
+        ns = real(self, *a, **k)
+        captured[self.prog] = ns.close_basis
+        raise SystemExit(0)
+
+    monkeypatch.setattr(argparse.ArgumentParser, "parse_args", grab)
+    for mod, argv in ((rd, ["refresh_data"]), (collect_prices, ["collect_prices"]), (backfill_history, ["backfill_history"])):
+        monkeypatch.setattr("sys.argv", argv)
+        try:
+            mod.main() if mod is not backfill_history else mod.main([])
+        except SystemExit:
+            pass
+    assert set(captured.values()) == {"official"} and len(captured) == 3, captured

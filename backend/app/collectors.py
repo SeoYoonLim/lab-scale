@@ -322,13 +322,37 @@ def _price_values(record: dict) -> tuple:
 
 # FinanceDataReader(KRX 로그인 불필요)로 주가 수집 후 DB에 upsert하는 함수.
 # 이미 있는 날짜는 최신 값으로 갱신한다. 장 마감 전에 저장된 행(거래량 등)이 남지 않게 하기 위해서다.
-CLOSE_BASIS_SOURCE = "source"  # 기본: FinanceDataReader(네이버 일봉) 값 그대로
-CLOSE_BASIS_OFFICIAL = "official"  # 44차 옵트인: 공식 종가(KRX 정규장) 기준. app/official_close.py
+CLOSE_BASIS_SOURCE = "source"  # FinanceDataReader(네이버 일봉) 값 그대로. 2026-09-14 이후 주식 종가는 애프터마켓 종료가다
+CLOSE_BASIS_OFFICIAL = "official"  # 공식 종가(KRX 정규장) 기준. app/official_close.py
+# 47차: 개발 DB 가격 교정 뒤 기본을 official로 바꿨다. source로 교정된 행을 다시 덮어쓰지 않게 source_after_market_guard를 둔다
+CLOSE_BASIS_DEFAULT = CLOSE_BASIS_OFFICIAL
+
+
+def _stored_asset_type(ticker: str) -> str | None:
+    """DB에 등록된 종목의 asset_type. 없으면 None. 공식 종가 분류(주식 vs ETF)와 source 보호가 호출자 인자에 기대지 않게 한다
+    (47차: backfill_history는 asset_type을 넘기지 않아 ETF가 주식으로 분류될 수 있었다)."""
+    db = SessionLocal()
+    try:
+        return db.query(Company.asset_type).filter(Company.ticker == ticker).scalar()
+    finally:
+        db.close()
+
+
+def source_after_market_guard(records: list[dict], asset_type: str, allow: bool) -> tuple[list[dict], list]:
+    """47차: source 모드에서 주식의 애프터마켓 개장일(2026-09-14) 이후 행은 저장하지 않는다(교정된 공식 종가를 애프터마켓 종료가로
+    덮어쓰지 않게). ETF는 애프터마켓 대상이 아니라 source = 공식 종가라 그대로 둔다. allow=True면 막지 않는다(시험·비상용).
+    반환: (저장할 레코드, 막은 날짜 목록)."""
+    from app.official_close import AFTER_MARKET_START
+
+    if allow or asset_type == "etf":
+        return records, []
+    blocked = [r["price_date"] for r in records if r["price_date"] >= AFTER_MARKET_START]
+    return [r for r in records if r["price_date"] < AFTER_MARKET_START], blocked
 
 
 def fetch_and_save_stock(
     ticker: str, name: str, days: int = 7, dry_run: bool = False, start_date: str | None = None, end_date: str | None = None,
-    close_basis: str = CLOSE_BASIS_SOURCE, asset_type: str = "stock",
+    close_basis: str = CLOSE_BASIS_DEFAULT, asset_type: str | None = None, allow_source_after_market: bool = False,
 ) -> CollectResult:
     """start_date/end_date(YYYY-MM-DD)를 주면 days 대신 그 기간을 받는다(scripts/backfill_history.py가 장기 이력에 쓴다).
 
@@ -339,7 +363,12 @@ def fetch_and_save_stock(
     start_date = start_date or (today - timedelta(days=days)).strftime("%Y-%m-%d")
     end_date = end_date or today.strftime("%Y-%m-%d")
 
-    print(f"[{name}({ticker})] {start_date} ~ {end_date} 주가 데이터 수집 중... (종가 기준: {close_basis})")
+    # 47차: 자산 구분은 DB 등록값을 먼저 쓴다(공식 종가 분류와 source 보호가 이 값에 달려 있다). 등록 전이면 인자, 그것도 없으면 stock
+    stored_type = _stored_asset_type(ticker) if V.valid_ticker(ticker) else None
+    if stored_type and asset_type and stored_type != asset_type:
+        print(f"[주의] {ticker} asset_type 인자 {asset_type} != DB {stored_type}: DB 값을 쓴다")
+    asset_type = stored_type or asset_type or "stock"
+    print(f"[{name}({ticker})] {start_date} ~ {end_date} 주가 데이터 수집 중... (종가 기준: {close_basis}, {asset_type})")
 
     if close_basis == CLOSE_BASIS_OFFICIAL:
         from app import official_close
@@ -382,6 +411,12 @@ def fetch_and_save_stock(
             return CollectResult(ok=False, error=msg)
 
         records = [_price_row(i, r) for i, r in df.dropna(subset=["Close"]).iterrows()]
+        records, blocked = source_after_market_guard(records, asset_type, allow_source_after_market)
+        if blocked:
+            print(f"[보호] source 모드: 애프터마켓 개장(2026-09-14) 뒤 주식 {len(blocked)}행은 저장하지 않음"
+                  f"({min(blocked)}~{max(blocked)}). 공식 종가는 --close-basis official로 받는다")
+        if not records:
+            return CollectResult(ok=True, saved=0, fetched=0)
     if not V.valid_ticker(ticker):
         # 2026-11-08(36차): 잘못된 종목코드로 회사를 새로 만들지 않는다. 받은 시세는 전부 격리한다
         checked = V.check_prices(ticker, records)

@@ -1,6 +1,7 @@
 """과거 시세 장기 수집(백테스트용): company 테이블 종목의 일별 시세와 코스피·코스닥 지수를 --years년치 받아 upsert한다.
 
 - 수집 경로는 기존 것을 그대로 쓴다: app.collectors.fetch_and_save_stock / fetch_and_save_market_index
+  (47차: 종가 기준 기본 official. --close-basis source여도 주식 2026-09-14 이후 행은 저장하지 않는다)
   (FinanceDataReader, http_retry의 timeout·재시도, on_conflict upsert라 다시 실행해도 같은 결과). 종목 사이에 --delay초 쉰다.
 - 기간 끝: 평일 15:30(KST) 전이면 어제, 아니면 오늘. 장중(평일 09:00~15:30)에는 기본으로 실행을 거부한다
   (--allow-market-hours를 줘도 끝은 어제라 오늘 행을 건드리지 않는다).
@@ -120,6 +121,8 @@ def main(argv=None):
     ap.add_argument("--report", default=str(DEFAULT_REPORT))
     ap.add_argument("--allow-market-hours", action="store_true", help="장중에도 실행(끝은 어제)")
     ap.add_argument("--end", default=None, help="기간 끝 YYYY-MM-DD(기본 계산값보다 늦을 수 없다)")
+    ap.add_argument("--close-basis", choices=["source", "official"], default="official",
+                    help="종가 기준(47차). official(기본): 공식 종가. source: FDR 그대로(주식 2026-09-14 이후 행은 저장하지 않는다)")
     args = ap.parse_args(argv)
 
     if not 1 <= args.years <= MAX_YEARS:
@@ -156,7 +159,9 @@ def main(argv=None):
     t0 = time.monotonic()
     results = []
     for i, (ticker, name) in enumerate(todo, 1):
-        res = fetch_and_save_stock(ticker, name, dry_run=args.dry_run, start_date=start.isoformat(), end_date=end.isoformat())
+        # 47차: 종가 기준을 명시한다. 자산 구분은 fetch_and_save_stock이 DB 등록값으로 정한다
+        res = fetch_and_save_stock(ticker, name, dry_run=args.dry_run, start_date=start.isoformat(), end_date=end.isoformat(),
+                                   close_basis=args.close_basis)
         db = SessionLocal()
         try:
             series = stored_series(db, ticker)

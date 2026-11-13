@@ -28,8 +28,11 @@ def main():
     ap.add_argument("--days", type=int, default=90, help="조회 기간(달력 기준 일)")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--report", default=None, help="결과 JSON 저장 경로")
-    ap.add_argument("--close-basis", choices=["source", "official"], default="source",
-                    help="종가 기준. source(기본): FinanceDataReader 값 그대로. official: 공식 종가(KRX 정규장, 44차, app/official_close.py)")
+    ap.add_argument("--close-basis", choices=["source", "official"], default="official",
+                    help="종가 기준. official(기본, 47차): 공식 종가(KRX 정규장, app/official_close.py). source: FinanceDataReader 값 그대로"
+                         "(주식 2026-09-14 이후 행은 --allow-source-after-market 없이는 저장하지 않는다)")
+    ap.add_argument("--allow-source-after-market", action="store_true",
+                    help="source 모드에서도 주식 2026-09-14 이후 행을 저장한다(교정된 공식 종가를 덮어쓴다. 비상용)")
     args = ap.parse_args()
 
     universe = json.loads((UNIVERSE_DIR / args.universe).read_text(encoding="utf-8"))["universe"]
@@ -53,7 +56,8 @@ def main():
             continue
 
         res, sec = _timed(fetch_and_save_stock, ticker, name, days=args.days, dry_run=args.dry_run,
-                          close_basis=args.close_basis, asset_type=t.get("asset_type", "stock"))
+                          close_basis=args.close_basis, asset_type=t.get("asset_type", "stock"),
+                          allow_source_after_market=args.allow_source_after_market)
         time.sleep(args.delay)
         row.update(ok=res.ok, saved=res.saved, fetched=res.fetched, error=res.error, sec=round(sec, 2),
                    held_dates=res.held_dates)  # 46차: 공식 종가 모드에서 교정하지 않은 날(원천 값 유지)
