@@ -1,10 +1,10 @@
 {
- "generated_at": "2026-11-04T09:39:48",
+ "generated_at": "2026-11-13T10:30:06",
  "method": "app.outlook 신호를 신호일까지의 260거래일 종가로 매 거래일 계산, 판정 뒤 h거래일 종가 수익률 > 0 비율을 같은 구간 전체와 비교. 95% 구간은 거래일 h개 블록 군집 강건 분산",
  "train_end": "2025-12-31",
  "valid_start": "2026-01-02",
  "data_first_date": "2023-10-30",
- "data_last_date": "2026-11-03",
+ "data_last_date": "2026-11-12",
  "groups": {
   "close_vs_ma_short": "단기 흐름",
   "period_return": "단기 흐름",
@@ -85,114 +85,114 @@
    },
    "valid": {
     "horizon": 5,
-    "n_scored": 67999,
+    "n_scored": 70407,
     "n_hold": 0,
     "first_date": "2026-01-02",
-    "last_date": "2026-10-27",
+    "last_date": "2026-11-05",
     "labels": {
      "상승 우위": {
-      "n": 22176,
-      "up_rate": 0.5179,
-      "base_rate": 0.4986,
-      "diff": 0.0194,
+      "n": 22560,
+      "up_rate": 0.5162,
+      "base_rate": 0.4938,
+      "diff": 0.0224,
       "diff_ci95": [
-       -0.0144,
-       0.0531
+       -0.0113,
+       0.0561
       ],
       "up_rate_ci95": [
-       0.4587,
-       0.5771
+       0.4578,
+       0.5745
       ],
-      "clusters": 41,
+      "clusters": 42,
       "significant": false
      },
      "하락 우위": {
-      "n": 22776,
-      "up_rate": 0.4823,
-      "base_rate": 0.4986,
-      "diff": -0.0162,
+      "n": 23932,
+      "up_rate": 0.4763,
+      "base_rate": 0.4938,
+      "diff": -0.0175,
       "diff_ci95": [
-       -0.0535,
-       0.0211
+       -0.0537,
+       0.0187
       ],
       "up_rate_ci95": [
-       0.4174,
-       0.5473
+       0.413,
+       0.5395
       ],
-      "clusters": 41,
+      "clusters": 42,
       "significant": false
      },
      "중립": {
-      "n": 23047,
-      "up_rate": 0.4959,
-      "base_rate": 0.4986,
-      "diff": -0.0026,
+      "n": 23915,
+      "up_rate": 0.4901,
+      "base_rate": 0.4938,
+      "diff": -0.0036,
       "diff_ci95": [
-       -0.0198,
-       0.0145
+       -0.0203,
+       0.013
       ],
       "up_rate_ci95": [
-       0.4397,
-       0.5522
+       0.4352,
+       0.545
       ],
-      "clusters": 41,
+      "clusters": 42,
       "significant": false
      }
     }
    },
    "valid_before_groups": {
     "horizon": 5,
-    "n_scored": 67999,
+    "n_scored": 70407,
     "n_hold": 0,
     "first_date": "2026-01-02",
-    "last_date": "2026-10-27",
+    "last_date": "2026-11-05",
     "labels": {
      "상승 우위": {
-      "n": 27156,
-      "up_rate": 0.5096,
-      "base_rate": 0.4986,
-      "diff": 0.011,
+      "n": 27657,
+      "up_rate": 0.5078,
+      "base_rate": 0.4938,
+      "diff": 0.014,
       "diff_ci95": [
-       -0.0193,
-       0.0413
+       -0.0162,
+       0.0442
       ],
       "up_rate_ci95": [
-       0.4519,
-       0.5672
+       0.4509,
+       0.5646
       ],
-      "clusters": 41,
+      "clusters": 42,
       "significant": false
      },
      "하락 우위": {
-      "n": 28508,
-      "up_rate": 0.4824,
-      "base_rate": 0.4986,
-      "diff": -0.0162,
+      "n": 29925,
+      "up_rate": 0.4761,
+      "base_rate": 0.4938,
+      "diff": -0.0177,
       "diff_ci95": [
-       -0.0475,
-       0.0151
+       -0.048,
+       0.0127
       ],
       "up_rate_ci95": [
-       0.42,
-       0.5448
+       0.4153,
+       0.5369
       ],
-      "clusters": 41,
+      "clusters": 42,
       "significant": false
      },
      "중립": {
-      "n": 12335,
-      "up_rate": 0.5116,
-      "base_rate": 0.4986,
-      "diff": 0.0131,
+      "n": 12825,
+      "up_rate": 0.5048,
+      "base_rate": 0.4938,
+      "diff": 0.011,
       "diff_ci95": [
-       -0.0078,
-       0.034
+       -0.0087,
+       0.0307
       ],
       "up_rate_ci95": [
-       0.4544,
-       0.5689
+       0.4493,
+       0.5603
       ],
-      "clusters": 41,
+      "clusters": 42,
       "significant": false
      }
     }
@@ -207,7 +207,7 @@
     "last_date": "2025-12-01",
     "labels": {
      "상승 우위": {
-      "n": 26979,
+      "n": 26978,
       "up_rate": 0.5911,
       "base_rate": 0.6017,
       "diff": -0.0106,
@@ -239,7 +239,7 @@
       "significant": true
      },
      "중립": {
-      "n": 40011,
+      "n": 40012,
       "up_rate": 0.5929,
       "base_rate": 0.6017,
       "diff": -0.0088,
@@ -258,55 +258,55 @@
    },
    "valid": {
     "horizon": 20,
-    "n_scored": 62839,
+    "n_scored": 65247,
     "n_hold": 0,
     "first_date": "2026-01-02",
-    "last_date": "2026-10-02",
+    "last_date": "2026-10-15",
     "labels": {
      "상승 우위": {
-      "n": 19031,
-      "up_rate": 0.5198,
-      "base_rate": 0.4963,
-      "diff": 0.0236,
+      "n": 19684,
+      "up_rate": 0.5091,
+      "base_rate": 0.4862,
+      "diff": 0.0229,
       "diff_ci95": [
-       -0.0349,
-       0.082
+       -0.0341,
+       0.0799
       ],
       "up_rate_ci95": [
-       0.4177,
-       0.622
+       0.3983,
+       0.62
       ],
       "clusters": 10,
       "significant": false
      },
      "하락 우위": {
-      "n": 15173,
-      "up_rate": 0.4805,
-      "base_rate": 0.4963,
-      "diff": -0.0158,
+      "n": 16054,
+      "up_rate": 0.4683,
+      "base_rate": 0.4862,
+      "diff": -0.018,
       "diff_ci95": [
-       -0.0727,
-       0.0412
+       -0.071,
+       0.0351
       ],
       "up_rate_ci95": [
-       0.328,
-       0.6331
+       0.3165,
+       0.6201
       ],
       "clusters": 10,
       "significant": false
      },
      "중립": {
-      "n": 28635,
-      "up_rate": 0.489,
-      "base_rate": 0.4963,
-      "diff": -0.0073,
+      "n": 29509,
+      "up_rate": 0.4807,
+      "base_rate": 0.4862,
+      "diff": -0.0055,
       "diff_ci95": [
-       -0.0244,
-       0.0098
+       -0.0232,
+       0.0122
       ],
       "up_rate_ci95": [
-       0.3681,
-       0.6099
+       0.3566,
+       0.6049
       ],
       "clusters": 10,
       "significant": false
@@ -315,55 +315,55 @@
    },
    "valid_before_groups": {
     "horizon": 20,
-    "n_scored": 62839,
+    "n_scored": 65247,
     "n_hold": 0,
     "first_date": "2026-01-02",
-    "last_date": "2026-10-02",
+    "last_date": "2026-10-15",
     "labels": {
      "상승 우위": {
-      "n": 27013,
-      "up_rate": 0.5086,
-      "base_rate": 0.4963,
-      "diff": 0.0123,
+      "n": 27891,
+      "up_rate": 0.4987,
+      "base_rate": 0.4862,
+      "diff": 0.0125,
       "diff_ci95": [
-       -0.0324,
-       0.0571
+       -0.031,
+       0.0559
       ],
       "up_rate_ci95": [
-       0.4055,
-       0.6117
+       0.3882,
+       0.6093
       ],
       "clusters": 10,
       "significant": false
      },
      "하락 우위": {
-      "n": 24850,
-      "up_rate": 0.4832,
-      "base_rate": 0.4963,
-      "diff": -0.0131,
+      "n": 26055,
+      "up_rate": 0.473,
+      "base_rate": 0.4862,
+      "diff": -0.0133,
       "diff_ci95": [
-       -0.064,
-       0.0378
+       -0.0617,
+       0.0352
       ],
       "up_rate_ci95": [
-       0.3359,
-       0.6304
+       0.3253,
+       0.6206
       ],
       "clusters": 10,
       "significant": false
      },
      "중립": {
-      "n": 10976,
-      "up_rate": 0.4956,
-      "base_rate": 0.4963,
-      "diff": -0.0007,
+      "n": 11301,
+      "up_rate": 0.4861,
+      "base_rate": 0.4862,
+      "diff": -0.0002,
       "diff_ci95": [
-       -0.0348,
-       0.0335
+       -0.0337,
+       0.0334
       ],
       "up_rate_ci95": [
-       0.3765,
-       0.6147
+       0.3635,
+       0.6086
       ],
       "clusters": 10,
       "significant": false
@@ -431,55 +431,55 @@
    },
    "valid": {
     "horizon": 60,
-    "n_scored": 49093,
+    "n_scored": 51494,
     "n_hold": 0,
     "first_date": "2026-01-02",
-    "last_date": "2026-08-04",
+    "last_date": "2026-08-13",
     "labels": {
      "상승 우위": {
-      "n": 15518,
-      "up_rate": 0.4888,
-      "base_rate": 0.4627,
-      "diff": 0.0261,
+      "n": 16001,
+      "up_rate": 0.4827,
+      "base_rate": 0.4505,
+      "diff": 0.0322,
       "diff_ci95": [
-       -0.0449,
-       0.0971
+       -0.0452,
+       0.1096
       ],
       "up_rate_ci95": [
-       0.2357,
-       0.7419
+       0.2371,
+       0.7283
       ],
       "clusters": 4,
       "significant": false
      },
      "하락 우위": {
-      "n": 8318,
-      "up_rate": 0.4584,
-      "base_rate": 0.4627,
-      "diff": -0.0043,
+      "n": 8472,
+      "up_rate": 0.453,
+      "base_rate": 0.4505,
+      "diff": 0.0025,
       "diff_ci95": [
-       -0.1444,
-       0.1358
+       -0.1328,
+       0.1378
       ],
       "up_rate_ci95": [
-       0.4032,
-       0.5136
+       0.399,
+       0.507
       ],
       "clusters": 4,
       "significant": false
      },
      "중립": {
-      "n": 25257,
-      "up_rate": 0.4481,
-      "base_rate": 0.4627,
-      "diff": -0.0146,
+      "n": 27021,
+      "up_rate": 0.4307,
+      "base_rate": 0.4505,
+      "diff": -0.0198,
       "diff_ci95": [
-       -0.0306,
-       0.0014
+       -0.043,
+       0.0033
       ],
       "up_rate_ci95": [
-       0.2638,
-       0.6325
+       0.2531,
+       0.6083
       ],
       "clusters": 4,
       "significant": false
@@ -488,55 +488,55 @@
    },
    "valid_before_groups": {
     "horizon": 60,
-    "n_scored": 49093,
+    "n_scored": 51494,
     "n_hold": 0,
     "first_date": "2026-01-02",
-    "last_date": "2026-08-04",
+    "last_date": "2026-08-13",
     "labels": {
      "상승 우위": {
-      "n": 26198,
-      "up_rate": 0.4717,
-      "base_rate": 0.4627,
-      "diff": 0.009,
+      "n": 26795,
+      "up_rate": 0.4674,
+      "base_rate": 0.4505,
+      "diff": 0.0169,
       "diff_ci95": [
-       -0.0684,
-       0.0864
+       -0.068,
+       0.1018
       ],
       "up_rate_ci95": [
-       0.2109,
-       0.7326
+       0.2116,
+       0.7233
       ],
       "clusters": 4,
       "significant": false
      },
      "하락 우위": {
-      "n": 15264,
-      "up_rate": 0.4454,
-      "base_rate": 0.4627,
-      "diff": -0.0173,
+      "n": 16454,
+      "up_rate": 0.4245,
+      "base_rate": 0.4505,
+      "diff": -0.026,
       "diff_ci95": [
-       -0.1566,
-       0.1221
+       -0.1683,
+       0.1162
       ],
       "up_rate_ci95": [
-       0.3913,
-       0.4995
+       0.3653,
+       0.4837
       ],
       "clusters": 4,
       "significant": false
      },
      "중립": {
-      "n": 7631,
-      "up_rate": 0.4664,
-      "base_rate": 0.4627,
-      "diff": 0.0037,
+      "n": 8245,
+      "up_rate": 0.4475,
+      "base_rate": 0.4505,
+      "diff": -0.003,
       "diff_ci95": [
-       -0.0149,
-       0.0223
+       -0.0359,
+       0.0299
       ],
       "up_rate_ci95": [
-       0.2891,
-       0.6436
+       0.2762,
+       0.6189
       ],
       "clusters": 4,
       "significant": false
