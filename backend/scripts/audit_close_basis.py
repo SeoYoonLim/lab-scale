@@ -4,11 +4,11 @@
   python -m scripts.audit_close_basis --tickers 005930,000660,069500,102110,360750 --since 2025-09-01 \
       --dbs ai_investment,ai_investment_verify --dates 2026-09-11,2026-09-14,2026-11-02,2026-11-10,2026-11-11 --out <폴더>
 
-DATABASE_URL의 DB 이름만 바꿔 각 DB를 READ ONLY 트랜잭션으로 읽는다. 공식 종가 복원 규칙은 app/official_close.py.
+앱과 같은 연결 주소(app.db.session.DB_URL: 환경변수 DATABASE_URL -> backend/.env -> 기본값)에서 DB 이름만 바꿔
+각 DB를 READ ONLY 트랜잭션으로 읽는다(48차: 환경변수가 없으면 KeyError로 멈추던 문제 수정). 공식 종가 복원 규칙은 app/official_close.py.
 """
 import argparse
 import json
-import os
 import time
 from collections import Counter
 from datetime import date
@@ -16,11 +16,18 @@ from pathlib import Path
 
 import FinanceDataReader as fdr
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 
 from app import http_retry, official_close as oc
+from app.db.session import DB_URL
 
 INDEX_URL = "https://m.stock.naver.com/api/index/{code}/price"
 INDEXES = {"KS11": "KOSPI", "KQ11": "KOSDAQ"}
+
+
+def db_url_for(name: str, base: str = DB_URL) -> str:
+    """앱 연결 주소에서 DB 이름만 바꾼다. 47차: 환경변수를 직접 읽어 .env만 있는 실행(개발 DB 대상)에서 KeyError로 멈췄다."""
+    return make_url(base).set(database=name).render_as_string(hide_password=False)
 
 
 def db_rows(url: str, ticker: str, since: date) -> dict:
@@ -68,12 +75,11 @@ def main():
     a = ap.parse_args()
     since = date.fromisoformat(a.since)
     focus = [date.fromisoformat(x) for x in a.dates.split(",") if x]
-    base_url = os.environ["DATABASE_URL"].rsplit("/", 1)[0]
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     report = {"since": a.since, "tickers": {}, "indexes": {}}
     for t in a.tickers.split(","):
-        dbs = {name: db_rows(f"{base_url}/{name}", t, since) for name in a.dbs.split(",")}
+        dbs = {name: db_rows(db_url_for(name), t, since) for name in a.dbs.split(",")}
         asset_type = next((v["asset_type"] for v in dbs.values() if v["asset_type"]), "stock")
         days = oc.classify(oc.fetch_daily(t, since), asset_type)
         time.sleep(a.delay)
@@ -108,7 +114,7 @@ def main():
     for code, ncode in INDEXES.items():
         nv = naver_index(ncode)
         fv = {i.date(): float(r["Close"]) for i, r in fdr.DataReader(code, a.since).iterrows()}
-        dbv = {n: db_index(f"{base_url}/{n}", code, since) for n in a.dbs.split(",")}
+        dbv = {n: db_index(db_url_for(n), code, since) for n in a.dbs.split(",")}
         diff_fdr = sorted((d.isoformat(), fv[d], nv[d]) for d in nv if d in fv and abs(fv[d] - nv[d]) >= 0.005)
         report["indexes"][code] = {"naver_days": len(nv), "fdr_vs_naver_diff": diff_fdr,
                                    "db_vs_naver_diff": {n: sorted((d.isoformat(), v[d], nv[d]) for d in nv if d in v and abs(v[d] - nv[d]) >= 0.005)
