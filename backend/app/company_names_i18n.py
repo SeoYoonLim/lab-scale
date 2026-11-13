@@ -108,11 +108,26 @@ FOREIGN_NAMES: dict[str, tuple[str, ...]] = {
 
 
 def foreign_aliases() -> dict[str, str]:
-    """표기 -> 등록명(평평한 사전). 같은 표기가 두 종목에 걸리면 ValueError(사전 오류를 조용히 덮어쓰지 않는다)."""
+    """표기 -> 등록명(평평한 사전). 같은 표기가 두 종목에 걸리면 ValueError(사전 오류를 조용히 덮어쓰지 않는다).
+    49차: DART 공식 영문명(app/company_names_dart.DART_ENGLISH_NAMES, 181종목)도 합친다."""
+    from app.company_names_dart import DART_ENGLISH_NAMES
+
     out: dict[str, str] = {}
-    for name, aliases in FOREIGN_NAMES.items():
+    for name, aliases in [*FOREIGN_NAMES.items(), *DART_ENGLISH_NAMES.items()]:
         for a in aliases:
             if a in out and out[a] != name:
                 raise ValueError(f"외국어 표기 {a!r}가 {out[a]}와 {name}에 함께 걸린다")
             out[a] = name
     return out
+
+
+# ---------- 모호한 그룹 이름 (49차) ----------
+# 여러 상장 계열사에 걸치는 그룹 이름. 이 이름만 있고 특정 종목을 찾지 못한 질문은 코드가 후보를 보여 주며 되묻는다(app.agent._ambiguous_group_answer).
+# 49차 재확인: "How is Samsung stock doing?"에 종목 해석은 거절됐지만 모델이 도구 인자로 "삼성전자"를 직접 골랐다.
+# (등록명이 그룹 이름과 같은 종목 — SK·LG·두산·한화·GS·CJ 등 지주사 — 은 정확한 종목명이라 여기에 넣지 않는다.)
+AMBIGUOUS_GROUPS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    # 그룹: (질문 속 표기, 후보 등록명(시가총액 순 일부))
+    "삼성": (("Samsung", "삼성", "三星", "サムスン"), ("삼성전자", "삼성바이오로직스", "삼성물산", "삼성생명", "삼성SDI")),
+    "현대": (("Hyundai", "현대", "現代", "现代", "ヒョンデ"), ("현대차", "현대모비스", "현대건설", "현대글로비스", "현대로템")),
+    "롯데": (("Lotte", "롯데", "ロッテ", "乐天", "樂天"), ("롯데지주", "롯데쇼핑", "롯데케미칼", "롯데웰푸드", "롯데렌탈")),
+}

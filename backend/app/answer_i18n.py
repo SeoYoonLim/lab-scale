@@ -42,13 +42,71 @@ def _company_names() -> tuple[str, ...]:
         return ()
 
 
+# 49차: 전망 기간 안내(app.outlook.horizon_note / unsupported_horizon_answer)의 언어별 문장. 숫자는 같은 값이다.
+_HORIZON_NOTE = {
+    "en-US": "The requested period (about {n} trading days) is not a supported outlook period (the next 5, 20 or 60 trading days), "
+             "so this analysis uses the nearest one: the next {used} trading days.",
+    "ja-JP": "ご指定の期間（約{n}営業日）は対応している見通し期間（今後5・20・60営業日）ではないため、最も近い今後{used}営業日を基準に分析しました。",
+    "zh-CN": "您指定的期间（约{n}个交易日）不是支持的展望期间（未来5、20、60个交易日），因此按最接近的未来{used}个交易日进行分析。",
+}
+_HORIZON_UNSUPPORTED = {
+    "en-US": "Outlooks are only provided for the next 5, 20 and 60 trading days (1 week, 1 month and 3 months). An outlook for the "
+             "requested period is not provided (the indicators and the historical backtest are based on these three periods). "
+             "Please ask again with one of these periods.",
+    "ja-JP": "見通しは今後5・20・60営業日（1週間・1か月・3か月）についてのみ提供しています。ご指定の期間の見通しは提供していません"
+             "（指標の計算と過去検証がこの3つの期間を基準としているためです）。期間を変えて再度ご質問ください。",
+    "zh-CN": "展望仅提供未来5、20、60个交易日（1周、1个月、3个月）的分析。不提供您指定期间的展望（指标计算和历史回测均以这三个期间为基准）。"
+             "请更换期间后重新提问。",
+}
+
+
+def _localize_horizon(question, answer, records, locale, fixed, code_data, horizon) -> tuple[str, str] | None:
+    """전망 기간 안내가 붙은 답. 지원 밖 안내는 고정 문장, 기간을 바꾼 안내는 그 문단만 떼어 옮기고 나머지는 원래 경로로 옮긴다."""
+    if locale not in _HORIZON_NOTE or not horizon:
+        return None
+    if horizon.get("kind") == "unsupported":
+        from app import outlook
+
+        h = outlook.Horizon(horizon["text"], None, None, False)
+        if answer == outlook.unsupported_horizon_answer(h):
+            return f"{_HORIZON_UNSUPPORTED[locale]}\n\n{text('disclaimer', locale)}", STATUS_LOCALIZED
+        return None
+    note = horizon.get("note")
+    if horizon.get("kind") == "note" and note and answer.startswith(note + "\n\n"):
+        from app.outlook import PERIODS
+
+        rest, status = localize_answer(question, answer[len(note) + 2:], records, locale, fixed, code_data)
+        local_note = _HORIZON_NOTE[locale].format(n=horizon["requested_days"], used=PERIODS[horizon["label"]].days)
+        return f"{local_note}\n\n{rest}", status
+    return None
+
+
+_AMBIGUOUS = {
+    "en-US": "The name '{token}' matches several listed companies ({names}, etc.), so we can't tell which one you mean. "
+             "Please ask again with the exact company name or ticker.",
+    "ja-JP": "「{token}」という名前は複数の銘柄（{names}など）に当てはまるため、どの銘柄か特定できません。正確な銘柄名か銘柄コードで再度ご質問ください。",
+    "zh-CN": "“{token}”对应多只股票（{names}等），无法确定是哪一只。请用准确的股票名称或股票代码重新提问。",
+}
+
+
 def localize_answer(question: str, answer: str, records: list[dict], locale: str,
-                    fixed: dict[str, str] | None = None, code_data: dict | None = None) -> tuple[str, str]:
+                    fixed: dict[str, str] | None = None, code_data: dict | None = None,
+                    horizon: dict | None = None, ambiguous: dict | None = None) -> tuple[str, str]:
     """(그 언어의 답변, translation_status). fixed는 {고정 문구 키: 그 한국어 상수}(app.agent가 넘긴다).
-    code_data(48차)는 코드 템플릿 답의 데이터(app.agent 내부 meta["etf_holdings"])다. 있으면 그 데이터로 언어별 템플릿을 먼저 본다."""
+    code_data(48차)는 코드 템플릿 답의 데이터(app.agent 내부 meta["etf_holdings"])다. 있으면 그 데이터로 언어별 템플릿을 먼저 본다.
+    horizon(49차)은 전망 기간 안내(내부 meta["forecast_horizon"])다."""
     for key, korean in (fixed or {}).items():
         if answer == korean:
             return text(key, locale), STATUS_LOCALIZED
+    if ambiguous and locale in _AMBIGUOUS:
+        from app.agent import ambiguous_group_text
+
+        if answer == ambiguous_group_text(ambiguous["token"], ambiguous["candidates"]):
+            sep = ", " if locale == "en-US" else "、"
+            return _AMBIGUOUS[locale].format(token=ambiguous["token"], names=sep.join(ambiguous["candidates"])), STATUS_LOCALIZED
+    with_horizon = _localize_horizon(question, answer, records, locale, fixed, code_data, horizon)
+    if with_horizon is not None:
+        return with_horizon
     holdings = etf_holdings_i18n.localize(answer, code_data, locale)
     if holdings is not None:
         return holdings, STATUS_LOCALIZED

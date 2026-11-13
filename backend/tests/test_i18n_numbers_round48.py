@@ -85,7 +85,8 @@ def test_failed_paragraph_is_retried_line_by_line(monkeypatch):
 
 def test_line_retry_still_rejects_a_changed_number(monkeypatch):
     # 줄 단위로도 숫자를 쓰면(값 변형) 통과시키지 않는다 -> 기존 폴백
-    monkeypatch.setattr(T, "_chat", fake_translator(lambda masked: to_ja(masked).replace("⟦2⟧", "1,254,001")))
+    # 49차: 자리표시자 번호는 코드가 옮기는 문장 틀 때문에 바뀔 수 있어, 모델이 받은 첫 자리표시자를 숫자로 바꾼다
+    monkeypatch.setattr(T, "_chat", fake_translator(lambda masked: re.sub(r"⟦\d+⟧", "1,254,001", to_ja(masked), count=1)))
     r = T.translate(SRC, "ja-JP", NAMES)
     assert r.status == T.STATUS_FALLBACK
 

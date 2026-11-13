@@ -217,7 +217,7 @@ class TestAnswerLocalization:
         saved = []
         monkeypatch.setattr(agent, "_answer", lambda q, m, p: ({"answer": "한국어 답", "used_tools": [], "sources": []}, []))
         monkeypatch.setattr(agent, "save_report_row", lambda *a, **k: saved.append((a, k)) or 9)
-        monkeypatch.setattr(answer_i18n, "localize_answer", lambda q, a, r, loc, fixed, code_data=None: (f"[{loc}] answer", "translated"))
+        monkeypatch.setattr(answer_i18n, "localize_answer", lambda q, a, r, loc, fixed, code_data=None, horizon=None, ambiguous=None: (f"[{loc}] answer", "translated"))
         out = agent.ask_question("q", user_id=1, locale="en-US")
         assert out["answer"] == "[en-US] answer" and out["report_id"] == 9
         (args, kwargs), = saved

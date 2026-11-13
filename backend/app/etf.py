@@ -291,10 +291,39 @@ def mask_news_numbers(text: str) -> str:
     return _NEWS_NUMBER_RE.sub(NUMBER_MASK, text or "")
 
 
-def news_result_for_llm(result: dict) -> dict:
-    """news_tool 결과에서 기사 제목·본문의 수치를 가린 사본(LLM에 넘기는 용도). 원본 result는 바꾸지 않는다."""
+# 49차: 주식 답의 기사 시세 표시. 시세 낱말(주가·종가·마감·등락 …)이 있고 실적 낱말이 없는 기사 문장의 원·% 숫자에 기사 발행일을 붙인다
+# ("146,900원" -> "146,900원[기사 2026-10-30 시점]"). 발행일이 없으면 그 숫자를 가린다. 실적·매출·수주 같은 숫자는 그대로 둔다.
+# LLM이 기사 시세를 현재 시세로 옮기지 않게 하려는 것이고, 최종 검증은 answer_guard.strip_article_prices가 한다.
+_ARTICLE_SENT_RE = re.compile(r"[^.!?。\n]+[.!?。]?")
+_ARTICLE_PRICE_WORD_RE = re.compile(r"주가|종가|시가|고가|저가|장중|마감|낙폭|등락|시세|상승|하락|급등|급락|올랐|내렸|올라|내려|떨어|반등")
+_ARTICLE_FIN_RE = re.compile(r"영업이익|영업손실|순이익|순손실|매출|실적|수주|계약|배당|점유율|성장률|판매|수출|투자|예산")
+_ARTICLE_PRICE_NUM_RE = re.compile(r"(?<![\d,.])[+-]?\d[\d,]*(?:\.\d+)?(?:\s?만)?\s?(?:원|%)(?![\d가-힣]*[억조])")
+ARTICLE_UNDATED_MASK = "[날짜 미상 기사 시세 생략]"
+
+
+def _mark_article_prices(text, published: str | None) -> str:
+    if not isinstance(text, str) or not text:
+        return text
+    day = published[:10] if isinstance(published, str) and re.match(r"\d{4}-\d{2}-\d{2}", published) else None
+
+    def sentence(m: re.Match) -> str:
+        s = m.group(0)
+        if not _ARTICLE_PRICE_WORD_RE.search(s) or _ARTICLE_FIN_RE.search(s):
+            return s
+        return _ARTICLE_PRICE_NUM_RE.sub(lambda x: f"{x.group(0)}[기사 {day} 시점]" if day else ARTICLE_UNDATED_MASK, s)
+
+    return _ARTICLE_SENT_RE.sub(sentence, text)
+
+
+def news_result_for_llm(result: dict, etf: bool = True) -> dict:
+    """news_tool 결과에서 LLM에 넘길 사본. 원본 result(도구 기록·출처)는 바꾸지 않는다.
+    etf=True(기존): 기사 제목·본문의 수치를 모두 가린다. etf=False(49차, 주식): 기사 본문의 시세형 숫자에만 기사 발행일을 붙인다(위 설명)."""
     if not isinstance(result, dict) or not isinstance(result.get("news"), list):
         return result
+    if not etf:
+        news = [{**n, "content": _mark_article_prices(n.get("content"), n.get("published_at"))} for n in result["news"]]
+        return {**result, "news": news,
+                "note": "기사 속 주가·등락률은 [기사 날짜 시점] 값이다. 현재 주가는 stock_tool 결과만 쓰고, 기사 값은 그 날짜와 함께만 쓴다."}
     news = [
         {**n, "title": mask_news_numbers(n.get("title")), "content": mask_news_numbers(n.get("content"))}
         for n in result["news"]

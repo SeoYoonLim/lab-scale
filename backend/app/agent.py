@@ -28,6 +28,7 @@ from app.event_answer import (
     trim_result,
 )
 from app import briefing_text, code_answers, period_answers, period_scope
+from app.briefing import drop_open_session
 from app.etf import (
     ETF_ANSWER_RULES,
     asks_constituents,
@@ -49,11 +50,12 @@ from app.answer_guard import (
     is_simple_quote,
     narrative_body_is_thin,
     quote_answer,
+    strip_article_prices,
     strip_foreign_script,
     strip_narrative_mismatch,
     strip_untrusted_urls,
 )
-from app import answer_basis, answer_i18n, answer_tidy, earnings, evidence_answer, market_ranking, outlook, price_flow, quote_freshness, related_news
+from app import answer_basis, answer_i18n, answer_tidy, earnings, intent_i18n, evidence_answer, market_ranking, outlook, price_flow, quote_freshness, related_news
 from app import market_overview, request_safety
 from app.data_status import last_business_day
 from app.etf_holdings import constituents_chat_answer, holding_weight_answer, requested_top_n
@@ -1281,6 +1283,33 @@ def _question_companies(question: str) -> list | None:
         return None
 
 
+def _ambiguous_group_answer(question: str, companies: list | None):
+    """질문에 그룹 이름(app.company_names_i18n.AMBIGUOUS_GROUPS)만 있고 특정 종목이 없으면 후보를 보여 주며 되묻는 코드 답. 아니면 None.
+    종목을 하나라도 찾았거나(정확한 이름·별칭) DB 오류(companies None)면 손대지 않는다."""
+    from app.company_names_i18n import AMBIGUOUS_GROUPS
+
+    if companies is None or companies:
+        return None
+    q = question or ""
+    for group, (tokens, candidates) in AMBIGUOUS_GROUPS.items():
+        for t in tokens:
+            if re.match(r"[A-Za-z]", t):
+                hit = re.search(r"(?<![A-Za-z])" + re.escape(t) + r"(?![A-Za-z])", q, re.IGNORECASE)
+            elif re.match(r"[가-힣]", t):
+                hit = re.search(r"(?<![가-힣])" + re.escape(t) + r"(?=[은는이가의을를도과와랑에]|[^가-힣]|$)", q)
+            else:
+                hit = re.search(re.escape(t), q)
+            if hit:
+                _meta()["ambiguous_group"] = {"token": hit.group(0), "candidates": list(candidates)}
+                return _code_answer(ambiguous_group_text(hit.group(0), candidates))
+    return None
+
+
+def ambiguous_group_text(token: str, candidates) -> str:
+    return (f"'{token}'(이)라는 이름은 여러 종목({', '.join(candidates)} 등)에 해당해 어떤 종목인지 특정할 수 없습니다. "
+            "정확한 종목명이나 종목코드로 다시 질문해 주세요.")
+
+
 def _answer_concept(question: str, companies: list | None):
     """(C) 종목이 없는 정의 질문("PER이 뭐야?")은 용어 사전으로 답한다. 사전에 없는 용어면 모른다고 답한다."""
     if companies is None or companies:
@@ -1515,7 +1544,13 @@ def _answer_forecast(question: str, previous: dict | None):
     company, marker, mode = found
     if mode == "ask":
         return _code_answer(outlook.ASK_SUBJECT_ANSWER)
-    label = outlook.period_in(question) or (marker or {}).get("period") or outlook.DEFAULT_PERIOD
+    # 49차: 숫자로 말한 미래 기간("향후 20거래일", "3주 뒤", "내년"). 지원 밖이면 도구 없이 안내, 다른 기간으로 분석하면 답 맨 앞에 밝힌다
+    horizon = outlook.horizon_in(question)
+    if horizon is not None and horizon.unsupported:
+        _meta()["forecast_horizon"] = {"kind": "unsupported", "text": horizon.text.strip()}
+        return _code_answer(outlook.unsupported_horizon_answer(horizon))
+    label = ((horizon.label if horizon else None) or outlook.period_in(question) or (marker or {}).get("period")
+             or outlook.DEFAULT_PERIOD)
     period = outlook.PERIODS[label]
     now = datetime.now(KST)
     called_at = datetime.now(timezone.utc)
@@ -1574,6 +1609,11 @@ def _answer_forecast(question: str, previous: dict | None):
         answer = outlook.brief_answer(company, period, res, now)
     else:
         answer = outlook.followup_answer(company, period, res, mode, now, extra)
+    if horizon is not None and horizon.note:
+        note = outlook.horizon_note(horizon)
+        _meta()["forecast_horizon"] = {"kind": "note", "text": horizon.text.strip(), "requested_days": horizon.requested_days,
+                                       "label": horizon.label, "note": note}
+        answer = f"{note}\n\n{answer}"
     return _code_answer(answer, records)
 
 
@@ -1802,13 +1842,24 @@ def _load_price_rows(company, limit: int) -> list:
         db.close()
 
 
-def _price_window(company, period_days: int, start, end=None) -> dict | None:
-    """start~end의 날짜 창으로 만든 stock_tool 결과 모양의 dict(장중 규칙 적용). 실패하면 None(기존 흐름으로 간다)."""
+_TRADING_DAYS_TEXT_RE = re.compile(r"^\d+\s?(?:거래일|영업일)$")
+
+
+def _price_window(company, period_days: int, start, end=None, trading_days: int | None = None) -> dict | None:
+    """start~end의 날짜 창으로 만든 stock_tool 결과 모양의 dict(장중 규칙 적용). 실패하면 None(기존 흐름으로 간다).
+    49차: trading_days("최근 20거래일"처럼 거래일 수로 말한 기간)면 날짜 창이 아니라 저장된 최근 N개 거래일(장중 행 제외)이 창이다.
+    날짜 창은 오늘까지라 오늘 종가가 아직 없으면 N-1거래일만 비교했다(49차 신규 평가 C01~C03: "19거래일 기준 비교")."""
     try:
-        rows = _load_price_rows(company, period_days + _WINDOW_SLACK_ROWS)
+        rows = _load_price_rows(company, max(period_days, trading_days or 0) + _WINDOW_SLACK_ROWS)
     except Exception:
         return None
-    return code_answers.window_result(company, rows, start, datetime.now(KST), "period_quote", end=end)
+    now = datetime.now(KST)
+    if trading_days:
+        done = drop_open_session(list(rows), now, lambda r: r.price_date)
+        if len(done) < trading_days:
+            return None
+        start, end = done[trading_days - 1].price_date, None
+    return code_answers.window_result(company, rows, start, now, "period_quote", end=end)
 
 
 def _answer_period_quote(question: str, companies: list | None):
@@ -1821,7 +1872,8 @@ def _answer_period_quote(question: str, companies: list | None):
     if kind is None:
         return None
     called_at = datetime.now(timezone.utc)
-    results = [_price_window(c, parsed.period_days, parsed.start_date, parsed.end_date) for c in companies]
+    trading = parsed.period_days if _TRADING_DAYS_TEXT_RE.match(parsed.matched_text.strip()) else None
+    results = [_price_window(c, parsed.period_days, parsed.start_date, parsed.end_date, trading) for c in companies]
     if any(r is None for r in results):
         return None
     if kind == code_answers.KIND_COMPARE:
@@ -2083,6 +2135,12 @@ def _guard(answer: str, records: list[dict], question: str) -> str:
             guarded = remove_empty_sections(guarded)
             if narrative_body_is_thin(guarded):
                 guarded = code_summary(records) or guarded
+    # 49차: 기사에서만 나온 시세형 숫자를 현재 시세처럼 쓴 문장을 지운다(주식·ETF 같은 원칙, app/answer_guard.strip_article_prices).
+    # "주가 동향"에는 DB 시세만, 다른 절의 기사 시세는 그 기사 발행일과 함께일 때만 남는다. 비어 버린 "주가 동향"은 DB 요약으로 채운다.
+    guarded, article_reasons = strip_article_prices(guarded, records)
+    log["article_price_sentences"] = len(article_reasons)
+    if article_reasons:
+        log["article_price_reasons"] = article_reasons
     # 2026-11-07(35차): 원시 숫자 표기(1414000.0원)와 같은 문단·문장 반복을 정리한다(값·뜻은 그대로, app/answer_tidy)
     guarded, log["repeats_removed"] = answer_tidy.tidy(guarded)
     # 48차: 근거 없는 일반론("수많은 요인에 의해…")·도구 이름 노출·앞 절 값만 되풀이한 원인 문장을 지운다(app/answer_tidy.strip_generic).
@@ -2237,6 +2295,11 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
 
     _reset_llm_state()
     companies = _question_companies(question)
+    # 49차: "Samsung", "三星", "현대"처럼 여러 계열사에 걸치는 그룹 이름만 있으면 고르지 않고 되묻는다(모델이 임의로 고르는 것을 막는다)
+    if previous is None:
+        ambiguous = _ambiguous_group_answer(question, companies)
+        if ambiguous is not None:
+            return ambiguous
     # 시장 비교(_answer_market_period)는 범위 안내(_answer_period_scope)보다 먼저다: 종목 값만 답하면 지수 비교가 빠진다
     # 거래량 순위는 용어 사전보다 먼저다("거래량"이 사전 용어라 "거래량 많은 종목"이 정의 답이 된다)
     for handler in (_answer_market_ranking, _answer_market_overview, _answer_concept, _answer_missing_subject, _answer_price_flow, _answer_etf_constituents, _answer_holding_return, _answer_market_period, _answer_period_scope, _answer_simple_quote,
@@ -2333,8 +2396,9 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
                 "elapsed_ms": elapsed_ms,
             }
         )
-        # ETF 질문이면 뉴스 기사 속 수치는 LLM에 넘기지 않는다(기록·출처에는 원문이 남는다)
-        llm_result = news_result_for_llm(result) if etf_mode and fn_name == "news_tool" else result
+        # ETF 질문이면 뉴스 기사 속 수치는 LLM에 넘기지 않는다(기록·출처에는 원문이 남는다).
+        # 49차: 주식 질문은 기사 속 시세형 숫자에 기사 발행일을 붙여 넘긴다(실적 수치는 그대로, app/etf.news_result_for_llm)
+        llm_result = news_result_for_llm(result, etf=etf_mode) if fn_name == "news_tool" else result
         messages.append(
             {
                 "role": "tool",
@@ -2404,16 +2468,23 @@ def ask_question(
     previous_id = previous["report_id"] if previous else None
     _reset_llm_state()
     _STATE.user_id = user_id  # 채팅 브리핑(_answer_briefing)의 소유자. 요청(스레드)마다 덮어쓴다
-    response, records = _answer(question, model, previous)
+    # 49차: 영어·일본어·중국어 질문은 기간·방향·의도를 한국어 표준 표현으로 정규화해 판정한다(app/intent_i18n). 한국어 질문은 그대로다.
+    # 정규화한 질문은 판정과 LLM 입력에만 쓰고, 리포트에는 원래 질문을 저장한다.
+    routed = intent_i18n.normalize(question, list(answer_i18n._company_names()))
+    response, records = _answer(routed.text, model, previous)
     # 내부 메타(대체·fallback·잘림). API 응답 모델(ResearchResponse)에는 없는 키라 응답에 나가지 않는다.
     response["meta"] = dict(_meta())
+    if routed.changed:
+        response["meta"]["question_routed"] = routed.text
+        response["meta"]["routing_steps"] = routed.steps
     extra = {}
     if locale is not None and locale != "ko-KR":
         original = response["answer"]
         response["answer"], status = answer_i18n.localize_answer(
             question, original, records, locale,
             {"fallback_answer": FALLBACK_ANSWER, "timeout_answer": LLM_TIMEOUT_ANSWER},
-            code_data=response["meta"].get("etf_holdings"),
+            code_data=response["meta"].get("etf_holdings"), horizon=response["meta"].get("forecast_horizon"),
+            ambiguous=response["meta"].get("ambiguous_group"),
         )
         response["meta"].update(locale=locale, translation_status=status)
         extra = {"locale": locale, "original_content": original, "translation_status": status}

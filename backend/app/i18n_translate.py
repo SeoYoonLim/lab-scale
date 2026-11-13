@@ -127,6 +127,90 @@ _STYLE = {
 }
 
 
+
+# ---------- 코드가 만든 문장 틀은 코드가 옮긴다 (49차, 2026-11-13) ----------
+# 48차 57문항 검사의 번역 실패 6건 중 3건(t05·N3·T1)은 코드가 만든 시세 요약·비교 문장이었다(app/tools/stock_tool.summarize_period,
+# app/code_answers, app/period_answers, app/quote_freshness). 문장 틀이 정해져 있으므로 값만 읽어 언어별 문장으로 바로 쓴다.
+# 값(날짜·금액·등락률·거래일 수·거래량)은 원문 그대로이고 금액 표기만 언어 규칙(app.i18n.money_text)을 따른다. 종목명은 보호 문자열(terms)일 때만 인정한다.
+_D = r"\d{4}-\d{2}-\d{2}"
+_M = r"\d[\d,]*"
+_P = r"[+-]?\d+(?:\.\d+)?"
+_MONEY_GROUPS = ("p", "p0", "h", "l")
+_TEMPLATE_TEXT: list[tuple[str, dict[str, str], bool]] = [
+    # (정규식(NAMES 자리는 보호 종목명), 언어별 문장, 종목명 필요)
+    (r"(?P<name>NAMES)의 (?P<d>" + _D + r") 종가는 (?P<p>" + _M + r")원으로, (?P<d0>" + _D + r") 종가 (?P<p0>" + _M + r")원 대비 (?P<n>\d+)거래일간 (?P<c>" + _P + r")%입니다\.",
+     {"en-US": "{name} closed at {p} on {d}, {c}% over {n} trading days versus the {d0} close of {p0}.",
+      "ja-JP": "{name}の{d}終値は{p}で、{d0}終値{p0}比で{n}営業日間{c}%です。",
+      "zh-CN": "{name}{d}收盘价为{p}，较{d0}收盘价{p0}，{n}个交易日涨跌{c}%。"}, True),
+    (r"이 기간 종가 최고는 (?P<h>" + _M + r")원\((?P<dh>" + _D + r")\), 최저는 (?P<l>" + _M + r")원\((?P<dl>" + _D + r")\)입니다\.",
+     {"en-US": "In this period the highest close was {h} ({dh}) and the lowest {l} ({dl}).",
+      "ja-JP": "この期間の終値の最高は{h}（{dh}）、最低は{l}（{dl}）です。",
+      "zh-CN": "期间收盘价最高为{h}（{dh}），最低为{l}（{dl}）。"}, False),
+    (r"마지막 거래일\((?P<d>" + _D + r")\) 하루 등락률은 (?P<r>" + _P + r")%, 거래량은 (?P<v>" + _M + r")주입니다\.",
+     {"en-US": "On the last trading day ({d}) the daily change was {r}% and volume was {v} shares.",
+      "ja-JP": "最終取引日（{d}）の当日の騰落率は{r}%、出来高は{v}株です。",
+      "zh-CN": "最后一个交易日（{d}）当日涨跌幅为{r}%，成交量为{v}股。"}, False),
+    (r"마지막 거래일\((?P<d>" + _D + r")\) 하루 등락률은 (?P<r>" + _P + r")%입니다\.",
+     {"en-US": "On the last trading day ({d}) the daily change was {r}%.", "ja-JP": "最終取引日（{d}）の当日の騰落率は{r}%です。",
+      "zh-CN": "最后一个交易日（{d}）当日涨跌幅为{r}%。"}, False),
+    (r"마지막 거래일\((?P<d>" + _D + r")\) 하루 거래량은 (?P<v>" + _M + r")주입니다\.",
+     {"en-US": "On the last trading day ({d}) volume was {v} shares.", "ja-JP": "最終取引日（{d}）の出来高は{v}株です。",
+      "zh-CN": "最后一个交易日（{d}）成交量为{v}股。"}, False),
+    (r"(?P<d0>" + _D + r") 종가 대비 (?P<d1>" + _D + r")까지 (?P<n>\d+)거래일 기준 비교입니다\(종가 기준\)\.",
+     {"en-US": "Comparison over {n} trading days from the {d0} close to {d1} (based on closing prices).",
+      "ja-JP": "{d0}終値比で{d1}まで{n}営業日を基準とした比較です（終値基準）。",
+      "zh-CN": "以{d0}收盘价为基准，比较截至{d1}的{n}个交易日（按收盘价）。"}, False),
+    (r"같은 기간 등락률은 (?P<a>NAMES)[이가] (?P<b>NAMES)보다 (?P<x>" + _P + r")%p 높았습니다\.",
+     {"en-US": "Over the same period, {a}'s change was {x}%p higher than {b}'s.",
+      "ja-JP": "同期間の騰落率は{a}が{b}より{x}%p高くなりました。",
+      "zh-CN": "同期涨跌幅{a}比{b}高{x}%p。"}, True),
+    (r"최고·최저는 종가 기준이며 장중 고가·저가가 아닙니다\.",
+     {"en-US": "Highs and lows are based on closing prices, not intraday highs and lows.",
+      "ja-JP": "最高・最低は終値基準で、日中の高値・安値ではありません。",
+      "zh-CN": "最高、最低按收盘价计算，并非盘中最高价、最低价。"}, False),
+]
+
+
+def _fresh_line(locale: str) -> str:
+    from app.quote_freshness import _FRESH
+
+    return _FRESH[locale]
+
+
+_FRESH_RE = re.compile(r"데이터 기준일: (?P<d>" + _D + r") 종가\(DB에 저장된 종가이며 실시간 시세가 아닙니다\)\.")
+
+
+def _templates(terms: list[str]) -> list[tuple[re.Pattern, dict[str, str]]]:
+    names = "|".join(re.escape(t) for t in sorted(terms, key=len, reverse=True) if t)
+    out = []
+    for pattern, fmts, needs_name in _TEMPLATE_TEXT:
+        if needs_name and not names:
+            continue
+        out.append((re.compile(pattern.replace("NAMES", names) if needs_name else pattern), fmts))
+    return out
+
+
+def _render_template(m: re.Match, fmts: dict[str, str], locale: str) -> str:
+    values = {}
+    for k, v in m.groupdict().items():
+        values[k] = money_text([(v, "")], locale, won=True) if k in _MONEY_GROUPS else v
+    return fmts[locale].format(**values)
+
+
+# 숫자와 단위가 붙은 표현은 단위째 한 자리표시자로(48차 t05: "⟦10⟧거래일간"의 자리표시자를 모델이 빠뜨렸다). 값은 그대로, 단위만 언어별.
+_UNIT_RULES = [
+    (re.compile(r"(?<![\d,.])(\d+)\s?(?:거래일|영업일)(?:간|\s?동안)?"),
+     {"en-US": "{0} trading days", "ja-JP": "{0}営業日", "zh-CN": "{0}个交易日"}),
+    # 주식 수: 쉼표가 있는 수 + 주, 또는 "거래량 … N주"(주(週)와 헷갈리지 않게)
+    (re.compile(r"(?<![\d,.])(\d{1,3}(?:,\d{3})+)\s?주(?!간|일|가|식|차|년|기|말|주|도|년)|(?<=거래량은 )(\d+)\s?주(?!간|일|가|식|차|년|기|말|주|도)"),
+     {"en-US": "{0} shares", "ja-JP": "{0}株", "zh-CN": "{0}股"}),
+]
+# 직함 앞의 인물 이름(3음절)은 기업명처럼 원문으로 둔다(48차 N2: "장덕현 사장"을 옮기지 못해 한글 남음).
+_PERSON_RE = re.compile(r"(?<![가-힣])([가-힣]{3})(?=\s?(?:대표이사|대표|사장|부사장|회장|부회장|의장|최고경영자|본부장|전무|상무)(?:[은는이가의을를도과와께]|[^가-힣]|$))")
+# 줄 단위 재시도: 줄 앞의 마크다운 표식은 코드가 떼었다 다시 붙인다(48차 N2·N4: 글머리표 줄을 한국어 그대로 돌려줬다).
+_LINE_PREFIX_RE = re.compile(r"^(\s*(?:#{1,6}\s+|[-*•]\s+|\d+[.)]\s+|>\s+)?)")
+
+
 @dataclass
 class Masked:
     text: str
@@ -193,6 +277,10 @@ def mask(source: str, locale: str, terms: list[str]) -> Masked:
     """URL → 보호 문자열(긴 것부터) → 금액 → 날짜 → 시각 → 숫자 순서로 자리표시자로 바꾼다."""
     m = Masked(text=source)
     m.text = _HEADING_RE.sub(lambda x: x.group(1) + m.token(HEADINGS[x.group(2)][locale]), m.text)
+    # 49차: 코드가 만든 문장 틀(시세 요약·비교·고가저가 안내·기준일 줄)은 문장째 코드가 옮긴 값으로 바꾼다
+    for rx, fmts in _templates(terms):
+        m.text = _sub_outside(rx, lambda x, f=fmts: m.token(_render_template(x, f, locale)), m.text)
+    m.text = _sub_outside(_FRESH_RE, lambda x: m.token(_fresh_line(locale).format(base=x.group("d"))), m.text)
     m.text = _sub_outside(_URL_RE, lambda x: m.token(x.group(0)), m.text)
     present = [t for t in terms if t in m.text]
     if present:
@@ -207,6 +295,9 @@ def mask(source: str, locale: str, terms: list[str]) -> Masked:
         return m.token(localized) if localized is not None else x.group(0)
 
     m.text = _sub_outside(_MONEY_RE, money, m.text)
+    m.text = _sub_outside(_PERSON_RE, lambda x: m.token(x.group(1)), m.text)
+    for rx, fmts in _UNIT_RULES:
+        m.text = _sub_outside(rx, lambda x, f=fmts: m.token(f[locale].format(x.group(1) or x.group(2))), m.text)
     for regex in (_DATE_RE, _TIME_RE, _NUMBER_RE):
         m.text = _sub_outside(regex, lambda x: m.token(x.group(0)), m.text)
     return m
@@ -264,7 +355,7 @@ def _chat(messages: list[dict]) -> str:
     return resp["message"]["content"]
 
 
-def _prompt(masked: str, locale: str) -> list[dict]:
+def _prompt(masked: str, locale: str, one_line: bool = False) -> list[dict]:
     lang = LANGUAGE_NAMES[locale]
     terms = [f"- {ko} → {t[locale]}" for ko, t in {**FINANCE_TERMS, **PROMPT_HINTS}.items() if ko in masked]
     system = (
@@ -278,14 +369,18 @@ def _prompt(masked: str, locale: str) -> list[dict]:
         "5. Korean particles attached to a token (e.g. ⟦3⟧는, ⟦3⟧의) belong to the sentence, not the token.\n"
         f"6. {_STYLE[locale]}"
     )
+    if one_line:
+        # 49차: 줄 단위 재시도. 짧은 한 줄을 대화로 보고 한국어 그대로 돌려주는 일이 있었다(48차 N2·N4)
+        system += ("\n7. The input is one line taken from a longer answer. Output exactly one line: its full translation. "
+                   "Never return the Korean text unchanged.")
     if terms:
         system += "\nUse these standard financial terms:\n" + "\n".join(terms)
     return [{"role": "system", "content": system}, {"role": "user", "content": masked}]
 
 
-def _translate_chunk(masked: str, locale: str) -> tuple[str | None, list[str]]:
+def _translate_chunk(masked: str, locale: str, one_line: bool = False) -> tuple[str | None, list[str]]:
     """(번역문 또는 None, 시도별 위반). 자리표시자 상태로 주고받는다."""
-    messages = _prompt(masked, locale)
+    messages = _prompt(masked, locale, one_line)
     failures = []
     for _ in range(MAX_ATTEMPTS):
         try:
@@ -313,11 +408,12 @@ def _translate_lines(masked: str, locale: str) -> tuple[str | None, list[str]]:
         if not _HANGUL_RE.search(_TOKEN_RE.sub("", line)):
             lines.append(line)
             continue
-        out, f = _translate_chunk(line, locale)
+        prefix = _LINE_PREFIX_RE.match(line).group(1)
+        out, f = _translate_chunk(line[len(prefix):], locale, one_line=True)
         failures += f
         if out is None:
             return None, failures
-        lines.append(out)
+        lines.append(prefix + _LINE_PREFIX_RE.sub("", out.strip(), count=1))
     return "\n".join(lines), failures
 
 

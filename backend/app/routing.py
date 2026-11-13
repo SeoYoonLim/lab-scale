@@ -239,13 +239,18 @@ def briefing_scope(question: str) -> str:
 _ANALYSIS_RE = re.compile(
     r"분석|어때|어떤가|어떻게\s*(?:봐|보여|보이|생각)|평가해|투자\s*포인트|현황"
     r"|\banaly[sz]e\b|\banalysis\b|\bhow\s+(?:is|are|has|have)\b[^?]{0,60}\b(?:doing|performed|performing|going|look)\b|\bhow'?s\b"
-    r"|分析|どう(?:です|でしょう|なって|ですか)?|状況|怎么样|怎樣|怎么樣|如何|情况|表现",
+    r"|\bwhat(?:'s|\s+is)\s+(?:going\s+on|happening)\b|分析|どう(?:です|でしょう|なって|ですか)?|状況|怎么样|怎樣|怎么樣|如何|情况|表现",
     re.IGNORECASE,
 )
 _NEWS_ONLY_RE = re.compile(r"(?:뉴스|기사|공시)[^?]{0,10}(?:요약|정리|목록|알려|보여|뭐|있)|\bnews\b|ニュース|新闻|新聞|公告|開示")
 
 
+_PRICE_WORD_RE = re.compile(r"주가|시세|\bstock\b|\bshares?\b|\bprice\b|株価|股价|股價", re.IGNORECASE)
+
+
 def is_analysis_question(question: str) -> bool:
     """종목의 분석·현재 상태를 묻는 질문이면 True. 뉴스·공시만 요약·나열해 달라는 질문은 False(주가를 덧붙이지 않는다)."""
     q = question or ""
-    return bool(_ANALYSIS_RE.search(q)) and not _NEWS_ONLY_RE.search(q)
+    # 49차: "주가와 뉴스"처럼 주가도 함께 물으면 뉴스만 묻는 질문이 아니다(재확인 X01: "… stock and recent news?"가 뉴스만 조회)
+    news_only = bool(_NEWS_ONLY_RE.search(q)) and not _PRICE_WORD_RE.search(q)
+    return bool(_ANALYSIS_RE.search(q)) and not news_only

@@ -216,6 +216,24 @@ _NATIVE_PATTERNS: list[tuple[re.Pattern, "callable", str]] = [
 ]
 
 
+# 49차: "최근 5거래일", "지난 20영업일"처럼 거래일 수를 직접 말한 표현. 이 수가 그대로 period_days다(평일 환산 없음).
+# 수정 전에는 이 표현을 인식하지 못해 기간을 LLM 추론에 맡겼다. "향후·앞으로·다음 N거래일"(미래)과 "N거래일 뒤·후"는 기간 조회가 아니라
+# 전망 기간이라 제외한다(app.outlook.horizon_in이 본다).
+_TRADING_DAYS_RE = re.compile(r"(?<![\d])(?<!향후\s)(?<!향후)(?<!앞으로\s)(?<!다음\s)(?<!이후\s)(?<!부터\s)(\d+)\s?(?:거래일|영업일)(?!\s?(?:뒤|후|이후|전))")
+_MAX_TRADING_DAYS = 2600
+
+
+def _trading_days_back(today: date, n: int) -> date:
+    """today를 포함해 평일 n개를 거슬러 올라간 날(공휴일 미고려, _business_days_between과 같은 근사)."""
+    d, left = today, n
+    while True:
+        if d.weekday() < 5:
+            left -= 1
+            if left == 0:
+                return d
+        d -= timedelta(days=1)
+
+
 def _candidates(question: str, today: date) -> list[tuple[int, str, tuple[date, date]]]:
     found = []
     taken = calendar_spans(question, today)
@@ -236,6 +254,10 @@ def _candidates(question: str, today: date) -> list[tuple[int, str, tuple[date, 
             rng = _quantity_range(today, quantity(m), unit)
             if rng is not None:
                 found.append((m.start(), m.group(), rng))
+    for m in _TRADING_DAYS_RE.finditer(question):
+        n = int(m.group(1))
+        if 1 <= n <= _MAX_TRADING_DAYS and free(m):
+            found.append((m.start(), m.group(), (_trading_days_back(today, n), today)))
     return found
 
 

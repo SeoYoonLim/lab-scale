@@ -11,7 +11,8 @@
 실행(backend/에서). 개발 DB는 읽기 전용 세션으로 연결하는 것을 권한다(쓰기 시도는 DB가 거부한다):
   DATABASE_URL="<기존 주소>?options=-c%20default_transaction_read_only%3Don" OLLAMA_HOST=http://127.0.0.1:11434 \\
   python -m evals.run_multilingual evals/multilingual_cases.txt --split holdout --out evals/results/multilingual_x.jsonl
-입력 줄: split|id|locale|기대 종목(쉼표, 없으면 -)|질문
+입력 줄: split|id|locale|기대 종목(쉼표, 없으면 -)|질문 (49차: split|id|locale|기대 종목|기대 경로|질문, evals/route_checks.py)
+49차 지표: intent_wrong(기대 경로와 다름), period_wrong(기간 숫자·방향), news_price_mix(현재 주가와 기사 과거 가격 혼입), 번역 검증 실패 시도 수.
 """
 
 from __future__ import annotations
@@ -25,6 +26,11 @@ from collections import Counter
 from datetime import date
 
 from app import agent, answer_basis, answer_i18n
+
+try:  # 49차 판정(같은 폴더). 수정 전 코드(워크트리)에서 이 파일만 복사해 돌릴 때를 위해 폴더 import도 받는다
+    from evals import route_checks
+except ImportError:  # pragma: no cover
+    import route_checks  # type: ignore
 from app.db.session import SessionLocal
 from app.models import Company
 
@@ -41,7 +47,11 @@ def has_holdings(answer: str) -> bool:
 
 
 def numbers(s: str) -> Counter:
-    return Counter(x.replace(",", "") for x in _NUM.findall(s or ""))
+    """숫자 다중집합(값 기준: "209,500.0"과 "209,500"은 같은 값)."""
+    out = Counter()
+    for x in _NUM.findall(s or ""):
+        out[f"{float(x.replace(',', '')):.10g}"] += 1
+    return out
 
 
 def _names() -> list[str]:
@@ -127,7 +137,9 @@ def check_one(cid: str, locale: str, expected: list[str], question: str, resp: d
         _texts(rec.get("result"), allowed)
     _texts((resp.get("meta") or {}).get("etf_holdings"), allowed)  # 구성종목 템플릿의 종목명(도구 기록이 아니라 내부 meta에 있다)
     allowed_text = " ".join(allowed) + " " + question
-    extra = [n for n in mentioned(korean, names) if n not in expected and n not in allowed_text]
+    # 종목을 되묻는 고정 안내(예시로 "삼성전자 현재가 알려줘"를 든다)는 종목 답이 아니다
+    fixed_guide = korean.startswith(("어떤 종목의 주가를 볼지 알 수 없습니다", "질문에서 종목을 찾지 못했습니다")) or "라는 이름은 여러 종목(" in korean
+    extra = [] if fixed_guide else [n for n in mentioned(korean, names) if n not in expected and n not in allowed_text]
     resolved = sorted({(rec.get("result") or {}).get("company_name") for rec in records if isinstance(rec.get("result"), dict)} - {None})
     wrong_resolved = [n for n in resolved if expected and n not in expected]
     if extra or wrong_resolved or (expected and not resolved and not any(e in korean for e in expected)):
@@ -157,24 +169,38 @@ def run(path: str, split: str, out_path: str) -> Counter:
     captured: dict = {}
     orig_localize, orig_answer = answer_i18n.localize_answer, agent._answer
 
-    def localize(question, answer, records, locale, fixed=None, code_data=None):
+    orig_translate = answer_i18n.translate
+
+    def localize(question, answer, records, locale, fixed=None, **kw):
         captured["ko"] = answer
-        return orig_localize(question, answer, records, locale, fixed, code_data=code_data)
+        return orig_localize(question, answer, records, locale, fixed, **kw)
+
+    def translate(source, locale, terms=None):
+        res = orig_translate(source, locale, terms)
+        captured.setdefault("translation_failures", []).extend(res.failures)  # 검증에 떨어진 시도(재시도로 통과한 것 포함)
+        return res
 
     def spy(question, model, previous=None):
         resp, recs = orig_answer(question, model, previous)
         captured["records"] = recs
         return resp, recs
 
-    agent.answer_i18n.localize_answer, agent._answer = localize, spy
+    agent.answer_i18n.localize_answer, agent._answer, answer_i18n.translate = localize, spy, translate
     rows, counts = [], Counter()
+    intent = Counter()
     try:
         with open(out_path, "w", encoding="utf-8") as out:
             for line in open(path, encoding="utf-8"):
                 line = line.strip()
                 if not line or line.startswith("#"):
                     continue
-                sp, cid, loc, exp, q = line.split("|", 4)
+                parts = line.split("|")
+                if len(parts) >= 6:  # 49차 형식: split|id|locale|종목|기대 경로|질문
+                    sp, cid, loc, exp, spec = parts[:5]
+                    q = "|".join(parts[5:])
+                else:
+                    sp, cid, loc, exp, q = line.split("|", 4)
+                    spec = ""
                 if split != "all" and sp != split:
                     continue
                 captured.clear()
@@ -185,18 +211,37 @@ def run(path: str, split: str, out_path: str) -> Counter:
                     resp = {"answer": f"EXC {type(e).__name__}: {e}", "used_tools": [], "sources": [], "meta": {}}
                 expected = [] if exp == "-" else exp.split(",")
                 korean = captured.get("ko", resp["answer"])
-                checks = check_one(cid, loc, expected, q, resp, captured.get("records") or [], korean, names)
-                row = {"split": sp, "id": cid, "locale": loc, "question": q, "expected": expected, "sec": round(time.time() - t0, 1),
+                recs = captured.get("records") or []
+                checks = check_one(cid, loc, expected, q, resp, recs, korean, names)
+                # 49차 지표: 경로·기간, 기사 시세 혼입, 번역 검증 실패
+                expect = route_checks.parse_expect(spec)
+                obs = route_checks.observe(recs, resp.get("meta") or {})
+                ok = route_checks.route_ok(expect, obs, expected)
+                if ok is not None:
+                    intent[ok] += 1
+                    if not ok:
+                        checks["intent_wrong"] = {"expect": spec, "observed": obs}
+                if route_checks.period_wrong(expect, obs):
+                    checks["period_wrong"] = {"expect": spec, "observed": obs}
+                mix = route_checks.news_price_mix(korean, recs)
+                if mix:
+                    checks["news_price_mix"] = mix[:5]
+                tfail = captured.get("translation_failures") or []
+                row = {"split": sp, "id": cid, "locale": loc, "question": q, "expected": expected, "expect": spec,
+                       "observed": obs, "sec": round(time.time() - t0, 1),
                        "used_tools": resp.get("used_tools"), "translation_status": (resp.get("meta") or {}).get("translation_status"),
+                       "translation_check_failures": len(tfail), "routed": (resp.get("meta") or {}).get("question_routed"),
                        "checks": checks, "answer": resp["answer"], "korean": korean if loc != "ko-KR" else None}
                 rows.append(row)
                 counts.update(checks.keys())
+                counts["translation_check_failures"] += len(tfail)
                 out.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
                 print(f"{cid} [{loc}] {','.join(checks) or 'ok':38} ts={row['translation_status']} tools={row['used_tools']} | {q}", flush=True)
     finally:
-        agent.answer_i18n.localize_answer, agent._answer = orig_localize, orig_answer
+        agent.answer_i18n.localize_answer, agent._answer, answer_i18n.translate = orig_localize, orig_answer, orig_translate
     counts["fallback_summary"] = sum(1 for r in rows if r["translation_status"] == "fallback_summary")
     counts["n"] = len(rows)
+    counts["intent_ok"], counts["intent_n"] = intent[True], intent[True] + intent[False]
     print("SUMMARY", dict(counts))
     return counts
 

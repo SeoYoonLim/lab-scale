@@ -338,6 +338,64 @@ def period_in(question: str) -> str | None:
     return None
 
 
+# ---------- 전망 기간을 숫자로 말한 질문 (49차, 2026-11-13) ----------
+# 수정 전: "향후 20거래일 전망"은 period_in이 기간을 못 찾아 기본 1주일(5거래일)로 답했다(요청한 기간 숫자가 바뀜).
+# "향후 1년 전망"도 말없이 1주일로 답했다. 이제 숫자로 말한 미래 기간을 읽는다:
+# - 5·20·60거래일(또는 1주·4주·1개월·3개월처럼 같은 거래일 수)이면 그 기간
+# - 그 밖에 90거래일 이하이면 가장 가까운 지원 기간으로 분석하고, 답 맨 앞에 바꾼 사실을 밝힌다(horizon_note)
+# - 90거래일을 넘거나 연 단위·"내년"이면 전망을 하지 않고 지원 기간을 안내한다(도구를 부르지 않는다)
+_HORIZON_UNIT_DAYS = {"거래일": 1, "영업일": 1, "주": 5, "개월": 20, "달": 20, "년": 250}
+_HORIZON_RE = re.compile(
+    r"(?:향후|앞으로|다음|이후)\s*(\d+)\s*(거래일|영업일|일|주|개월|달|년)(?:\s*(?:동안|간))?"
+    r"|(?<![\d])(\d+)\s*(거래일|영업일|일|주|개월|달|년)\s*(?:뒤|후|이후)"
+)
+_HORIZON_YEAR_RE = re.compile(r"내년|(?:향후|앞으로)\s*(?:한|1)\s*년|(?:향후|앞으로)\s*몇\s*년|장기\s*전망")
+SUPPORTED_HORIZONS = {5: "1주일", 20: "1개월", 60: "3개월"}
+MAX_HORIZON_DAYS = 90
+
+
+@dataclass(frozen=True)
+class Horizon:
+    text: str  # 질문 속 표현
+    requested_days: int | None  # 거래일 환산(연 단위는 None일 수 있다)
+    label: str | None  # 분석할 지원 기간(1주일/1개월/3개월), 지원 밖이면 None
+    note: bool  # 요청과 다른 기간으로 분석했다(답 맨 앞에 밝힌다)
+
+    @property
+    def unsupported(self) -> bool:
+        return self.label is None
+
+
+def horizon_in(question: str) -> Horizon | None:
+    """질문이 숫자로 말한 미래 기간. 없으면 None(기존 period_in·기본 기간을 쓴다)."""
+    q = question or ""
+    y = _HORIZON_YEAR_RE.search(q)
+    if y:
+        return Horizon(y.group(0), None, None, False)
+    m = _HORIZON_RE.search(q)
+    if not m:
+        return None
+    n, unit = (int(m.group(1)), m.group(2)) if m.group(1) else (int(m.group(3)), m.group(4))
+    days = max(1, round(n * 5 / 7)) if unit == "일" else n * _HORIZON_UNIT_DAYS[unit]
+    if days in SUPPORTED_HORIZONS:
+        return Horizon(m.group(0), days, SUPPORTED_HORIZONS[days], False)
+    if days > MAX_HORIZON_DAYS:
+        return Horizon(m.group(0), days, None, False)
+    nearest = min(SUPPORTED_HORIZONS, key=lambda d: (abs(d - days), d))
+    return Horizon(m.group(0), days, SUPPORTED_HORIZONS[nearest], True)
+
+
+def horizon_note(h: Horizon) -> str:
+    used = PERIODS[h.label].days
+    return (f"요청하신 기간({h.text.strip()}, 약 {h.requested_days}거래일)은 지원하는 전망 기간(향후 5·20·60거래일)이 아니어서 "
+            f"가장 가까운 향후 {used}거래일({h.label}) 기준으로 분석했습니다.")
+
+
+def unsupported_horizon_answer(h: Horizon) -> str:
+    return (f"전망은 향후 5·20·60거래일(1주일·1개월·3개월) 기준으로만 제공합니다. 요청하신 기간({h.text.strip()})의 전망은 제공하지 않습니다"
+            "(지표 계산과 과거 검증이 이 세 기간 기준입니다). 기간을 바꿔 다시 질문해 주세요.\n\n" + DISCLAIMER)
+
+
 def marker_of(answer: str | None) -> dict | None:
     """이 경로가 만든 답변이면 {"name", "ticker", "period"}, 아니면 None."""
     m = _MARKER_RE.search(answer or "")
