@@ -13,7 +13,7 @@
 import re
 from datetime import date
 
-from app import code_answers, routing
+from app import code_answers, price_basis, routing
 from app.period_scope import PRICE_INTENT_RE, RequestedPeriod
 
 # 이보다 짧은 과거 창("지난주", "지난달")은 기존 LLM 흐름으로 두고 stock_tool에 날짜 범위만 넘긴다(흐름 서술이 필요한 질문이 많다)
@@ -154,8 +154,9 @@ def closed_day_text(name: str, day: date, reason: str, previous: dict, latest_no
     return f"{head} 직전 거래일({previous['price_date']}) {name} 종가는 {close}입니다."
 
 
-def day_text(name: str, row: dict, question: str = "") -> str:
-    """거래일 하루의 답. row: price_date, close_price, change_pct, volume(시가·고가·저가가 있으면 질문이 물을 때 덧붙인다)."""
+def day_text(name: str, row: dict, question: str = "", asset_type: str | None = None) -> str:
+    """거래일 하루의 답. row: price_date, close_price, change_pct, volume(시가·고가·저가가 있으면 질문이 물을 때 덧붙인다).
+    50차: 주식의 2026-09-14 이후 날짜에 고가·저가를 말하면 애프터마켓 체결을 포함한 값이라고 밝힌다(app/price_basis.py)."""
     text = f"{name}의 {row['price_date']} 종가는 {row['close_price']:,.0f}원입니다."
     extra = []
     if row.get("change_pct") is not None:
@@ -169,6 +170,8 @@ def day_text(name: str, row: dict, question: str = "") -> str:
                 if row.get(key) is not None]
         if ohlc:
             text += " " + ", ".join(ohlc) + "입니다."
+            if price_basis.after_market_included(asset_type, row.get("price_date")):
+                text += " " + price_basis.OHLC_AFTER_MARKET_NOTE
     return text
 
 

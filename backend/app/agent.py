@@ -1903,7 +1903,7 @@ def _history_day_parts(db, company, day, requested, data_end, question: str) -> 
                "high_price": float(rows[0].high_price) if rows[0].high_price is not None else None,
                "low_price": float(rows[0].low_price) if rows[0].low_price is not None else None}
         result = {**base, "period_days": 1, "change_pct": row["change_pct"], "volume": row["volume"], "prices": [row]}
-        return period_answers.day_text(company.name, row, question), result
+        return period_answers.day_text(company.name, row, question, getattr(company, "asset_type", None)), result
     previous_row = last_row_before(db, company.id, day)
     if previous_row is None:
         return None

@@ -549,16 +549,44 @@ def fetch_index_frame(index_code: str, start_date: str, end_date: str, reader=No
     return None, None, errors
 
 
+def krx_calendar_now(now: datetime | None = None) -> datetime:
+    """KST 현재 시각(테스트는 now를 준다). tz 없는 now는 KST로 본다."""
+    if now is None:
+        return datetime.now(KST)
+    return now if now.tzinfo else now.replace(tzinfo=KST)
+
+
+def confirm_index_records(index_code: str, records: list[dict], now: datetime, naver_get=None) -> tuple[list[dict], list]:
+    """50차: 저장 전 확정 검증(app/index_confirm.py). 장중 행, 네이버 지수 일별과 다른 행, 대조할 수 없는 마지막 행은 빼고
+    (저장할 레코드, 뺀 날의 판정 dict 목록)을 돌려준다. 네이버를 읽지 못해도 수집은 계속한다(마지막 행만 보류)."""
+    from app import index_confirm
+
+    try:
+        naver = index_confirm.fetch_naver_closes(index_code, get=naver_get)
+    except Exception as e:
+        print(f"[market_index {index_code}] 확정 대조 실패(네이버 지수 일별): {_safe_error(e)} -> 마지막 행은 저장하지 않음")
+        naver = None
+    keep, held = index_confirm.split(records, naver, now)
+    for h in held:
+        ref = f", 네이버 {h.reference}" if h.reference is not None else ""
+        print(f"[market_index {index_code}] 저장 보류 {h.day} {h.value} ({h.status}{ref}): 기존 값 유지, 다음 실행에서 다시 확인")
+    return keep, [h.as_dict() for h in held]
+
+
 def fetch_and_save_market_index(
-    index_code: str, days: int = 7, dry_run: bool = False, start_date: str | None = None, end_date: str | None = None
+    index_code: str, days: int = 7, dry_run: bool = False, start_date: str | None = None, end_date: str | None = None,
+    now: datetime | None = None, reader=None, naver_get=None,
 ) -> CollectResult:
     """지수 일별 종가를 폴백 체인(MARKET_INDEX_SOURCES)으로 받아 market_index에 upsert한다(멱등).
-    start_date/end_date를 주면 days 대신 그 기간을 받는다."""
-    today = datetime.now(KST)
+    start_date/end_date를 주면 days 대신 그 기간을 받는다.
+
+    50차: 저장 전에 확정 검증을 한다(confirm_index_records). 장중 값·대조 불일치·대조 불가 마지막 행은 저장하지 않고
+    held_dates에 판정을 남긴다. now(KST)·reader(FDR DataReader 대신)·naver_get(네이버 응답 대신)은 테스트용이다."""
+    today = krx_calendar_now(now)
     start_date = start_date or (today - timedelta(days=days)).strftime("%Y-%m-%d")
     end_date = end_date or today.strftime("%Y-%m-%d")
 
-    df, source, errors = fetch_index_frame(index_code, start_date, end_date, today=today.date())
+    df, source, errors = fetch_index_frame(index_code, start_date, end_date, reader=reader, today=today.date())
     for msg in errors:
         print(f"[market_index {index_code}] 소스 실패 - {msg}")
     if df is None:
@@ -568,6 +596,9 @@ def fetch_and_save_market_index(
     print(f"[market_index {index_code}] 소스 사용: {source}")
 
     records = [_index_row(i, r) for i, r in df.sort_index().iterrows()]
+    records, held = confirm_index_records(index_code, records, today, naver_get=naver_get)
+    if not records:
+        return CollectResult(ok=True, saved=0, fetched=0, source=source, held_dates=held)
 
     db = SessionLocal()
     try:
@@ -587,12 +618,14 @@ def fetch_and_save_market_index(
         records = [c.record for c in keep]
         new = [r for r in records if r["price_date"] not in existing]
         if dry_run:
-            return CollectResult(ok=True, saved=len(new), fetched=fetched, source=source, quarantined=len(bad), warned=warned)
+            return CollectResult(ok=True, saved=len(new), fetched=fetched, source=source, quarantined=len(bad), warned=warned,
+                                 held_dates=held)
         quarantine.record("market_index", checked, {"index_code": index_code})
         if bad:
             print(f"[market_index {index_code}] 격리 {len(bad)}건(저장하지 않음)")
         if not records:
-            return CollectResult(ok=True, saved=0, fetched=fetched, source=source, quarantined=len(bad), warned=warned)
+            return CollectResult(ok=True, saved=0, fetched=fetched, source=source, quarantined=len(bad), warned=warned,
+                                 held_dates=held)
 
         stmt = pg_insert(MarketIndex).values([{**r, "index_code": index_code} for r in records])
         stmt = stmt.on_conflict_do_update(
@@ -601,7 +634,8 @@ def fetch_and_save_market_index(
         )
         db.execute(stmt)
         db.commit()
-        return CollectResult(ok=True, saved=len(new), fetched=fetched, source=source, quarantined=len(bad), warned=warned)
+        return CollectResult(ok=True, saved=len(new), fetched=fetched, source=source, quarantined=len(bad), warned=warned,
+                                 held_dates=held)
     except Exception as e:
         db.rollback()
         return CollectResult(ok=False, fetched=len(records), error=_safe_error(e))
