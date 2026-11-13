@@ -16,7 +16,7 @@ BACKEND = Path(__file__).resolve().parents[1]
 def test_db_url_for_swaps_only_database_name():
     from scripts.audit_close_basis import db_url_for
 
-    base = "postgresql+psycopg://user:p%40ss@db.local:15432/ai_investment?sslmode=disable"
+    base = "postgresql+psycopg://dummy_user:dummy%40pw@db.example:15432/ai_investment?sslmode=disable"  # 견본 값
     got = make_url(db_url_for("ai_investment_verify", base))
     want = make_url(base)
     assert got.database == "ai_investment_verify"

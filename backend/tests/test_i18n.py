@@ -123,7 +123,9 @@ class TestProtectedTranslation:
         monkeypatch.setattr(tr, "_chat", llm)
         r = tr.translate(SOURCE, "ja-JP", TERMS)
         assert r.status == tr.STATUS_FALLBACK
-        assert len(llm.calls) == tr.MAX_ATTEMPTS and any(problem in f for f in r.failures)
+        # 48차: 문단 전체가 MAX_ATTEMPTS번 실패하면 줄마다 다시 시도한다(줄도 같은 검증). 그래서 호출은 MAX_ATTEMPTS번 이상이다
+        assert len(llm.calls) >= tr.MAX_ATTEMPTS and any(problem in f for f in r.failures)
+        assert any(f.startswith("line: ") for f in r.failures)
         assert r.text == f"{i18n.text('translation_fallback', 'ja-JP')}\n\n{SOURCE}"  # 한국어 원문 그대로
 
     def test_llm_error_falls_back(self, monkeypatch):
@@ -215,7 +217,7 @@ class TestAnswerLocalization:
         saved = []
         monkeypatch.setattr(agent, "_answer", lambda q, m, p: ({"answer": "한국어 답", "used_tools": [], "sources": []}, []))
         monkeypatch.setattr(agent, "save_report_row", lambda *a, **k: saved.append((a, k)) or 9)
-        monkeypatch.setattr(answer_i18n, "localize_answer", lambda q, a, r, loc, fixed: (f"[{loc}] answer", "translated"))
+        monkeypatch.setattr(answer_i18n, "localize_answer", lambda q, a, r, loc, fixed, code_data=None: (f"[{loc}] answer", "translated"))
         out = agent.ask_question("q", user_id=1, locale="en-US")
         assert out["answer"] == "[en-US] answer" and out["report_id"] == 9
         (args, kwargs), = saved

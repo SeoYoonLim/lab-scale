@@ -31,6 +31,7 @@ from app import briefing_text, code_answers, period_answers, period_scope
 from app.etf import (
     ETF_ANSWER_RULES,
     asks_constituents,
+    asks_holding_weight,
     check_etf_answer,
     comparison_sentence,
     compose_etf_answer,
@@ -52,12 +53,12 @@ from app.answer_guard import (
     strip_narrative_mismatch,
     strip_untrusted_urls,
 )
-from app import answer_i18n, answer_tidy, earnings, evidence_answer, market_ranking, outlook, price_flow, quote_freshness, related_news
+from app import answer_basis, answer_i18n, answer_tidy, earnings, evidence_answer, market_ranking, outlook, price_flow, quote_freshness, related_news
 from app import market_overview, request_safety
 from app.data_status import last_business_day
-from app.etf_holdings import constituents_chat_answer, requested_top_n
+from app.etf_holdings import constituents_chat_answer, holding_weight_answer, requested_top_n
 from app.llm_settings import call_options, chat_model
-from app.etf_holdings_db import chat_views
+from app.etf_holdings_db import chat_views, holding_weights
 from app.glossary import comparison_answer, concept_answer, find_term, term_answer
 from app.models import Company, StockPrice
 from app.period_parser import KST, mentions_period, parse_period
@@ -70,6 +71,7 @@ from app.routing import (
     event_type_for,
     briefing_scope,
     explicitly_requested_tools,
+    is_analysis_question,
     is_cause_question,
     is_trend_question,
     mentions_own,
@@ -732,14 +734,27 @@ def _repair_company_args(calls: list[dict], question: str, previous_question: st
                 continue
             res = resolve_company(db, raw)
             if res.company is not None:
-                resolved_names.setdefault(fn_name, set()).add(res.company.name)
-                resolved.append((i, key, args, raw, res.company))
+                resolved.append((i, key, args, raw, res.company, res.corrected_from is not None, fn_name))
             else:
                 failed.append((i, fn_name, key, args, raw))
+        question_companies = extract_from_text(db, question)
+        # 48차: 모델 인자가 보정(퍼지·별칭 등 정확한 이름이 아님)을 거쳐 질문에 없는 종목으로 해석되면 실패로 본다. 실측: "Compare Kia and
+        # Hyundai Motor"에 모델이 "현대모터스"를 넘겨 퍼지 매칭이 현대모비스로 보정했다(질문 원문에서는 현대차를 정확히 찾았다).
+        # 질문에서 찾은 종목이 있을 때만 하고, 아래 일대일 규칙으로 질문 종목을 채운다(맞지 않으면 그대로 not-found).
+        question_ids = {c.id for c in question_companies}
+        kept = []
+        for item in resolved:
+            i, key, args, raw, company, corrected, fn_name = item
+            if question_ids and corrected and company.id not in question_ids:
+                failed.append((i, fn_name, key, args, raw))
+            else:
+                kept.append(item)
+                resolved_names.setdefault(fn_name, set()).add(company.name)
+        resolved = [(i, key, args, raw, company) for i, key, args, raw, company, _, _ in kept]
         if not failed and not previous_question and not previous_company:
             return {}
 
-        candidates = extract_from_text(db, question)
+        candidates = question_companies
         follow_up_subject = None
         if not candidates and previous_question:
             candidates = extract_from_text(db, previous_question)
@@ -872,6 +887,9 @@ def _wanted_tools(question: str) -> list[str]:
     wanted = list(explicitly_requested_tools(question))
     if is_cause_question(question):
         wanted += [name for name in _CAUSE_QUESTION_TOOLS if name not in wanted]
+    # 48차: 분석 질문은 주가(기준일) 없이 답하지 않는다("삼성전자 분석해줘" -> news_tool만 불렀다)
+    if is_analysis_question(question) and "stock_tool" not in wanted:
+        wanted.append("stock_tool")
     return wanted
 
 
@@ -1589,9 +1607,29 @@ def _answer_price_flow(question: str, companies: list | None):
 
 def _answer_etf_constituents(question: str, companies: list | None):
     """(B) ETF 구성종목·편입 비중 질문. 수집한 구성종목(운용사 공시 PDF)이 있는 ETF는 코드 템플릿으로 답하고(LLM을 부르지 않는다),
-    데이터가 없는 ETF는 제공하지 않는다고 답한다(구성종목을 지어내지 않는다). DB를 읽지 못해도 제공하지 않음 답변으로 돌아간다."""
+    데이터가 없는 ETF는 제공하지 않는다고 답한다(구성종목을 지어내지 않는다). DB를 읽지 못해도 제공하지 않음 답변으로 돌아간다.
+
+    48차: ETF 하나와 주식이 함께 있고 그 종목의 비중·편입 여부를 물으면("KODEX 200에서 삼성전자 비중") 전체 구성종목에서 그 종목의
+    비중·순위를 답한다(없으면 없다고). 다른 언어로 보낼 때 같은 데이터로 언어별 템플릿을 쓰도록 내부 meta["etf_holdings"]에 남긴다
+    (API 응답·used_tools에는 나가지 않는다: used_tools 값 목록은 API 계약 그대로)."""
     etf_companies = [c for c in companies or [] if getattr(c, "asset_type", None) == "etf"]
-    if not etf_companies or not asks_constituents(question):
+    stocks = [c for c in companies or [] if getattr(c, "asset_type", None) != "etf"]
+    if not etf_companies:
+        return None
+    if len(etf_companies) == 1 and stocks and asks_holding_weight(question):
+        try:
+            db = SessionLocal()
+            try:
+                info = holding_weights(db, etf_companies[0], stocks[:3])
+            finally:
+                db.close()
+        except Exception:
+            return _code_answer(constituents_answer([etf_companies[0].name]))
+        if info.get("as_of_date") is None:
+            return _code_answer(constituents_answer([etf_companies[0].name]))
+        _meta()["etf_holdings"] = {"kind": "weight", "info": info}
+        return _code_answer(holding_weight_answer(info))
+    if not asks_constituents(question):
         return None
     names = [c.name for c in etf_companies]
     try:
@@ -1604,7 +1642,9 @@ def _answer_etf_constituents(question: str, companies: list | None):
         return _code_answer(constituents_answer(names))
     if not views:
         return _code_answer(constituents_answer(names))
-    return _code_answer(constituents_chat_answer(views, missing, constituents_answer, requested_top_n(question)))
+    top_n = requested_top_n(question)
+    _meta()["etf_holdings"] = {"kind": "constituents", "views": views, "missing": missing, "top_n": top_n}
+    return _code_answer(constituents_chat_answer(views, missing, constituents_answer, top_n))
 
 
 def _price_dict(row) -> dict:
@@ -2045,6 +2085,13 @@ def _guard(answer: str, records: list[dict], question: str) -> str:
                 guarded = code_summary(records) or guarded
     # 2026-11-07(35차): 원시 숫자 표기(1414000.0원)와 같은 문단·문장 반복을 정리한다(값·뜻은 그대로, app/answer_tidy)
     guarded, log["repeats_removed"] = answer_tidy.tidy(guarded)
+    # 48차: 근거 없는 일반론("수많은 요인에 의해…")·도구 이름 노출·앞 절 값만 되풀이한 원인 문장을 지운다(app/answer_tidy.strip_generic).
+    # 다 지워지면: 도구 결과가 있으면 코드 요약, 없으면(개념 답 등) 지우지 않은 글을 그대로 둔다.
+    stripped, log["generic_removed"] = answer_tidy.strip_generic(guarded)
+    if stripped.strip():
+        guarded = stripped
+    elif log["generic_removed"] and records:
+        guarded = code_summary(records) or guarded
     _meta()["answer_guard"] = log
     if log["replaced"]:
         logger.info("답변 숫자 검증: %s로 대체(설명되지 않는 숫자 %s)", log["mode"], log["violations"])
@@ -2120,7 +2167,8 @@ def _answer_evidence(question: str, companies: list | None, model: str):
                 guard_log.update(evidence_dropped=dropped, evidence_original=text[:ORIGINAL_LOG_CHARS])
         _meta()["answer_guard"] = guard_log
     answer = evidence_answer.compose(price_lines, items, sentences, cause)
-    return _code_answer(_with_freshness(answer, question, records), records)
+    answer = answer_basis.ensure_basis(_with_freshness(answer, question, records), records, datetime.now(KST))
+    return _code_answer(answer, records)
 
 
 def _unresolved_company_answer(calls: list[dict], question: str = "") -> str | None:
@@ -2314,6 +2362,8 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
         if etf_mode:
             answer = _finish_etf_answer(answer, records, subjects)
         answer = _with_freshness(_guard_etf_aware(answer, records, question, subjects if etf_mode else None), question, records)
+        # 48차: 시세를 쓴 답에 그 데이터의 기준일이 없으면 표준 한 줄을 붙인다(app/answer_basis)
+        answer = answer_basis.ensure_basis(answer, records, datetime.now(KST))
     response = {
         "answer": answer,
         "used_tools": [r["tool_name"] for r in records],
@@ -2363,6 +2413,7 @@ def ask_question(
         response["answer"], status = answer_i18n.localize_answer(
             question, original, records, locale,
             {"fallback_answer": FALLBACK_ANSWER, "timeout_answer": LLM_TIMEOUT_ANSWER},
+            code_data=response["meta"].get("etf_holdings"),
         )
         response["meta"].update(locale=locale, translation_status=status)
         extra = {"locale": locale, "original_content": original, "translation_status": status}

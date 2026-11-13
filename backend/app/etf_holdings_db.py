@@ -79,6 +79,32 @@ def holdings_view(db: Session, company: Company, limit: int, today: date | None 
     }
 
 
+def holding_weights(db: Session, etf: Company, stocks: list[Company], today: date | None = None) -> dict:
+    """(48차) ETF의 최신 기준일 구성종목 전체에서 주어진 종목들의 비중·순위. 종목코드(holding_code = ticker)나 이름으로 찾는다.
+    데이터가 없으면 as_of_date=None(호출측이 "제공하지 않음" 답으로 간다)."""
+    today = today or datetime.now(ZoneInfo("Asia/Seoul")).date()
+    as_of = db.execute(select(func.max(EtfHolding.as_of_date)).where(EtfHolding.company_id == etf.id)).scalar()
+    base = {"etf": etf.name, "etf_ticker": etf.ticker, "as_of_date": None, "source": None, "holding_count": 0,
+            "stale_notice": None, "data_warnings": [], "items": []}
+    if as_of is None:
+        return base
+    rows = db.execute(
+        select(EtfHolding.holding_name, EtfHolding.holding_code, EtfHolding.weight_pct, EtfHolding.source)
+        .where(EtfHolding.company_id == etf.id, EtfHolding.as_of_date == as_of)
+        .order_by(EtfHolding.weight_pct.desc(), EtfHolding.holding_name)
+    ).all()
+    total = round(sum(float(r.weight_pct) for r in rows), 2)
+    items = []
+    for s in stocks:
+        hit = next(((i, r) for i, r in enumerate(rows, 1) if r.holding_code == s.ticker or r.holding_name == s.name), None)
+        items.append({"name": s.name, "ticker": s.ticker, "found": hit is not None,
+                      "weight_pct": float(hit[1].weight_pct) if hit else None, "rank": hit[0] if hit else None})
+    _, notice = stale_info(as_of, today)
+    return {**base, "as_of_date": as_of.isoformat(), "source": SOURCES.get(rows[0].source, rows[0].source) if rows else None,
+            "holding_count": len(rows), "stale_notice": notice, "data_warnings": weight_warnings(etf.name, total, len(rows)),
+            "items": items}
+
+
 def chat_views(db: Session, companies: list[Company], today: date | None = None) -> tuple[list[dict], list[str]]:
     """채팅용: ETF들 중 데이터가 있는 것의 view 목록과 데이터가 없는 ETF 이름 목록."""
     views, missing = [], []

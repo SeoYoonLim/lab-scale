@@ -383,12 +383,16 @@ class TestCauseQuestionTools:
 
     def test_other_kinds_of_questions_want_exactly_what_they_wanted_before(self):
         """원인 질문이 아닌 질문은 덧붙일 tool 목록이 이전(이름 요청만 보던 때)과 같다: 벤치마크 질문과 합성 말뭉치 전체."""
-        from app.routing import explicitly_requested_tools, is_cause_question
+        from app.routing import explicitly_requested_tools, is_analysis_question, is_cause_question
 
         others = [q for q in ALL_BENCHMARK_QUESTIONS + SYNTHETIC_NO_PERIOD_QUESTIONS if not is_cause_question(q)]
         assert len(others) >= 500
         for q in others + ["오늘 많이 오른 종목 알려줘", "삼성전자 지난주 주가 알려줘", "삼성전자 최근 3일 등락률 알려줘"]:
-            assert agent._wanted_tools(q) == explicitly_requested_tools(q), q
+            want = explicitly_requested_tools(q)
+            # 48차: 분석·상태 질문("…어때?", "분석해줘")은 주가 조회도 있어야 한다(말뭉치 622개 중 3개가 해당)
+            if is_analysis_question(q) and "stock_tool" not in want:
+                want = want + ["stock_tool"]
+            assert agent._wanted_tools(q) == want, q
 
 
 class TestCauseQuestionPeriod:
@@ -484,7 +488,10 @@ class TestAnswerPath:
         monkeypatch.setattr(agent, "_run_tool", lambda name, args: {
             "found": True, "company_name": "삼성전자",
             "prices": [{"price_date": "2026-10-14", "close_price": 263000.0, "change_pct": 0.4, "volume": 100}]})
-        assert agent._answer("삼성전자 주가 흐름 알려줘", "m")[0]["answer"] == "삼성전자의 종가는 263,000원입니다."
+        answer = agent._answer("삼성전자 주가 흐름 알려줘", "m")[0]["answer"]
+        # 48차: 답이 시세 날짜를 말하지 않으면 표준 기준일 줄이 붙는다(app/answer_basis). 본문은 그대로다
+        assert answer.split("\n\n데이터 기준일: ")[0] == "삼성전자의 종가는 263,000원입니다."
+        assert "데이터 기준일: 2026-10-14 종가" in answer
 
     def test_trend_question_runs_stock_tool_with_twenty_days(self, monkeypatch):
         llm = FakeLLM(monkeypatch, [stock_call(period_days=1)])

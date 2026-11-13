@@ -276,7 +276,8 @@ class TestAgentEtfPath:
         resp, records = agent._answer("삼성전자 주가 알려줘", "m")
         assert [r["tool_name"] for r in records] == ["stock_tool"] and records[0]["arguments"]["period_days"] == 1
         assert fake_agent["messages"][-1]["content"] == agent.ANSWER_STRUCTURE_INSTRUCTION
-        assert resp["answer"] == "삼성전자는 20% 올랐습니다."
+        # 48차: 날짜 없는 시세 답에는 표준 기준일 줄이 붙는다(app/answer_basis). 본문은 그대로다
+        assert resp["answer"].split("\n\n데이터 기준일: ")[0] == "삼성전자는 20% 올랐습니다." and "데이터 기준일: " in resp["answer"]
 
     def test_stock_news_is_not_masked(self, fake_agent):
         fake_agent.update(first=[call("news_tool", company_name="삼성전자")], subjects=[("삼성전자", "stock")])

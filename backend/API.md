@@ -4982,3 +4982,18 @@ AI 답변 품질 평가(2026-11-07, 개발자용, API 아님): `cd backend && py
 - **`python -m scripts.collect_universe`**(뉴스·공시 수동 수집)가 데이터 갱신과 같은 advisory lock을 잡는다. 실행 중이면 수집하지 않고 종료 코드 2.
   `--dry-run`은 락을 잡지 않는다. `scripts/refresh_data`는 락을 잡은 채 이 스크립트의 `main()`을 직접 부르므로 그대로다.
 - 뉴스·공시 DB 유니크 제약은 넣지 않았다(이유는 `docs/DATA_QUALITY_AND_TRADING_CALENDAR.md` "중복 방지 구조").
+
+## 리서치 답변 품질 개선 (2026-11-13, 48차)
+
+`POST /api/research`의 요청·응답 필드, `used_tools` 값 목록, `translation_status` 값 목록은 그대로다. 바뀐 것은 아래 답변 문장과 상태값 빈도다(자세한 내용은 `docs/LLM_ANSWER_QUALITY_48.md`).
+
+| 질문 예 | 이전 | 지금 | `used_tools` |
+|---|---|---|---|
+| "KODEX 200 포트폴리오 알려줘", "KODEX 200 안에 뭐 들어있어?", "What are the top holdings of KODEX 200?", "KODEX 200の構成銘柄を教えて", "KODEX 200的成分股有哪些？" | 주가·뉴스 LLM 답 | 구성종목 템플릿(위 "ETF 구성종목" 답과 같음). en/ja/zh는 언어별 템플릿(`translation_status: localized`) | 빈 배열 |
+| "KODEX 200에서 삼성전자 비중은 얼마야?", "What is Samsung Electronics' weight in KODEX 200?" | 두 종목 주가 비교 | 최신 기준일 전체 구성종목에서 그 종목의 비중·순위 + 출처·기준일. 구성종목에 없으면 "… 종목은 없습니다". "비중 늘려도 돼?"·"어떻게 나눠야 해?" 같은 배분·매매 질문은 해당하지 않는다 | 빈 배열 |
+| "삼성전자 분석해줘", "How is SK hynix doing?", "三星SDI怎么样？" | 뉴스만 조회할 때가 있었음 | 주가를 항상 조회한다 | `stock_tool` 포함 |
+| 시세를 말하면서 날짜가 없는 LLM 답 | 날짜 없음 | 끝에 `데이터 기준일: YYYY-MM-DD 종가(DB에 저장된 종가이며 실시간 시세가 아닙니다).`(+ 지연 안내). 뉴스·공시만 쓴 답이 날짜를 하나도 말하지 않으면 `참고한 뉴스·공시 게시일: …` | 같음 |
+| "SK海力士…", "サムスン電子…", "现代汽车…", "Samsung Electronics…" | 다른 종목(SK·LG) 또는 종목 없음 | 국내 종목으로 해석(86종목의 영어·일본어·중국어 표기, `app/company_names_i18n.py`). 모호한 "三星"·"Samsung"은 고르지 않는다. 답의 종목명은 한국어 등록명 원문 | 같음 |
+
+- LLM 답에서 근거 없는 상투 문장("수많은 요인에 의해…", "투자는 신중하게…"), 도구 이름 노출, 앞 절 수치만 되풀이한 원인 문장, 빈 제목을 지운다. 면책은 `disclaimer` 필드 그대로다.
+- 번역: 섹션 제목은 코드 사전으로 옮기고(en "Price Trend" 등), 괄호만 훼손된 자리표시자를 되돌리고, 실패한 문단은 줄 단위로 다시 옮긴다. 그래서 `fallback_summary`가 줄었다. 숫자·날짜·이름은 전과 같이 코드가 원문 값으로 되돌린다.

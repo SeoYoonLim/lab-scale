@@ -1,0 +1,60 @@
+# 48차(2026-11-13) 4개 언어 실답 검사 문항. 형식: split|id|locale|기대 종목(쉼표, 없으면 -)|질문
+# dev: 수정하면서 본 문항(기준선·튜닝). holdout: 수정을 마친 뒤 전후 비교에만 쓴 문항(수정 중 결과를 보지 않음).
+# id 머리글자: e/E ETF 구성종목, d/D 분석·기준일, g/G 일반론·반복, n/N 외국어 종목명, t/T 숫자 많은 번역
+dev|e01|ko-KR|KODEX 200|KODEX 200 포트폴리오 알려줘
+dev|e02|ko-KR|KODEX 200,삼성전자|KODEX 200에서 삼성전자 비중은 얼마야?
+dev|e03|ko-KR|TIGER 반도체TOP10|TIGER 반도체TOP10 안에 뭐 들어있어?
+dev|e04|ko-KR|KODEX 미국S&P500|KODEX 미국S&P500 비중 큰 종목 알려줘
+dev|e05|en-US|KODEX 200|What are the top holdings of KODEX 200?
+dev|e06|en-US|TIGER 200|What stocks are in TIGER 200?
+dev|e07|ja-JP|KODEX 200|KODEX 200の構成銘柄を教えて
+dev|e08|ja-JP|KODEX 반도체|KODEX 반도체の組入上位銘柄は？
+dev|e09|zh-CN|KODEX 200|KODEX 200的成分股有哪些？
+dev|e10|zh-CN|TIGER 미국나스닥100|TIGER 미국나스닥100持仓前十
+dev|d01|ko-KR|삼성전자|삼성전자 분석해줘
+dev|d02|ko-KR|SK하이닉스|SK하이닉스 지금 어때?
+dev|d03|ko-KR|NAVER|NAVER 최근 이슈와 주가 정리해줘
+dev|d04|ko-KR|카카오|카카오 투자 포인트는?
+dev|d05|en-US|현대차|Analyze 현대차 stock
+dev|d06|ja-JP|기아|기아の株価を分析して
+dev|d07|zh-CN|셀트리온|分析一下셀트리온的股票
+dev|g01|ko-KR|셀트리온|셀트리온 최근 주가 왜 떨어졌어?
+dev|g02|ko-KR|KODEX 레버리지|KODEX 레버리지 최근 움직임과 뉴스 알려줘
+dev|g03|ko-KR|기아|기아 주가 흐름과 뉴스 같이 알려줘
+dev|g04|ko-KR|LG에너지솔루션|LG에너지솔루션 최근 뉴스 요약해줘
+dev|n01|ja-JP|SK하이닉스|SKハイニックスの株価は？
+dev|n02|ja-JP|현대차|現代自動車の最近の株価推移を教えて
+dev|n03|ja-JP|삼성전자|サムスン電子の最近のニュースは？
+dev|n04|zh-CN|SK하이닉스|SK海力士最近股价怎么样？
+dev|n05|zh-CN|현대차|现代汽车的股价是多少？
+dev|n06|zh-CN|기아|起亚最近怎么样？
+dev|n07|zh-CN|LG에너지솔루션|LG新能源最近的新闻
+dev|n08|en-US|삼성바이오로직스|What is Samsung Biologics' stock price?
+dev|n09|en-US|삼성전자|How has Samsung Electronics stock performed recently?
+dev|t01|ja-JP|삼성전자,SK하이닉스|삼성전자와 SK하이닉스 최근 20거래일 주가 비교해줘
+dev|t02|zh-CN|삼성전자,SK하이닉스|삼성전자와 SK하이닉스 최근 20거래일 주가 비교해줘
+dev|t03|en-US|삼성전자,SK하이닉스|삼성전자와 SK하이닉스 최근 20거래일 주가 비교해줘
+dev|t04|ja-JP|현대차|현대차 최근 1개월 주가와 거래량 자세히 알려줘
+dev|t05|zh-CN|NAVER|NAVER 최근 한 달 주가 최고가 최저가 알려줘
+dev|t06|ja-JP|KODEX 200|KODEX 200 최근 주가 알려줘
+holdout|E1|ko-KR|KODEX 반도체|KODEX 반도체에 뭐가 들어있는지 알려줘
+holdout|E2|ko-KR|TIGER 미국S&P500,NVIDIA|TIGER 미국S&P500 가장 많이 담은 종목은?
+holdout|E3|en-US|KODEX 미국나스닥100|Which companies does KODEX 미국나스닥100 hold?
+holdout|E4|ja-JP|TIGER 200,SK하이닉스|TIGER 200のSKハイニックスの比率はどれくらい？
+holdout|E5|zh-CN|KODEX 반도체|KODEX 반도체的成分股和权重
+holdout|E6|en-US|KODEX 200,삼성전자|What is Samsung Electronics' weight in KODEX 200?
+holdout|D1|ko-KR|현대모비스|현대모비스 분석해줘
+holdout|D2|ko-KR|LG화학|LG화학 요즘 어때?
+holdout|D3|en-US|SK하이닉스|How is SK hynix doing?
+holdout|D4|ja-JP|LG전자|LG電子の最近の状況を分析して
+holdout|D5|zh-CN|삼성SDI|三星SDI怎么样？
+holdout|G1|ko-KR|한화오션|한화오션 주가 왜 올랐어?
+holdout|G2|ko-KR|KT&G|KT&G 최근 주가와 뉴스 정리해줘
+holdout|N1|ja-JP|대한항공|大韓航空の株価を教えて
+holdout|N2|zh-CN|삼성전기|三星电机最近的新闻
+holdout|N3|en-US|기아,현대차|Compare Kia and Hyundai Motor over the last 20 trading days
+holdout|N4|zh-CN|KB금융|KB金融最近股价怎么样？
+holdout|N5|ja-JP|한국전력|韓国電力の最近の株価推移
+holdout|T1|ja-JP|LG에너지솔루션,삼성SDI|LG에너지솔루션과 삼성SDI 최근 1개월 주가 비교해줘
+holdout|T2|zh-CN|현대차|현대차 최근 20거래일 주가와 거래량 자세히 알려줘
+holdout|T3|en-US|POSCO홀딩스|POSCO홀딩스 최근 한 달 최고가 최저가 알려줘

@@ -8,13 +8,13 @@
    글자까지 같고 새 숫자가 없을 때만 쓴다. 최근 N거래일 주가 흐름 답(app.price_flow_i18n)도 같은 조건의 언어별 템플릿이다
 4. 그 밖(상세 전망·실적·기간·시세·LLM 답 등)은 보호 번역(app.i18n_translate): 숫자·날짜·종목명·기사/공시 제목은 코드가 원문 그대로 되돌린다.
    검증에 실패하면(2026-11-07 35차) 한국어 원문이 아니라 그 언어의 안내 + 도구 결과 데이터 요약이다(status fallback_summary).
-   단순 시세 답(app.quote_i18n)은 3번처럼 언어별 템플릿이다.
+   단순 시세 답(app.quote_i18n)은 3번처럼 언어별 템플릿이다. ETF 구성종목·특정 종목 비중 답(app.etf_holdings_i18n, 48차)도 같다.
 """
 
 import logging
 from functools import lru_cache
 
-from app import glossary, glossary_i18n, outlook_i18n, price_flow_i18n, quote_i18n
+from app import etf_holdings_i18n, glossary, glossary_i18n, outlook_i18n, price_flow_i18n, quote_i18n
 from app.i18n import text
 from app.i18n_translate import STATUS_FALLBACK, STATUS_LOCALIZED, protected_terms, translate
 
@@ -43,11 +43,15 @@ def _company_names() -> tuple[str, ...]:
 
 
 def localize_answer(question: str, answer: str, records: list[dict], locale: str,
-                    fixed: dict[str, str] | None = None) -> tuple[str, str]:
-    """(그 언어의 답변, translation_status). fixed는 {고정 문구 키: 그 한국어 상수}(app.agent가 넘긴다)."""
+                    fixed: dict[str, str] | None = None, code_data: dict | None = None) -> tuple[str, str]:
+    """(그 언어의 답변, translation_status). fixed는 {고정 문구 키: 그 한국어 상수}(app.agent가 넘긴다).
+    code_data(48차)는 코드 템플릿 답의 데이터(app.agent 내부 meta["etf_holdings"])다. 있으면 그 데이터로 언어별 템플릿을 먼저 본다."""
     for key, korean in (fixed or {}).items():
         if answer == korean:
             return text(key, locale), STATUS_LOCALIZED
+    holdings = etf_holdings_i18n.localize(answer, code_data, locale)
+    if holdings is not None:
+        return holdings, STATUS_LOCALIZED
     if not records:
         korean = glossary.concept_answer(question)
         if korean is not None and korean == answer:

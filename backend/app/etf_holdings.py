@@ -285,6 +285,30 @@ def holdings_answer(view: dict, top_n: int | None = None) -> str:
     return "\n\n".join(parts)
 
 
+def holding_weight_answer(info: dict) -> str:
+    """(48차) ETF 안에서 특정 종목의 비중 답(코드 템플릿). info는 etf_holdings_db.holding_weights()의 결과(as_of_date가 있어야 한다).
+    구성종목에 없으면 없다고 답한다(비중을 추정하지 않는다). 숫자는 모두 info의 값이다."""
+    etf, as_of, source, count = info["etf"], info["as_of_date"], info["source"], info["holding_count"]
+    lines = []
+    for it in info["items"]:
+        label = f"{it['name']}({it['ticker']})"
+        if it["found"]:
+            lines.append(f"{etf}에서 {label}의 비중은 {it['weight_pct']:.2f}%입니다. 현금성 자산을 뺀 전체 {count}개 구성종목 중 "
+                         f"{it['rank']}위이고, {source}에 공시된 {as_of} 기준 값입니다.")
+        else:
+            lines.append(f"{source}에 공시된 {as_of} 기준 {etf}의 구성종목 {count}개 중에 {label} 종목은 없습니다.")
+    parts = ["\n".join(lines)]
+    if kind := leverage_kind(etf):
+        parts.append(leverage_notice(etf, kind))
+    if info.get("stale_notice"):
+        parts.append(f"※ {info['stale_notice']} 최신 내용과 다를 수 있습니다.")
+    for w in info.get("data_warnings") or []:
+        parts.append(f"※ {w['message']}")
+    parts.append(f"※ {FRESHNESS_NOTE} 정확한 최신 내용은 운용사 홈페이지의 상품 페이지에서 확인해주세요. "
+                 "이 내용은 정보 제공용이며 투자 권유가 아닙니다.")
+    return "\n\n".join(parts)
+
+
 def constituents_chat_answer(views: list[dict], missing_names: list[str], not_provided_answer, top_n: int | None = None) -> str:
     """views: 데이터가 있는 ETF들, missing_names: 데이터가 없는 ETF 이름들, top_n: 질문이 요청한 개수.
     not_provided_answer(names)는 기존 "제공하지 않음" 답변을 만드는 함수(app.etf.constituents_answer)다."""

@@ -230,3 +230,22 @@ def briefing_scope(question: str) -> str:
     if hold and not watch:
         return "holdings"
     return "all"
+
+
+# ---------- 종목 분석 질문 (48차, 2026-11-13) ----------
+# "삼성전자 분석해줘"에 모델이 news_tool만 불러 주가·기준일이 없는 답이 나왔다(48차 d01). 분석·상태를 묻는 질문이면 주가 조회를
+# 코드가 덧붙인다(app/agent.py의 _add_requested_tools, 원인 질문과 같은 방식). 뉴스·공시만 요약·정리해 달라는 질문은 아니다.
+# 질문은 여러 언어로 온다(locale은 답 언어일 뿐): 영어·일본어·중국어 표현도 본다.
+_ANALYSIS_RE = re.compile(
+    r"분석|어때|어떤가|어떻게\s*(?:봐|보여|보이|생각)|평가해|투자\s*포인트|현황"
+    r"|\banaly[sz]e\b|\banalysis\b|\bhow\s+(?:is|are|has|have)\b[^?]{0,60}\b(?:doing|performed|performing|going|look)\b|\bhow'?s\b"
+    r"|分析|どう(?:です|でしょう|なって|ですか)?|状況|怎么样|怎樣|怎么樣|如何|情况|表现",
+    re.IGNORECASE,
+)
+_NEWS_ONLY_RE = re.compile(r"(?:뉴스|기사|공시)[^?]{0,10}(?:요약|정리|목록|알려|보여|뭐|있)|\bnews\b|ニュース|新闻|新聞|公告|開示")
+
+
+def is_analysis_question(question: str) -> bool:
+    """종목의 분석·현재 상태를 묻는 질문이면 True. 뉴스·공시만 요약·나열해 달라는 질문은 False(주가를 덧붙이지 않는다)."""
+    q = question or ""
+    return bool(_ANALYSIS_RE.search(q)) and not _NEWS_ONLY_RE.search(q)
