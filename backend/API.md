@@ -5040,3 +5040,43 @@ API 요청·응답 필드는 바뀌지 않았다(새 필드 없음, 스키마·�
 프런트엔드 표시 권장(API 변경 없이): 지수 값 옆에 `indices[].date` 표시, 차트 툴팁 "고·저"에 주식·2026-09-14 이후면 "애프터마켓 포함", 거래량은 "KRX 하루 거래량"으로 표기(정규장 거래량이라고 쓰지 않는다). API 필드 추가 제안(`price_basis`, `confirmation_pending`)은 보고서 12절, 합의 전 구현하지 않는다.
 
 평가: 49차 신규 문항 v2(`evals/multilingual_cases_49_v2.txt`, 1개월 = 24거래일)와 재채점 도구(`evals/rescore_routes.py`)를 추가했다. v1 파일은 그대로다.
+
+## 시장 데이터 표시 정책 (프런트엔드 참고, 2026-11-14, 51차)
+
+API 요청·응답은 바뀌지 않았다. 아래 1~5는 지금 응답으로 할 수 있는 표시 권장이다. 필드 추가는 **제안**이며 프런트엔드 합의 전에는 구현하지 않는다. 근거·설계는 `docs/SESSION_MARKET_DATA_DESIGN_51.md`(5절)에 있다.
+
+| # | 정책 | 쓸 필드(지금) | 권장 문구(ko) |
+|---|---|---|---|
+| 1 | 지수 값 옆에 데이터 기준일 | `GET /api/market/overview`의 `indices[].date`, 일일 브리핑 `content.sections.market.indices[].date` | "11-13 종가" |
+| 2 | 차트 고가·저가에 애프터마켓 포함 표시 | `price-history`의 `asset_type == "stock"`이고 `items[].date >= "2026-09-14"`인 행 | "고·저는 장 마감 뒤 애프터마켓 체결 포함". ETF와 09-11 이전 행에는 붙이지 않는다 |
+| 3 | 거래량 기준 | `items[].volume`, 급증 `volume_ratio`, 사건 반응 `volume_ratio` | "KRX 하루 거래량(애프터마켓 포함, NXT 제외)". **"정규장 거래량"이라고 쓰지 않는다** |
+| 4 | 지수 확정 전 구분 | 50차부터 장중 지수는 저장하지 않으므로 보이는 지수는 항상 확정 종가다. "오늘 값 확정 대기"는 지금 응답으로 수집 실패와 구분할 수 없다(아래 `confirmation_pending` 제안) | 대기 중이면 "오늘 종가는 확정 뒤 반영됩니다(전 거래일 종가 표시)" |
+| 5 | 최신 데이터 지연 | `indices[].lag_business_days`, `freshness.status` | "지연 N거래일"(브리핑 화면과 같은 배지를 시장 카드에도) |
+
+- 시장 카드(`MarketSummaryCard`)는 `/api/market/overview`가 아니라 일일 브리핑의 market 영역을 읽는다. 브리핑의 지수 항목에도 `date`·`lag_business_days`가 있어서 1·5는 API 변경 없이 된다.
+- 4번 임시 판단(필드 합의 전): `lag_business_days == 1`이고 지금이 KRX 거래일 15:40~23:30 KST면 "확정 대기일 수 있음"이다. 수집 실패도 같은 모양이라 단정 문구는 쓰지 않는다.
+- 값이 null이면 "—"를 보인다(0으로 그리지 않는다).
+
+### 필드 추가 제안(합의 전 구현하지 않음)
+
+`GET /api/stocks/{ticker}/price-history` 최상위 `price_basis`(객체). 서버는 항상 넣고, 프런트는 선택 필드로 다룬다. 기존 필드는 그대로다.
+
+| 키 | 타입 | 값 | 의미 |
+|---|---|---|---|
+| `version` | int | `1` | 정의가 바뀌면 올림 |
+| `close` | string | `"official_regular_close"` | 공식 종가(정규장) x 원천 수정주가 비율 |
+| `open` | string | `"krx_regular_open"` | KRX 정규장 시가 |
+| `high_low` | string | 주식 `"krx_full_day"` / ETF `"krx_regular"` | 하루 범위(애프터마켓 포함) / 정규장 |
+| `volume` | string | `"krx_full_day_excl_nxt"` | KRX 하루 거래량, NXT 제외 |
+| `after_market_from` | string(date) \| null | 주식 `"2026-09-14"`, ETF `null` | 이 날짜 이상 행의 고가·저가·거래량에 애프터마켓 포함 |
+| `before_after_market` | string | `"unverified"` | 09-11 이전 행의 시간외 단일가 포함 여부 미확인 |
+| `adjusted` | string | `"source_adjusted"` | 가격 4개 같은 비율, 거래량은 역수로 조정 |
+
+시장 요약 `indices[].confirmation_pending`(boolean). `GET /api/market/overview`와 **일일 브리핑 `content.sections.market.indices[]`** 모두에 넣는다.
+- true: 오늘이 KRX 거래일이고 마감 + 10분이 지났는데, 오늘 지수 행이 확정 검증에서 보류돼 아직 저장되지 않았다. 이때 `date`·`close`는 전 거래일 확정값이다.
+- false: 오늘 행 저장됨, 장중, 휴장일, 또는 지수 수집 실패(이 경우는 overview `last_collection.index.status = "failed"`로 구분).
+- 이미 저장된 브리핑에는 이 키가 없다. 없으면 false로 본다. 브리핑은 불변 스냅샷이라 16시에 만든 브리핑은 계속 true로 남는다.
+
+현재 프런트 스키마(`z.object`, strict 아님)는 모르는 키를 버리므로 위 필드를 더해도 파싱이 깨지지 않는다.
+
+정규장 OHLCV(세션별 저장 `stock_price_session`)는 승인 전이다. 만들지 않았고 응답에도 없다. 승인되면 `items[].regular`(정규장 값, 수집한 날만)를 따로 협의한다. 정규장 값은 2026-11-05 이후 날짜만 생길 수 있다.

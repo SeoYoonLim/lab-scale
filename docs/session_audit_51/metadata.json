@@ -1,0 +1,264 @@
+{
+ "generated": "2026-11-14 (51차)",
+ "common": {
+  "source": {
+   "name": "네이버 증권 국내 분봉(비공식 API)",
+   "url": "https://api.stock.naver.com/chart/domestic/item/{ticker}/minute",
+   "query": "startDateTime=YYYYMMDD0000&endDateTime=YYYYMMDD2359",
+   "official": false,
+   "history_window": "최근 7거래일 안팎(2026-11-13 15:03 KST에는 11-05~11-13, 2026-11-14 11:54 KST에는 11-06~11-13)"
+  },
+  "record_fields": {
+   "localDateTime": "KST, YYYYMMDDHHMMSS, 분 시작 시각",
+   "openPrice/highPrice/lowPrice/currentPrice": "그 분의 시가·고가·저가·종가(원)",
+   "accumulatedTradingVolume": "이름과 달리 그 분의 거래량(주). 50차에서 하루 합계 = KRX 일봉 거래량으로 확인(1,695/1,800행 정확히 일치)"
+  },
+  "market_scope": "KRX 체결만(NXT 체결 없음, 50차 [표본])",
+  "price_basis": "수집 시점 원천의 수정주가 체계. 소수 가격 종목 214980·284430·441640·498400(분배 조정 반영)",
+  "session_buckets_hhmm": {
+   "regular": "0900-1530(1530 봉 = 종가 단일가)",
+   "closing_price": "1531-1559(장후 종가매매, 관찰 봉 1540-1559)",
+   "after_market": "1600-2000(KRX 애프터마켓, 관찰 마지막 봉 1959)",
+   "other": "관찰 0개"
+  },
+  "git": "backend/backups/는 .gitignore 대상. 이 메타데이터·체크섬·범위 CSV만 커밋"
+ },
+ "sets": [
+  {
+   "dir": "backend/backups/session_audit_2026-11-05_2026-11-12",
+   "role": "원본 보존본(50차 수집분 복사)",
+   "origin": "50차 세션 스크래치 session_audit/ (python -m scripts.audit_session_ohlcv --out <폴더> --keep-raw)",
+   "collected_at_kst": "2026-11-13T15:03:07+09:00(감사 시작 시각, generated_at). 파일 수정 시각 15:03~15:07",
+   "copied_at_kst": "2026-11-14 (51차), cp -rp(수정 시각 보존)",
+   "files": 352,
+   "bytes": 165649045,
+   "raw_files": 350,
+   "other_files": [
+    "session_audit_rows.csv",
+    "session_audit_summary.json"
+   ],
+   "manifest": "docs/session_audit_51/session_audit_2026-11-05_2026-11-12.sha256",
+   "verification": "원본·복사본 352개 개수·바이트·SHA-256·수정 시각 모두 일치. sha256sum -c 통과",
+   "coverage_csv": "docs/session_audit_51/session_audit_2026-11-05_2026-11-12_coverage.csv",
+   "summary": {
+    "tickers": 350,
+    "asset_types": {
+     "stock": 300,
+     "etf": 50
+    },
+    "bars_total": 1027147,
+    "dates": {
+     "2026-11-05": {
+      "tickers": 350,
+      "bars": {
+       "regular": 130580,
+       "closing_price": 1159,
+       "after_market": 39978
+      },
+      "first": "0900",
+      "last": "1959"
+     },
+     "2026-11-06": {
+      "tickers": 350,
+      "bars": {
+       "regular": 124059,
+       "closing_price": 1091,
+       "after_market": 43693
+      },
+      "first": "0900",
+      "last": "1959"
+     },
+     "2026-11-09": {
+      "tickers": 350,
+      "bars": {
+       "regular": 130594,
+       "after_market": 47440,
+       "closing_price": 912
+      },
+      "first": "0900",
+      "last": "1959"
+     },
+     "2026-11-10": {
+      "tickers": 350,
+      "bars": {
+       "regular": 130515,
+       "closing_price": 1003,
+       "after_market": 35684
+      },
+      "first": "0900",
+      "last": "1959"
+     },
+     "2026-11-11": {
+      "tickers": 350,
+      "bars": {
+       "regular": 130674,
+       "closing_price": 1031,
+       "after_market": 40070
+      },
+      "first": "0900",
+      "last": "1959"
+     },
+     "2026-11-12": {
+      "tickers": 350,
+      "bars": {
+       "regular": 130488,
+       "after_market": 37141,
+       "closing_price": 1035
+      },
+      "first": "0900",
+      "last": "1959"
+     }
+    },
+    "null_counts": {},
+    "decimal_price_tickers": [
+     "214980",
+     "284430",
+     "441640",
+     "498400"
+    ],
+    "bars_per_ticker": {
+     "min": 716,
+     "max": 3832
+    },
+    "stocks_with_after_market_by_date": {
+     "2026-11-05": 299,
+     "2026-11-06": 299,
+     "2026-11-09": 299,
+     "2026-11-10": 299,
+     "2026-11-11": 299,
+     "2026-11-12": 298
+    },
+    "etfs_with_after_market_by_date": {
+     "2026-11-05": 0,
+     "2026-11-06": 0,
+     "2026-11-09": 0,
+     "2026-11-10": 0,
+     "2026-11-11": 0,
+     "2026-11-12": 0
+    },
+    "rows_without_1530_bar": 40
+   },
+   "unique_note": "11-05 분봉은 2026-11-14 11:54 KST 원천에서 이미 빠짐. 이 보존본이 유일한 사본"
+  },
+  {
+   "dir": "backend/backups/session_audit_2026-11-06_2026-11-13_snapshot_20261114",
+   "role": "보충 스냅샷(51차 수집, 11-13 하루 전체 포함)",
+   "origin": "51차 스크래치 스크립트(app.session_ohlcv.fetch_minute 호출, DB 접근 없음, 요청 간격 0.35초), 요청 범위 2026-11-05~11-13",
+   "collected_at_kst": "2026-11-14T11:54:17+09:00 ~ 11:58:06+09:00(종목별 시각은 fetch_log.json)",
+   "files": 351,
+   "bytes": 164447504,
+   "raw_files": 350,
+   "other_files": [
+    "fetch_log.json"
+   ],
+   "manifest": "docs/session_audit_51/session_audit_2026-11-06_2026-11-13_snapshot_20261114.sha256",
+   "verification": "스크래치·복사본 351개 개수·바이트·SHA-256 모두 일치. sha256sum -c 통과",
+   "coverage_csv": "docs/session_audit_51/session_audit_2026-11-06_2026-11-13_snapshot_20261114_coverage.csv",
+   "summary": {
+    "tickers": 350,
+    "asset_types": {
+     "stock": 300,
+     "etf": 50
+    },
+    "bars_total": 1020911,
+    "dates": {
+     "2026-11-06": {
+      "tickers": 350,
+      "bars": {
+       "regular": 124059,
+       "closing_price": 1091,
+       "after_market": 43693
+      },
+      "first": "0900",
+      "last": "1959"
+     },
+     "2026-11-09": {
+      "tickers": 350,
+      "bars": {
+       "regular": 130594,
+       "after_market": 47440,
+       "closing_price": 912
+      },
+      "first": "0900",
+      "last": "1959"
+     },
+     "2026-11-10": {
+      "tickers": 350,
+      "bars": {
+       "regular": 130515,
+       "closing_price": 1003,
+       "after_market": 35684
+      },
+      "first": "0900",
+      "last": "1959"
+     },
+     "2026-11-11": {
+      "tickers": 350,
+      "bars": {
+       "regular": 130674,
+       "closing_price": 1031,
+       "after_market": 40070
+      },
+      "first": "0900",
+      "last": "1959"
+     },
+     "2026-11-12": {
+      "tickers": 350,
+      "bars": {
+       "regular": 130488,
+       "after_market": 37141,
+       "closing_price": 1035
+      },
+      "first": "0900",
+      "last": "1959"
+     },
+     "2026-11-13": {
+      "tickers": 350,
+      "bars": {
+       "regular": 130577,
+       "after_market": 34157,
+       "closing_price": 747
+      },
+      "first": "0900",
+      "last": "1959"
+     }
+    },
+    "null_counts": {},
+    "decimal_price_tickers": [
+     "214980",
+     "284430",
+     "441640",
+     "498400"
+    ],
+    "bars_per_ticker": {
+     "min": 651,
+     "max": 3834
+    },
+    "stocks_with_after_market_by_date": {
+     "2026-11-06": 299,
+     "2026-11-09": 299,
+     "2026-11-10": 299,
+     "2026-11-11": 299,
+     "2026-11-12": 298,
+     "2026-11-13": 298
+    },
+    "etfs_with_after_market_by_date": {
+     "2026-11-06": 0,
+     "2026-11-09": 0,
+     "2026-11-10": 0,
+     "2026-11-11": 0,
+     "2026-11-12": 0,
+     "2026-11-13": 0
+    },
+    "rows_without_1530_bar": 40
+   },
+   "cross_check_with_original": {
+    "overlap_dates": "2026-11-06~11-12",
+    "bars_equal": 855430,
+    "bars_differ": 0,
+    "bars_only_in_original(11-05)": 171717,
+    "bars_only_in_snapshot_within_overlap": 0
+   }
+  }
+ ]
+}
