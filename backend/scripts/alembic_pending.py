@@ -7,12 +7,14 @@
 - 버전 위치 = alembic/versions + alembic/pending. 기본 alembic.ini(versions만)는 그대로라 일반 `alembic upgrade head`와
   /api/health 검사는 pending을 모른다.
 - 개발 DB(.env의 DATABASE_URL, 이름 ai_investment)와 보존 중인 DB(PROTECTED_DATABASES)를 가리키면 거부한다.
+  그 밖에도 허용 이름(ai_investment_session_*, captest_*)이 아니면 거부한다(54차).
   개발 DB 적용은 승인 뒤 파일을 alembic/versions로 옮겨 일반 절차로 한다(이 도구로 하지 않는다).
 """
 from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -23,6 +25,8 @@ PENDING = BACKEND / "alembic" / "pending"
 VERSIONS = BACKEND / "alembic" / "versions"
 DEV_DEFAULT_URL = "postgresql+psycopg://postgres:postgres@localhost:15432/ai_investment"
 PROTECTED_DATABASES = {"ai_investment", "ai_investment_postcheck47", "ai_investment_verify", "postgres", "template0", "template1"}
+# 쓰기를 허용하는 시험 DB 이름(54차): 세션 리허설 DB와 CI·통합 테스트가 만드는 임시 DB만
+ALLOWED_TEST_DATABASE = re.compile(r"(ai_investment_session_[a-z0-9_]+|captest_[a-z0-9_]+)")
 
 
 class Refused(Exception):
@@ -50,6 +54,8 @@ def check_target(url: str, allow_dev_db: bool = False):
         raise Refused(f"개발 DB({target.database})에는 쓰지 않습니다(승인 전)")
     if target.database in PROTECTED_DATABASES - {dev.database}:
         raise Refused(f"보존 중인 DB({target.database})에는 쓰지 않습니다")
+    if not (allow_dev_db and target.database == dev.database) and not ALLOWED_TEST_DATABASE.fullmatch(target.database):
+        raise Refused(f"허용된 시험 DB 이름이 아닙니다: {target.database}(ai_investment_session_* 또는 captest_*)")
     return target
 
 

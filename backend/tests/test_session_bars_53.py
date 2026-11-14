@@ -21,7 +21,11 @@ def row(hm, o, h=None, lo=None, c=None, v=100, day="20261112", sec="00"):
 
 
 def stock_day(auction_hm="1530", close=208000, extra=()):
-    """삼성전자 11-12형: 정규장, 종가 단일가, 장후 종가매매, 애프터마켓."""
+    """삼성전자 11-12형: 정규장, 종가 단일가, 장후 종가매매, 애프터마켓. 원본처럼 시간 순서로 돌려준다(54차: 순서 검사)."""
+    return sorted(_stock_day(auction_hm, close, extra), key=lambda r: r["localDateTime"])
+
+
+def _stock_day(auction_hm, close, extra):
     return [row("0900", 208500, 209000, 208000, 208500, 1_000_000), row("1100", 212000, 214000, 211500, 213000, 9_000_000),
             row("1519", 207000, 207500, 206000, 207000, 3_000_000), row(auction_hm, close, v=5_004_149),
             row("1540", close, v=300), row("1559", close, v=84), row("1600", 208000, 209000, 207500, 208500, 300_000),
@@ -53,9 +57,9 @@ def test_late_closing_auction_at_1532_is_auction_not_post_close():
 
 
 def test_late_auction_must_be_single_flat_bar():
-    r = classify(stock_day(auction_hm="1532")[:3] + [row("1532", 208000, 208500, 208000, 208000)])
+    r = classify(stock_day(auction_hm="1532")[:3] + [row("1532", 208000, 208500, 208000, 208000)] + stock_day(auction_hm="1532")[4:])
     assert r.status == "rejected" and "1532" in r.unclassified
-    r2 = classify(stock_day(auction_hm="1532") + [row("1535", 208000)])
+    r2 = classify(stock_day(auction_hm="1532", extra=[row("1535", 208000)]))
     assert r2.status == "rejected" and set(r2.unclassified) >= {"1532", "1535"}
 
 
@@ -162,7 +166,7 @@ def test_special_schedule_day_is_rejected():
     special = krx_calendar.Calendar(**{**cal.__dict__, "special_close": {**cal.special_close, D: __import__("datetime").time(16, 30)}})
     by, probs, _ = sb.parse_bars(sb.load_rows(__import__("json").dumps(stock_day()).encode()))
     r = sb.classify_day(D, by[D], "stock", DONE, probs.get(D), cal=special)
-    assert r.status == "rejected" and r.reasons == ["special_session_schedule"]
+    assert r.status == "rejected" and r.reasons == ["schedule_unknown"]  # 54차: 달력 특수 마감 + 등록된 세션 일정 없음
 
 
 @pytest.mark.parametrize("collected, reason", [(datetime(2026, 11, 12, 20, 9, tzinfo=KST), "incomplete_day"), (None, "collected_at_unknown")])

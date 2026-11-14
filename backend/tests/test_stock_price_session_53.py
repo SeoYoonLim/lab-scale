@@ -34,6 +34,7 @@ KST = krx_calendar.KST
     "postgresql+psycopg://postgres:postgres@127.0.0.1:15432/ai_investment_verify",
     "postgresql+psycopg://postgres:postgres@127.0.0.1:15432/postgres",
     "postgresql+psycopg://postgres:postgres@127.0.0.1:15432/",
+    "postgresql+psycopg://postgres:postgres@127.0.0.1:15432/some_other_db",  # 54차: 허용 이름(ai_investment_session_*, captest_*)만
 ])
 def test_check_target_refuses_dev_and_preserved_databases(url):
     with pytest.raises(ap.Refused):
@@ -119,6 +120,21 @@ def test_loader_refuses_dev_db_and_missing_raw(tmp_path, capsys):
     assert "거부" in capsys.readouterr().err
 
 
+def test_load_requires_confirm_database_report_and_verified_schedule(tmp_path, capsys):
+    """54차: 적재는 DB 이름 재확인·출처 기록이 필요하고, 발표만 된 일정(2026-11-19)은 별도 허용 없이는 적재하지 않는다. DB 연결 전 거부."""
+    (tmp_path / "raw").mkdir()
+    url = "postgresql+psycopg://p:p@127.0.0.1:1/ai_investment_session_x"
+    base = ["--database-url", url, "--source", str(tmp_path)]
+    assert lsm.main(base + ["--date", "2026-11-12", "--load", "--report", str(tmp_path.parent / "r.json")]) == 2
+    assert lsm.main(base + ["--date", "2026-11-12", "--load", "--confirm-database", "ai_investment_session_y",
+                            "--report", str(tmp_path.parent / "r.json")]) == 2
+    assert lsm.main(base + ["--date", "2026-11-12", "--load", "--confirm-database", "ai_investment_session_x"]) == 2
+    assert lsm.main(base + ["--date", "2026-11-19", "--load", "--confirm-database", "ai_investment_session_x",
+                            "--report", str(tmp_path.parent / "r.json")]) == 2
+    err = capsys.readouterr().err
+    assert "--confirm-database" in err and "--report" in err and "announced" in err
+
+
 # ---------- 통합: 별도 서버의 임시 DB ----------
 
 def bars(day="20261112", auction="1530", close=208000):
@@ -173,8 +189,17 @@ class TestMigrationAndLoadRoundTrip:
             src = write_source(tmp_path / "src", {"005930": bars(auction="1532"),
                                                    "385540": [bars()[0], {**bars()[1], "localDateTime": "20261112151800"}]})
             args = ["--database-url", sa_url, "--source", str(src), "--date", "2026-11-12"]
-            assert lsm.main(args + ["--report", str(tmp_path / "r1.json")]) == 0
+            load = ["--load", "--confirm-database", name, "--report", str(tmp_path / "rl.json")]
+            for mode in ([], ["--validate-only"], ["--dry-run"]):  # 54차: 기본·검증·미리 보기는 쓰지 않는다
+                assert lsm.main(args + mode) == 0
+            with psycopg.connect(pg_url) as c:
+                assert c.execute("SELECT count(*) FROM stock_price_session").fetchone()[0] == 0
+            assert lsm.main(args + ["--load", "--confirm-database", name, "--report", str(tmp_path / "r1.json")]) == 0
             r1 = json.loads((tmp_path / "r1.json").read_text(encoding="utf-8"))
+            day = next(d for d in r1["days"] if d["ticker"] == "005930")  # 출처 기록
+            assert day["file"] == "raw/005930.json" and len(day["sha256"]) == 64 and day["result"] == "inserted"
+            assert day["schedule"]["status"] == "data_verified" and day["aggregated_at"] and set(day["sessions"]) == {
+                "regular", "closing_auction", "post_close", "after_market"}
             assert r1["counts"]["inserted_rows"] == 5 and r1["official_close"] == {"match": 1, "no_official_close": 1}
             assert r1["flags"] == {"etf:no_closing_auction": 1, "stock:late_closing_auction": 1}
 
@@ -187,13 +212,13 @@ class TestMigrationAndLoadRoundTrip:
                                       "JOIN company co ON co.id = s.company_id WHERE ticker = '005930'").fetchall())
             assert rows == {"regular": "09:00", "closing_auction": "15:32", "post_close": "15:40", "after_market": "16:00"}
             first = table()
-            assert lsm.main(args) == 0 and table() == first  # 재적재: 그대로
+            assert lsm.main(args + load) == 0 and table() == first  # 재적재: 그대로
             assert lsm.main(args + ["--verify-only"]) == 0
 
             bad = write_source(tmp_path / "bad", {"005930": [dict(b, accumulatedTradingVolume=b["accumulatedTradingVolume"] + 1)
                                                              if b["localDateTime"].endswith("090000") else b for b in bars(auction="1532")]})
             assert lsm.main(["--database-url", sa_url, "--source", str(bad), "--date", "2026-11-12",
-                             "--report", str(tmp_path / "r2.json")]) == 1
+                             "--load", "--confirm-database", name, "--report", str(tmp_path / "r2.json")]) == 1
             conflict = json.loads((tmp_path / "r2.json").read_text(encoding="utf-8"))["conflicts"][0]
             assert conflict["sessions"]["regular"]["db"]["volume"] == 4000 and conflict["sessions"]["regular"]["source"]["volume"] == 4001
             assert table() == first  # 충돌은 아무것도 바꾸지 않는다
@@ -216,10 +241,38 @@ class TestMigrationAndLoadRoundTrip:
                 assert c.execute("SELECT count(*) FROM pg_proc WHERE proname = 'stock_price_session_no_update'").fetchone()[0] == 0
                 assert c.execute("SELECT version_num FROM alembic_version").fetchone()[0] == BASE
                 assert c.execute("SELECT count(*), md5(string_agg(t::text, ',' order by id)) FROM stock_price t").fetchone() == before_sp
-            assert lsm.main(args) == 2  # 표가 없으면 거부
+            assert lsm.main(args + ["--dry-run"]) == 2  # 표가 없으면 거부
 
             assert self._run("-m", "scripts.alembic_pending", "--database-url", sa_url, "upgrade", REVISION).returncode == 0
-            assert lsm.main(args) == 0 and table()[0] == 5
+            assert lsm.main(args + load) == 0 and table()[0] == 5
+
+            # 54차: 한 종목-날짜의 충돌이 같은 실행의 다른 종목을 막지 않는다
+            with psycopg.connect(pg_url, autocommit=True) as c:
+                c.execute("INSERT INTO company (ticker, name, asset_type) VALUES ('000660', 'h', 'stock')")
+            mixed = write_source(tmp_path / "mixed", {
+                "005930": [dict(b, accumulatedTradingVolume=b["accumulatedTradingVolume"] + 1) if b["localDateTime"].endswith("090000")
+                           else b for b in bars(auction="1532")],
+                "000660": bars()})
+            assert lsm.main(["--database-url", sa_url, "--source", str(mixed), "--date", "2026-11-12", "--load",
+                             "--confirm-database", name, "--report", str(tmp_path / "r3.json")]) == 1
+            r3 = json.loads((tmp_path / "r3.json").read_text(encoding="utf-8"))
+            assert {d["ticker"]: d["result"] for d in r3["days"]} == {"000660": "inserted", "005930": "conflict"}
+            assert table()[0] == 9  # 000660 4행만 더해짐, 005930은 그대로
+
+            # 54차: 수능일 합성 분봉(시험용 임시 DB에서만). 발표 일정이라 허용 플래그 없이는 적재 거부, 있으면 DB 제약을 통과
+            csat = write_source(tmp_path / "csat", {"000660": [
+                {**b, "localDateTime": "20261119" + hm + "00"} for b, hm in zip(bars(), ("1000", "1619", "1630", "1640", "1700", "1959"))]})
+            fetch = json.loads((csat / "fetch_log.json").read_text(encoding="utf-8"))
+            fetch["fetched_at"] = {"000660": "2026-11-19T21:00:00+09:00"}
+            (csat / "fetch_log.json").write_text(json.dumps(fetch), encoding="utf-8")
+            ca = ["--database-url", sa_url, "--source", str(csat), "--date", "2026-11-19", "--load", "--confirm-database", name,
+                  "--report", str(tmp_path / "r4.json")]
+            assert lsm.main(ca) == 2
+            assert lsm.main(ca + ["--allow-unverified-schedule"]) == 0
+            with psycopg.connect(pg_url) as c:
+                got = dict(c.execute("SELECT session, to_char(first_bar_at AT TIME ZONE 'Asia/Seoul', 'HH24:MI') FROM stock_price_session "
+                                     "WHERE price_date = '2026-11-19'").fetchall())
+            assert got == {"regular": "10:00", "closing_auction": "16:30", "post_close": "16:40", "after_market": "17:00"}
         finally:
             with psycopg.connect(admin, autocommit=True) as c:
                 c.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
