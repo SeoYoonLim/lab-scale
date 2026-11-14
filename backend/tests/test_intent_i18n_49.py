@@ -86,11 +86,17 @@ def test_past_and_future_windows_take_different_paths_with_the_same_number(past,
     assert (b["forecast"], b["future_days"]) == (True, n), b
 
 
+MONTH = "month"  # "1개월"은 실행일 기준 달력 한 달의 평일 수라 날마다 다르다(2026-11-13엔 24, 11-14엔 23). 51차에 고정값을 없앴다
+
+
 @pytest.mark.parametrize("q, days", [
-    ("How did Kia shares move over the past month?", 24), ("起亚过去一个月股价走势", 24), ("起亜の過去1か月の株価推移", 24),
+    ("How did Kia shares move over the past month?", MONTH), ("起亚过去一个月股价走势", MONTH), ("起亜の過去1か月の株価推移", MONTH),
     ("Kia stock price last week", 5), ("起亜の先週の株価", 5), ("起亚上周的股价", 5),
 ])
 def test_past_calendar_periods(q, days):
+    if days == MONTH:  # 기대값 = 같은 날 한국어 표준 표현 "1개월"의 서비스 정의
+        days = parse_period("기아 최근 1개월 주가").period_days
+        assert 19 <= days <= 24, days  # 정의가 깨져 엉뚱한 값이 나오는 것만 막는다
     r = route(q)
     assert r["forecast"] is False and r["past_days"] == days, r
 
