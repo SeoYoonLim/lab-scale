@@ -120,7 +120,9 @@ def _load_dart_corp_code_map() -> dict[str, str]:
     if _dart_stock_to_corp_code is not None:
         return _dart_stock_to_corp_code
 
+    global dart_requests
     key = os.environ["DART_API_KEY"]
+    dart_requests += 1
     # corpCode.xml은 11만 건이 넘는 zip이라 읽기 timeout을 길게 둔다
     resp = http_retry.get(DART_CORP_CODE_URL, params={"crtfc_key": key}, timeout=(5, 60), label="DART corpCode")
 
@@ -157,6 +159,8 @@ def resolve_ticker(name: str) -> str | None:
 
 
 def fetch_dart_disclosures(corp_code: str, days: int = 90) -> list[dict]:
+    """최근 days일(오늘 포함) 접수 공시를 total_page까지 모두 받는다. 013(조회 결과 없음)은 빈 목록, 그 밖의 status는 RuntimeError."""
+    global dart_requests
     key = os.environ["DART_API_KEY"]
     end_de = datetime.now().strftime("%Y%m%d")
     bgn_de = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
@@ -164,6 +168,7 @@ def fetch_dart_disclosures(corp_code: str, days: int = 90) -> list[dict]:
     items = []
     page_no = 1
     while True:
+        dart_requests += 1
         resp = http_retry.get(
             DART_DISCLOSURE_LIST_URL,
             params={
@@ -266,6 +271,7 @@ def _safe_error(e: Exception) -> str:
 
 
 naver_requests = 0  # 이 프로세스에서 네이버 뉴스 API에 보낸 요청 수(재시도 포함)
+dart_requests = 0  # 62차: 이 프로세스에서 DART에 보낸 요청 수(corpCode 1 + 공시 목록 페이지, 재시도는 세지 않음)
 
 
 class _CountingSession:
@@ -275,13 +281,14 @@ class _CountingSession:
         return requests.get(*args, **kwargs)
 
 
-def fetch_naver_news(company_name: str, display: int = 10, sort: str = "date") -> list[dict]:
+def fetch_naver_news(company_name: str, display: int = 10, sort: str = "date", start: int = 1) -> list[dict]:
+    """네이버 뉴스 검색 한 페이지. start(1~1000, 62차 추가, 기본 1 = 예전과 같음)는 검색 결과의 시작 위치다(app/news_recovery.py가 페이지를 넘긴다)."""
     client_id = os.environ["NAVER_CLIENT_ID"]
     client_secret = os.environ["NAVER_CLIENT_SECRET"]
 
     resp = http_retry.get(
         NAVER_NEWS_URL,
-        params={"query": company_name, "display": display, "start": 1, "sort": sort},
+        params={"query": company_name, "display": display, "start": start, "sort": sort},
         headers={
             "X-Naver-Client-Id": client_id,
             "X-Naver-Client-Secret": client_secret,
