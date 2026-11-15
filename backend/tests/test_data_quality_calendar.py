@@ -82,7 +82,8 @@ class TestPrices:
     def test_non_trading_day_is_quarantined(self):
         got = V.check_prices("005930", [px(date(2026, 10, 9)), px(date(2026, 11, 7))], today=TODAY)  # 한글날, 토요일
         assert all("non_trading_day" in c for c in codes(got))
-        unknown = V.check_prices("005930", [px(date(2026, 12, 31))], today=date(2026, 12, 31))  # 미확정 날은 막지 않는다
+        # 58차: 2026-12-31은 연말 휴장으로 확정됐다. 확인할 수 없는 날(범위 밖 평일)은 막지 않는다
+        unknown = V.check_prices("005930", [px(date(2027, 1, 4))], today=date(2027, 1, 4))
         assert unknown[0].status == V.VALID
 
     def test_existing_value_is_protected(self):  # 15(판정)
@@ -249,8 +250,8 @@ class TestCalendar:
 
     def test_year_end_closure(self):  # 28
         assert K.is_holiday(date(2025, 12, 31)) and K.is_holiday(date(2024, 12, 31)) and K.is_holiday(date(2023, 12, 29))
-        assert K.day_status(date(2026, 12, 31)) == K.UNKNOWN  # 2026년 연말 휴장은 KRX 공지 전: 단정하지 않는다
-        assert "미확정" in K.holiday_name(date(2026, 12, 31))
+        # 58차: 2026-12-31(목)은 KRX 규정(12월 31일, 토·공휴일이면 직전 거래일)으로 연말 휴장. 미확정 동작은 test_krx_calendar_year_end_58
+        assert K.is_holiday(date(2026, 12, 31)) and K.holiday_name(date(2026, 12, 31)) == "연말 휴장"
 
     def test_temporary_holidays_and_elections(self):  # 29
         for d in (date(2024, 10, 1), date(2025, 1, 27), date(2024, 4, 10), date(2025, 6, 3), date(2026, 6, 3), date(2026, 7, 17)):
@@ -266,7 +267,7 @@ class TestCalendar:
         assert K.day_status(date(2027, 2, 8)) == K.UNKNOWN and K.is_trading_day(date(2027, 2, 8)) is None  # 설 연휴 날짜를 모른다
         assert K.day_status(date(2027, 1, 1)) == K.HOLIDAY  # 고정 법정 공휴일은 범위 밖에도 휴장
         lg = K.lag(date(2026, 12, 30), date(2027, 1, 5))
-        assert lg == K.Lag(3, 3) and not lg.certain  # 12/31(미확정)·1/4·1/5: 거래일일 수 있는 날, 확인 불가로 표시
+        assert lg == K.Lag(2, 2) and not lg.certain  # 1/4·1/5: 거래일일 수 있는 날, 확인 불가로 표시(58차: 12/31은 연말 휴장 확정이라 빠진다)
 
     def test_expected_day_intraday_and_after_close(self):  # 32, 33
         assert K.expected_trading_day(datetime(2026, 11, 4, 10, 0, tzinfo=KST)) == date(2026, 11, 3)
@@ -342,7 +343,7 @@ class TestFreshnessPolicies:
     def test_calendar_unknown_is_reported(self):
         jan = datetime(2027, 1, 5, 18, 0, tzinfo=KST)
         row = DM.evaluate_source(DM.SOURCE_BY_KEY["market_index"], self.facts(date(2026, 12, 30)), {}, None, jan)
-        assert row["lag_calendar_unknown_days"] == 3 and any("calendar_unknown" in r for r in row["reasons"])
+        assert row["lag_calendar_unknown_days"] == 2 and any("calendar_unknown" in r for r in row["reasons"])  # 58차: 12-31 확정 휴장(1/4·1/5만)
 
     def test_etf_holdings_stale_before_uses_trading_days(self):
         assert DM._stale_before(date(2026, 10, 12)) == date(2026, 10, 8)  # 10-12의 직전 거래일(10-09 휴장)

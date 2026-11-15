@@ -1,5 +1,5 @@
 {
- "version": "krx-2026-11-15.2",
+ "version": "krx-2026-11-15.3",
  "updated": "2026-11-15",
  "market": "KRX 유가증권·코스닥 정규시장",
  "coverage": {
@@ -11,6 +11,7 @@
  "sources": {
   "db": "개발 DB 기록 대조: 2023-10-30~2026-11-03의 평일 중 KS11·KQ11 지수와 주가(stock_price)가 모두 없는 날(733거래일, 주말 행 0). 아래 날짜와 정확히 일치",
   "statute": "관공서의 공휴일에 관한 규정·공휴일에 관한 법률(대체공휴일) — 날짜가 고정된 법정 공휴일",
+  "krx_rule": "한국거래소 휴장일 규정: 연말 휴장일은 12월 31일, 그날이 공휴일·토요일이면 직전 매매거래일(https://global.krx.co.kr/contents/GLB/06/0602/0602010201/GLB0602010201T1.jsp, 2026-11-15 확인). 2026-12-31(목)이 해당한다. KRX KIND '2026 코스닥시장 공시일정 캘린더'(2025-11-21 작성, https://kind.krx.co.kr/external/dst/reference/11625/2026%20%EC%BD%94%EC%8A%A4%EB%8B%A5%EC%8B%9C%EC%9E%A5%20%EA%B3%B5%EC%8B%9C%EC%9D%BC%EC%A0%95%20%EC%BA%98%EB%A6%B0%EB%8D%94_vF.pdf) 12월에도 '2026년 증권시장 폐장'·'2026년 증권시장 연말휴장' 표시(폐장 12-30)",
   "krx_notice": "한국거래소 휴장 공지(언론 보도로 확인): 2026-06-03 지방선거일·2026-07-17 제헌절 휴장(2026-05-20 발표). 2026-11-19 수능일 정규시장 10:00~16:30(2026-11-05 발표, 연합뉴스 https://www.yna.co.kr/view/AKR20261105065500008 · 유안타증권 2026-11-13 공지 https://04.myasset.com/myasset/customer/notice/CU_0201000_P2.cmd?SEQ=202611131405580000000004&gubun=norNotice)"
  },
  "holidays": [
@@ -288,15 +289,14 @@
    "date": "2026-12-25",
    "name": "성탄절",
    "source": "statute"
-  }
- ],
- "unconfirmed": [
+  },
   {
    "date": "2026-12-31",
-   "name": "연말 휴장(관례)",
-   "reason": "한국거래소 연말 휴장 공지 전(보통 12월 중순 발표). 공지가 나오면 holidays로 옮긴다"
+   "name": "연말 휴장",
+   "source": "krx_rule"
   }
  ],
+ "unconfirmed": [],
  "fixed_annual": [
   {
    "md": "01-01",

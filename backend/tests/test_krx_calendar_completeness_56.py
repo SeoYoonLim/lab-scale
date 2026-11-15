@@ -100,9 +100,9 @@ def test_regular_day_market_phase(d, hms, phase):
 
 
 def test_non_trading_days_and_unknown_days():
-    for d in (date(2026, 11, 21), date(2026, 11, 22), date(2026, 12, 25)):
+    for d in (date(2026, 11, 21), date(2026, 11, 22), date(2026, 12, 25), date(2026, 12, 31)):  # 58차: 12-31 연말 휴장 확정
         assert K.market_phase(at(d, "11:00")) == K.NON_TRADING_DAY
-    assert K.market_phase(at(date(2026, 12, 31), "11:00")) == K.INTRADAY  # 미확정(unknown)은 거래일일 수 있는 날, 기본 시각
+    assert K.market_phase(at(date(2027, 1, 4), "11:00")) == K.INTRADAY  # 확인할 수 없는 날(unknown)은 거래일일 수 있는 날, 기본 시각
 
 
 def test_session_is_open_keeps_meaning_before_close_including_pre_market():

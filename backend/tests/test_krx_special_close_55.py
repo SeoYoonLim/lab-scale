@@ -76,7 +76,7 @@ def test_invalid_special_sessions_are_rejected(mutate):
 def test_parsing_the_real_file_is_unchanged_for_holidays_and_coverage():
     cal = K.parse(RAW)
     assert (cal.start, cal.end) == (date(2023, 10, 30), date(2026, 12, 31))
-    assert len(cal.holidays) == 55 and list(cal.unconfirmed) == [date(2026, 12, 31)]
+    assert len(cal.holidays) == 56 and list(cal.unconfirmed) == []  # 58차: 2026-12-31 미확정 -> 연말 휴장
 
 
 # ---------- 2. 지수 확정 검증 경계값(15:40~16:41) ----------
@@ -264,7 +264,7 @@ def test_regular_days_keep_15_30(d):
 
 
 def test_non_trading_and_unregistered_days():
-    sat, hol, unconfirmed, outside = date(2026, 11, 21), date(2026, 12, 25), date(2026, 12, 31), date(2027, 1, 4)
+    sat, hol, unconfirmed, outside = date(2026, 11, 21), date(2026, 12, 25), date(2027, 2, 8), date(2027, 1, 4)  # 58차: 범위 밖 평일 두 개
     assert not K.session_is_open(at(sat, "11:00")) and not K.session_is_open(at(hol, "11:00"))
     assert K.expected_trading_day(at(sat, "11:00")) == date(2026, 11, 20)
     # 특수 마감이 등록되지 않은 날(미확정·범위 밖 평일)은 15:30 규칙. 2027 연초 개장일 등은 공지 뒤 등록해야 한다

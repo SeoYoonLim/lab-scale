@@ -38,7 +38,7 @@ def old_expected_day24(gen: str) -> date:
     ("2026-11-19", KD.TRADING),   # 특수 거래시간 거래일(수능일)
     ("2027-01-01", KD.HOLIDAY),   # 범위 밖이지만 고정 공휴일
     ("2027-02-08", KD.UNKNOWN),   # 범위 밖 평일
-    ("2026-12-31", KD.UNKNOWN),   # 미확정 연말 휴장
+    ("2026-12-31", KD.HOLIDAY),   # 연말 휴장(58차 확정, 57차까지 미확정)
     ("2023-10-27", KD.UNKNOWN),   # 범위 시작 전 평일
 ])
 def test_day_status(d, status):
@@ -51,7 +51,7 @@ def test_special_session_day_is_a_normal_trading_day_with_its_own_hours():
     assert (KD.open_hhmm(D("2026-11-18")), KD.close_hhmm(D("2026-11-18"))) == ("09:00", "15:30")
 
 
-@pytest.mark.parametrize("d", ["2027-02-08", "2026-12-31", "2023-10-27"])
+@pytest.mark.parametrize("d", ["2027-02-08", "2027-01-04", "2023-10-27"])
 def test_unknown_days_raise_instead_of_guessing(d):
     with pytest.raises(KD.CalendarUnknown) as e:
         KD.is_trading_day(D(d))
@@ -119,7 +119,7 @@ def test_invalid_calendar_files_are_rejected(tmp_path, mutate):
 def test_real_file_loads_with_expected_content():
     cal = KD.load()
     assert (cal.start, cal.end) == (D("2023-10-30"), D("2026-12-31"))
-    assert len(cal.holidays) == 55 and cal.unconfirmed == frozenset({D("2026-12-31")})
+    assert len(cal.holidays) == 56 and cal.unconfirmed == frozenset()  # 58차: 12-31 연말 휴장 확정
     assert cal.special_close == {CSAT: "16:30"} and cal.special_open == {CSAT: "10:00"}
 
 
@@ -177,7 +177,7 @@ def test_counts_match_product_for_5_20_60_windows():
 
 def test_counting_into_unknown_days_raises():
     with pytest.raises(KD.CalendarUnknown):
-        KD.nth_trading_day(D("2026-12-30"), 1)         # 12-31 미확정
+        KD.nth_trading_day(D("2026-12-30"), 1)         # 12-31 휴장·01-01 신정 뒤 2027-01-04 미확인(58차)
     with pytest.raises(KD.CalendarUnknown):
         KD.count_trading_days(D("2026-12-28"), D("2027-01-08"))
     with pytest.raises(KD.CalendarUnknown):
