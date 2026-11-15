@@ -550,7 +550,7 @@ _PICK24 = re.compile(r"^굳이 하나를 (?:고르면 (상승|하락) 쪽입니�
 _FAKE_PROB = re.compile(r"(?:상승|하락|오를|내릴)\s*(?:확률|가능성)(?:은|이|는)?\s*(?:약\s*)?\d+(?:\.\d+)?\s*%|\d+(?:\.\d+)?\s*%\s*(?:의\s*)?(?:확률|가능성)")
 _BUY_PUSH = re.compile(r"매수하세요|사세요|살 만합니다|매수를 (?:추천|권)합니다|매수 추천|지금이 매수 기회|팔아야 합니다|매도하세요")
 _STATUS24 = ("최신", "미수집", "수집 실패", "휴장일 추정", "종목만 누락")
-_MARKET_CLOSE_MIN = 15 * 60 + 30
+_MARKET_CLOSE_MIN = 15 * 60 + 30  # 정규 일정 마감. 56차: 판정은 _close_min(그날)을 쓴다(달력 특수 마감, 2026-11-19 16:30)
 TREND_OF = {"상승 추세 지속": 1, "상승 추세 중 조정": 1, "하락 추세 지속": -1}
 
 
@@ -923,14 +923,26 @@ def check_earnings24(db, answer: str, company_name: str, quarter: str | None = N
     return errs
 
 
+def _close_hhmm(d) -> str:
+    """그날 KRX 정규장 마감 "HH:MM". 56차: 제품 코드가 아니라 달력 파일에서 읽는다(evals.quality_judges.krx_close_hhmm)."""
+    from evals.quality_judges import krx_close_hhmm
+    return krx_close_hhmm(d)
+
+
+def _close_min(d) -> int:
+    h, m = _close_hhmm(d).split(":")
+    return int(h) * 60 + int(m)
+
+
 def _before_close24(gen: str) -> bool:
     from datetime import datetime
     t = datetime.strptime(gen, "%Y-%m-%d %H:%M")
-    return t.weekday() < 5 and t.hour * 60 + t.minute < _MARKET_CLOSE_MIN
+    return t.weekday() < 5 and t.hour * 60 + t.minute < _close_min(t.date())
 
 
 def _expected_day24(gen: str):
-    """종가가 있어야 할 가장 최근 평일. 평일 15:30 전이면 직전 평일(KRX 휴장일 달력은 없다)."""
+    """종가가 있어야 할 가장 최근 평일. 평일 마감(평소 15:30, 달력의 특수 마감일은 그 값) 전이면 직전 평일.
+    KRX 휴장일은 보지 않는다(24차 평가 기준 그대로. 제품은 36차부터 휴장일을 본다: 56차 보고서 4절)."""
     from datetime import datetime, timedelta
     d = datetime.strptime(gen, "%Y-%m-%d %H:%M").date()
     if _before_close24(gen):
@@ -951,7 +963,8 @@ def status24(db, company_name: str, base: str, gen: str) -> tuple[str, str]:
         return exp.isoformat(), "종목만 누락"
     runs = db.execute(text(
         "select status from data_refresh_log where step = 'prices' and status in ('success', 'failed') "
-        "and started_at >= (cast(:d as date) + time '15:30') at time zone 'Asia/Seoul' order by id desc"), {"d": exp.isoformat()}).fetchall()
+        "and started_at >= (cast(:d as date) + cast(:close as time)) at time zone 'Asia/Seoul' order by id desc"),
+        {"d": exp.isoformat(), "close": _close_hhmm(exp)}).fetchall()
     if runs and runs[0][0] == "failed":
         return exp.isoformat(), "수집 실패"
     if runs:

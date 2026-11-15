@@ -32,7 +32,7 @@ def recs(day: date, value: float = 4000.12) -> list[dict]:
 # ---------- 1. 달력 JSON ----------
 
 def test_calendar_has_exactly_one_special_close_for_csat():
-    assert RAW["special_sessions"] == [{"date": "2026-11-19", "close": "16:30", "name": "2027학년도 대학수학능력시험일(정규시장 10:00~16:30)",
+    assert RAW["special_sessions"] == [{"date": "2026-11-19", "open": "10:00", "close": "16:30", "name": "2027학년도 대학수학능력시험일(정규시장 10:00~16:30)",
                                         "source": "krx_notice"}]
     assert RAW["special_sessions"][0]["source"] in RAW["sources"]
     cal = K.calendar()
@@ -89,8 +89,8 @@ NAVER_SAME = {K.previous_trading_day(CSAT): 3990.55, CSAT: 4000.12}  # 장중 �
     ("15:40:00", True, ic.INTRADAY),   # 변경 전: 15:30 + 10분이라 여기서 confirmed가 됐다
     ("16:00:00", True, ic.INTRADAY),
     ("16:29:59", True, ic.INTRADAY),
-    ("16:30:00", True, ic.INTRADAY),   # 정규장 마감 도달, 확정 대기
-    ("16:39:59", True, ic.INTRADAY),   # 10분 확인 지연 안
+    ("16:30:00", True, ic.CONFIRMATION_PENDING),   # 정규장 마감 도달, 확정 대기(56차: intraday와 나눔)
+    ("16:39:59", True, ic.CONFIRMATION_PENDING),   # 10분 확인 지연 안
     ("16:40:00", False, ic.CONFIRMED),  # 확정 검증 시도 가능(네이버와 같아서 확정)
     ("16:41:00", False, ic.CONFIRMED),
 ])
@@ -132,11 +132,11 @@ def test_held_csat_row_is_never_written(monkeypatch):
 
     monkeypatch.setattr(collectors, "SessionLocal", lambda: pytest.fail("DB를 열면 안 된다"))
     frame = pd.DataFrame({"Close": [4000.12], "Change": [0.0]}, index=pd.to_datetime(["2026-11-19"]))
-    for hms in ("16:00", "16:35"):
+    for hms, why in (("16:00", ic.INTRADAY), ("16:35", ic.CONFIRMATION_PENDING)):
         res = collectors.fetch_and_save_market_index(
             "KS11", start_date="2026-11-19", end_date="2026-11-19", now=at(CSAT, hms), reader=lambda s, a, b: frame,
             naver_get=lambda u, p: [{"localTradedAt": "2026-11-19", "closePrice": "4,000.12"}])
-        assert res.ok and res.saved == 0 and res.held_dates[0]["status"] == ic.INTRADAY
+        assert res.ok and res.saved == 0 and res.held_dates[0]["status"] == why
     res = collectors.fetch_and_save_market_index(
         "KS11", start_date="2026-11-19", end_date="2026-11-19", now=at(CSAT, "16:41"), reader=lambda s, a, b: frame,
         naver_get=lambda u, p: [{"localTradedAt": "2026-11-19", "closePrice": "4,011.00"}])

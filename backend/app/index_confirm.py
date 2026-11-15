@@ -9,7 +9,10 @@
 - 그래서 14시~23시에 수집하면 장중 값이 그날 종가로 저장됐다(검증 DB 11-11, 개발 DB 11-03). 시장 요약은 15:30 뒤 그 행을 "latest"로 보였다.
 
 ## 규칙(collectors.fetch_and_save_market_index가 저장 전에 적용)
-- 오늘 행은 그날 정규장 마감(krx_calendar.close_time, 특수일 포함) + CONFIRM_DELAY 전에는 저장하지 않는다(intraday).
+- 오늘 행은 그날 정규장 마감(krx_calendar.close_time, 특수일 포함) + CONFIRM_DELAY 전에는 저장하지 않는다.
+  56차: 보류 사유를 나눈다(모두 내부 판정, 수집 출력에만 보인다. 공개 API 값은 바꾸지 않는다):
+  pre_market(개장 krx_calendar.open_time 전) / intraday(개장~마감 전) / confirmation_pending(마감~마감 + CONFIRM_DELAY).
+  마감 + CONFIRM_DELAY 뒤에는 "확정을 시도"할 뿐이다. 아래 대조를 통과해야 confirmed다(시각만으로 확정하지 않는다).
 - 네이버 지수 일별(m.stock.naver.com/api/index/{KOSPI|KOSDAQ}/price, 비공식)과 날짜가 겹치는 행은 값이 같을 때만 저장한다
   (TOLERANCE 안). 다르면 저장하지 않는다(mismatch). 네이버는 15:30 뒤 그날 확정 종가를 보인다(11-13 관찰).
 - 네이버를 읽지 못했거나 네이버에 그 날짜가 없으면, 수집한 행 중 **마지막 행**만 저장하지 않는다(unverified).
@@ -38,10 +41,13 @@ TOLERANCE = 0.005  # 지수는 소수 둘째 자리까지다
 
 CONFIRMED = "confirmed"  # 네이버와 같다
 TRUSTED_OLDER = "older_than_latest"  # 대조 범위 밖이지만 마지막 행보다 앞선 날(캐시가 그 뒤에 갱신됨)
-INTRADAY = "intraday"
+PRE_MARKET = "pre_market"  # 56차: 오늘 개장 전(그날 행이 있으면 종가가 아니다)
+INTRADAY = "intraday"  # 개장~마감 전. 미래 날짜 행도 이 값이다(50차와 같음)
+CONFIRMATION_PENDING = "confirmation_pending"  # 56차: 마감~마감 + CONFIRM_DELAY(지수 종가 게시 전일 수 있다)
 MISMATCH = "mismatch"
 UNVERIFIED = "unverified"
-HELD = (INTRADAY, MISMATCH, UNVERIFIED)
+HELD = (PRE_MARKET, INTRADAY, CONFIRMATION_PENDING, MISMATCH, UNVERIFIED)
+TIME_HELD = (PRE_MARKET, INTRADAY, CONFIRMATION_PENDING)  # 시각 때문에 보류(대조하지 않음)
 
 
 @dataclass(frozen=True)
@@ -76,15 +82,26 @@ def fetch_naver_closes(index_code: str, get=None) -> dict[date, float] | None:
     return {date.fromisoformat(r["localTradedAt"][:10]): _num(r["closePrice"]) for r in rows}
 
 
-def intraday(day: date, now: datetime) -> bool:
-    """그날 정규장 마감 + CONFIRM_DELAY 전인가(오늘 또는 그 뒤 날짜). now는 KST로 본다."""
+def time_status(day: date, now: datetime) -> str | None:
+    """시각 때문에 대조하지 않고 보류할 사유(PRE_MARKET·INTRADAY·CONFIRMATION_PENDING). 대조를 시도해도 되면 None. now는 KST로 본다.
+    개장·마감은 krx_calendar.open_time·close_time(특수일 포함)에서만 읽는다."""
     now = krx_calendar._kst(now)
     if day > now.date():
-        return True
+        return INTRADAY
     if day < now.date():
-        return False
-    close_at = datetime.combine(day, krx_calendar.close_time(day), tzinfo=krx_calendar.KST) + CONFIRM_DELAY
-    return now < close_at
+        return None
+    t = now.time()
+    if t < krx_calendar.open_time(day):
+        return PRE_MARKET
+    if t < krx_calendar.close_time(day):
+        return INTRADAY
+    close_at = datetime.combine(day, krx_calendar.close_time(day), tzinfo=krx_calendar.KST)
+    return CONFIRMATION_PENDING if now < close_at + CONFIRM_DELAY else None
+
+
+def intraday(day: date, now: datetime) -> bool:
+    """그날 정규장 마감 + CONFIRM_DELAY 전인가(오늘 또는 그 뒤 날짜). 50차 이름 그대로(장 시작 전·마감 직후 대기도 True)."""
+    return time_status(day, now) is not None
 
 
 def decide(records: list[dict], naver: dict[date, float] | None, now: datetime) -> list[Decision]:
@@ -96,8 +113,8 @@ def decide(records: list[dict], naver: dict[date, float] | None, now: datetime) 
     for r in records:
         d, v = r["price_date"], float(r["close_price"])
         ref = (naver or {}).get(d)
-        if intraday(d, now):
-            status = INTRADAY
+        if (held := time_status(d, now)) is not None:
+            status = held
         elif ref is not None:
             status = CONFIRMED if abs(v - ref) <= TOLERANCE else MISMATCH
         elif d < last:

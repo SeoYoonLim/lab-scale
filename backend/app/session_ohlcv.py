@@ -14,6 +14,7 @@
 ## 이 모듈이 하지 않는 것
 - DB에 쓰지 않는다(세션별 저장 테이블은 제안만, 문서 11절). 7거래일보다 오래된 날의 정규장 값은 만들 수 없다.
 - 분봉에 없는 체결(거래량 차이, unattributed)의 구성은 확인하지 못했다(시간외 대량매매 등으로 추정, 미확인).
+- 56차: 세션 창은 정규 일정 고정값이다. 개장·마감이 다른 특수 거래일은 compare_day가 special_session_day로 판정하지 않는다.
 """
 from __future__ import annotations
 
@@ -84,6 +85,10 @@ def regular_issue(sessions: dict[str, SessionBar], d: date, now: datetime) -> st
     """정규장 값을 쓸 수 없는 이유. 쓸 수 있으면 None."""
     if not day_complete(d, now):
         return "day_incomplete"
+    if (krx_calendar.open_time(d), krx_calendar.close_time(d)) != (time(9, 0), time(15, 30)):
+        # 56차: SESSIONS는 정규 일정(09:00~15:30) 고정 창이다. 특수 거래일(2026-11-19 10:00~16:30)은 여기서 판정하지 않는다
+        # (app.session_bars·krx_session_schedule.json의 날짜별 일정을 쓴다)
+        return "special_session_day"
     reg = sessions.get(REGULAR)
     if reg is None:
         return "no_regular_bars"

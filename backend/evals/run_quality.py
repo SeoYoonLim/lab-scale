@@ -161,9 +161,10 @@ def _kst(s: str) -> datetime:
 
 
 def _visible_rows(rows: list[tuple], now: datetime) -> list[tuple]:
-    """평가기 쪽 장중 처리(제품과 따로): 평일 15:30 전이면 오늘 날짜 행은 종가가 아니므로 정답 계산에서 뺀다."""
+    """평가기 쪽 장중 처리(제품과 따로): 평일 마감(평소 15:30, 달력의 특수 마감일은 그 값) 전이면 오늘 날짜 행은 종가가 아니므로
+    정답 계산에서 뺀다(56차: 마감 시각은 J.krx_close_hhmm, 제품 코드가 아니라 달력 파일에서 읽는다)."""
     today = now.date()
-    if now.weekday() < 5 and now.strftime("%H:%M") < "15:30":
+    if now.weekday() < 5 and now.strftime("%H:%M") < J.krx_close_hhmm(today):
         return [r for r in rows if r[0] != today]
     return rows
 

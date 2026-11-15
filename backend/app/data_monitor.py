@@ -37,7 +37,8 @@ logger = logging.getLogger(__name__)
 
 STATUSES = ("healthy", "stale", "partial", "failed", "running", "never_run", "disabled", "unsupported")
 QUALITY = ("ok", "warning", "error")
-MARKET_CLOSE = (15, 30)
+MARKET_CLOSE = (15, 30)  # 환율 평일 정책 전용(56차 조사). KRX 정규장 마감이 아니다: 환율 원천(FDR USD/KRW = Yahoo KRW=X)은 24시간 시세이고
+# 날짜는 원천 일봉 날짜라 KRX 달력·특수 마감(2026-11-19 16:30)을 적용하지 않는다. KRX 판정은 app.krx_calendar.close_time을 쓴다
 
 
 @dataclass(frozen=True)
@@ -100,7 +101,9 @@ def expected_close_date(now: datetime) -> date:
 
 
 def expected_weekday_close(now: datetime) -> date:
-    """환율: 평일 15:30 전이면 직전 평일, 아니면 오늘 이하의 마지막 평일(KRX 휴장일도 평일로 본다)."""
+    """환율: 평일 15:30 전이면 직전 평일, 아니면 오늘 이하의 마지막 평일(KRX 휴장일도 평일로 본다).
+    56차: KRX 특수 마감(수능일 16:30)을 적용하지 않는다. 환율 원천은 한국 휴장일에도 값을 주고(개발 DB 10일 중 6일), 날짜가 원천(Yahoo) 일봉
+    날짜라 서울 외환시장 시각과도 맞지 않는다(영국 서머타임 기간에는 일~목 날짜, 2026-10-26부터 월~금 날짜)."""
     now = now.astimezone(KST)
     d = last_weekday(now.date())
     if d == now.date() and (now.hour, now.minute) < MARKET_CLOSE:

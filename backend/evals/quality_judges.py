@@ -516,6 +516,19 @@ def _krx_holidays() -> tuple[frozenset, date, date, frozenset]:
     return hol, date.fromisoformat(data["coverage"]["start"]), date.fromisoformat(data["coverage"]["end"]), fixed
 
 
+@lru_cache(maxsize=1)
+def _krx_closes() -> tuple[str, dict]:
+    """(정규 마감 "HH:MM", {날짜: 특수 마감 "HH:MM"}). 56차: 제품 코드를 import하지 않고 같은 달력 파일(special_sessions)만 읽는다."""
+    data = json.loads(_CALENDAR_FILE.read_text(encoding="utf-8"))
+    return data.get("regular_close", "15:30"), {date.fromisoformat(s["date"]): s["close"] for s in data.get("special_sessions", [])}
+
+
+def krx_close_hhmm(d: date) -> str:
+    """그날 KRX 정규장 마감 "HH:MM"(평소 15:30, 달력에 특수 마감이 있는 날은 그 값. 2026-11-19 16:30)."""
+    regular, special = _krx_closes()
+    return special.get(d, regular)
+
+
 def krx_closed(d: date) -> bool:
     """KRX 정규시장이 열리지 않는 날(주말·달력의 휴장일·범위 밖 고정 휴장일). 미확정·범위 밖 평일은 열릴 수 있는 날로 본다."""
     hol, start, end, fixed = _krx_holidays()
@@ -536,11 +549,12 @@ def trading_days_behind(latest: date, reference: date) -> int:
 
 
 def expected_trading_day(now_date: date, now_hhmm: str = "20:00") -> date:
-    """KST 기준 종가가 있어야 할 가장 최근 거래일. 거래일 15:30 전이면 직전 거래일(장중), 주말·휴장일이면 그 앞 거래일."""
+    """KST 기준 종가가 있어야 할 가장 최근 거래일. 거래일 마감(평소 15:30, 특수일은 달력 값) 전이면 직전 거래일(장중),
+    주말·휴장일이면 그 앞 거래일."""
     d = now_date
     while krx_closed(d):
         d -= timedelta(days=1)
-    if d == now_date and now_hhmm < "15:30":
+    if d == now_date and now_hhmm < krx_close_hhmm(d):
         d -= timedelta(days=1)
         while krx_closed(d):
             d -= timedelta(days=1)
