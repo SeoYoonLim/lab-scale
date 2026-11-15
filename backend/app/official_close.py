@@ -28,12 +28,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, time
 
-from app import http_retry
+from app import http_retry, krx_calendar
 
 NAVER_DAILY_URL = "https://m.stock.naver.com/api/stock/{ticker}/price"
 PAGE_SIZE = 60  # 이보다 크면 400(2026-11-11 확인)
 MAX_PAGES = 40  # 2,400거래일(약 10년). 45차: 10이면 600행에서 멈춰 ETF 전체 기간(약 750행)의 앞부분이 수정주가로 남았다
-REGULAR_CLOSE = time(15, 30)  # 이 시각 전 당일 행은 장중 값이다
+REGULAR_CLOSE = time(15, 30)  # 정규 일정의 마감. 55차부터 판정은 krx_calendar.close_time(그날)을 쓴다(수능일 16:30)
 REQUEST_TIMEOUT_S = 10
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
@@ -144,7 +144,7 @@ def official_records(ticker: str, asset_type: str, start: date, rows: list[dict]
     - 시가·고가·저가·거래량: 같은 네이버 일별 시세 행(fchart와 같다). 2026-09-14 이후 주식은 애프터마켓 체결이 포함된 통합 값이다(46차).
     - 주식의 최신 거래일은 쓰지 않는다: 다음 거래일 기준가가 아직 없고, 당일 행은 NXT까지 합친 통합 값이다.
     - 등락률은 저장하는 공식 종가끼리 다시 계산한다(원천의 전일 대비를 쓰지 않는다).
-    - ETF의 최신 거래일은 그날 15:30(KST) 뒤에만 쓴다(now는 KST 시각, 없으면 쓴다). 장중에는 그 행이 장중 값이다(45차).
+    - ETF의 최신 거래일은 그날 정규장 마감(15:30, 특수일은 krx_calendar.close_time) 뒤에만 쓴다(now는 KST 시각, 없으면 쓴다). 장중에는 그 행이 장중 값이다(45차).
     - source(45차, 권장): {날짜: 원천(FDR) 레코드}. 주면 원천 행(수정주가 체계의 시가·고가·저가·거래량)을 그대로 쓰고 종가만
       공식 종가 x (원천 종가 / 네이버 실제 종가)로 바꾼다. FDR은 기업 이벤트·ETF 분배 뒤 과거 전체를 조정하므로, 실제 종가를 그대로
       쓰면 교정 구간 경계에 가짜 급등락이 생긴다(엘앤씨바이오 2026-09-14 +93%). ETF는 공식 종가 = 실제 종가라 원천 값 그대로다.
@@ -163,7 +163,7 @@ def official_records(ticker: str, asset_type: str, start: date, rows: list[dict]
     for d in days:
         close = d.official_close
         if d.kind == PROVISIONAL and asset_type == "etf":
-            intraday = now is not None and d.day >= now.date() and now.time() < REGULAR_CLOSE
+            intraday = now is not None and d.day >= now.date() and now.time() < krx_calendar.close_time(now.date())
             # ETF는 애프터마켓 대상이 아니다. 최신일 거래량은 장 마감 뒤 조금 늘 수 있다. 장중이면 쓰지 않는다
             close = None if intraday else d.source_close
         if close is None:

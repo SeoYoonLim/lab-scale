@@ -79,11 +79,11 @@ def test_calendar_special_close_without_registered_schedule_is_unknown():
 
 
 def test_calendar_mismatch_is_reported_for_csat_day():
-    """세션 일정은 16:30 마감인데 기존 달력(krx_calendar.json)은 11-19 특수 마감이 없다(15:30). 54차에서는 달력을 바꾸지 않았다."""
-    assert ss.calendar_mismatches() == [{"date": "2026-11-19", "schedule_close": "16:30", "calendar_close": "15:30"}]
+    """54차: 기존 달력에 11-19 특수 마감이 없으면(15:30) 불일치로 드러난다. 55차: 달력에 16:30을 넣어 실제 파일은 불일치가 없다."""
+    assert ss.calendar_mismatches() == []
     cal = krx_calendar.calendar()
-    fixed = krx_calendar.Calendar(**{**cal.__dict__, "special_close": {**cal.special_close, SAT: time(16, 30)}})
-    assert ss.calendar_mismatches(cal=fixed) == []
+    unfixed = krx_calendar.Calendar(**{**cal.__dict__, "special_close": {k: v for k, v in cal.special_close.items() if k != SAT}})
+    assert ss.calendar_mismatches(cal=unfixed) == [{"date": "2026-11-19", "schedule_close": "16:30", "calendar_close": "15:30"}]
 
 
 def _bad(mutate):
@@ -141,7 +141,7 @@ def test_csat_synthetic_day_classifies_into_shifted_sessions():
     assert (pc.first_bar_at.minute, pc.last_bar_at.minute, pc.bar_count, pc.volume) == (40, 59, 2, 25)  # 16:40~16:59
     assert (am.first_bar_at.hour, am.last_bar_at.hour, am.volume) == (17, 19, 67)  # 17:00~19:59
     assert r.schedule == {"date": "2026-11-19", "kind": "override", "status": "announced", "label": ss.resolve(SAT)[0].label}
-    assert "calendar_close_mismatch" in r.flags
+    assert "calendar_close_mismatch" not in r.flags  # 55차: 달력과 일정이 모두 16:30
 
 
 @pytest.mark.parametrize("hm", ["0900", "0930", "0959"])

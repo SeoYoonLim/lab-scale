@@ -11,13 +11,17 @@ unknown은 거래일로 단정하지 않는다. 다만 "기대 거래일"·"지�
 (오래된 데이터를 최신이라고 말하지 않는 쪽, 지연을 크게 잡는 쪽). 그 대신 lag()·unknown_days()가 미확인 일수를 따로 돌려주고,
 화면 문장(app.quote_freshness)과 운영 보고서(app.data_monitor)는 이 값으로 "달력 범위 밖/미확정"이라고 밝힌다.
 
-장 마감: 정규시장 15:30(KST). special_sessions에 마감 시각이 다른 날(수능일 등)을 KRX 공지 뒤 넣으면 그날만 그 시각을 쓴다.
+장 마감: 정규시장 15:30(KST). special_sessions에 마감 시각이 다른 날(수능일 등)을 KRX 공지 뒤 넣으면 그날만 그 시각을 쓴다
+(2026-11-19 수능일 16:30, 55차). close_time()은 정규시장 마감이다(장후 시간외·애프터마켓 종료가 아니다).
+장 마감 판정이 필요한 코드는 15:30 상수 대신 close_time(날짜)를 쓴다(55차: 지수 확정·장중 판정·기대 거래일·ETF 최신일·뉴스 반응 기준일).
+calendar()는 프로세스 안에서 한 번만 읽는다(lru_cache): JSON을 바꾸면 실행 중인 서버는 재시작해야 반영된다.
 환율·뉴스·공시는 이 달력을 쓰지 않는다(app.data_status의 평일 함수, docs/DATA_QUALITY_AND_TRADING_CALENDAR.md).
 """
 
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache
@@ -49,6 +53,27 @@ def _hm(s: str) -> time:
     return time(int(h), int(m))
 
 
+_HM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def _special_sessions(items: list[dict], start: date, end: date, holidays: dict[date, str]) -> dict[date, time]:
+    """special_sessions -> {날짜: 정규시장 마감}. close는 정규시장 마감(종가 단일가 체결) 시각이다. 애프터마켓·시간외 종료가 아니다.
+    55차: 중복·주말·휴장일·범위 밖 날짜·HH:MM 형식 오류는 ValueError(같은 날짜가 두 번이면 뒤 값이 조용히 이기던 것을 막는다)."""
+    out: dict[date, time] = {}
+    for s in items:
+        d = date.fromisoformat(s["date"])
+        if not start <= d <= end:
+            raise ValueError(f"특수 마감일 {d}가 적용 범위({start}~{end}) 밖입니다")
+        if d.weekday() >= 5 or d in holidays:
+            raise ValueError(f"특수 마감일 {d}가 거래일이 아닙니다(주말·휴장일)")
+        if d in out:
+            raise ValueError(f"특수 마감일 {d}가 두 번 있습니다")
+        if not isinstance(s.get("close"), str) or not _HM_RE.match(s["close"]):
+            raise ValueError(f"특수 마감일 {d}의 close 형식이 HH:MM이 아닙니다: {s.get('close')!r}")
+        out[d] = _hm(s["close"])
+    return out
+
+
 def parse(data: dict) -> Calendar:
     """JSON -> Calendar. 형식 오류(범위 밖 휴장일, 주말 휴장일, 중복)는 ValueError(달력 데이터를 고칠 때 바로 드러나게)."""
     start, end = date.fromisoformat(data["coverage"]["start"]), date.fromisoformat(data["coverage"]["end"])
@@ -65,7 +90,7 @@ def parse(data: dict) -> Calendar:
     unconfirmed = {date.fromisoformat(u["date"]): u["name"] for u in data.get("unconfirmed", [])}
     if overlap := set(unconfirmed) & set(holidays):
         raise ValueError(f"확정·미확정 휴장일이 겹칩니다: {sorted(overlap)}")
-    special = {date.fromisoformat(s["date"]): _hm(s["close"]) for s in data.get("special_sessions", [])}
+    special = _special_sessions(data.get("special_sessions", []), start, end, holidays)
     fixed = {(int(f["md"][:2]), int(f["md"][3:])): f["name"] for f in data.get("fixed_annual", [])}
     # 범위 안에서는 고정 휴장일이 평일이면 반드시 휴장일 목록에 있어야 한다(목록을 고칠 때 빠뜨리지 않게)
     d = start

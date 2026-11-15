@@ -25,7 +25,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from app.backtest import sma, sma_target
-from app.briefing import KST, MARKET_CLOSE, drop_open_session, session_is_open
+from app.briefing import KST, drop_open_session, session_is_open
 from app.data_status import business_days_behind, last_business_day
 from app.disclaimer import DISCLAIMER
 from app.etf import leverage_kind, leverage_notice
@@ -846,7 +846,9 @@ def price_status(db, base_date: date, now: datetime) -> dict:
         out.update(status=PRICE_STATUS_STOCK_ONLY,
                    detail=f"지수에는 {idx.isoformat()} 시세가 있음, 거래정지이거나 이 종목만 수집되지 않았을 수 있음")
         return out
-    close_at = datetime.combine(expected, MARKET_CLOSE, tzinfo=KST)
+    from app.krx_calendar import close_time
+
+    close_at = datetime.combine(expected, close_time(expected), tzinfo=KST)  # 55차: 특수 마감일(수능일 16:30) 포함
     runs = (db.query(DataRefreshLog).filter(DataRefreshLog.step == "prices", DataRefreshLog.status.in_(("success", "failed")))
             .order_by(DataRefreshLog.id.desc()).limit(20).all())
     after = [r for r in runs if r.started_at is not None and r.started_at >= close_at]

@@ -107,11 +107,13 @@ def mask_secrets(text: str, secrets: tuple[str, ...] | None = None) -> str:
 
 
 def is_market_hours(now: datetime) -> bool:
-    """거래일 09:00~15:30 KST이면 True. 2026-11-08(36차)부터 KRX 휴장일은 장중이 아니다(app.krx_calendar)."""
-    from app.krx_calendar import HOLIDAY, day_status
+    """거래일 09:00~정규장 마감(15:30) KST이면 True. 2026-11-08(36차)부터 KRX 휴장일은 장중이 아니다(app.krx_calendar).
+    55차: 마감은 krx_calendar.close_time(그날)이다(수능일 2026-11-19는 16:30까지 장중. 시작은 09:00 그대로라 그날 09:00~10:00도 경고한다)."""
+    from app.krx_calendar import HOLIDAY, close_time, day_status
 
     now = now.astimezone(KST)
-    return now.weekday() < 5 and day_status(now.date()) != HOLIDAY and (9, 0) <= (now.hour, now.minute) <= (15, 30)
+    close = close_time(now.date())
+    return now.weekday() < 5 and day_status(now.date()) != HOLIDAY and (9, 0) <= (now.hour, now.minute) <= (close.hour, close.minute)
 
 
 def select_steps(only: list[str] | None, skip: list[str] | None) -> list[str]:

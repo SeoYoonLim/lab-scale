@@ -31,6 +31,7 @@ from pathlib import Path
 
 from sqlalchemy import func, select, text
 
+from app import krx_calendar
 from app.collectors import fetch_and_save_market_index, fetch_and_save_stock
 from app.db.session import SessionLocal
 from app.models import Company, DataRefreshLog, MarketIndex, StockPrice
@@ -41,14 +42,15 @@ from scripts.refresh_data import KST, is_market_hours
 BACKEND = Path(__file__).resolve().parents[1]
 STATE_FILE = BACKEND / "backups" / "backfill_state.json"
 DEFAULT_REPORT = BACKEND / "scripts" / "backfill_history_report.json"
-MARKET_CLOSE = dtime(15, 30)
+MARKET_CLOSE = dtime(15, 30)  # 정규 일정의 마감. 55차부터 period()는 krx_calendar.close_time을 쓴다
 MAX_YEARS = 10
 
 
 def period(now: datetime, years: int) -> tuple[date, date]:
     """(시작, 끝). 끝은 평일 15:30 전이면 어제(오늘 행은 장중 값이거나 아직 없다), 아니면 오늘."""
     now = now.astimezone(KST)
-    end = now.date() - timedelta(days=1) if now.weekday() < 5 and now.time() < MARKET_CLOSE else now.date()
+    close = krx_calendar.close_time(now.date())  # 55차: 특수 마감일(수능일 16:30)
+    end = now.date() - timedelta(days=1) if now.weekday() < 5 and now.time() < close else now.date()
     try:
         start = end.replace(year=end.year - years)
     except ValueError:  # 2월 29일
