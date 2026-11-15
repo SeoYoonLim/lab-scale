@@ -3049,7 +3049,7 @@ curl http://localhost:8000/api/status
 | `sources.news.latest_published_date` | date \| null | 뉴스 발행일 중 가장 최근(KST 기준 날짜) |
 | `sources.disclosure.latest_date` | date \| null | 공시일 중 가장 최근(KST 기준 날짜) |
 | `last_refresh` | object \| null | 마지막 `scripts/refresh_data.py` 실행 요약. 기록이 없으면 `null`. `refresh_data` 밖의 수집(`collect_prices`·`collect_market_index` 등 개별 스크립트)은 반영되지 않는다. 그래서 데이터 기준일(`sources.*.latest_date`)보다 이를 수 있다(60차 확인: `last_refresh` 2026-11-03, 시세 2026-11-12). 화면의 "데이터 기준일"은 `sources.*.latest_date`를 쓴다 |
-| `last_refresh.finished_at` | string \| null | 그 실행의 마지막 단계 종료 시각(KST) |
+| `last_refresh.finished_at` | string \| null | 그 실행의 마지막 단계 종료 시각(KST). 일부 단계만 돈 실행(예: `--only fx`, 나머지 `skipped`)도 한 실행이다. 그래서 뉴스가 그 시각에 갱신됐다는 뜻은 아니다(61차 확인: 2026-11-03 20:03은 환율만 돈 실행, 뉴스는 19:54). 단계별 마지막 시도는 시장 요약 `last_collection`·목록 `freshness.last_collection`을 본다 |
 | `last_refresh.ok` | boolean | 실패한 단계가 없으면 `true`(건너뛴 단계는 실패로 보지 않는다) |
 | `last_refresh.failed_steps` | string[] | 실패한 단계 이름(`prices`, `index`, `fx`, `news`, `embed`, `content`) |
 | `is_realtime` | boolean | 항상 `false`. 이 값들은 종가 기준 DB 값이다 |
@@ -3469,6 +3469,13 @@ curl "http://localhost:8000/api/stocks/005930/news?limit=20&offset=0"
 - **중복:** 같은 종목에 같은 URL이 두 번 저장됐으면(유니크 제약이 없다, `docs/DATA_QUALITY_AND_TRADING_CALENDAR.md`) `id`가 가장 큰 행 하나만 보인다.
   다른 종목에 연결된 같은 URL 행은 지우거나 숨기지 않는다. 제목이 비슷한 다른 언론사 기사는 묶지 않는다(일일 브리핑은 묶는다).
 - **빈 결과:** 200 + `items: []`, `total: 0`. `freshness.last_collection.status`가 `failed`면 수집 실패, `success`인데 비었으면 저장된 기사가 원래 없는 것이다.
+- **수집 범위(61차 확인)**: 뉴스는 전체 기사가 아니라 **실행마다 종목당 최신 기사 최대 10건**이다.
+  - 주식은 네이버 뉴스 검색 최신순 30건을 한 번 받아 관련성 높은 기사를 먼저 고른다.
+  - ETF는 최신순·관련도순 각 100건을 받아 ETF 이름이 나오는 기사만 최신순으로 고른다.
+  - 둘 다 `collect_universe --display 10`이고 페이지 넘김이 없다.
+  - 수집이 며칠 멈췄다가 다시 돌면, 그 사이 기사 중 최신 10건보다 오래된 것은 채워지지 않는다.
+  - 공시는 실행마다 최근 90일을 끝까지 받으므로 공백이 채워진다.
+  - 2026-11-15 현재 뉴스·공시 모두 2026-11-03 19:54 KST 수집이 마지막이다(`docs/NEWS_DISCLOSURE_FRESHNESS_AUDIT_61.md`).
 
 | 상태 | 원인 | 응답 |
 | --- | --- | --- |
