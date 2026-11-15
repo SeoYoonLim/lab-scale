@@ -3048,7 +3048,7 @@ curl http://localhost:8000/api/status
 | `sources.exchange_rate.latest_date` | date \| null | 환율(USD/KRW)의 최신 날짜 |
 | `sources.news.latest_published_date` | date \| null | 뉴스 발행일 중 가장 최근(KST 기준 날짜) |
 | `sources.disclosure.latest_date` | date \| null | 공시일 중 가장 최근(KST 기준 날짜) |
-| `last_refresh` | object \| null | 마지막 `scripts/refresh_data.py` 실행 요약. 기록이 없으면 `null` |
+| `last_refresh` | object \| null | 마지막 `scripts/refresh_data.py` 실행 요약. 기록이 없으면 `null`. `refresh_data` 밖의 수집(`collect_prices`·`collect_market_index` 등 개별 스크립트)은 반영되지 않는다. 그래서 데이터 기준일(`sources.*.latest_date`)보다 이를 수 있다(60차 확인: `last_refresh` 2026-11-03, 시세 2026-11-12). 화면의 "데이터 기준일"은 `sources.*.latest_date`를 쓴다 |
 | `last_refresh.finished_at` | string \| null | 그 실행의 마지막 단계 종료 시각(KST) |
 | `last_refresh.ok` | boolean | 실패한 단계가 없으면 `true`(건너뛴 단계는 실패로 보지 않는다) |
 | `last_refresh.failed_steps` | string[] | 실패한 단계 이름(`prices`, `index`, `fx`, `news`, `embed`, `content`) |
@@ -3282,10 +3282,10 @@ curl "http://localhost:8000/api/stocks/005930/price-history?days=90"
 | `count` | int | 실제로 들어 있는 `items` 개수(`<= days`). 데이터가 `days`보다 적으면 `count < days`이고 에러가 아니다 |
 | `price_as_of` | date \| null | `items` 마지막 날짜(가장 최근 거래일). 주가가 없으면 `null` |
 | `items[].date` | date | 거래일(`YYYY-MM-DD`). **날짜 오름차순**(과거 -> 최근)이라 차트에 그대로 그리면 된다 |
-| `items[].close` | number | 종가 |
-| `items[].volume` | int \| null | 거래량(주) |
+| `items[].close` | number | 저장 종가. 47차 교정 뒤 개발 DB는 **공식 종가(KRX 정규장 마감) x 원천 수정주가 비율**이다([시세 데이터 기준](#시세-데이터-기준-ohlcv-세션-범위와-지수-확정-2026-11-13-50차)). OpenAPI 타입은 `number \| null`이지만 DB 열이 NOT NULL이라 null은 나오지 않는다(60차 확인) |
+| `items[].volume` | int \| null | 거래량(주). KRX 하루 거래량(정규장·장후 종가매매·애프터마켓 포함, **NXT 제외**). 정규장 거래량이 아니다([시세 데이터 기준](#시세-데이터-기준-ohlcv-세션-범위와-지수-확정-2026-11-13-50차)) |
 | `items[].change_pct` | number \| null | 전일 대비 등락률(%) |
-| `items[].open`, `high`, `low` | number \| null | 시가, 고가, 저가 |
+| `items[].open`, `high`, `low` | number \| null | 시가(KRX 정규장), 고가·저가(KRX 하루 범위: 2026-09-14 이후 주식은 **장 마감 뒤 KRX 애프터마켓 체결 포함**, ETF는 정규장). [시세 데이터 기준](#시세-데이터-기준-ohlcv-세션-범위와-지수-확정-2026-11-13-50차) |
 | `available_count` | int | (2026-11-10 추가) 이 종목의 저장된 주가 행 **전체** 수. `days`와 무관하다. 180·365거래일 버튼을 켤지 정할 때 쓴다(`available_count < 365`면 365는 모자란다) |
 | `first_date` | date \| null | (2026-11-10 추가) 이 종목의 가장 이른 저장 날짜. 주가가 없으면 `null` |
 | `missing_trading_days` | int | (2026-11-10 추가) `items` 첫날~끝날 사이에서 KRX 거래일 달력이 거래일로 확정한 날인데 행이 없는 날 수. 휴장일·주말은 세지 않는다. 0이 아니면 그 사이 수집 공백이 있다 |
@@ -3312,8 +3312,9 @@ curl "http://localhost:8000/api/stocks/005930/price-history?days=90"
   "보정하지 않은 원 종가"라고 단정할 수 없다. 2026-11-10 dev DB에서 5만 원 이상 주식 종가 중 100원 단위가 아닌(호가 단위에 맞지 않는) 행이
   2023~2026년 모두 있다(예: 삼성바이오로직스 2026-10-01 1,417,007원). 행마다 수정 여부를 저장하지 않아 어느 행이 수정값인지 구분할 수 없다.
   저장된 등락률(`change_pct`)은 연속한 종가로 계산한 값과 0.6%p 넘게 다른 행이 없었다(248,655행). 화면 문구는 "수집 소스의 종가"로 쓰는 것이 맞다.
-- **종가 정의(2026-11-11 43차 확인, 미해결)**: FinanceDataReader의 국내 주식 기본 소스는 네이버 일봉이다. KRX 애프터마켓이 열린 **2026-09-14부터 주식의 일봉 종가는 장 종료(20:00) 시점의 마지막 체결가**라 공식 종가(정규장 15:30 종가 = 다음 날 기준가)와 다른 날이 많다(삼성전자·SK하이닉스 2026-09-14 이후 32·37일, 최대 2.5%·3.9%). 15:40~20:00에 수집하면 그 사이의 중간값이 저장되고, 다시 받으면 바뀐다. ETF·ETN은 애프터마켓 대상이 아니라 해당 없다(분배락일의 기준가 조정만 있다). 지수 KS11·KQ11의 최신일 값도 장 마감 뒤 한동안 확정치가 아니었다(2026-11-11 코스피 저장 5,346.07 vs 공식 5,375.36). 가격 정의를 정하기 전까지 저장 종가는 "수집 소스의 일봉 종가"이며 공식 종가라고 쓰지 않는다. 근거·영향·대안은 `docs/REAL_DATA_LLM_INTEGRATION_AUDIT_43.md` 4·5·17절.
-- **공식 종가 수집 경로(2026-11-11 44차, 옵트인)**: `python -m scripts.collect_prices --close-basis official`은 주식 종가를 다음 거래일 기준가로 복원한 공식 종가로, ETF 종가를 실제 종가로 저장한다(`app/official_close.py`). **45차 정정**: 저장 종가는 공식 종가 x (원천 FDR 종가 / 네이버 실제 종가)다. 원천의 수정주가 체계(기업 이벤트·ETF 분배 조정)를 유지하고 애프터마켓 차이만 고친다. 그래서 ETF는 원천 값 그대로다(실제 종가로 덮어쓰면 경계에 가짜 급등락이 생긴다). `refresh_data --close-basis official`로도 고를 수 있다(기본은 여전히 `source`). 근거: `docs/PRICE_DATA_MIGRATION_AUDIT_45.md`. ETF의 기본 경로(FDR 일봉) 값은 마지막 분배락 이전 전체를 분배 조정한 수정주가다. 주식의 최신 거래일은 다음 거래일에 확정되므로 저장하지 않는다. 기본 경로(`source`)와 `refresh_data`는 그대로이고, 개발 DB 재수집은 승인 대기다. 저장 종가가 공식 종가와 같은지는 `python -m scripts.audit_close_basis`(읽기 전용)로 센다. 자세한 내용은 `docs/PRICE_SOURCE_AND_CLOSE_DEFINITION_AUDIT_44.md`.
+- **종가 정의(60차 정리)**: 아래 43~45차 기록은 당시 상태다. **47차(2026-11-12~13)에 개발 DB 종가를 공식 종가 기준으로 교정했고, 수집 기본값도 `--close-basis official`이다**(`scripts/refresh_data.py`·`scripts/collect_prices.py`, `bde8883`). 지금 저장 종가 = 공식 종가 x 원천 수정주가 비율이다(`docs/PRICE_DATA_MIGRATION_APPLY_47.md`, 위 `items[].close`).
+- **종가 정의(2026-11-11 43차 확인, 당시 미해결 -> 47차 교정)**: FinanceDataReader의 국내 주식 기본 소스는 네이버 일봉이다. KRX 애프터마켓이 열린 **2026-09-14부터 주식의 일봉 종가는 장 종료(20:00) 시점의 마지막 체결가**라 공식 종가(정규장 15:30 종가 = 다음 날 기준가)와 다른 날이 많다(삼성전자·SK하이닉스 2026-09-14 이후 32·37일, 최대 2.5%·3.9%). 15:40~20:00에 수집하면 그 사이의 중간값이 저장되고, 다시 받으면 바뀐다. ETF·ETN은 애프터마켓 대상이 아니라 해당 없다(분배락일의 기준가 조정만 있다). 지수 KS11·KQ11의 최신일 값도 장 마감 뒤 한동안 확정치가 아니었다(2026-11-11 코스피 저장 5,346.07 vs 공식 5,375.36). 가격 정의를 정하기 전까지 저장 종가는 "수집 소스의 일봉 종가"이며 공식 종가라고 쓰지 않는다. 근거·영향·대안은 `docs/REAL_DATA_LLM_INTEGRATION_AUDIT_43.md` 4·5·17절.
+- **공식 종가 수집 경로(2026-11-11 44차, 옵트인)**: `python -m scripts.collect_prices --close-basis official`은 주식 종가를 다음 거래일 기준가로 복원한 공식 종가로, ETF 종가를 실제 종가로 저장한다(`app/official_close.py`). **45차 정정**: 저장 종가는 공식 종가 x (원천 FDR 종가 / 네이버 실제 종가)다. 원천의 수정주가 체계(기업 이벤트·ETF 분배 조정)를 유지하고 애프터마켓 차이만 고친다. 그래서 ETF는 원천 값 그대로다(실제 종가로 덮어쓰면 경계에 가짜 급등락이 생긴다). `refresh_data --close-basis official`로도 고를 수 있다(44·45차 당시 기본은 `source`. **47차부터 기본 `official`**). 근거: `docs/PRICE_DATA_MIGRATION_AUDIT_45.md`. ETF의 기본 경로(FDR 일봉) 값은 마지막 분배락 이전 전체를 분배 조정한 수정주가다. 주식의 최신 거래일은 다음 거래일에 확정되므로 저장하지 않는다. 기본 경로(`source`)와 `refresh_data`는 그대로이고, 개발 DB 재수집은 승인 대기다. 저장 종가가 공식 종가와 같은지는 `python -m scripts.audit_close_basis`(읽기 전용)로 센다. 자세한 내용은 `docs/PRICE_SOURCE_AND_CLOSE_DEFINITION_AUDIT_44.md`.
 - 주가 행이 아직 없는 종목은 200에 `items=[]`, `count=0`, `price_as_of=null`이다.
 
 | 상태 | 원인 | 응답 |
@@ -3393,7 +3394,7 @@ curl http://localhost:8000/api/market/overview
 | `breadth.no_price` | int | 등록된 주식 중 그날 시세 행이 없는 종목(`total`에 들지 않는다) |
 | `breadth.up_ratio_pct` 등 | number \| null | `up / (up + down + flat) x 100`(소수 첫째 자리). 분모가 0이면 `null` |
 | `breadth.by_market` | object | `KOSPI`, `KOSDAQ`(코스닥 글로벌 포함), 시장이 비어 있는 주식이 있으면 `OTHER`. 각 값은 위와 같은 개수·비율 |
-| `last_collection.index`, `.prices` | object \| null | `refresh_data`의 지수·시세 단계의 마지막 실제 시도(`skipped` 제외): `step`, `status`(`success`/`partial`/`failed`), `ok`, `finished_at`(KST), `error_code`. 기록이 없으면 `null`. **지연·결측이 수집 실패 때문인지** 구분하는 용도이고 숫자는 바꾸지 않는다. 수동 수집 스크립트는 이 기록을 남기지 않는다 |
+| `last_collection.index`, `.prices` | object \| null | `refresh_data`의 지수·시세 단계의 마지막 실제 시도(`skipped` 제외): `step`, `status`(`success`/`partial`/`failed`), `ok`, `finished_at`(KST), `error_code`. 기록이 없으면 `null`. **지연·결측이 수집 실패 때문인지** 구분하는 용도이고 숫자는 바꾸지 않는다. 수동 수집 스크립트는 이 기록을 남기지 않는다. 그래서 지수·시세 `date`보다 이를 수 있다(60차 확인: 2026-11-03 기록, 데이터 2026-11-12) |
 | `unavailable` | string[] | 저장하지 않아 제공하지 않는 지표. `trading_value`(거래대금), `market_volume`(시장 전체 거래량). 값을 만들지 않는다 |
 | `source.per_row_source_recorded` | bool | `false`: 지수 수집은 FinanceDataReader 폴백 체인(별칭·Yahoo 심볼)을 쓰지만 행마다 어느 소스였는지 저장하지 않는다 |
 
@@ -4980,6 +4981,11 @@ AI 답변 품질 평가(2026-11-07, 개발자용, API 아님): `cd backend && py
   기본 상세(`GET /api/research/{id}`)와 목록은 바꾸지 않았다.
 - **시각**: 값은 바꾸지 않았다. DB 시각 컬럼은 모두 `timestamptz`, 저장 시각(`created_at`·`executed_at`·`added_at`·`collected_at`·`queried_at`, 진단 `generated_at`)은
   UTC `+00:00`, 응답 때 계산한 시각(브리핑·노출·성과·백테스트·`/api/status`의 `generated_at`, `finished_at`, 브리핑 뉴스·공시 시각, `event_at`)은 KST `+09:00`이다.
+  **예외(60차 실제 응답 확인)**: 41차 공개 API는 저장 시각도 KST `+09:00`으로 준다.
+  - `GET /api/market/overview`의 `indices[].first_collected_at`
+  - `GET /api/stocks/{ticker}/news`·`/disclosures`의 `items[].collected_at`·`published_at`·`freshness.last_collected_at`·`company_latest_at`
+  - ETF 구성종목 `collected_at`은 위 규칙대로 UTC `+00:00`이다.
+  - 같은 순간이므로 화면은 오프셋을 읽어 KST로 바꿔 보이면 된다(값은 바꾸지 않았다).
   오프셋 없는 시각은 내보내지 않는다. 날짜(`price_date` 등)는 한국 거래일이다.
 - **고친 것**: AI 답의 번역 실패 요약과 코드 요약에서 뉴스·공시 날짜를 UTC 문자열 앞 10자로 써서 하루 이르게 나오던 것(공시는 KST 자정 = UTC 전날 15:00로 저장)을
   한국 날짜로 고쳤다(`app/display_dates.kst_day`). 오프셋 없는 값·날짜만 있는 값은 그대로 둔다.
