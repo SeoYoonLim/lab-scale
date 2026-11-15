@@ -414,4 +414,9 @@ def test_expected_trading_day_skips_krx_holidays():
     assert J.expected_trading_day(date(2026, 10, 12), "10:00") == date(2026, 10, 8)  # 한글날(금) 다음 월요일 장중
     assert J.trading_days_behind(date(2026, 10, 8), date(2026, 10, 12)) == 1
     assert J.weekdays_behind(date(2026, 10, 8), date(2026, 10, 12)) == 2  # 평일 기준(기존 함수)은 그대로
-    assert J.krx_closed(date(2027, 1, 1)) and not J.krx_closed(date(2027, 2, 8))  # 범위 밖: 고정 휴장일만 휴장
+    assert J.krx_closed(date(2027, 1, 1))  # 범위 밖이라도 고정 휴장일은 휴장
+    # 57차 정책 변경: 범위 밖 평일(고정 휴장일 아님)을 열린 날로 보지 않는다. 확정할 수 없으니 평가를 멈추고 원인을 밝힌다
+    from evals.krx_days import CalendarUnknown
+
+    with pytest.raises(CalendarUnknown):
+        J.krx_closed(date(2027, 2, 8))

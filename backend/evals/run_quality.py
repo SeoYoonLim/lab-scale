@@ -162,9 +162,12 @@ def _kst(s: str) -> datetime:
 
 def _visible_rows(rows: list[tuple], now: datetime) -> list[tuple]:
     """평가기 쪽 장중 처리(제품과 따로): 평일 마감(평소 15:30, 달력의 특수 마감일은 그 값) 전이면 오늘 날짜 행은 종가가 아니므로
-    정답 계산에서 뺀다(56차: 마감 시각은 J.krx_close_hhmm, 제품 코드가 아니라 달력 파일에서 읽는다)."""
+    정답 계산에서 뺀다(56차: 마감 시각은 J.krx_close_hhmm, 제품 코드가 아니라 달력 파일에서 읽는다).
+    57차: "평일"이 아니라 KRX 거래일이다(evals.krx_days.before_close). 휴장일에는 장이 열리지 않아 오늘 행을 빼지 않는다(제품과 같다)."""
+    from evals import krx_days as KD
+
     today = now.date()
-    if now.weekday() < 5 and now.strftime("%H:%M") < J.krx_close_hhmm(today):
+    if KD.before_close(today, now.strftime("%H:%M")):
         return [r for r in rows if r[0] != today]
     return rows
 

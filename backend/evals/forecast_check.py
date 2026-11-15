@@ -924,9 +924,9 @@ def check_earnings24(db, answer: str, company_name: str, quarter: str | None = N
 
 
 def _close_hhmm(d) -> str:
-    """그날 KRX 정규장 마감 "HH:MM". 56차: 제품 코드가 아니라 달력 파일에서 읽는다(evals.quality_judges.krx_close_hhmm)."""
-    from evals.quality_judges import krx_close_hhmm
-    return krx_close_hhmm(d)
+    """그날 KRX 정규장 마감 "HH:MM". 56차: 제품 코드가 아니라 달력 파일에서 읽는다. 57차: evals.krx_days(평가 공통)."""
+    from evals import krx_days as KD
+    return KD.close_hhmm(d)
 
 
 def _close_min(d) -> int:
@@ -935,21 +935,22 @@ def _close_min(d) -> int:
 
 
 def _before_close24(gen: str) -> bool:
+    """생성 시각(KST "YYYY-MM-DD HH:MM")이 그날 KRX 거래일 마감 전인가. 57차: 평일이 아니라 거래일(휴장일은 False, 제품과 같다)."""
     from datetime import datetime
+    from evals import krx_days as KD
     t = datetime.strptime(gen, "%Y-%m-%d %H:%M")
-    return t.weekday() < 5 and t.hour * 60 + t.minute < _close_min(t.date())
+    return KD.before_close(t.date(), t.strftime("%H:%M"))
 
 
 def _expected_day24(gen: str):
-    """종가가 있어야 할 가장 최근 평일. 평일 마감(평소 15:30, 달력의 특수 마감일은 그 값) 전이면 직전 평일.
-    KRX 휴장일은 보지 않는다(24차 평가 기준 그대로. 제품은 36차부터 휴장일을 본다: 56차 보고서 4절)."""
-    from datetime import datetime, timedelta
-    d = datetime.strptime(gen, "%Y-%m-%d %H:%M").date()
-    if _before_close24(gen):
-        d -= timedelta(days=1)
-    while d.weekday() >= 5:
-        d -= timedelta(days=1)
-    return d
+    """종가가 있어야 할 가장 최근 KRX 거래일. 거래일 마감(평소 15:30, 달력의 특수 마감일은 그 값) 전이면 직전 거래일,
+    주말·휴장일이면 그 앞 거래일(evals.krx_days.expected_trading_day).
+    57차: 24차부터 평일만 보던 것을 KRX 휴장일까지 보게 고쳤다(제품은 36차부터 휴장일을 본다). 휴장일 다음 날 오전·휴장일 당일에
+    휴장일을 기대 거래일로 잡아 맞는 답을 "미수집·휴장일 추정"으로 틀리게 채점하던 문제(57차 보고서 2절)."""
+    from datetime import datetime
+    from evals import krx_days as KD
+    t = datetime.strptime(gen, "%Y-%m-%d %H:%M")
+    return KD.expected_trading_day(t.date(), t.strftime("%H:%M"))
 
 
 def status24(db, company_name: str, base: str, gen: str) -> tuple[str, str]:

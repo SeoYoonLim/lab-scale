@@ -13,7 +13,9 @@ from evals.quality_judges import Truth
 
 
 def trading_days(end: date, n: int) -> list[date]:
-    """end 이하의 평일 n개(오름차순). 공휴일은 모른다(제품과 같은 한계)."""
+    """end 이하의 평일 n개(오름차순). 합성 입력이라 KRX 휴장일 날짜에도 행이 생긴다(57차 확인: 53개 중 50개, 304행).
+    제품 경로와 정답 계산이 같은 행 목록을 순서로 읽으므로 판정에는 영향이 없다. 입력을 바꾸면 평가 입력이 바뀌므로 그대로 둔다
+    (docs/KRX_HOLIDAY_EVALUATION_FIX_57.md 16절)."""
     out, d = [], end
     while len(out) < n:
         if d.weekday() < 5:
