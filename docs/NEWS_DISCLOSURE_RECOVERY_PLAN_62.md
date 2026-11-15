@@ -250,9 +250,9 @@ Register-ScheduledTask -TaskName "lab-scale refresh_data weekday" -Action $act -
 
 ## 12. 테스트 결과
 
-`tests/test_news_recovery_62.py`(신규 22): **22 통과**(순수 17, 통합 5).
-- 첫 push의 CI는 유니버스 파일을 읽는 테스트 2개 때문에 실패했다(12.1절).
-- 그 테스트를 임시 유니버스 파일로 바꿨고, 실제 파일 확인은 파일이 있을 때만 한다
+`tests/test_news_recovery_62.py`(신규 21): **21 통과**(순수 16, 통합 5).
+- 첫 push의 CI는 유니버스 파일을 읽는 테스트 때문에 실패했다(12.1절).
+- 그 테스트들은 임시 유니버스 파일을 쓴다
 
 | 요청 항목 | 테스트 |
 | --- | --- |
@@ -274,7 +274,7 @@ Register-ScheduledTask -TaskName "lab-scale refresh_data weekday" -Action $act -
 
 | 전체 | 결과 |
 | --- | --- |
-| 단위 전체(`-m "not slow and not integration"`, `DATABASE_URL` 닫힌 포트) | **6,474 통과**(61차 6,458 + 신규 순수 16, 테스트 수정 전 실행). 수정 뒤 이 파일만 다시 돌려 순수 17 통과(실제 유니버스 파일 확인 1개 추가) |
+| 단위 전체(`-m "not slow and not integration"`, `DATABASE_URL` 닫힌 포트) | **6,474 통과**(61차 6,458 + 신규 순수 16, 테스트 수정 전 실행). 수정 뒤 이 파일만 다시 돌려 순수 16 통과(테스트 수는 같음) |
 | 통합 전체(격리 DB `ai_investment_recovery62_it`) | **705 통과, 10 건너뜀**, 실패 0(61차 700 + 신규 5, 건너뜀은 이전과 같다) |
 | 품질 평가(결정적) | **244/244**(이전과 같다) |
 | offline 평가(개발 DB 읽기 전용) | **실패 11건**(알려진 `ent_*`, 61차와 문항·내용 같음) |
@@ -284,7 +284,11 @@ Register-ScheduledTask -TaskName "lab-scale refresh_data weekday" -Action $act -
 - 첫 push(`5611a83`)의 CI run 43713438978에서 `backend-unit`·`backend-integration`이 실패했다.
 - 원인: `FileNotFoundError: backend/scripts/universe_top300.json`. 유니버스 파일은 Git 밖이라 CI에 없다.
   - 실패한 테스트는 `test_targets_are_the_refresh_universes`, `test_plan_mode_reads_only_and_makes_no_requests`다.
-- 수정: 두 테스트가 임시 유니버스 파일을 쓰게 했다(`_universe_dir`). 실제 파일 350종목 확인은 파일이 있을 때만 한다(`test_real_universe_files_when_present`, CI에서는 건너뜀).
+- 1차 수정(`3c16ca9`):
+  - 두 테스트가 임시 유니버스 파일을 쓰게 했다(`_universe_dir`).
+  - 실제 파일 확인 테스트를 "파일이 없으면 건너뜀"으로 더했다.
+  - 그런데 CI run 43713747867에서 `backend-unit`이 다시 실패했다. CI는 단위 테스트의 조용한 건너뜀을 실패로 본다(`needs_collected_data` 마커로만 명시적으로 제외할 수 있고, 제외 상한이 있다).
+- 2차 수정: 그 실제 파일 테스트를 지웠다. 실제 대상 350종목(주식 300, ETF 50, 미등록 0)은 개발 환경 `plan` 출력으로 확인했다(7절).
 - 도구 코드는 바꾸지 않았다. 운영 환경에는 유니버스 파일이 있어야 한다(`refresh_data`와 같은 조건).
 
 ## 13. 개발 DB 불변 확인

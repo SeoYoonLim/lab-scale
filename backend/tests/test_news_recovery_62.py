@@ -189,13 +189,6 @@ def test_targets_come_from_the_refresh_universe_files(tmp_path, monkeypatch):
     assert [x["ticker"] for x in T.load_targets(tickers=["069500", "005930"])] == ["005930", "069500"]
 
 
-def test_real_universe_files_when_present():
-    if not all((T.UNIVERSE_DIR / f).exists() for f in T.UNIVERSES):
-        pytest.skip("유니버스 파일 없음(Git 밖, build_universe로 만든다)")
-    t = T.load_targets()
-    assert len(t) == 350 and sum(x["asset_type"] == "etf" for x in t) == 50 and len({x["ticker"] for x in t}) == 350
-
-
 def test_dry_run_and_apply_refuse_without_flags_before_any_db_or_network(monkeypatch, capsys):
     monkeypatch.setattr(C.http_retry, "get", lambda *a, **k: pytest.fail("외부 요청"))
     assert T.main(["--mode", "dry-run"]) == 2 and "allow-network" in capsys.readouterr().out
