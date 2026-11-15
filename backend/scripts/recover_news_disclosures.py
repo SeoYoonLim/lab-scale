@@ -216,7 +216,7 @@ def run(targets: list[dict], *, mode: str, start: date, end: date, today: date, 
                      "duplicate_in_scan": scan.duplicate_in_scan, "stop": scan.stop, "truncated": scan.truncated,
                      "oldest_seen": scan.oldest_seen.astimezone(R.KST).isoformat() if scan.oldest_seen else None}
                 if scan.error:
-                    n.update(ok=False, error=scan.error)
+                    n.update(ok=False, error=C._API_KEY_RE.sub(r"***", scan.error))
                     if _BLOCKED.search(scan.error):
                         stopped = "naver_blocked"
                 else:
@@ -229,9 +229,11 @@ def run(targets: list[dict], *, mode: str, start: date, end: date, today: date, 
                 row["news"] = n
                 sleep(delay)
             if disclosures and company.asset_type == "stock" and t["ticker"] not in state["disclosures"] and not stopped:
+                d0 = C.dart_requests
                 r = C.fetch_and_save_disclosures(company.ticker, days=disc_days, dry_run=not apply)
-                row["disclosures"] = {"ok": r.ok, "fetched": r.fetched, "new": r.saved, "quarantined": r.quarantined,
-                                      "warned": r.warned, "existing": max(0, r.fetched - r.saved - r.quarantined), "error": r.error}
+                row["disclosures"] = {"ok": r.ok, "requests": C.dart_requests - d0, "fetched": r.fetched, "new": r.saved,
+                                      "not_company_filer": r.skipped, "quarantined": r.quarantined, "warned": r.warned,
+                                      "existing": max(0, r.fetched - r.skipped - r.saved - r.quarantined), "error": r.error}
                 if r.ok and apply:
                     state["disclosures"].append(t["ticker"])
                     _save_state(state_path, state)

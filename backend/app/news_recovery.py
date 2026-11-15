@@ -201,5 +201,7 @@ def news_query(company) -> str:
 
 
 def disclosure_days(start: date, today: date) -> int:
-    """DART 조회 기간(일, 오늘 포함). start부터 오늘까지. 기존 수집(90일)보다 길게 잡지 않는다."""
+    """DART 조회 기간 인자(일). collectors.fetch_dart_disclosures가 bgn_de = 오늘 - days로 쓰므로 실제 조회는 start 전날부터 오늘까지다
+    (하루 겹침. 이미 저장된 접수번호는 건너뛰고, 전날 마지막 수집 뒤 접수분은 새로 받는다. 62차 dry-run: 11-03 겹침 67건 건너뜀).
+    기존 수집(90일)보다 길게 잡지 않는다."""
     return max(1, min(90, (today - start).days + 1))

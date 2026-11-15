@@ -930,9 +930,11 @@ def fetch_and_save_disclosures(
         items = fetch_dart_disclosures(corp_code, days=days)
 
         candidates = []
+        not_company = 0  # 62차: 회사 명의가 아니라 뺀 수(CollectResult.skipped). 기존 저장 수 = fetched - skipped - saved - quarantined
         for item in items:
             # 임원/주요주주 개인 명의 공시는 제외하고, 회사 명의 공시만 저장
             if item.get("flr_nm") != item.get("corp_name"):
+                not_company += 1
                 continue
 
             source_url = f"https://dart.fss.or.kr/dsaf001/main.do?rcptNo={item.get('rcept_no')}"
@@ -965,14 +967,15 @@ def fetch_and_save_disclosures(
                 f"(전체 조회 {len(items)}건 중, 회사 명의만 필터링)"
             )
             return CollectResult(ok=True, saved=len(to_insert), fetched=len(items), records=to_insert,
-                                 quarantined=len(bad), warned=warned)
+                                 quarantined=len(bad), warned=warned, skipped=not_company)
 
         quarantine.record("disclosure", checked, {"ticker": company.ticker})
         for record in to_insert:
             db.add(record)
         db.commit()
         print(f"DB 저장 완료: 신규 {len(to_insert)}건 데이터 추가됨" + (f"(격리 {len(bad)}건)" if bad else ""))
-        return CollectResult(ok=True, saved=len(to_insert), fetched=len(items), quarantined=len(bad), warned=warned)
+        return CollectResult(ok=True, saved=len(to_insert), fetched=len(items), quarantined=len(bad), warned=warned,
+                             skipped=not_company)
     except Exception as e:
         db.rollback()
         msg = _safe_error(e)
