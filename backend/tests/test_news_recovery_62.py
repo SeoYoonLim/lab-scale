@@ -171,10 +171,29 @@ def test_guard():
     T.guard("apply", DEV, True, "ai_investment")
 
 
-def test_targets_are_the_refresh_universes():
+def _universe_dir(tmp_path, stocks, etfs):
+    (tmp_path / "universe_top300.json").write_text(json.dumps({"universe": [
+        {"rank": i, "ticker": t, "name": n} for i, (t, n) in enumerate(stocks, 1)]}, ensure_ascii=False), encoding="utf-8")
+    (tmp_path / "universe_etf50.json").write_text(json.dumps({"universe": [
+        {"rank": i, "ticker": t, "name": n, "asset_type": "etf"} for i, (t, n) in enumerate(etfs, 1)]}, ensure_ascii=False),
+        encoding="utf-8")
+    return tmp_path
+
+
+def test_targets_come_from_the_refresh_universe_files(tmp_path, monkeypatch):
+    """유니버스 파일(backend/scripts/universe_*.json)은 build_universe가 만들고 Git에 올리지 않는다. 테스트는 임시 파일로 본다."""
+    monkeypatch.setattr(T, "UNIVERSE_DIR", _universe_dir(tmp_path, [("005930", "삼성전자"), ("000660", "SK하이닉스")],
+                                                         [("069500", "KODEX 200"), ("005930", "중복")]))
+    t = T.load_targets()
+    assert [(x["ticker"], x["asset_type"]) for x in t] == [("005930", "stock"), ("000660", "stock"), ("069500", "etf")]
+    assert [x["ticker"] for x in T.load_targets(tickers=["069500", "005930"])] == ["005930", "069500"]
+
+
+def test_real_universe_files_when_present():
+    if not all((T.UNIVERSE_DIR / f).exists() for f in T.UNIVERSES):
+        pytest.skip("유니버스 파일 없음(Git 밖, build_universe로 만든다)")
     t = T.load_targets()
     assert len(t) == 350 and sum(x["asset_type"] == "etf" for x in t) == 50 and len({x["ticker"] for x in t}) == 350
-    assert [x["ticker"] for x in T.load_targets(tickers=["005930", "069500"])] == ["005930", "069500"]
 
 
 def test_dry_run_and_apply_refuse_without_flags_before_any_db_or_network(monkeypatch, capsys):
@@ -340,8 +359,9 @@ def test_disclosure_recovery_dedups_by_receipt_and_records_step(dev_db, cos, mon
 
 
 @pytest.mark.integration
-def test_plan_mode_reads_only_and_makes_no_requests(dev_db, monkeypatch, capsys):
+def test_plan_mode_reads_only_and_makes_no_requests(dev_db, monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(C.http_retry, "get", lambda *a, **k: pytest.fail("plan이 외부 요청을 했다"))
+    monkeypatch.setattr(T, "UNIVERSE_DIR", _universe_dir(tmp_path, [("005930", "삼성전자")], [("069500", "KODEX 200")]))
     before = dev_db.execute(text("SELECT (SELECT count(*) FROM news), (SELECT count(*) FROM disclosure), "
                                  "(SELECT count(*) FROM data_refresh_run)")).one()
     assert T.main(["--tickers", "005930,069500", "--end", "2026-11-14"]) == 0

@@ -125,6 +125,8 @@
 - 중복 건너뛰기, 실패 종목 기록(`failed[]`)
 - 중간 실패 뒤 재실행: `--state` 파일. 종목·종류(뉴스·공시)마다 끝나면 기록하고, 다시 실행하면 건너뛴다. 기간·설정이 다른 상태 파일은 거부한다.
 - 결과 보고서: `--report` JSON(요약 + 종목별 행)
+- 대상 목록은 `backend/scripts/universe_top300.json`·`universe_etf50.json`(`refresh_data`와 같음)이다.
+  - 이 두 파일은 `build_universe`·`build_etf_universe`가 만들고 Git에 올리지 않는다(`.gitignore`). 로컬에는 있다(350종목 확인).
 
 지키는 조건:
 1. DB 주소를 실행 전에 출력한다(`대상 DB: … (호스트 …) · 모드 …`). dry-run·apply는 DB 이름이 `ai_investment`가 아니면 거부한다.
@@ -248,7 +250,9 @@ Register-ScheduledTask -TaskName "lab-scale refresh_data weekday" -Action $act -
 
 ## 12. 테스트 결과
 
-`tests/test_news_recovery_62.py`(신규 21): **21 통과**(순수 16, 통합 5)
+`tests/test_news_recovery_62.py`(신규 22): **22 통과**(순수 17, 통합 5).
+- 첫 push의 CI는 유니버스 파일을 읽는 테스트 2개 때문에 실패했다(12.1절).
+- 그 테스트를 임시 유니버스 파일로 바꿨고, 실제 파일 확인은 파일이 있을 때만 한다
 
 | 요청 항목 | 테스트 |
 | --- | --- |
@@ -270,10 +274,18 @@ Register-ScheduledTask -TaskName "lab-scale refresh_data weekday" -Action $act -
 
 | 전체 | 결과 |
 | --- | --- |
-| 단위 전체(`-m "not slow and not integration"`, `DATABASE_URL` 닫힌 포트) | **6,474 통과**(61차 6,458 + 신규 순수 16), 실패 0 |
+| 단위 전체(`-m "not slow and not integration"`, `DATABASE_URL` 닫힌 포트) | **6,474 통과**(61차 6,458 + 신규 순수 16, 테스트 수정 전 실행). 수정 뒤 이 파일만 다시 돌려 순수 17 통과(실제 유니버스 파일 확인 1개 추가) |
 | 통합 전체(격리 DB `ai_investment_recovery62_it`) | **705 통과, 10 건너뜀**, 실패 0(61차 700 + 신규 5, 건너뜀은 이전과 같다) |
 | 품질 평가(결정적) | **244/244**(이전과 같다) |
 | offline 평가(개발 DB 읽기 전용) | **실패 11건**(알려진 `ent_*`, 61차와 문항·내용 같음) |
+
+### 12.1 첫 CI 실패와 수정
+
+- 첫 push(`5611a83`)의 CI run 43713438978에서 `backend-unit`·`backend-integration`이 실패했다.
+- 원인: `FileNotFoundError: backend/scripts/universe_top300.json`. 유니버스 파일은 Git 밖이라 CI에 없다.
+  - 실패한 테스트는 `test_targets_are_the_refresh_universes`, `test_plan_mode_reads_only_and_makes_no_requests`다.
+- 수정: 두 테스트가 임시 유니버스 파일을 쓰게 했다(`_universe_dir`). 실제 파일 350종목 확인은 파일이 있을 때만 한다(`test_real_universe_files_when_present`, CI에서는 건너뜀).
+- 도구 코드는 바꾸지 않았다. 운영 환경에는 유니버스 파일이 있어야 한다(`refresh_data`와 같은 조건).
 
 ## 13. 개발 DB 불변 확인
 
