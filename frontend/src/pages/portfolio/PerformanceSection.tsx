@@ -18,6 +18,7 @@ import StatusBadge from '../../components/ui/StatusBadge'
 import { useLocale } from '../../i18n/useLocale'
 import { formatPlainPct, formatSignedPct, formatSignedPp, formatTradingDate, formatWon } from '../../utils/format'
 import { trendClass } from '../../utils/format'
+import LoadingNotice from '../../components/ui/LoadingNotice'
 
 type Mode = 'index' | 'amount'
 
@@ -253,7 +254,7 @@ export default function PerformanceSection() {
           </label>
         </div>
 
-        {isPending && <p className="muted">{t('common.loading')}</p>}
+        {isPending && <LoadingNotice />}
         {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
 
         {data && (

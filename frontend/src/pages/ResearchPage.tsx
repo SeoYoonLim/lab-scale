@@ -9,6 +9,7 @@ import DataToolCards from '../components/DataToolCards'
 import MarketSummaryCard from '../components/MarketSummaryCard'
 import ResearchProgress from '../components/ResearchProgress'
 import SourceFootnotes from '../components/SourceFootnotes'
+import ErrorNotice from '../components/ui/ErrorNotice'
 import TrendingWidget from '../components/TrendingWidget'
 import type { TranslationStatus } from '../api/contracts/common'
 import type { Source } from '../types'
@@ -30,7 +31,7 @@ interface Entry {
   // 실제로 답한 언어와 번역 상태(핸드오프 15-1절) - 번역문인지, 번역 검증에 실패해 요약만 온 건지 구분해 보여준다
   locale?: string
   translationStatus?: TranslationStatus | null
-  errorMessage?: string
+  error?: unknown
 }
 
 // 추천 질문은 실제로 백엔드에 보내는 문장이다. 질문 해석(라우팅·용어 사전·전망 판정)이 한국어 규칙이라 번역하지 않는다
@@ -106,8 +107,7 @@ export default function ResearchPage() {
       // 저장에 실패하면(report_id: null) 이어받을 리포트가 없으니 대화 스레드를 끊는다.
       setThreadReportId(res.report_id)
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('research.answer_failed', { fallback: '답변을 가져오지 못했어요.' })
-      setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, status: 'error', errorMessage: message } : e)))
+      setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, status: 'error', error } : e)))
     } finally {
       setPending(false)
     }
@@ -211,7 +211,13 @@ export default function ResearchPage() {
                 <h2 className="entry-question">{entry.question}</h2>
 
                 {entry.status === 'pending' && <ResearchProgress />}
-                {entry.status === 'error' && <p className="entry-answer entry-error">{entry.errorMessage}</p>}
+                {entry.status === 'error' && (
+                  <ErrorNotice
+                    error={entry.error}
+                    fallback={t('research.answer_failed', { fallback: '답변을 가져오지 못했어요.' })}
+                    onRetry={() => void send(entry.question)}
+                  />
+                )}
                 {entry.status === 'done' && (
                   <div className="answer-card">
                     <div className="answer-head">

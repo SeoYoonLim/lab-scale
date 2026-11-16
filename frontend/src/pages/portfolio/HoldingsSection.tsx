@@ -185,7 +185,7 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
             })}
           </p>
         )}
-        {formError && <p className="notice notice-error">{formError}</p>}
+        {formError && <p className="notice notice-error" role="alert">{formError}</p>}
         {orderMutation.data && (
           <p className="notice order-result">
             {t('holdings.filled', {

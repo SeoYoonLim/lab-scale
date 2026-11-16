@@ -1,10 +1,12 @@
 import { Suspense } from 'react'
 import type { ReactNode } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { USE_MOCK } from '../api'
 import { useAuth } from '../auth/useAuth'
 import { useLocale } from '../i18n/useLocale'
 import DisclaimerFooter from './DisclaimerFooter'
+import ErrorBoundary from './ui/ErrorBoundary'
+import LoadingNotice from './ui/LoadingNotice'
 import { IconBulb, IconChart, IconFile, IconHome, IconSettings, IconSun, IconWallet } from './icons'
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -13,6 +15,7 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
 export default function Layout() {
   const { user, logout } = useAuth()
   const { t } = useLocale()
+  const location = useLocation()
 
   // 라벨은 백엔드 리소스의 nav.* 와 언어 설정을 따른다(없는 키는 한국어 fallback)
   const items: { to: string; label: string; icon: ReactNode; end?: boolean; auth?: boolean }[] = [
@@ -76,9 +79,11 @@ export default function Layout() {
         </div>
       </aside>
       <main className="main" id="main" tabIndex={-1}>
-        <Suspense fallback={<p className="muted container page">{t('common.loading')}</p>}>
-          <Outlet />
-        </Suspense>
+        <ErrorBoundary resetKey={location.pathname}>
+          <Suspense fallback={<LoadingNotice className="container page" />}>
+            <Outlet />
+          </Suspense>
+        </ErrorBoundary>
         <DisclaimerFooter />
       </main>
     </div>

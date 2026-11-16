@@ -8,6 +8,7 @@ import MockMailbox from '../../components/MockMailbox'
 import ErrorNotice from '../../components/ui/ErrorNotice'
 import StatusBadge from '../../components/ui/StatusBadge'
 import { useLocale } from '../../i18n/useLocale'
+import LoadingNotice from '../../components/ui/LoadingNotice'
 
 // 복구용 이메일(PUT /api/auth/email). 인증된 이메일이 있어야 아이디 찾기·비밀번호 찾기를 쓸 수 있다.
 // 등록·변경에는 현재 비밀번호가 필요하고(토큰을 훔친 사람이 자기 주소로 계정을 가져가지 못하게), 바꾸면 인증 전 상태로 돌아간다.
@@ -49,7 +50,7 @@ export default function EmailCard() {
         })}
       </p>
 
-      {me.isPending && <p className="muted">{t('common.loading')}</p>}
+      {me.isPending && <LoadingNotice />}
       {me.error && <ErrorNotice error={me.error} onRetry={() => void me.refetch()} />}
 
       {me.data && (

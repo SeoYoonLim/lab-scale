@@ -8,6 +8,7 @@ import Pagination from '../../components/Pagination'
 import { useLocale } from '../../i18n/useLocale'
 import { formatDate, formatPrice } from '../../utils/format'
 import ErrorNotice from '../../components/ui/ErrorNotice'
+import LoadingNotice from '../../components/ui/LoadingNotice'
 
 const DIAGNOSIS_HISTORY_PAGE_SIZE = 10
 
@@ -55,7 +56,7 @@ export default function DiagnosisHistorySection() {
     <section>
       <h2 className="section-title">{t('diagnosis.history_title', { fallback: '진단 이력' })}</h2>
       <div className="card">
-        {isPending && <p className="muted">{t('common.loading')}</p>}
+        {isPending && <LoadingNotice />}
         {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
         {data && data.items.length === 0 && (
           <p className="muted">{t('diagnosis.history_empty', { fallback: '아직 저장된 진단이 없어요. 위에서 AI 진단을 받아보세요.' })}</p>
@@ -110,7 +111,7 @@ export default function DiagnosisHistorySection() {
 
                 {expanded?.id === item.id && expanded.view === 'detail' && (
                   <div className="ledger-detail">
-                    {detailQuery.isPending && <p className="muted">{t('common.loading')}</p>}
+                    {detailQuery.isPending && <LoadingNotice />}
                     {detailQuery.error && <ErrorNotice error={detailQuery.error} onRetry={() => void detailQuery.refetch()} />}
                     {detailQuery.data && <DiagnosisResultView result={detailQuery.data} />}
                   </div>

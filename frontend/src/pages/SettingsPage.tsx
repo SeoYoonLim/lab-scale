@@ -11,6 +11,7 @@ import { useLocale } from '../i18n/useLocale'
 import DeleteAccountCard from './settings/DeleteAccountCard'
 import EmailCard from './settings/EmailCard'
 import PasswordCard from './settings/PasswordCard'
+import LoadingNotice from '../components/ui/LoadingNotice'
 
 // 브라우저가 아는 IANA 시간대 목록(자동완성용). 목록에 없는 이름은 서버가 422로 막는다.
 function knownTimezones(): string[] {
@@ -63,7 +64,7 @@ export default function SettingsPage() {
     <div className="container page settings-page">
       <h1 className="page-title">{t('settings.title')}</h1>
       <form className="card settings-card" onSubmit={handleSubmit}>
-        {query.isPending && <p className="muted">{t('common.loading')}</p>}
+        {query.isPending && <LoadingNotice />}
         {query.error && <ErrorNotice error={query.error} onRetry={() => void query.refetch()} />}
 
         <label className="auth-field">

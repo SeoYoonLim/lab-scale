@@ -8,6 +8,7 @@ import { useLocale } from '../i18n/useLocale'
 import { computeChart, movingAverage, nearestIndex, periodReturn, summarizeHistory } from '../utils/priceChart'
 import type { ChartLayout } from '../utils/priceChart'
 import { formatDate, formatPct, formatPrice, formatVolume, trendClass } from '../utils/format'
+import LoadingNotice from './ui/LoadingNotice'
 
 // days는 달력 일이 아니라 "최근 N거래일"이다(backend/API.md). 데이터 시작일 때문에 실제 개수(count)가
 // 더 적을 수 있어서, 아래에서 항상 count를 기준으로 그리고 모자라면 그 사실을 알려준다.
@@ -153,7 +154,7 @@ export default function PriceChartCard({ ticker }: { ticker: string }) {
           })}
         </p>
       )}
-      {isPending && <p className="muted">{t('common.loading')}</p>}
+      {isPending && <LoadingNotice />}
       {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
 
       {data && data.count === 0 && <p className="muted">{t('chart.no_data', { fallback: '아직 수집된 주가가 없어요.' })}</p>}

@@ -12,6 +12,8 @@ import EtfHoldingsCard from '../components/EtfHoldingsCard'
 import PriceChartCard from '../components/PriceChartCard'
 import StockDisclosuresCard from '../components/StockDisclosuresCard'
 import StockNewsCard from '../components/StockNewsCard'
+import ErrorNotice from '../components/ui/ErrorNotice'
+import LoadingNotice from '../components/ui/LoadingNotice'
 import { formatDate, formatPct, formatPrice, trendClass } from '../utils/format'
 
 // backend/API.md: 서버가 종목별로 3~5초 캐싱하므로 이 주기로 폴링해도 안전하다.
@@ -152,7 +154,7 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
                         : t('company.watchlist_add', { fallback: '관심종목 추가' })}
                 </button>
                 {watchlistState === 'error' && watchlistError && (
-                  <span className="notice-error small">{watchlistError}</span>
+                  <span className="notice-error small" role="alert">{watchlistError}</span>
                 )}
               </>
             ) : (
@@ -192,10 +194,10 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
             )}
           </div>
         ) : error ? (
-          <p className="notice notice-error">{error.message}</p>
-        ) : (
-          <p className="muted">{isPending ? t('common.loading') : ''}</p>
-        )}
+          <ErrorNotice error={error} />
+        ) : isPending ? (
+          <LoadingNotice />
+        ) : null}
       </section>
 
       {realtime && <PriceChartCard ticker={realtime.ticker} />}

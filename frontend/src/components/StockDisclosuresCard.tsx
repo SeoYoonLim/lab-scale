@@ -13,6 +13,7 @@ import type { FeedFilterState } from './stockFeed/filters'
 import EmptyState from './ui/EmptyState'
 import ErrorNotice from './ui/ErrorNotice'
 import StatusBadge from './ui/StatusBadge'
+import LoadingNotice from './ui/LoadingNotice'
 
 const PAGE_SIZE = 10
 
@@ -80,7 +81,7 @@ export default function StockDisclosuresCard({ ticker }: { ticker: string }) {
         />
       )}
 
-      {isPending && !invalid && <p className="muted">{t('common.loading')}</p>}
+      {isPending && !invalid && <LoadingNotice />}
       {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
 
       {data && unsupported && (

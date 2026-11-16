@@ -53,7 +53,7 @@ export default function SignupPage() {
             placeholder={t('auth.password_placeholder', { fallback: '8~128자 (흔한 비밀번호·아이디가 든 비밀번호는 안 돼요)' })}
           />
         </label>
-        {error && <p className="notice notice-error">{error}</p>}
+        {error && <p className="notice notice-error" role="alert">{error}</p>}
         <button
           type="submit"
           className="send auth-submit"

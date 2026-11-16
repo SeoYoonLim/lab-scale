@@ -3625,3 +3625,23 @@ body {
     margin-left: 0;
   }
 }
+
+/* 화면 오류(렌더 예외·코드 조각 로딩 실패) 안내 */
+.error-boundary-title {
+  margin: 0 0 8px;
+  font-size: 24px;
+}
+
+.error-boundary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.error-boundary-actions .send,
+.error-boundary-actions .btn {
+  min-height: 44px;
+  text-decoration: none;
+}

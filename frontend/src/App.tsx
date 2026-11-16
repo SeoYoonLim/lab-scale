@@ -1,5 +1,5 @@
 import { lazy } from 'react'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom'
 import RequireAuth from './components/RequireAuth'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
@@ -28,7 +28,14 @@ const WatchlistSection = lazy(() => import('./pages/portfolio/WatchlistSection')
 
 function NotFoundPage() {
   const { t } = useLocale()
-  return <div className="container page">{t('auth.not_found_page', { fallback: '페이지를 찾을 수 없어요.' })}</div>
+  return (
+    <div className="container page">
+      <p>{t('auth.not_found_page', { fallback: '페이지를 찾을 수 없어요.' })}</p>
+      <Link className="btn" to="/">
+        {t('common.go_home', { fallback: '처음 화면으로' })}
+      </Link>
+    </div>
+  )
 }
 
 export default function App() {

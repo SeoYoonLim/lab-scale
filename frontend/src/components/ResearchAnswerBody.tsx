@@ -10,6 +10,7 @@ import AnswerSections from './AnswerSections'
 import Banner from './ui/Banner'
 import ErrorNotice from './ui/ErrorNotice'
 import StatusBadge from './ui/StatusBadge'
+import LoadingNotice from './ui/LoadingNotice'
 
 // 리서치 답변 본문 + 작성 언어·번역 상태 표시(핸드오프 15-1절).
 //   null            ko-KR 답(번역 안 함)               -> 그대로
@@ -71,7 +72,7 @@ export default function ResearchAnswerBody({
 
       {showOriginal && canShowOriginal ? (
         <>
-          {record.isPending && originalAnswer === undefined && <p className="muted small">{t('common.loading')}</p>}
+          {record.isPending && originalAnswer === undefined && <LoadingNotice small />}
           {record.error && <ErrorNotice error={record.error} onRetry={() => void record.refetch()} />}
           {original != null ? (
             <AnswerSections answer={original} />

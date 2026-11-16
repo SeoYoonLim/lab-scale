@@ -5,6 +5,7 @@ import { useLocale } from '../i18n/useLocale'
 import { formatPlainPct, formatTradingDate } from '../utils/format'
 import Banner from './ui/Banner'
 import ErrorNotice from './ui/ErrorNotice'
+import LoadingNotice from './ui/LoadingNotice'
 
 const LIMIT = 10
 
@@ -21,7 +22,7 @@ export default function EtfHoldingsCard({ ticker }: { ticker: string }) {
   return (
     <section className="card etf-holdings-card" aria-labelledby="etf-holdings-heading">
       <h2 id="etf-holdings-heading">{t('etf.title', { fallback: '구성종목·편입 비중' })}</h2>
-      {isPending && <p className="muted">{t('common.loading')}</p>}
+      {isPending && <LoadingNotice />}
       {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
       {data && (
         <>

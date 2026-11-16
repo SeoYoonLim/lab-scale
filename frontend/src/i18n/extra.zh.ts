@@ -446,4 +446,8 @@ export const EXTRA_ZH: Record<string, string> = {
   'watchlist.registered_as': '已登记为{name}（{ticker}），而非“{input}”。',
   'watchlist.remove': '删除',
   'watchlist.remove_failed': '无法删除。',
+  'errors.boundary_title': '无法显示此页面',
+  'errors.boundary_body': '这可能是暂时的问题。刷新后仍然出现的话，请稍后再试。',
+  'errors.reload': '刷新',
+  'common.go_home': '回到首页',
 }

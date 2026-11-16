@@ -15,6 +15,7 @@ import { languageName } from '../i18n'
 import { toLocale } from '../i18n'
 import { useLocale } from '../i18n/useLocale'
 import { formatDateTime, formatTradingDate } from '../utils/format'
+import LoadingNotice from '../components/ui/LoadingNotice'
 
 type Tab = 'today' | 'history'
 const HISTORY_PAGE_SIZE = 10
@@ -105,7 +106,7 @@ function TodayTab({ onShowHistory }: { onShowHistory: () => void }) {
 
   return (
     <>
-      {current.isPending && <p className="muted">{t('common.loading')}</p>}
+      {current.isPending && <LoadingNotice />}
       {current.error && <ErrorNotice error={current.error} onRetry={() => void current.refetch()} />}
       {generate.error && (
         <>
@@ -159,7 +160,7 @@ function HistoryTab() {
         <button type="button" className="back-link-button" onClick={() => setOpenId(null)}>
           ← {t('daily_briefing.history_title')}
         </button>
-        {detail.isPending && <p className="muted">{t('common.loading')}</p>}
+        {detail.isPending && <LoadingNotice />}
         {detail.error && <ErrorNotice error={detail.error} onRetry={() => void detail.refetch()} />}
         {detail.data && <BriefingDetail briefing={detail.data} isPast />}
       </>
@@ -179,7 +180,7 @@ function HistoryTab() {
           </button>
         </p>
       )}
-      {list.isPending && <p className="muted">{t('common.loading')}</p>}
+      {list.isPending && <LoadingNotice />}
       {list.error && <ErrorNotice error={list.error} onRetry={() => void list.refetch()} />}
       {list.data && items.length === 0 && <EmptyState message={t('daily_briefing.not_generated')} />}
 

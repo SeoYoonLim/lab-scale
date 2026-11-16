@@ -19,6 +19,7 @@ import { languageName, toLocale } from '../i18n'
 import { useLocale } from '../i18n/useLocale'
 import { formatPlainPct, formatWon } from '../utils/format'
 import { toolLabel } from '../utils/toolLabels'
+import LoadingNotice from '../components/ui/LoadingNotice'
 
 const PAGE_SIZE = 10
 
@@ -45,7 +46,7 @@ function Highlight({ text, terms }: { text: string; terms: string[] }) {
 function ResearchRecord({ reportId }: { reportId: number }) {
   const { t } = useLocale()
   const record = useQuery({ queryKey: queryKeys.reportRecord(reportId), queryFn: () => api.getReportRecord(reportId) })
-  if (record.isPending) return <p className="muted">{t('common.loading')}</p>
+  if (record.isPending) return <LoadingNotice />
   if (record.error) return <ErrorNotice error={record.error} onRetry={() => void record.refetch()} />
   const r = record.data
   return (
@@ -88,7 +89,7 @@ function DiagnosisRecord({ diagnosisId }: { diagnosisId: number }) {
   return (
     <div className="history-detail">
       <Banner tone="info">{t('history.past_basis_notice')}</Banner>
-      {detail.isPending && <p className="muted">{t('common.loading')}</p>}
+      {detail.isPending && <LoadingNotice />}
       {detail.error && <ErrorNotice error={detail.error} onRetry={() => void detail.refetch()} />}
       {detail.data && <DiagnosisResultView result={detail.data} />}
       <button type="button" className="reset-button" onClick={() => setShowCompare((v) => !v)}>
@@ -96,7 +97,7 @@ function DiagnosisRecord({ diagnosisId }: { diagnosisId: number }) {
       </button>
       {showCompare && (
         <div className="diagnosis-compare-panel">
-          {compare.isPending && <p className="muted">{t('common.loading')}</p>}
+          {compare.isPending && <LoadingNotice />}
           {compare.error && <ErrorNotice error={compare.error} onRetry={() => void compare.refetch()} />}
           {compare.data && <DiagnosisCompareView compare={compare.data} />}
         </div>
@@ -401,7 +402,7 @@ export default function HistoryPage() {
       </div>
 
       <div id="history-panel" role="tabpanel" aria-labelledby={`history-tab-${type}`}>
-      {search.isPending && !dateError && <p className="muted">{t('common.loading')}</p>}
+      {search.isPending && !dateError && <LoadingNotice />}
       {search.error && <ErrorNotice error={search.error} onRetry={() => void search.refetch()} fallback={t('history.error_load')} />}
       {remove.error && <ErrorNotice error={remove.error} />}
 

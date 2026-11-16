@@ -6,6 +6,7 @@ import { useLocale } from '../i18n/useLocale'
 import type { EventReaction, EventReactionSummary, EventReturn, EventTypeFilter } from '../types'
 import { formatDate, formatPct, trendClass } from '../utils/format'
 import ErrorNotice from './ui/ErrorNotice'
+import LoadingNotice from './ui/LoadingNotice'
 
 const EVENT_TYPE_OPTIONS: { value: EventTypeFilter; label: { key: string; fallback: string } }[] = [
   { value: 'all', label: { key: 'filter.all', fallback: '전체' } },
@@ -189,7 +190,7 @@ export default function EventReactionsCard({ ticker }: { ticker: string }) {
         </div>
       </div>
 
-      {isPending && <p className="muted">{t('common.loading')}</p>}
+      {isPending && <LoadingNotice />}
       {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
 
       {data && (
