@@ -5,6 +5,7 @@ import { queryKeys } from '../../api/queryKeys'
 import DiagnosisCompareView from '../../components/DiagnosisCompareView'
 import DiagnosisResultView from '../../components/DiagnosisResultView'
 import ErrorNotice from '../../components/ui/ErrorNotice'
+import LiveStatus from '../../components/ui/LiveStatus'
 import { useLocale } from '../../i18n/useLocale'
 
 // 진단은 "항상 새로 계산"이고 결과를 캐시해서 재사용할 이유가 없다(backend/API.md) - 쿼리가 아니라
@@ -37,15 +38,28 @@ export default function DiagnosisSection() {
       <div className="card">
         <div className="card-head">
           <p className="muted">{t('diagnosis.intro', { fallback: '보유 종목을 바탕으로 비중·손익·위험 요인을 진단해드려요.' })}</p>
+          {/* disabled로 끄면 누른 버튼의 키보드 초점이 사라지므로 aria-disabled로 두고, 진행 중에는 눌러도 무시한다 */}
           <button
             type="button"
             className="send"
-            onClick={() => diagnosisMutation.mutate()}
-            disabled={diagnosisMutation.isPending}
+            onClick={() => {
+              if (!diagnosisMutation.isPending) diagnosisMutation.mutate()
+            }}
+            aria-disabled={diagnosisMutation.isPending || undefined}
           >
             {diagnosisMutation.isPending ? t('diagnosis.running', { fallback: '진단 중…' }) : t('diagnosis.run_button', { fallback: 'AI 진단 받기' })}
           </button>
         </div>
+        {/* 1분 넘게 걸릴 수 있는 작업이라, 시작과 끝을 소리로도 알린다 */}
+        <LiveStatus
+          message={
+            diagnosisMutation.isPending
+              ? t('diagnosis.running_note', { fallback: '보유 종목을 분석하고 있어요. 1분 정도 걸릴 수 있어요.' })
+              : diagnosisMutation.isSuccess
+                ? t('diagnosis.done_status', { fallback: '진단이 끝났어요. 아래에서 결과를 확인하세요.' })
+                : ''
+          }
+        />
 
         {diagnosisMutation.isPending && (
           <p className="entry-pending muted">
@@ -71,7 +85,7 @@ export default function DiagnosisSection() {
                   : t('diagnosis.not_saved', { fallback: '이력에 저장되지 않았어요(저장만 실패, 결과는 정상이에요).' })}
               </span>
               {diagnosisId != null && (
-                <button type="button" className="reset-button" onClick={() => setShowCompare((v) => !v)}>
+                <button type="button" className="reset-button" aria-expanded={showCompare} onClick={() => setShowCompare((v) => !v)}>
                   {showCompare ? t('diagnosis.compare_close', { fallback: '비교 닫기' }) : t('history.compare', { fallback: '이전 진단과 비교' })}
                 </button>
               )}

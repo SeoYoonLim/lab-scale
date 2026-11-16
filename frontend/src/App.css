@@ -491,7 +491,8 @@
   cursor: pointer;
 }
 
-.send:disabled {
+.send:disabled,
+.send[aria-disabled='true'] {
   opacity: 0.4;
   cursor: not-allowed;
 }
@@ -572,7 +573,8 @@
   font-size: 13px;
 }
 
-.watchlist-button:disabled {
+.watchlist-button:disabled,
+.watchlist-button[aria-disabled='true'] {
   opacity: 0.6;
   cursor: not-allowed;
 }
@@ -898,7 +900,9 @@
 }
 
 .inline-form button:disabled,
-.order-form button:disabled {
+.inline-form button[aria-disabled='true'],
+.order-form button:disabled,
+.order-form button[aria-disabled='true'] {
   opacity: 0.4;
   cursor: not-allowed;
 }
@@ -919,7 +923,8 @@
   font-size: 13px;
 }
 
-.reset-button:disabled {
+.reset-button:disabled,
+.reset-button[aria-disabled='true'] {
   opacity: 0.5;
   cursor: not-allowed;
 }

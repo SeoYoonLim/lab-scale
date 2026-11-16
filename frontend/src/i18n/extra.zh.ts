@@ -456,4 +456,10 @@ export const EXTRA_ZH: Record<string, string> = {
   'research.question_filled': '问题已填入输入框，请确认后发送。',
   'stock_feed.order_aria': '排序方式',
   'stock_feed.correction_aria': '更正公告筛选',
+  'watchlist.added_status': '已将 {name}（{ticker}）加入自选。',
+  'watchlist.removed_status': '已将 {name} 从自选中删除。',
+  'diagnosis.done_status': '诊断已完成，请在下方查看结果。',
+  'diagnosis.deleted_status': '诊断已删除。',
+  'diagnosis.delete_failed': '无法删除诊断。',
+  'briefing.generated_status': '简报已生成。',
 }

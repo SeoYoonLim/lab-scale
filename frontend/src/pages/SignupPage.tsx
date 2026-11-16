@@ -35,25 +35,34 @@ export default function SignupPage() {
       <form className="card auth-card" onSubmit={handleSubmit}>
         <AuthBrand />
         <h1 className="auth-title">{t('auth.signup', { fallback: '회원가입' })}</h1>
-        <label className="auth-field">
-          <span>{t('auth.username', { fallback: '아이디' })}</span>
+        <div className="auth-field">
+          <label htmlFor="signup-username">{t('auth.username', { fallback: '아이디' })}</label>
           <input
+            id="signup-username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             autoComplete="username"
-            placeholder={t('auth.username_placeholder', { fallback: '영문 소문자/숫자/밑줄, 3~20자' })}
+            aria-describedby="signup-username-help"
           />
-        </label>
-        <label className="auth-field">
-          <span>{t('auth.password', { fallback: '비밀번호' })}</span>
+          {/* 규칙은 placeholder가 아니라 화면에 남는 글로 둔다(입력하면 placeholder는 사라진다) */}
+          <span id="signup-username-help" className="muted small">
+            {t('auth.username_placeholder', { fallback: '영문 소문자/숫자/밑줄, 3~20자' })}
+          </span>
+        </div>
+        <div className="auth-field">
+          <label htmlFor="signup-password">{t('auth.password', { fallback: '비밀번호' })}</label>
           <input
+            id="signup-password"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="new-password"
-            placeholder={t('auth.password_placeholder', { fallback: '8~128자 (흔한 비밀번호·아이디가 든 비밀번호는 안 돼요)' })}
+            aria-describedby="signup-password-help"
           />
-        </label>
+          <span id="signup-password-help" className="muted small">
+            {t('auth.password_placeholder', { fallback: '8~128자 (흔한 비밀번호·아이디가 든 비밀번호는 안 돼요)' })}
+          </span>
+        </div>
         {error && <p className="notice notice-error" role="alert">{error}</p>}
         <button
           type="submit"
