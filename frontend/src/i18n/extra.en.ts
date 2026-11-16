@@ -462,4 +462,11 @@ export const EXTRA_EN: Record<string, string> = {
   'diagnosis.deleted_status': 'The diagnosis was deleted.',
   'diagnosis.delete_failed': 'Could not delete the diagnosis.',
   'briefing.generated_status': 'The briefing was created.',
+  'auth.email_invalid': 'Enter a valid email address.',
+  'settings.current_pw_required': 'Enter your current password.',
+  'settings.pw_fields_required': 'Enter your current password, the new password and its confirmation.',
+  'settings.delete_understood_required': 'Check the box confirming this cannot be undone.',
+  'watchlist.ticker_required': 'Enter a company name or ticker.',
+  'holdings.ticker_required': 'Enter the company to trade.',
+  'exposure.col_via': 'ETF breakdown',
 }

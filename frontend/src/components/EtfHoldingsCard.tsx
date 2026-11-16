@@ -6,6 +6,7 @@ import { formatPlainPct, formatTradingDate } from '../utils/format'
 import Banner from './ui/Banner'
 import ErrorNotice from './ui/ErrorNotice'
 import LoadingNotice from './ui/LoadingNotice'
+import ScrollRegion from './ui/ScrollRegion'
 
 const LIMIT = 10
 
@@ -42,7 +43,7 @@ export default function EtfHoldingsCard({ ticker }: { ticker: string }) {
                 })}
                 {data.source && ` · ${t('etf.source', { fallback: '출처: {source}', vars: { source: data.source } })}`}
               </p>
-              <div className="table-scroll">
+              <ScrollRegion className="table-scroll" label={t('etf.title', { fallback: '구성종목·편입 비중' })}>
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -64,7 +65,7 @@ export default function EtfHoldingsCard({ ticker }: { ticker: string }) {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </ScrollRegion>
               <p className="muted small">
                 {t('etf.top_note', {
                   fallback: '상위 {n}개 합계 {pct}. 운용사 공시 기준이며 현재 구성과 다를 수 있어요.',

@@ -462,4 +462,11 @@ export const EXTRA_ZH: Record<string, string> = {
   'diagnosis.deleted_status': '诊断已删除。',
   'diagnosis.delete_failed': '无法删除诊断。',
   'briefing.generated_status': '简报已生成。',
+  'auth.email_invalid': '请输入有效的电子邮箱地址。',
+  'settings.current_pw_required': '请输入当前密码。',
+  'settings.pw_fields_required': '请输入当前密码、新密码和确认密码。',
+  'settings.delete_understood_required': '请勾选确认无法恢复的选项。',
+  'watchlist.ticker_required': '请输入公司名称或股票代码。',
+  'holdings.ticker_required': '请输入要下单的标的。',
+  'exposure.col_via': 'ETF 成分',
 }

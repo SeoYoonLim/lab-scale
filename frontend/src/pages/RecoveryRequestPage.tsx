@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
@@ -32,19 +32,28 @@ export default function RecoveryRequestPage({ mode }: { mode: 'password' | 'user
   const { t } = useLocale()
   const copy = COPY[mode]
   const [email, setEmail] = useState('')
+  const [localError, setLocalError] = useState<string | null>(null)
+  const emailRef = useRef<HTMLInputElement>(null)
   const mutation = useMutation({
     mutationFn: (value: string) => (mode === 'password' ? api.forgotPassword(value) : api.findUsername(value)),
   })
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (mutation.isPending || !looksLikeEmail(email)) return
+    if (mutation.isPending) return
+    // 버튼을 끄는 대신 여기서 안내한다(꺼진 버튼은 키보드로 닿지 않아 이유를 알 수 없다)
+    if (!looksLikeEmail(email)) {
+      setLocalError(t('auth.email_invalid', { fallback: '올바른 이메일 주소를 입력해주세요.' }))
+      emailRef.current?.focus()
+      return
+    }
+    setLocalError(null)
     mutation.mutate(email.trim())
   }
 
   return (
     <AuthShell>
-      <form className="card auth-card" onSubmit={handleSubmit}>
+      <form className="card auth-card" onSubmit={handleSubmit} noValidate>
         <AuthBrand />
         <h1 className="auth-title">{t(copy.title.key, { fallback: copy.title.fallback })}</h1>
         <p className="muted small">{t(copy.lead.key, { fallback: copy.lead.fallback })}</p>
@@ -52,19 +61,27 @@ export default function RecoveryRequestPage({ mode }: { mode: 'password' | 'user
           <span>{t('auth.email', { fallback: '이메일' })}</span>
           <input
             type="email"
+            ref={emailRef}
+            aria-invalid={localError ? true : undefined}
+            aria-describedby={localError ? 'recovery-error' : undefined}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             autoComplete="email"
             inputMode="email"
           />
         </label>
+        {localError && (
+          <p id="recovery-error" className="notice notice-error" role="alert">
+            {localError}
+          </p>
+        )}
         {mutation.error && <ErrorNotice error={mutation.error} fallback={t('auth.request_failed', { fallback: '요청에 실패했어요. 잠시 후 다시 시도해주세요.' })} />}
         {mutation.data && (
           <p className="notice order-result" role="status">
             {mutation.data.message}
           </p>
         )}
-        <button type="submit" className="send auth-submit" disabled={mutation.isPending || !looksLikeEmail(email)}>
+        <button type="submit" className="send auth-submit" aria-disabled={mutation.isPending || undefined}>
           {mutation.isPending ? t('auth.sending', { fallback: '보내는 중…' }) : t(copy.submit.key, { fallback: copy.submit.fallback })}
         </button>
         <MockMailbox refreshKey={mutation.data} />

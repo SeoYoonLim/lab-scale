@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from '../../api'
 import { PASSWORD_MAX_LEN, PASSWORD_MIN_LEN } from '../../api/contracts/account'
@@ -16,6 +16,9 @@ export default function PasswordCard() {
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
   const [localError, setLocalError] = useState<string | null>(null)
+  const currentRef = useRef<HTMLInputElement>(null)
+  const nextRef = useRef<HTMLInputElement>(null)
+  const confirmRef = useRef<HTMLInputElement>(null)
 
   const mutation = useMutation({
     mutationFn: () => api.changePassword(current, next),
@@ -30,6 +33,13 @@ export default function PasswordCard() {
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (mutation.isPending) return
+    // 버튼을 끄는 대신 여기서 안내한다(꺼진 버튼은 키보드로 닿지 않아 이유를 알 수 없다)
+    const empty = !current ? currentRef : !next ? nextRef : !confirm ? confirmRef : null
+    if (empty) {
+      setLocalError(t('settings.pw_fields_required', { fallback: '현재 비밀번호, 새 비밀번호, 새 비밀번호 확인을 모두 입력해주세요.' }))
+      empty.current?.focus()
+      return
+    }
     if (next.length < PASSWORD_MIN_LEN || next.length > PASSWORD_MAX_LEN) {
       setLocalError(
         t('settings.password_length', {
@@ -48,13 +58,16 @@ export default function PasswordCard() {
   }
 
   return (
-    <form className="card settings-card" onSubmit={handleSubmit} aria-labelledby="password-card-title">
+    <form className="card settings-card" onSubmit={handleSubmit} aria-labelledby="password-card-title" noValidate>
       <h2 id="password-card-title" className="section-title">
         {t('settings.password_title', { fallback: '비밀번호 변경' })}
       </h2>
       <label className="auth-field">
         <span>{t('settings.current_password', { fallback: '현재 비밀번호' })}</span>
         <input
+          ref={currentRef}
+          aria-invalid={localError && !current ? true : undefined}
+          aria-describedby={localError ? 'password-card-error' : undefined}
           type="password"
           value={current}
           onChange={(e) => setCurrent(e.target.value)}
@@ -63,7 +76,15 @@ export default function PasswordCard() {
       </label>
       <label className="auth-field">
         <span>{t('settings.new_password', { fallback: '새 비밀번호' })}</span>
-        <input type="password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" />
+        <input
+          ref={nextRef}
+          aria-invalid={localError && !next ? true : undefined}
+          aria-describedby={localError ? 'password-card-error' : undefined}
+          type="password"
+          value={next}
+          onChange={(e) => setNext(e.target.value)}
+          autoComplete="new-password"
+        />
         <span className="muted small">
           {t('settings.password_help', {
             fallback: '{min}~{max}자. 흔한 비밀번호나 아이디·이메일이 들어간 비밀번호는 쓸 수 없어요.',
@@ -74,6 +95,9 @@ export default function PasswordCard() {
       <label className="auth-field">
         <span>{t('settings.new_password_confirm', { fallback: '새 비밀번호 확인' })}</span>
         <input
+          ref={confirmRef}
+          aria-invalid={localError && !confirm ? true : undefined}
+          aria-describedby={localError ? 'password-card-error' : undefined}
           type="password"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
@@ -82,7 +106,7 @@ export default function PasswordCard() {
       </label>
 
       {localError && (
-        <p className="notice notice-error" role="alert">
+        <p id="password-card-error" className="notice notice-error" role="alert">
           {localError}
         </p>
       )}
@@ -95,7 +119,7 @@ export default function PasswordCard() {
         </p>
       )}
 
-      <button type="submit" className="send" disabled={mutation.isPending || !current || !next || !confirm}>
+      <button type="submit" className="send" aria-disabled={mutation.isPending || undefined}>
         {mutation.isPending ? t('common.loading') : t('settings.password_change', { fallback: '비밀번호 바꾸기' })}
       </button>
     </form>
