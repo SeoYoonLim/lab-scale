@@ -450,4 +450,10 @@ export const EXTRA_EN: Record<string, string> = {
   'errors.boundary_body': 'This may be temporary. If it keeps happening after reloading, please try again in a moment.',
   'errors.reload': 'Reload',
   'common.go_home': 'Go to the start page',
+  'a11y.opens_new_tab': 'Opens in a new tab',
+  'auth.fields_required': 'Enter your username and password.',
+  'research.answer_ready': 'The analysis result has arrived.',
+  'research.question_filled': 'The question was filled in. Check it and send.',
+  'stock_feed.order_aria': 'Sort order',
+  'stock_feed.correction_aria': 'Correction filings filter',
 }

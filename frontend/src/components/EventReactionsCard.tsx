@@ -6,6 +6,7 @@ import { useLocale } from '../i18n/useLocale'
 import type { EventReaction, EventReactionSummary, EventReturn, EventTypeFilter } from '../types'
 import { formatDate, formatPct, trendClass } from '../utils/format'
 import ErrorNotice from './ui/ErrorNotice'
+import NewTabHint from './ui/NewTabHint'
 import LoadingNotice from './ui/LoadingNotice'
 
 const EVENT_TYPE_OPTIONS: { value: EventTypeFilter; label: { key: string; fallback: string } }[] = [
@@ -33,11 +34,9 @@ function ReturnCell({ label, value }: { label: string; value: EventReturn }) {
         <>
           <span className={`num reaction-cell-value ${trendClass(value.pct)}`}>{formatPct(value.pct)}</span>
           {value.excess_pct != null && (
-            <span
-              className="muted small num"
-              title={t('reactions.excess_title', { fallback: '같은 기간 시장 지수 대비 초과수익률' })}
-            >
+            <span className="muted small num" title={t('reactions.excess_title', { fallback: '같은 기간 시장 지수 대비 초과수익률' })}>
               {t('reactions.vs_index', { fallback: '지수 대비 {value}', vars: { value: signed(value.excess_pct) } })}
+              <span className="sr-only">. {t('reactions.excess_title', { fallback: '같은 기간 시장 지수 대비 초과수익률' })}</span>
             </span>
           )}
         </>
@@ -62,6 +61,7 @@ function EventRow({ event }: { event: EventReaction }) {
         {event.url ? (
           <a href={event.url} target="_blank" rel="noreferrer" className="reaction-title">
             {event.title}
+            <NewTabHint />
           </a>
         ) : (
           <span className="reaction-title">{event.title}</span>
@@ -81,6 +81,7 @@ function EventRow({ event }: { event: EventReaction }) {
             })}
           >
             {t('reactions.volume_ratio', { fallback: '거래량 평균의 {n}배', vars: { n: event.volume_ratio.toFixed(2) } })}
+            <span className="sr-only">. {t('reactions.volume_title', { fallback: '반응 시작일 거래량 ÷ 직전 {n}거래일 평균', vars: { n: event.volume_sample_days } })}</span>
           </span>
         )}
         {event.other_events_in_window > 0 && (

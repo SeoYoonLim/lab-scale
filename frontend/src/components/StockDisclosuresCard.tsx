@@ -12,6 +12,7 @@ import { DEFAULT_FILTERS } from './stockFeed/filters'
 import type { FeedFilterState } from './stockFeed/filters'
 import EmptyState from './ui/EmptyState'
 import ErrorNotice from './ui/ErrorNotice'
+import NewTabHint from './ui/NewTabHint'
 import StatusBadge from './ui/StatusBadge'
 import LoadingNotice from './ui/LoadingNotice'
 
@@ -70,7 +71,7 @@ export default function StockDisclosuresCard({ ticker }: { ticker: string }) {
                   setCorrection(e.target.value as CorrectionFilter)
                   setOffset(0)
                 }}
-                aria-label={t('stock_feed.correction_all', { fallback: '전체' })}
+                aria-label={t('stock_feed.correction_aria', { fallback: '정정 공시 필터' })}
               >
                 <option value="all">{t('stock_feed.correction_all', { fallback: '전체' })}</option>
                 <option value="only">{t('stock_feed.correction_only', { fallback: '정정 공시만' })}</option>
@@ -113,6 +114,7 @@ export default function StockDisclosuresCard({ ticker }: { ticker: string }) {
                       {item.source_url ? (
                         <a href={item.source_url} target="_blank" rel="noopener noreferrer" className="feed-title">
                           {item.title}
+                          <NewTabHint />
                         </a>
                       ) : (
                         <span className="feed-title">{item.title}</span>

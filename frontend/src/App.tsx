@@ -31,7 +31,7 @@ function NotFoundPage() {
   const { t } = useLocale()
   return (
     <div className="container page">
-      <p>{t('auth.not_found_page', { fallback: '페이지를 찾을 수 없어요.' })}</p>
+      <h1 className="notice-heading">{t('auth.not_found_page', { fallback: '페이지를 찾을 수 없어요.' })}</h1>
       <Link className="btn" to="/">
         {t('common.go_home', { fallback: '처음 화면으로' })}
       </Link>

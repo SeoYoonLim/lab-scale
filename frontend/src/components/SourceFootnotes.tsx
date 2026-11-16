@@ -1,6 +1,7 @@
 import { useLocale } from '../i18n/useLocale'
 import type { Source } from '../types'
 import { toolLabel } from '../utils/toolLabels'
+import NewTabHint from './ui/NewTabHint'
 
 // 답변 아래에 근거를 붙인다. 위쪽 칩은 "무엇을 근거로 했는지"를 한눈에(사용한 도구, 뉴스·공시 건수),
 // 아래 각주는 번호 매긴 원문 링크다. stock_tool·market_tool처럼 근거 문서가 없는 도구는 칩으로만 보여준다.
@@ -37,6 +38,7 @@ export default function SourceFootnotes({ usedTools, sources }: { usedTools: str
               {source.url ? (
                 <a href={source.url} target="_blank" rel="noreferrer">
                   {source.title}
+                  <NewTabHint />
                 </a>
               ) : (
                 <span>{source.title}</span>

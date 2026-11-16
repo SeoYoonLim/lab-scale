@@ -48,6 +48,8 @@ export default function ResearchPage() {
   const [entries, setEntries] = useState<Entry[]>([])
   const [input, setInput] = useState('')
   const [pending, setPending] = useState(false)
+  // 화면 읽기 프로그램용 알림. 진행 카드가 답변 카드로 바뀌는 건 소리로는 알 수 없어서 따로 알려준다.
+  const [announcement, setAnnouncement] = useState('')
   // 직전 성공한 report_id. 있으면 다음 질문에 이어서(previous_report_id) 물어본다.
   // (backend/API.md: "그럼 최근 뉴스는?"처럼 종목명이 빠진 후속 질문도 이어받아 답함)
   const [threadReportId, setThreadReportId] = useState<number | null>(null)
@@ -58,7 +60,9 @@ export default function ResearchPage() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    // 부드러운 스크롤은 CSS의 prefers-reduced-motion을 따르지 않으므로 직접 확인한다
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    endRef.current?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'end' })
   }, [entries, pending])
 
   // 첫 질문을 보내면 입력창이 가운데(안내 화면)에서 아래쪽 고정 칸으로 옮겨 가며 새로 만들어져서, 키보드로 보낸 사용자의
@@ -86,6 +90,7 @@ export default function ResearchPage() {
     if (!question || pending) return
 
     setInput('')
+    setAnnouncement('')
     const id = nextId.current++
     const previousReportId = threadReportId
     setEntries((prev) => [
@@ -114,6 +119,7 @@ export default function ResearchPage() {
             : e,
         ),
       )
+      setAnnouncement(t('research.answer_ready', { fallback: '분석 결과가 도착했어요.' }))
       // 저장에 실패하면(report_id: null) 이어받을 리포트가 없으니 대화 스레드를 끊는다.
       setThreadReportId(res.report_id)
     } catch (error) {
@@ -121,6 +127,13 @@ export default function ResearchPage() {
     } finally {
       setPending(false)
     }
+  }
+
+  // 오늘의 관심 종목을 누르면 질문만 채우고 보내지는 않는다 - 채워졌다는 걸 알리고 입력창으로 초점을 옮겨 바로 확인·전송하게 한다.
+  function pickQuestion(question: string) {
+    setInput(question)
+    setAnnouncement(t('research.question_filled', { fallback: '질문이 입력창에 채워졌어요. 확인하고 보내주세요.' }))
+    inputRef.current?.focus()
   }
 
   function handleSubmit(e: FormEvent) {
@@ -185,7 +198,12 @@ export default function ResearchPage() {
 
   return (
     <div className="chat-page">
+      <p className="sr-only" role="status">
+        {announcement}
+      </p>
       <div className="chat-scroll">
+        {/* 첫 질문 뒤에는 안내 문구(h1)가 사라지므로, 화면 제목은 화면 읽기 프로그램용으로 남긴다 */}
+        {entries.length > 0 && <h1 className="sr-only">{t('nav.research')}</h1>}
         <div className="container container-wide">
           {entries.length === 0 && (
             <div className="entry-empty">
@@ -208,7 +226,7 @@ export default function ResearchPage() {
               </ul>
               <MarketSummaryCard />
               <DataToolCards />
-              <TrendingWidget onPick={(question) => setInput(question)} />
+              <TrendingWidget onPick={pickQuestion} />
             </div>
           )}
 

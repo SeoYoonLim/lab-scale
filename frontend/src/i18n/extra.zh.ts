@@ -450,4 +450,10 @@ export const EXTRA_ZH: Record<string, string> = {
   'errors.boundary_body': '这可能是暂时的问题。刷新后仍然出现的话，请稍后再试。',
   'errors.reload': '刷新',
   'common.go_home': '回到首页',
+  'a11y.opens_new_tab': '在新标签页中打开',
+  'auth.fields_required': '请输入用户名和密码。',
+  'research.answer_ready': '分析结果已送达。',
+  'research.question_filled': '问题已填入输入框，请确认后发送。',
+  'stock_feed.order_aria': '排序方式',
+  'stock_feed.correction_aria': '更正公告筛选',
 }

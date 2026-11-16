@@ -5,6 +5,7 @@ import { api } from '../api'
 import { queryKeys } from '../api/queryKeys'
 import { useAuth } from '../auth/useAuth'
 import AuthBrand from '../components/AuthBrand'
+import AuthShell from '../components/AuthShell'
 import ErrorNotice from '../components/ui/ErrorNotice'
 import { useLocale } from '../i18n/useLocale'
 import { useHashToken } from '../utils/useHashToken'
@@ -32,7 +33,7 @@ export default function VerifyEmailPage() {
   }, [token, mutate])
 
   return (
-    <div className="auth-page">
+    <AuthShell>
       <div className="card auth-card">
         <AuthBrand />
         <h1 className="auth-title">{t('auth.verify_title', { fallback: '이메일 인증' })}</h1>
@@ -68,6 +69,6 @@ export default function VerifyEmailPage() {
           </p>
         )}
       </div>
-    </div>
+    </AuthShell>
   )
 }

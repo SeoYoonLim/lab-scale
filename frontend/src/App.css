@@ -777,7 +777,8 @@
   cursor: pointer;
 }
 
-.pagination button:disabled {
+.pagination button:disabled,
+.pagination button[aria-disabled='true'] {
   opacity: 0.4;
   cursor: not-allowed;
 }
@@ -3649,4 +3650,38 @@ body {
 .error-boundary-actions .btn {
   min-height: 44px;
   text-decoration: none;
+}
+
+/* 화면에는 보이지 않고 화면 읽기 프로그램에만 읽히는 글(알림 영역·보조 설명) */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 문장 속 링크는 색만으로 구분하지 않는다(밑줄) */
+.auth-switch a,
+.feed-related-link,
+.back-link {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* 안내 문장이 제목(h1)이어야 하는 화면(404 등)에서 글자 크기·여백은 일반 문장 그대로 둔다 */
+.notice-heading {
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+}
+
+/* 11~12px 배지 글자는 4.5:1이 필요해서 더 진한 파랑을 쓴다(--accent는 --accent-soft 위에서 4.4:1) */
+.chip-strong,
+.reaction-type-disclosure {
+  color: var(--accent-strong);
 }

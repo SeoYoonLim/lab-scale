@@ -25,17 +25,17 @@ export function FeedFilters({
       <div className="history-filter-row">
         <label className="inline-select">
           <span className="muted small">{t('stock_feed.date_from', { fallback: '시작일' })}</span>
-          <input type="date" value={value.dateFrom} max={value.dateTo || undefined} onChange={(e) => onChange({ ...value, dateFrom: e.target.value })} />
+          <input type="date" value={value.dateFrom} max={value.dateTo || undefined} aria-invalid={invalid || undefined} onChange={(e) => onChange({ ...value, dateFrom: e.target.value })} />
         </label>
         <label className="inline-select">
           <span className="muted small">{t('stock_feed.date_to', { fallback: '종료일' })}</span>
-          <input type="date" value={value.dateTo} min={value.dateFrom || undefined} onChange={(e) => onChange({ ...value, dateTo: e.target.value })} />
+          <input type="date" value={value.dateTo} min={value.dateFrom || undefined} aria-invalid={invalid || undefined} onChange={(e) => onChange({ ...value, dateTo: e.target.value })} />
         </label>
         <label className="inline-select">
           <select
             value={value.order}
             onChange={(e) => onChange({ ...value, order: e.target.value as FeedOrder })}
-            aria-label={t('stock_feed.order_newest', { fallback: '최신순' })}
+            aria-label={t('stock_feed.order_aria', { fallback: '정렬' })}
           >
             <option value="desc">{t('stock_feed.order_newest', { fallback: '최신순' })}</option>
             <option value="asc">{t('stock_feed.order_oldest', { fallback: '오래된순' })}</option>

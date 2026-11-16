@@ -91,6 +91,9 @@ export default function PriceChartCard({ ticker }: { ticker: string }) {
       event.preventDefault()
       const step = event.key === 'ArrowLeft' ? -1 : 1
       setActiveIndex((prev) => Math.min(items.length - 1, Math.max(0, (prev ?? items.length - 1) + step)))
+    } else if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault()
+      setActiveIndex(event.key === 'Home' ? 0 : items.length - 1)
     } else if (event.key === 'Escape') {
       setActiveIndex(null)
     }

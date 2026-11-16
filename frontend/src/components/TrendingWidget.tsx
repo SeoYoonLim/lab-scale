@@ -45,6 +45,7 @@ export default function TrendingWidget({ onPick }: { onPick: (question: string) 
                 key={c}
                 type="button"
                 className={c === category ? 'seg active' : 'seg'}
+                aria-pressed={c === category}
                 onClick={() => setCategory(c)}
               >
                 {t(CATEGORY_LABELS[c].key, { fallback: CATEGORY_LABELS[c].fallback })}
@@ -57,6 +58,7 @@ export default function TrendingWidget({ onPick }: { onPick: (question: string) 
                 key={type}
                 type="button"
                 className={type === assetType ? 'seg active' : 'seg'}
+                aria-pressed={type === assetType}
                 onClick={() => setAssetType(type)}
               >
                 {t(ASSET_TYPE_LABELS[type].key, { fallback: ASSET_TYPE_LABELS[type].fallback })}

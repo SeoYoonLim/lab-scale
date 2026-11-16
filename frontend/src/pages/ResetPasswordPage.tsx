@@ -7,6 +7,7 @@ import { PASSWORD_MAX_LEN, PASSWORD_MIN_LEN } from '../api/contracts/account'
 import { ApiError } from '../api/errors'
 import { useAuth } from '../auth/useAuth'
 import AuthBrand from '../components/AuthBrand'
+import AuthShell from '../components/AuthShell'
 import ErrorNotice from '../components/ui/ErrorNotice'
 import { useLocale } from '../i18n/useLocale'
 import { useHashToken } from '../utils/useHashToken'
@@ -58,7 +59,7 @@ function ResetPasswordForm({ token }: { token: string | null }) {
   const linkDead = mutation.error instanceof ApiError && mutation.error.status === 400
 
   return (
-    <div className="auth-page">
+    <AuthShell>
       <form className="card auth-card" onSubmit={handleSubmit}>
         <AuthBrand />
         <h1 className="auth-title">{t('auth.reset_title', { fallback: '비밀번호 재설정' })}</h1>
@@ -129,6 +130,6 @@ function ResetPasswordForm({ token }: { token: string | null }) {
           </>
         )}
       </form>
-    </div>
+    </AuthShell>
   )
 }

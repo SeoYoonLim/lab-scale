@@ -49,7 +49,7 @@ describe('StockNewsCard', () => {
   it('제목 링크·출처·KST 날짜·함께 언급된 종목을 보여주고, 수집이 멈췄으면 지연 띠를 띄운다', async () => {
     getStockNews.mockResolvedValue(news)
     renderWithProviders(<StockNewsCard ticker="005930" />)
-    const title = await screen.findByRole('link', { name: news.items[0].title })
+    const title = await screen.findByRole('link', { name: (n) => n.startsWith(news.items[0].title) })
     expect(title.getAttribute('href')).toBe(news.items[0].url)
     expect(title.getAttribute('rel')).toContain('noopener')
     expect(screen.getByText('www.thereport.co.kr')).toBeTruthy()
@@ -81,7 +81,7 @@ describe('StockNewsCard', () => {
   it('날짜 범위가 거꾸로면 서버(422)에 보내지 않고 안내만 보여준다', async () => {
     getStockNews.mockResolvedValue(news)
     renderWithProviders(<StockNewsCard ticker="005930" />)
-    await screen.findByRole('link', { name: news.items[0].title })
+    await screen.findByRole('link', { name: (n) => n.startsWith(news.items[0].title) })
     const calls = getStockNews.mock.calls.length
     const [from, to] = screen.getAllByDisplayValue('')
       .filter((el) => (el as HTMLInputElement).type === 'date') as HTMLInputElement[]
@@ -96,7 +96,7 @@ describe('StockNewsCard', () => {
   it('필터를 바꾸면 첫 페이지부터 다시 불러온다(페이지 이동 뒤에도 offset을 0으로)', async () => {
     getStockNews.mockResolvedValue({ ...news, total: 25, total_pages: 3, has_next: true, limit: 10, offset: 0 })
     renderWithProviders(<StockNewsCard ticker="005930" />)
-    await screen.findByRole('link', { name: news.items[0].title })
+    await screen.findByRole('link', { name: (n) => n.startsWith(news.items[0].title) })
     fireEvent.click(screen.getByRole('button', { name: '다음' }))
     await waitFor(() => expect(getStockNews).toHaveBeenLastCalledWith('005930', expect.objectContaining({ offset: 10 })))
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'asc' } })
@@ -108,7 +108,7 @@ describe('StockDisclosuresCard', () => {
   it('정정 공시에 배지를 달고, 접수일은 시각 없이 날짜만 보여준다', async () => {
     getStockDisclosures.mockResolvedValue({ ...disclosures, freshness: { ...disclosures.freshness, stale: false } })
     renderWithProviders(<StockDisclosuresCard ticker="005930" />)
-    const link = await screen.findByRole('link', { name: disclosures.items[0].title })
+    const link = await screen.findByRole('link', { name: (n) => n.startsWith(disclosures.items[0].title) })
     expect(link.getAttribute('href')).toBe(disclosures.items[0].source_url)
     expect(screen.getByText('정정')).toBeTruthy()
     expect(screen.getByText('2026.10.29')).toBeTruthy()
@@ -119,7 +119,7 @@ describe('StockDisclosuresCard', () => {
   it('정정 필터를 바꾸면 correction 파라미터로 다시 부른다', async () => {
     getStockDisclosures.mockResolvedValue(disclosures)
     renderWithProviders(<StockDisclosuresCard ticker="005930" />)
-    await screen.findByRole('link', { name: disclosures.items[0].title })
+    await screen.findByRole('link', { name: (n) => n.startsWith(disclosures.items[0].title) })
     fireEvent.change(screen.getByDisplayValue('전체'), { target: { value: 'only' } })
     await waitFor(() => expect(getStockDisclosures).toHaveBeenLastCalledWith('005930', expect.objectContaining({ correction: 'only', offset: 0 })))
   })
