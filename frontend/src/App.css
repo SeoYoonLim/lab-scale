@@ -3698,3 +3698,9 @@ body {
   cursor: not-allowed;
   text-decoration: none;
 }
+
+/* 진단 결과·비교 안의 작은 소제목(강점·위험 요인·보유 종목별 비중 등). 제목 요소(h3)지만 예전의 작은 회색 글자 모양 그대로 둔다. */
+.diagnosis-heading {
+  margin: 0;
+  font-weight: 400;
+}

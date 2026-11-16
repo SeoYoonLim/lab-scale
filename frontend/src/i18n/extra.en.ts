@@ -469,4 +469,5 @@ export const EXTRA_EN: Record<string, string> = {
   'watchlist.ticker_required': 'Enter a company name or ticker.',
   'holdings.ticker_required': 'Enter the company to trade.',
   'exposure.col_via': 'ETF breakdown',
+  'companies.result_count': '{n} results',
 }

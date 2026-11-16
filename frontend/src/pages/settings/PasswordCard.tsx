@@ -74,24 +74,26 @@ export default function PasswordCard() {
           autoComplete="current-password"
         />
       </label>
-      <label className="auth-field">
-        <span>{t('settings.new_password', { fallback: '새 비밀번호' })}</span>
+      <div className="auth-field">
+        <label htmlFor="password-card-new">{t('settings.new_password', { fallback: '새 비밀번호' })}</label>
         <input
+          id="password-card-new"
           ref={nextRef}
           aria-invalid={localError && !next ? true : undefined}
-          aria-describedby={localError ? 'password-card-error' : undefined}
+          aria-describedby={localError ? 'password-card-new-help password-card-error' : 'password-card-new-help'}
           type="password"
           value={next}
           onChange={(e) => setNext(e.target.value)}
           autoComplete="new-password"
         />
-        <span className="muted small">
+        {/* 규칙 도움말은 라벨 밖에 두고 연결만 한다(라벨 안에 두면 입력칸 이름이 길어진다) */}
+        <span id="password-card-new-help" className="muted small">
           {t('settings.password_help', {
             fallback: '{min}~{max}자. 흔한 비밀번호나 아이디·이메일이 들어간 비밀번호는 쓸 수 없어요.',
             vars: { min: PASSWORD_MIN_LEN, max: PASSWORD_MAX_LEN },
           })}
         </span>
-      </label>
+      </div>
       <label className="auth-field">
         <span>{t('settings.new_password_confirm', { fallback: '새 비밀번호 확인' })}</span>
         <input

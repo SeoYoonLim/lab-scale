@@ -82,7 +82,7 @@ export default function DiagnosisResultView({ result }: { result: DiagnosisRespo
 
       {result.holdings.length > 0 && (
         <div className="diagnosis-block">
-          <div className="muted small">{t('diagnosis.holdings_title', { fallback: '보유 종목별 비중' })}</div>
+          <h3 className="muted small diagnosis-heading">{t('diagnosis.holdings_title', { fallback: '보유 종목별 비중' })}</h3>
           <ScrollRegion className="diagnosis-holdings-scroll" label={t('diagnosis.holdings_title', { fallback: '보유 종목별 비중' })}>
             <table className="diagnosis-holdings">
               <thead>
@@ -124,7 +124,7 @@ export default function DiagnosisResultView({ result }: { result: DiagnosisRespo
 
       {result.flags.length > 0 && (
         <div className="diagnosis-block">
-          <div className="muted small">{t('diagnosis.flags_title', { fallback: '확인된 항목' })}</div>
+          <h3 className="muted small diagnosis-heading">{t('diagnosis.flags_title', { fallback: '확인된 항목' })}</h3>
           <ul className="list">
             {result.flags.map((flag, i) => (
               <li key={i}>{flag.message}</li>
@@ -135,7 +135,7 @@ export default function DiagnosisResultView({ result }: { result: DiagnosisRespo
 
       <div className="diagnosis-columns">
         <div>
-          <div className="muted small">{t('diagnosis.strengths', { fallback: '강점' })}</div>
+          <h3 className="muted small diagnosis-heading">{t('diagnosis.strengths', { fallback: '강점' })}</h3>
           <ul className="list">
             {result.strengths.map((s, i) => (
               <li key={i}>{s}</li>
@@ -143,7 +143,7 @@ export default function DiagnosisResultView({ result }: { result: DiagnosisRespo
           </ul>
         </div>
         <div>
-          <div className="muted small">{t('diagnosis.risks', { fallback: '위험 요인' })}</div>
+          <h3 className="muted small diagnosis-heading">{t('diagnosis.risks', { fallback: '위험 요인' })}</h3>
           <ul className="list">
             {result.risks.map((s, i) => (
               <li key={i}>{s}</li>
@@ -151,7 +151,7 @@ export default function DiagnosisResultView({ result }: { result: DiagnosisRespo
           </ul>
         </div>
         <div>
-          <div className="muted small">{t('diagnosis.suggestions', { fallback: '제안' })}</div>
+          <h3 className="muted small diagnosis-heading">{t('diagnosis.suggestions', { fallback: '제안' })}</h3>
           <ul className="list">
             {result.suggestions.map((s, i) => (
               <li key={i}>{s}</li>

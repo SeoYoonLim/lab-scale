@@ -13,7 +13,7 @@ export default function MockMailbox({ refreshKey }: { refreshKey?: unknown }) {
   const mails = useMemo(() => (USE_MOCK ? readMockMailbox().slice(0, 3) : []), [refreshKey])
   if (!USE_MOCK) return null
   return (
-    <div className="mock-mailbox" aria-label={t('mock.mailbox_aria', { fallback: '샘플 메일함' })}>
+    <div className="mock-mailbox" role="group" aria-label={t('mock.mailbox_aria', { fallback: '샘플 메일함' })}>
       <p className="muted small">
         {t('mock.mailbox_note', { fallback: '샘플 데이터 모드라 메일이 실제로 가지 않아요. 보낸 것으로 친 메일의 링크예요.' })}
       </p>

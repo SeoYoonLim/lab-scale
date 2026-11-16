@@ -469,4 +469,5 @@ export const EXTRA_JA: Record<string, string> = {
   'watchlist.ticker_required': '銘柄名または銘柄コードを入力してください。',
   'holdings.ticker_required': '注文する銘柄を入力してください。',
   'exposure.col_via': 'ETFの内訳',
+  'companies.result_count': '検索結果 {n}件',
 }

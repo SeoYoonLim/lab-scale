@@ -69,21 +69,31 @@ export default function SettingsPage() {
         {query.isPending && <LoadingNotice />}
         {query.error && <ErrorNotice error={query.error} onRetry={() => void query.refetch()} />}
 
-        <label className="auth-field">
-          <span>{t('settings.language')}</span>
-          <select value={locale} onChange={(e) => setLocaleDraft(e.target.value as Locale)}>
+        <div className="auth-field">
+          <label htmlFor="settings-language">{t('settings.language')}</label>
+          <select
+            id="settings-language"
+            value={locale}
+            onChange={(e) => setLocaleDraft(e.target.value as Locale)}
+            aria-describedby="settings-language-help"
+          >
             {LOCALES.map((code) => (
               <option key={code} value={code}>
                 {LOCALE_NATIVE_NAMES[code]}
               </option>
             ))}
           </select>
-          <span className="muted small">{t('settings.language_help')}</span>
-        </label>
+          {/* 도움말은 라벨 밖에 두고 연결만 한다(라벨 안에 두면 입력칸 이름이 길어진다) */}
+          <span id="settings-language-help" className="muted small">
+            {t('settings.language_help')}
+          </span>
+        </div>
 
-        <label className="auth-field">
-          <span>{t('settings.timezone')}</span>
+        <div className="auth-field">
+          <label htmlFor="settings-timezone">{t('settings.timezone')}</label>
           <input
+            id="settings-timezone"
+            aria-describedby="settings-timezone-help"
             list="timezone-options"
             value={timezone}
             onChange={(e) => setTimezoneDraft(e.target.value)}
@@ -94,11 +104,11 @@ export default function SettingsPage() {
               <option key={name} value={name} />
             ))}
           </datalist>
-          <span className="muted small">
+          <span id="settings-timezone-help" className="muted small">
             {t('settings.timezone_help')}
             {current && <> ({current.effective_timezone})</>}
           </span>
-        </label>
+        </div>
 
         {save.error && <ErrorNotice error={save.error} fallback={t('settings.save_failed')} />}
         {save.isSuccess && !dirty && <p className="notice order-result" role="status">{t('settings.saved')}</p>}

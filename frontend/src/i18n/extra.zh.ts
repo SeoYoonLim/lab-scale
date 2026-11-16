@@ -469,4 +469,5 @@ export const EXTRA_ZH: Record<string, string> = {
   'watchlist.ticker_required': '请输入公司名称或股票代码。',
   'holdings.ticker_required': '请输入要下单的标的。',
   'exposure.col_via': 'ETF 成分',
+  'companies.result_count': '共 {n} 条结果',
 }
