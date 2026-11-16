@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api'
 import { queryKeys } from '../../api/queryKeys'
 import DiagnosisCompareView from '../../components/DiagnosisCompareView'
@@ -35,6 +35,20 @@ export default function DiagnosisHistorySection() {
     enabled: expanded?.view === 'compare',
   })
 
+  // 삭제한 진단의 위치. 눌렀던 삭제 버튼이 사라져 초점이 문서 맨 위로 날아가지 않도록, 목록이 바뀐 뒤 다음 줄의 삭제 버튼
+  // (없으면 구역 제목)으로 옮긴다.
+  const listRef = useRef<HTMLUListElement>(null)
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const focusAfterDelete = useRef<number | null>(null)
+  useEffect(() => {
+    const index = focusAfterDelete.current
+    if (index == null) return
+    focusAfterDelete.current = null
+    const buttons = listRef.current?.querySelectorAll<HTMLButtonElement>('button.delete-report')
+    if (buttons && buttons.length > 0) buttons[Math.max(0, Math.min(index, buttons.length - 1))].focus()
+    else headingRef.current?.focus()
+  }, [data])
+
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.deleteDiagnosis(id),
     onSuccess: () => {
@@ -49,12 +63,20 @@ export default function DiagnosisHistorySection() {
 
   async function handleDelete(id: number) {
     if (!confirm(t('diagnosis.delete_confirm', { fallback: '이 진단을 삭제할까요? 되돌릴 수 없어요.' }))) return
-    await deleteMutation.mutateAsync(id)
+    focusAfterDelete.current = data?.items.findIndex((row) => row.id === id) ?? null
+    try {
+      await deleteMutation.mutateAsync(id)
+    } catch (err) {
+      focusAfterDelete.current = null
+      throw err
+    }
   }
 
   return (
     <section>
-      <h2 className="section-title">{t('diagnosis.history_title', { fallback: '진단 이력' })}</h2>
+      <h2 className="section-title" ref={headingRef} tabIndex={-1}>
+        {t('diagnosis.history_title', { fallback: '진단 이력' })}
+      </h2>
       <div className="card">
         {isPending && <LoadingNotice />}
         {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
@@ -63,7 +85,7 @@ export default function DiagnosisHistorySection() {
         )}
 
         {data && data.items.length > 0 && (
-          <ul className="ledger">
+          <ul className="ledger" ref={listRef}>
             {data.items.map((item) => (
               <li key={item.id} className="ledger-row">
                 <div className="ledger-summary diagnosis-history-row">

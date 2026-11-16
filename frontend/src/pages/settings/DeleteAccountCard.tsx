@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from '../../api'
 import { isAccountDeleted } from '../../api/contracts/account'
@@ -28,7 +28,25 @@ export default function DeleteAccountCard() {
     },
   })
 
+  // 펼치면 "탈퇴 진행" 버튼이, 접으면 비밀번호 칸이 사라져 초점이 문서 맨 위로 날아간다. 바뀐 화면에서 이어서 쓸 칸으로 옮긴다.
+  // (이벤트에서 의도를 적어 두고 렌더 뒤에 옮긴다. 마운트 때 저절로 옮기지 않도록 effect가 아니라 의도 표시로 구분한다.)
+  const openButtonRef = useRef<HTMLButtonElement>(null)
+  const passwordRef = useRef<HTMLInputElement>(null)
+  const pendingFocus = useRef<'password' | 'open-button' | null>(null)
+  useEffect(() => {
+    const target = pendingFocus.current
+    if (!target) return
+    pendingFocus.current = null
+    ;(target === 'password' ? passwordRef : openButtonRef).current?.focus()
+  }, [open])
+
+  function openCard() {
+    pendingFocus.current = 'password'
+    setOpen(true)
+  }
+
   function close() {
+    pendingFocus.current = 'open-button'
     setOpen(false)
     setPassword('')
     setUnderstood(false)
@@ -53,7 +71,7 @@ export default function DeleteAccountCard() {
       </p>
 
       {!open ? (
-        <button type="button" className="send danger-button" onClick={() => setOpen(true)}>
+        <button type="button" className="send danger-button" ref={openButtonRef} onClick={openCard}>
           {t('settings.delete_open', { fallback: '회원 탈퇴 진행' })}
         </button>
       ) : (
@@ -61,6 +79,7 @@ export default function DeleteAccountCard() {
           <label className="auth-field">
             <span>{t('settings.current_password', { fallback: '현재 비밀번호' })}</span>
             <input
+              ref={passwordRef}
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

@@ -2,6 +2,7 @@ import { lazy } from 'react'
 import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom'
 import RequireAuth from './components/RequireAuth'
 import Layout from './components/Layout'
+import RouteA11y from './components/RouteA11y'
 import LoginPage from './pages/LoginPage'
 import { useLocale } from './i18n/useLocale'
 import RecoveryRequestPage from './pages/RecoveryRequestPage'
@@ -30,7 +31,7 @@ function NotFoundPage() {
   const { t } = useLocale()
   return (
     <div className="container page">
-      <p>{t('auth.not_found_page', { fallback: '페이지를 찾을 수 없어요.' })}</p>
+      <h1 className="notice-heading">{t('auth.not_found_page', { fallback: '페이지를 찾을 수 없어요.' })}</h1>
       <Link className="btn" to="/">
         {t('common.go_home', { fallback: '처음 화면으로' })}
       </Link>
@@ -41,6 +42,7 @@ function NotFoundPage() {
 export default function App() {
   return (
     <BrowserRouter>
+      <RouteA11y />
       <Routes>
         {/* 로그인 화면은 사이드바 없이 단독으로 보여준다. */}
         <Route path="login" element={<LoginPage />} />

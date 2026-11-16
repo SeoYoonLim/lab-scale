@@ -4,6 +4,7 @@ import { api } from '../api'
 import { isAccountDeleted } from '../api/contracts/account'
 import { useAuth } from '../auth/useAuth'
 import AuthBrand from '../components/AuthBrand'
+import AuthShell from '../components/AuthShell'
 import ErrorNotice from '../components/ui/ErrorNotice'
 import { useLocale } from '../i18n/useLocale'
 import { useHashToken } from '../utils/useHashToken'
@@ -31,7 +32,7 @@ function DeleteAccountConfirm({ token }: { token: string | null }) {
   const done = mutation.isSuccess
 
   return (
-    <div className="auth-page">
+    <AuthShell>
       <div className="card auth-card">
         <AuthBrand />
         <h1 className="auth-title">{t('auth.delete_confirm_title', { fallback: '회원 탈퇴 확인' })}</h1>
@@ -74,6 +75,6 @@ function DeleteAccountConfirm({ token }: { token: string | null }) {
           </Link>
         </p>
       </div>
-    </div>
+    </AuthShell>
   )
 }

@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { looksLikeEmail } from '../api/contracts/account'
 import AuthBrand from '../components/AuthBrand'
+import AuthShell from '../components/AuthShell'
 import MockMailbox from '../components/MockMailbox'
 import { useLocale } from '../i18n/useLocale'
 import ErrorNotice from '../components/ui/ErrorNotice'
@@ -42,7 +43,7 @@ export default function RecoveryRequestPage({ mode }: { mode: 'password' | 'user
   }
 
   return (
-    <div className="auth-page">
+    <AuthShell>
       <form className="card auth-card" onSubmit={handleSubmit}>
         <AuthBrand />
         <h1 className="auth-title">{t(copy.title.key, { fallback: copy.title.fallback })}</h1>
@@ -77,6 +78,6 @@ export default function RecoveryRequestPage({ mode }: { mode: 'password' | 'user
           )}
         </p>
       </form>
-    </div>
+    </AuthShell>
   )
 }

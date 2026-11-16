@@ -73,6 +73,8 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
     },
   })
 
+  const watchlistBusy = addWatchlistMutation.isPending || watchlistState === 'added' || watchlistState === 'already'
+
   // AI 종목 전망: 전망 질문은 백엔드가 결론을 먼저 쓰고 근거·한계를 붙여 답한다. 리서치 화면으로 질문을 채워 보낸다.
   function handleOutlook() {
     const name = realtime?.company_name ?? ticker
@@ -106,7 +108,8 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
   if (notFound) {
     return (
       <div className="container page">
-        <p className="notice">{t('company.not_found', { fallback: '등록되지 않은 종목이에요.' })}</p>
+        {/* h1이 있어야 화면 이동 때 제목·초점이 맞춰진다(RouteA11y) */}
+        <h1 className="notice notice-heading">{t('company.not_found', { fallback: '등록되지 않은 종목이에요.' })}</h1>
         <Link to="/companies" className="back-link">
           {t('company.back_to_list', { fallback: '← 종목 목록' })}
         </Link>
@@ -139,11 +142,14 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
           <div className="watchlist-row">
             {user ? (
               <>
+                {/* disabled로 끄면 방금 누른 버튼의 키보드 초점이 사라지므로 aria-disabled로 둔다 */}
                 <button
                   type="button"
                   className="watchlist-button"
-                  onClick={handleAddWatchlist}
-                  disabled={addWatchlistMutation.isPending || watchlistState === 'added' || watchlistState === 'already'}
+                  onClick={() => {
+                    if (!watchlistBusy) void handleAddWatchlist()
+                  }}
+                  aria-disabled={watchlistBusy || undefined}
                 >
                   {watchlistState === 'added'
                     ? t('company.watchlist_added', { fallback: '관심종목에 추가했어요' })
@@ -153,6 +159,14 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
                         ? t('company.watchlist_adding', { fallback: '추가 중…' })
                         : t('company.watchlist_add', { fallback: '관심종목 추가' })}
                 </button>
+                {/* 결과(성공·이미 있음)를 화면 읽기 프로그램에 알린다. 오류는 아래 role="alert"가 맡는다. */}
+                <span className="sr-only" role="status">
+                  {watchlistState === 'added'
+                    ? t('company.watchlist_added', { fallback: '관심종목에 추가했어요' })
+                    : watchlistState === 'already'
+                      ? t('company.watchlist_already', { fallback: '이미 관심종목이에요' })
+                      : ''}
+                </span>
                 {watchlistState === 'error' && watchlistError && (
                   <span className="notice-error small" role="alert">{watchlistError}</span>
                 )}

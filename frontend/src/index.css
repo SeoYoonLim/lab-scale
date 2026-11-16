@@ -13,15 +13,21 @@
   --sidebar-text-active: #ffffff;
   --sidebar-active-bg: #2563eb;
 
-  --up: #e5383b; /* 상승 = 빨강(한국 증권 관례) */
+  --up: #da1d20; /* 상승 = 빨강(한국 증권 관례). 글자로 쓰므로 흰/연한 배경 위 4.5:1 이상 */
   --down: #2f6bd6; /* 하락 = 파랑 */
   --accent: #2563eb; /* 버튼·링크·활성 상태 전용. 상승/하락과 겹치지 않게 분리 */
   --accent-strong: #1d4fd0;
   --accent-soft: #e4eeff;
   --accent-text: #ffffff;
   --success: #12a05c;
-  --warn: #e08a00;
-  --danger: #dc2626;
+  --warn: #e08a00; /* 면(배경)·선 전용. 글자로 쓰면 대비가 부족하니 --warn-text */
+  --danger: #c82020;
+  /* 글자용 변형: 연한 배경(뱃지 등) 위에서 4.5:1 이상 */
+  --success-text: #0d7443;
+  --warn-text: #8e5800;
+  --on-warn: #111a33; /* --warn 면 위 글자·아이콘 */
+  /* 입력칸 테두리: 카드 구분선(--rule)보다 진하게(비텍스트 대비 3:1) */
+  --field-border: #7d8aa8;
 
   --radius: 16px;
   --radius-sm: 10px;
@@ -60,7 +66,11 @@
     --accent-text: #08102a;
     --success: #3ccf8e;
     --warn: #f0a93a;
-    --danger: #f1605c;
+    --danger: #f1625e;
+    --success-text: #3ccf8e;
+    --warn-text: #f0a93a;
+    --on-warn: #08102a;
+    --field-border: #66739a;
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
   }
 }
@@ -90,6 +100,12 @@ select,
 input {
   font: inherit;
   color: inherit;
+}
+
+/* 브라우저 기본 placeholder 색은 다크 모드에서 대비가 부족하다(3.7:1) */
+::placeholder {
+  color: var(--ink-muted);
+  opacity: 1;
 }
 
 h1,

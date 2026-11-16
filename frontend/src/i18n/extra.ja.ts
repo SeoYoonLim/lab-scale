@@ -450,4 +450,10 @@ export const EXTRA_JA: Record<string, string> = {
   'errors.boundary_body': '一時的な問題の可能性があります。再読み込みしても直らない場合は、しばらくしてからもう一度お試しください。',
   'errors.reload': '再読み込み',
   'common.go_home': '最初の画面へ',
+  'a11y.opens_new_tab': '新しいタブで開きます',
+  'auth.fields_required': 'ユーザー名とパスワードを入力してください。',
+  'research.answer_ready': '分析結果が届きました。',
+  'research.question_filled': '質問が入力欄に入りました。確認して送信してください。',
+  'stock_feed.order_aria': '並べ替え',
+  'stock_feed.correction_aria': '訂正開示の絞り込み',
 }

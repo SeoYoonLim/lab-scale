@@ -13,6 +13,7 @@ import { DEFAULT_FILTERS } from './stockFeed/filters'
 import type { FeedFilterState } from './stockFeed/filters'
 import EmptyState from './ui/EmptyState'
 import ErrorNotice from './ui/ErrorNotice'
+import NewTabHint from './ui/NewTabHint'
 import LoadingNotice from './ui/LoadingNotice'
 
 const PAGE_SIZE = 10
@@ -78,6 +79,7 @@ export default function StockNewsCard({ ticker }: { ticker: string }) {
                       {item.url ? (
                         <a href={item.url} target="_blank" rel="noopener noreferrer" className="feed-title">
                           {item.title}
+                          <NewTabHint />
                         </a>
                       ) : (
                         <span className="feed-title">{item.title}</span>

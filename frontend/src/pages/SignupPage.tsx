@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import AuthBrand from '../components/AuthBrand'
+import AuthShell from '../components/AuthShell'
 import { useLocale } from '../i18n/useLocale'
 
 export default function SignupPage() {
@@ -30,7 +31,7 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="auth-page">
+    <AuthShell>
       <form className="card auth-card" onSubmit={handleSubmit}>
         <AuthBrand />
         <h1 className="auth-title">{t('auth.signup', { fallback: '회원가입' })}</h1>
@@ -65,6 +66,6 @@ export default function SignupPage() {
           {t('auth.have_account', { fallback: '이미 계정이 있으신가요?' })} <Link to="/login">{t('nav.login', { fallback: '로그인' })}</Link>
         </p>
       </form>
-    </div>
+    </AuthShell>
   )
 }

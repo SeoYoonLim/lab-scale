@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import AuthBrand from '../components/AuthBrand'
+import AuthShell from '../components/AuthShell'
 import { useLocale } from '../i18n/useLocale'
 
 export default function LoginPage() {
@@ -14,10 +15,18 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const usernameRef = useRef<HTMLInputElement>(null)
+  const passwordRef = useRef<HTMLInputElement>(null)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (pending) return
+    // 버튼을 끄는 대신 여기서 안내한다(꺼진 버튼은 키보드로 닿지 않아 이유를 알 수 없다)
+    if (!username.trim() || !password) {
+      setError(t('auth.fields_required', { fallback: '아이디와 비밀번호를 입력해주세요.' }))
+      ;(username.trim() ? passwordRef : usernameRef).current?.focus()
+      return
+    }
     setPending(true)
     setError(null)
     try {
@@ -34,8 +43,8 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="auth-page">
-      <form className="card auth-card" onSubmit={handleSubmit}>
+    <AuthShell>
+      <form className="card auth-card" onSubmit={handleSubmit} noValidate>
         <AuthBrand />
         <h1 className="auth-title">{t('nav.login', { fallback: '로그인' })}</h1>
         {notice && (
@@ -45,19 +54,31 @@ export default function LoginPage() {
         )}
         <label className="auth-field">
           <span>{t('auth.username', { fallback: '아이디' })}</span>
-          <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
+          <input
+            ref={usernameRef}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            autoComplete="username"
+            required
+            aria-invalid={error != null && !username.trim() ? true : undefined}
+            aria-describedby={error ? 'login-error' : undefined}
+          />
         </label>
         <label className="auth-field">
           <span>{t('auth.password', { fallback: '비밀번호' })}</span>
           <input
+            ref={passwordRef}
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="current-password"
+            required
+            aria-invalid={error != null && !password ? true : undefined}
+            aria-describedby={error ? 'login-error' : undefined}
           />
         </label>
-        {error && <p className="notice notice-error" role="alert">{error}</p>}
-        <button type="submit" className="send auth-submit" disabled={pending || !username.trim() || !password}>
+        {error && <p id="login-error" className="notice notice-error" role="alert">{error}</p>}
+        <button type="submit" className="send auth-submit" aria-disabled={pending || undefined}>
           {pending ? t('auth.logging_in', { fallback: '로그인 중…' }) : t('nav.login', { fallback: '로그인' })}
         </button>
         <p className="muted small auth-switch">
@@ -69,6 +90,6 @@ export default function LoginPage() {
           <Link to="/forgot-password">{t('auth.forgot_password', { fallback: '비밀번호 찾기' })}</Link>
         </p>
       </form>
-    </div>
+    </AuthShell>
   )
 }

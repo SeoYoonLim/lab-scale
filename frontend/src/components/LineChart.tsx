@@ -51,6 +51,9 @@ export default function LineChart({
       event.preventDefault()
       const step = event.key === 'ArrowLeft' ? -1 : 1
       setActive((prev) => Math.min(dates.length - 1, Math.max(0, (prev ?? dates.length - 1) + step)))
+    } else if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault()
+      setActive(event.key === 'Home' ? 0 : dates.length - 1)
     } else if (event.key === 'Escape') {
       setActive(null)
     }
