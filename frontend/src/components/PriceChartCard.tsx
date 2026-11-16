@@ -20,7 +20,7 @@ const LONG_RANGE_FROM = 180
 
 // 이동평균선: 화면에서 종가로 계산한 단순이동평균이다(서버가 주는 값이 아니다). 창(window)만큼 거래일이 쌓이기 전 구간은 그리지 않는다.
 const MOVING_AVERAGES = [
-  { window: 5, color: '#e08a00' },
+  { window: 5, color: '#d38200' },
   { window: 20, color: '#12a05c' },
   { window: 60, color: '#8b5cf6' },
 ] as const

@@ -501,7 +501,7 @@
   width: 100%;
   padding: 10px 14px;
   margin-bottom: 16px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--field-border);
   border-radius: var(--radius);
   background: var(--surface);
 }
@@ -870,7 +870,7 @@
 .order-form input,
 .order-form select {
   padding: 8px 12px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--field-border);
   border-radius: 8px;
   background: var(--bg);
 }
@@ -1020,7 +1020,7 @@
 
 .auth-field input {
   padding: 10px 12px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--field-border);
   border-radius: 8px;
   background: var(--bg);
   font-size: 14px;
@@ -1603,7 +1603,7 @@ body {
   align-items: center;
   gap: 10px;
   padding: 6px 6px 6px 16px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--field-border);
   border-radius: 999px;
   background: var(--surface);
   box-shadow: var(--shadow-card);
@@ -2396,7 +2396,7 @@ body {
 
 .banner-danger .banner-icon {
   background: var(--danger);
-  color: #fff;
+  color: var(--on-warn);
 }
 
 .error-notice {
@@ -2439,12 +2439,12 @@ body {
 
 .status-badge-ok {
   background: color-mix(in srgb, var(--success) 16%, var(--surface));
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .status-badge-warn {
   background: color-mix(in srgb, var(--warn) 18%, var(--surface));
-  color: var(--warn);
+  color: var(--warn-text);
 }
 
 .status-badge-danger {
@@ -2454,7 +2454,7 @@ body {
 
 .status-badge-accent {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 
 /* ---------- 포트폴리오 탭·성과(2026-11) ---------- */
@@ -2515,7 +2515,7 @@ body {
 
 .inline-select select {
   padding: 6px 10px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--field-border);
   border-radius: 10px;
   background: var(--surface);
 }
@@ -3002,7 +3002,7 @@ body {
 }
 
 .briefing-headline-warn {
-  color: var(--warn);
+  color: var(--warn-text);
 }
 
 .back-link-button {
@@ -3396,7 +3396,7 @@ body {
   box-sizing: border-box;
   height: var(--control-h);
   padding: 0 12px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--field-border);
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
