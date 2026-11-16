@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { PASSWORD_MAX_LEN, PASSWORD_MIN_LEN } from '../api/contracts/account'
 import { useAuth } from '../auth/useAuth'
 import AuthBrand from '../components/AuthBrand'
 import AuthShell from '../components/AuthShell'
@@ -14,10 +15,28 @@ export default function SignupPage() {
   const [password, setPassword] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const usernameRef = useRef<HTMLInputElement>(null)
+  const passwordRef = useRef<HTMLInputElement>(null)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (pending) return
+    // 버튼을 끄는 대신 여기서 안내한다(꺼진 버튼은 키보드로 닿지 않아 이유를 알 수 없다)
+    if (!username.trim() || !password) {
+      setError(t('auth.fields_required', { fallback: '아이디와 비밀번호를 입력해주세요.' }))
+      ;(username.trim() ? passwordRef : usernameRef).current?.focus()
+      return
+    }
+    if (password.length < PASSWORD_MIN_LEN || password.length > PASSWORD_MAX_LEN) {
+      setError(
+        t('auth.password_length', {
+          fallback: '비밀번호는 {min}~{max}자여야 해요.',
+          vars: { min: PASSWORD_MIN_LEN, max: PASSWORD_MAX_LEN },
+        }),
+      )
+      passwordRef.current?.focus()
+      return
+    }
     setPending(true)
     setError(null)
     try {
@@ -32,17 +51,19 @@ export default function SignupPage() {
 
   return (
     <AuthShell>
-      <form className="card auth-card" onSubmit={handleSubmit}>
+      <form className="card auth-card" onSubmit={handleSubmit} noValidate>
         <AuthBrand />
         <h1 className="auth-title">{t('auth.signup', { fallback: '회원가입' })}</h1>
         <div className="auth-field">
           <label htmlFor="signup-username">{t('auth.username', { fallback: '아이디' })}</label>
           <input
             id="signup-username"
+            ref={usernameRef}
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             autoComplete="username"
-            aria-describedby="signup-username-help"
+            aria-describedby={error ? 'signup-username-help signup-error' : 'signup-username-help'}
+            aria-invalid={error != null && !username.trim() ? true : undefined}
           />
           {/* 규칙은 placeholder가 아니라 화면에 남는 글로 둔다(입력하면 placeholder는 사라진다) */}
           <span id="signup-username-help" className="muted small">
@@ -53,22 +74,20 @@ export default function SignupPage() {
           <label htmlFor="signup-password">{t('auth.password', { fallback: '비밀번호' })}</label>
           <input
             id="signup-password"
+            ref={passwordRef}
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="new-password"
-            aria-describedby="signup-password-help"
+            aria-describedby={error ? 'signup-password-help signup-error' : 'signup-password-help'}
+            aria-invalid={error != null && (!password || password.length < PASSWORD_MIN_LEN) ? true : undefined}
           />
           <span id="signup-password-help" className="muted small">
             {t('auth.password_placeholder', { fallback: '8~128자 (흔한 비밀번호·아이디가 든 비밀번호는 안 돼요)' })}
           </span>
         </div>
-        {error && <p className="notice notice-error" role="alert">{error}</p>}
-        <button
-          type="submit"
-          className="send auth-submit"
-          disabled={pending || !username.trim() || password.length < 8}
-        >
+        {error && <p id="signup-error" className="notice notice-error" role="alert">{error}</p>}
+        <button type="submit" className="send auth-submit" aria-disabled={pending || undefined}>
           {pending ? t('auth.signing_up', { fallback: '가입 중…' }) : t('auth.signup', { fallback: '회원가입' })}
         </button>
         <p className="muted small auth-switch">

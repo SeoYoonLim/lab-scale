@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from '../../api'
 import { queryKeys } from '../../api/queryKeys'
@@ -21,6 +21,7 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
   const [quantity, setQuantity] = useState('1')
   const [formError, setFormError] = useState<string | null>(null)
   const [debouncedTicker, setDebouncedTicker] = useState('')
+  const tickerRef = useRef<HTMLInputElement>(null)
 
   function invalidatePortfolioQueries() {
     void queryClient.invalidateQueries({ queryKey: queryKeys.portfolio })
@@ -93,7 +94,12 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
   async function handleOrder(e: FormEvent) {
     e.preventDefault()
     const qty = Number(quantity)
-    if (!ticker.trim() || mutating) return
+    if (mutating) return
+    if (!ticker.trim()) {
+      setFormError(t('holdings.ticker_required', { fallback: '주문할 종목을 입력해주세요.' }))
+      tickerRef.current?.focus()
+      return
+    }
     if (!Number.isInteger(qty) || qty < 1 || qty > MAX_ORDER_QUANTITY) {
       setFormError(
         t('holdings.qty_range', {
@@ -173,6 +179,7 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
 
         <form className="order-form" onSubmit={handleOrder}>
           <input
+            ref={tickerRef}
             value={ticker}
             onChange={(e) => setTicker(e.target.value)}
             placeholder={t('holdings.ticker_placeholder', { fallback: '종목명 또는 종목코드' })}

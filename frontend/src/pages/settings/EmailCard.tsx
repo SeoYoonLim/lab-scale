@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from '../../api'
 import { looksLikeEmail } from '../../api/contracts/account'
@@ -18,12 +18,16 @@ export default function EmailCard() {
   const me = useQuery({ queryKey: queryKeys.me, queryFn: () => api.me() })
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [localError, setLocalError] = useState<string | null>(null)
+  const emailRef = useRef<HTMLInputElement>(null)
+  const passwordRef = useRef<HTMLInputElement>(null)
 
   const save = useMutation({
     mutationFn: () => api.setEmail(email.trim(), password),
     onSuccess: () => {
       setEmail('')
       setPassword('')
+      setLocalError(null)
       void queryClient.invalidateQueries({ queryKey: queryKeys.me })
     },
   })
@@ -31,7 +35,19 @@ export default function EmailCard() {
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (save.isPending || !looksLikeEmail(email) || !password) return
+    if (save.isPending) return
+    // 버튼을 끄는 대신 여기서 안내한다(꺼진 버튼은 키보드로 닿지 않아 이유를 알 수 없다)
+    if (!looksLikeEmail(email)) {
+      setLocalError(t('auth.email_invalid', { fallback: '올바른 이메일 주소를 입력해주세요.' }))
+      emailRef.current?.focus()
+      return
+    }
+    if (!password) {
+      setLocalError(t('settings.current_pw_required', { fallback: '현재 비밀번호를 입력해주세요.' }))
+      passwordRef.current?.focus()
+      return
+    }
+    setLocalError(null)
     resend.reset()
     save.mutate()
   }
@@ -40,7 +56,7 @@ export default function EmailCard() {
   const verified = me.data?.email_verified === true
 
   return (
-    <form className="card settings-card" onSubmit={handleSubmit} aria-labelledby="email-card-title">
+    <form className="card settings-card" onSubmit={handleSubmit} aria-labelledby="email-card-title" noValidate>
       <h2 id="email-card-title" className="section-title">
         {t('settings.email_title', { fallback: '이메일' })}
       </h2>
@@ -75,7 +91,7 @@ export default function EmailCard() {
           <p className="muted small">
             {t('settings.email_verify_hint', { fallback: '메일의 링크를 열면 인증이 끝나요. 메일이 안 왔다면 스팸함을 확인하거나 다시 받아보세요.' })}
           </p>
-          <button type="button" className="link-button" onClick={() => resend.mutate()} disabled={resend.isPending}>
+          <button type="button" className="link-button" onClick={() => !resend.isPending && resend.mutate()} aria-disabled={resend.isPending || undefined}>
             {resend.isPending ? t('common.loading') : t('settings.email_resend', { fallback: '인증 메일 다시 받기' })}
           </button>
           {resend.error && <ErrorNotice error={resend.error} />}
@@ -91,6 +107,9 @@ export default function EmailCard() {
         <span>{registered ? t('settings.email_new', { fallback: '새 이메일' }) : t('settings.email_label', { fallback: '이메일' })}</span>
         <input
           type="email"
+          ref={emailRef}
+          aria-invalid={localError && !looksLikeEmail(email) ? true : undefined}
+          aria-describedby={localError ? 'email-card-error' : undefined}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           autoComplete="email"
@@ -101,6 +120,9 @@ export default function EmailCard() {
         <span>{t('settings.current_password', { fallback: '현재 비밀번호' })}</span>
         <input
           type="password"
+          ref={passwordRef}
+          aria-invalid={localError && looksLikeEmail(email) && !password ? true : undefined}
+          aria-describedby={localError ? 'email-card-error' : undefined}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="current-password"
@@ -110,6 +132,11 @@ export default function EmailCard() {
         </span>
       </label>
 
+      {localError && (
+        <p id="email-card-error" className="notice notice-error" role="alert">
+          {localError}
+        </p>
+      )}
       {save.error && <ErrorNotice error={save.error} fallback={t('settings.save_failed')} />}
       {save.data && (
         <p className="notice order-result" role="status">
@@ -117,7 +144,7 @@ export default function EmailCard() {
         </p>
       )}
 
-      <button type="submit" className="send" disabled={save.isPending || !looksLikeEmail(email) || !password}>
+      <button type="submit" className="send" aria-disabled={save.isPending || undefined}>
         {save.isPending
           ? t('common.loading')
           : registered

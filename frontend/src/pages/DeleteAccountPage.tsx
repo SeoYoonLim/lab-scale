@@ -55,8 +55,8 @@ function DeleteAccountConfirm({ token }: { token: string | null }) {
             <button
               type="button"
               className="send auth-submit danger-button"
-              onClick={() => mutation.mutate()}
-              disabled={mutation.isPending}
+              onClick={() => !mutation.isPending && mutation.mutate()}
+              aria-disabled={mutation.isPending || undefined}
             >
               {mutation.isPending ? t('auth.delete_processing', { fallback: '처리 중…' }) : t('settings.delete_submit', { fallback: '영구히 탈퇴하기' })}
             </button>

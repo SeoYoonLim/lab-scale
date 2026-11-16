@@ -756,7 +756,8 @@
   font-size: 13px;
 }
 
-.delete-report:disabled {
+.delete-report:disabled,
+.delete-report[aria-disabled='true'] {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -1522,13 +1523,13 @@ body {
   transition: background 0.15s, transform 0.05s;
 }
 
-.send:hover:not(:disabled),
-.inline-form button:hover:not(:disabled),
-.order-form button:hover:not(:disabled) {
+.send:hover:not(:disabled):not([aria-disabled='true']),
+.inline-form button:hover:not(:disabled):not([aria-disabled='true']),
+.order-form button:hover:not(:disabled):not([aria-disabled='true']) {
   background: var(--accent-strong);
 }
 
-.send:active:not(:disabled) {
+.send:active:not(:disabled):not([aria-disabled='true']) {
   transform: translateY(1px);
 }
 
@@ -3689,4 +3690,11 @@ body {
 .chip-strong,
 .reaction-type-disclosure {
   color: var(--accent-strong);
+}
+
+/* 글자 모양 버튼도 처리 중에는 꺼진 모양으로 보인다(disabled 대신 aria-disabled를 써서 초점은 유지한다) */
+.link-button[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  text-decoration: none;
 }

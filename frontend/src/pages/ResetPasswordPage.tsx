@@ -60,7 +60,7 @@ function ResetPasswordForm({ token }: { token: string | null }) {
 
   return (
     <AuthShell>
-      <form className="card auth-card" onSubmit={handleSubmit}>
+      <form className="card auth-card" onSubmit={handleSubmit} noValidate>
         <AuthBrand />
         <h1 className="auth-title">{t('auth.reset_title', { fallback: '비밀번호 재설정' })}</h1>
 
@@ -123,7 +123,7 @@ function ResetPasswordForm({ token }: { token: string | null }) {
                 {t('auth.get_new_link', { fallback: '새 링크 받기' })}
               </Link>
             ) : (
-              <button type="submit" className="send auth-submit" disabled={mutation.isPending || !password || !confirm}>
+              <button type="submit" className="send auth-submit" aria-disabled={mutation.isPending || undefined}>
                 {mutation.isPending ? t('auth.changing', { fallback: '바꾸는 중…' }) : t('auth.change_password', { fallback: '비밀번호 바꾸기' })}
               </button>
             )}

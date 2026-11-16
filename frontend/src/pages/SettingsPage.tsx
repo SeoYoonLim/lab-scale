@@ -53,6 +53,8 @@ export default function SettingsPage() {
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    // 버튼을 끄는 대신(aria-disabled) 여기서 막는다 - 꺼진 버튼은 키보드로 닿지 않는다
+    if (save.isPending || !dirty) return
     save.mutate()
   }
 
@@ -101,7 +103,7 @@ export default function SettingsPage() {
         {save.error && <ErrorNotice error={save.error} fallback={t('settings.save_failed')} />}
         {save.isSuccess && !dirty && <p className="notice order-result" role="status">{t('settings.saved')}</p>}
 
-        <button type="submit" className="send" disabled={save.isPending || !dirty}>
+        <button type="submit" className="send" aria-disabled={save.isPending || !dirty || undefined}>
           {save.isPending ? t('common.loading') : t('common.save')}
         </button>
       </form>

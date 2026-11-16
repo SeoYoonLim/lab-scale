@@ -46,7 +46,13 @@ export default function WatchlistSection() {
 
   async function handleAdd(e: FormEvent) {
     e.preventDefault()
-    if (!ticker.trim() || addMutation.isPending) return
+    if (addMutation.isPending) return
+    // 버튼을 끄는 대신 여기서 안내한다(꺼진 버튼은 키보드로 닿지 않아 이유를 알 수 없다)
+    if (!ticker.trim()) {
+      setFormError(t('watchlist.ticker_required', { fallback: '종목명 또는 종목코드를 입력해주세요.' }))
+      inputRef.current?.focus()
+      return
+    }
     setFormError(null)
     setFormNotice(null)
     setAnnouncement('')
@@ -98,12 +104,13 @@ export default function WatchlistSection() {
         <form className="inline-form" onSubmit={handleAdd}>
           <input
             ref={inputRef}
+            aria-invalid={formError && !ticker.trim() ? true : undefined}
             value={ticker}
             onChange={(e) => setTicker(e.target.value)}
             placeholder={t('watchlist.placeholder', { fallback: '종목명 또는 종목코드 (예: 삼성전자)' })}
             aria-label={t('watchlist.aria', { fallback: '관심종목에 추가할 종목' })}
           />
-          <button type="submit" disabled={addMutation.isPending || !ticker.trim()}>
+          <button type="submit" aria-disabled={addMutation.isPending || undefined}>
             {t('watchlist.add', { fallback: '추가' })}
           </button>
         </form>

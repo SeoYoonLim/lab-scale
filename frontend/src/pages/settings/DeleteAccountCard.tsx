@@ -17,6 +17,8 @@ export default function DeleteAccountCard() {
   const [open, setOpen] = useState(false)
   const [password, setPassword] = useState('')
   const [understood, setUnderstood] = useState(false)
+  const [localError, setLocalError] = useState<string | null>(null)
+  const understoodRef = useRef<HTMLInputElement>(null)
 
   const mutation = useMutation({
     mutationFn: () => api.deleteAccount({ current_password: password }),
@@ -50,17 +52,30 @@ export default function DeleteAccountCard() {
     setOpen(false)
     setPassword('')
     setUnderstood(false)
+    setLocalError(null)
     mutation.reset()
   }
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (mutation.isPending || !password || !understood) return
+    if (mutation.isPending) return
+    // 버튼을 끄는 대신 여기서 안내한다(꺼진 버튼은 키보드로 닿지 않아 이유를 알 수 없다)
+    if (!password) {
+      setLocalError(t('settings.current_pw_required', { fallback: '현재 비밀번호를 입력해주세요.' }))
+      passwordRef.current?.focus()
+      return
+    }
+    if (!understood) {
+      setLocalError(t('settings.delete_understood_required', { fallback: '되돌릴 수 없다는 항목에 체크해주세요.' }))
+      understoodRef.current?.focus()
+      return
+    }
+    setLocalError(null)
     mutation.mutate()
   }
 
   return (
-    <form className="card settings-card danger-zone" onSubmit={handleSubmit} aria-labelledby="delete-card-title">
+    <form className="card settings-card danger-zone" onSubmit={handleSubmit} aria-labelledby="delete-card-title" noValidate>
       <h2 id="delete-card-title" className="section-title">
         {t('settings.delete_title', { fallback: '회원 탈퇴' })}
       </h2>
@@ -80,6 +95,8 @@ export default function DeleteAccountCard() {
             <span>{t('settings.current_password', { fallback: '현재 비밀번호' })}</span>
             <input
               ref={passwordRef}
+              aria-invalid={localError && !password ? true : undefined}
+              aria-describedby={localError ? 'delete-card-error' : undefined}
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -87,10 +104,22 @@ export default function DeleteAccountCard() {
             />
           </label>
           <label className="check-label">
-            <input type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} />
+            <input
+              ref={understoodRef}
+              type="checkbox"
+              checked={understood}
+              aria-invalid={localError && password && !understood ? true : undefined}
+              aria-describedby={localError ? 'delete-card-error' : undefined}
+              onChange={(e) => setUnderstood(e.target.checked)}
+            />
             <span>{t('settings.delete_understood', { fallback: '모든 데이터가 지워지고 되돌릴 수 없다는 것을 이해했어요.' })}</span>
           </label>
 
+          {localError && (
+            <p id="delete-card-error" className="notice notice-error" role="alert">
+              {localError}
+            </p>
+          )}
           {mutation.error && <ErrorNotice error={mutation.error} fallback={t('settings.save_failed')} />}
           {/* 소셜 계정은 지우기 전에 이메일 확인이 필요하다(202) - 계정은 아직 그대로다 */}
           {mutation.data && !isAccountDeleted(mutation.data) && (
@@ -100,10 +129,10 @@ export default function DeleteAccountCard() {
           )}
 
           <div className="form-actions">
-            <button type="submit" className="send danger-button" disabled={mutation.isPending || !password || !understood}>
+            <button type="submit" className="send danger-button" aria-disabled={mutation.isPending || undefined}>
               {mutation.isPending ? t('common.loading') : t('settings.delete_submit', { fallback: '영구히 탈퇴하기' })}
             </button>
-            <button type="button" className="link-button" onClick={close} disabled={mutation.isPending}>
+            <button type="button" className="link-button" onClick={() => !mutation.isPending && close()} aria-disabled={mutation.isPending || undefined}>
               {t('common.cancel', { fallback: '취소' })}
             </button>
           </div>

@@ -462,4 +462,11 @@ export const EXTRA_JA: Record<string, string> = {
   'diagnosis.deleted_status': '診断を削除しました。',
   'diagnosis.delete_failed': '診断を削除できませんでした。',
   'briefing.generated_status': 'ブリーフィングを作成しました。',
+  'auth.email_invalid': '正しいメールアドレスを入力してください。',
+  'settings.current_pw_required': '現在のパスワードを入力してください。',
+  'settings.pw_fields_required': '現在のパスワード、新しいパスワード、確認用パスワードをすべて入力してください。',
+  'settings.delete_understood_required': '元に戻せないことを確認するチェックボックスにチェックしてください。',
+  'watchlist.ticker_required': '銘柄名または銘柄コードを入力してください。',
+  'holdings.ticker_required': '注文する銘柄を入力してください。',
+  'exposure.col_via': 'ETFの内訳',
 }

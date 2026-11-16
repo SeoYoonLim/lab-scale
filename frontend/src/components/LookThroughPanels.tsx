@@ -12,6 +12,7 @@ import type {
 import { useLocale } from '../i18n/useLocale'
 import { formatPlainPct, formatTradingDate, formatWon } from '../utils/format'
 import Banner from './ui/Banner'
+import ScrollRegion from './ui/ScrollRegion'
 import StatusBadge from './ui/StatusBadge'
 
 export interface LookThroughBody {
@@ -107,7 +108,13 @@ function CompanyRow({ company, expandable }: { company: CompanyExposure; expanda
         {expandable && (
           <td>
             {hasVia && (
-              <button type="button" className="link-button" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+              <button
+                type="button"
+                className="link-button"
+                aria-expanded={open}
+                aria-label={`${open ? t('exposure.hide_via', { fallback: 'ETF 접기' }) : t('exposure.show_via', { fallback: 'ETF 보기' })} (${company.name})`}
+                onClick={() => setOpen((v) => !v)}
+              >
                 {open ? t('exposure.hide_via', { fallback: 'ETF 접기' }) : t('exposure.show_via', { fallback: 'ETF 보기' })}
               </button>
             )}
@@ -132,10 +139,10 @@ function CompanyRow({ company, expandable }: { company: CompanyExposure; expanda
   )
 }
 
-function CompanyTable({ companies, expandable }: { companies: CompanyExposure[]; expandable: boolean }) {
+function CompanyTable({ companies, expandable, label }: { companies: CompanyExposure[]; expandable: boolean; label: string }) {
   const { t } = useLocale()
   return (
-    <div className="table-scroll">
+    <ScrollRegion className="table-scroll" label={label}>
       <table className="data-table exposure-table">
         <thead>
           <tr>
@@ -144,7 +151,11 @@ function CompanyTable({ companies, expandable }: { companies: CompanyExposure[];
             <th scope="col">{t('look_through.direct')}</th>
             <th scope="col">{t('look_through.via_etf')}</th>
             <th scope="col">{t('look_through.total_weight')}</th>
-            {expandable && <th scope="col" />}
+            {expandable && (
+              <th scope="col">
+                <span className="sr-only">{t('exposure.col_via', { fallback: 'ETF 구성' })}</span>
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -153,7 +164,7 @@ function CompanyTable({ companies, expandable }: { companies: CompanyExposure[];
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollRegion>
   )
 }
 
@@ -188,7 +199,7 @@ function EtfCard({ etf, warnings }: { etf: EtfContribution; warnings: ExposureDa
         </p>
       ))}
       {etf.constituents.length > 0 && (
-        <div className="table-scroll">
+        <ScrollRegion className="table-scroll" label={`${etf.name} ${t('look_through.constituents')}`}>
           <table className="data-table">
             <caption className="muted small">{t('look_through.constituents')}</caption>
             <thead>
@@ -212,7 +223,7 @@ function EtfCard({ etf, warnings }: { etf: EtfContribution; warnings: ExposureDa
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollRegion>
       )}
       {etf.residual_amount != null && etf.status === 'decomposed' && (
         <p className="muted small">
@@ -270,7 +281,7 @@ export default function LookThroughPanels({ body, compact = false }: { body: Loo
       {body.companies.length > 0 ? (
         <>
           <h3 className="sub-title">{t('look_through.company')}</h3>
-          <CompanyTable companies={body.companies} expandable={!compact} />
+          <CompanyTable companies={body.companies} expandable={!compact} label={t('look_through.company')} />
         </>
       ) : (
         <p className="muted">{t('exposure.no_companies', { fallback: '기업별로 나눌 수 있는 ETF가 없어 미확인 노출만 보여드려요.' })}</p>
@@ -279,7 +290,11 @@ export default function LookThroughPanels({ body, compact = false }: { body: Loo
       {!compact && body.overlaps.length > 0 && (
         <>
           <h3 className="sub-title">{t('exposure.overlaps', { fallback: '직접 + ETF로 겹쳐 가진 기업' })}</h3>
-          <CompanyTable companies={body.overlaps} expandable={false} />
+          <CompanyTable
+            companies={body.overlaps}
+            expandable={false}
+            label={t('exposure.overlaps', { fallback: '직접 + ETF로 겹쳐 가진 기업' })}
+          />
         </>
       )}
 

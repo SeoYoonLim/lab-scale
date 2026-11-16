@@ -1,6 +1,7 @@
 import AssetTypeBadge from './AssetTypeBadge'
 import DiagnosisLookThrough from './DiagnosisLookThrough'
 import { useLocale } from '../i18n/useLocale'
+import ScrollRegion from './ui/ScrollRegion'
 import type { DiagnosisDetail, DiagnosisResponse } from '../types'
 import { formatDate, formatPct, formatPrice, trendClass } from '../utils/format'
 
@@ -82,7 +83,7 @@ export default function DiagnosisResultView({ result }: { result: DiagnosisRespo
       {result.holdings.length > 0 && (
         <div className="diagnosis-block">
           <div className="muted small">{t('diagnosis.holdings_title', { fallback: '보유 종목별 비중' })}</div>
-          <div className="diagnosis-holdings-scroll">
+          <ScrollRegion className="diagnosis-holdings-scroll" label={t('diagnosis.holdings_title', { fallback: '보유 종목별 비중' })}>
             <table className="diagnosis-holdings">
               <thead>
                 <tr>
@@ -115,7 +116,7 @@ export default function DiagnosisResultView({ result }: { result: DiagnosisRespo
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollRegion>
         </div>
       )}
 
