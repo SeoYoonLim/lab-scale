@@ -116,21 +116,23 @@ export default function EmailCard() {
           inputMode="email"
         />
       </label>
-      <label className="auth-field">
-        <span>{t('settings.current_password', { fallback: '현재 비밀번호' })}</span>
+      <div className="auth-field">
+        <label htmlFor="email-card-password">{t('settings.current_password', { fallback: '현재 비밀번호' })}</label>
         <input
+          id="email-card-password"
           type="password"
           ref={passwordRef}
           aria-invalid={localError && looksLikeEmail(email) && !password ? true : undefined}
-          aria-describedby={localError ? 'email-card-error' : undefined}
+          aria-describedby={localError ? 'email-card-password-help email-card-error' : 'email-card-password-help'}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="current-password"
         />
-        <span className="muted small">
+        {/* 도움말은 라벨 밖에 두고 연결만 한다(라벨 안에 두면 입력칸 이름이 길어진다) */}
+        <span id="email-card-password-help" className="muted small">
           {t('settings.email_password_help', { fallback: '이메일을 등록하거나 바꿀 때는 본인 확인을 위해 비밀번호가 필요해요.' })}
         </span>
-      </label>
+      </div>
 
       {localError && (
         <p id="email-card-error" className="notice notice-error" role="alert">

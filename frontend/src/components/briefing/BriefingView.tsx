@@ -16,6 +16,7 @@ import { useLocale } from '../../i18n/useLocale'
 import { formatPlainPct, formatSignedPct, formatWon, kstDateOf, trendClass } from '../../utils/format'
 import AssetTypeBadge from '../AssetTypeBadge'
 import Banner from '../ui/Banner'
+import NewTabHint from '../ui/NewTabHint'
 import StatusBadge from '../ui/StatusBadge'
 
 // 뉴스·공시 시각은 오프셋이 붙은 ISO다(news·disclosure·market_news는 +09:00, indirect_news는 +00:00). 문자열 앞 10자를
@@ -32,6 +33,7 @@ function NewsList({ items, label, emptyText }: { items: BriefingNewsItem[]; labe
             {n.url ? (
               <a href={n.url} target="_blank" rel="noreferrer">
                 {n.title}
+                <NewTabHint />
               </a>
             ) : (
               n.title
@@ -56,6 +58,7 @@ function DisclosureList({ items, emptyText }: { items: BriefingDisclosure[]; emp
           {d.source_url ? (
             <a href={d.source_url} target="_blank" rel="noreferrer">
               {d.title}
+              <NewTabHint />
             </a>
           ) : (
             d.title
@@ -261,6 +264,7 @@ function ChecklistCard({ section }: { section: ChecklistSection }) {
               {item.url ? (
                 <a href={item.url} target="_blank" rel="noreferrer">
                   {item.text}
+                  <NewTabHint />
                 </a>
               ) : (
                 item.text

@@ -50,7 +50,7 @@ export default function DiagnosisCompareView({ compare }: { compare: DiagnosisCo
       </div>
 
       <div className="diagnosis-block">
-        <div className="muted small">{t('diagnosis.change_total_asset')}</div>
+        <h3 className="muted small diagnosis-heading">{t('diagnosis.change_total_asset')}</h3>
         <p className={`num ${trendClass(changes.total_asset.change_pct)}`}>
           {formatPrice(changes.total_asset.previous)}
           {won} → {formatPrice(changes.total_asset.current)}
@@ -63,9 +63,9 @@ export default function DiagnosisCompareView({ compare }: { compare: DiagnosisCo
 
       {metrics && (
         <div className="diagnosis-block">
-          <div className="muted small">
+          <h3 className="muted small diagnosis-heading">
             {t('diagnosis.change_cash_weight')} · {t('diagnosis.change_concentration')}
-          </div>
+          </h3>
           <ul className="list">
             <MetricRow label={t('diagnosis.cash_weight')} change={metrics.cash_weight_pct} unit="%" />
             <MetricRow label={t('diagnosis.top1_weight', { fallback: '상위 1종목 비중' })} change={metrics.top1_weight_pct} unit="%" />
@@ -78,7 +78,7 @@ export default function DiagnosisCompareView({ compare }: { compare: DiagnosisCo
 
       {changes.holdings.length > 0 && (
         <div className="diagnosis-block">
-          <div className="muted small">{t('diagnosis.change_holdings')}</div>
+          <h3 className="muted small diagnosis-heading">{t('diagnosis.change_holdings')}</h3>
           <ul className="list">
             {changes.holdings.map((h) => (
               <li key={h.ticker}>
@@ -94,7 +94,7 @@ export default function DiagnosisCompareView({ compare }: { compare: DiagnosisCo
       {(changes.flags.added.length > 0 || changes.flags.resolved.length > 0) && (
         <div className="diagnosis-columns">
           <div>
-            <div className="muted small">{t('diagnosis.flags_added')}</div>
+            <h3 className="muted small diagnosis-heading">{t('diagnosis.flags_added')}</h3>
             <ul className="list">
               {changes.flags.added.length === 0 && <li className="muted">{none}</li>}
               {changes.flags.added.map((f, i) => (
@@ -103,7 +103,7 @@ export default function DiagnosisCompareView({ compare }: { compare: DiagnosisCo
             </ul>
           </div>
           <div>
-            <div className="muted small">{t('diagnosis.flags_resolved')}</div>
+            <h3 className="muted small diagnosis-heading">{t('diagnosis.flags_resolved')}</h3>
             <ul className="list">
               {changes.flags.resolved.length === 0 && <li className="muted">{none}</li>}
               {changes.flags.resolved.map((f, i) => (
@@ -116,7 +116,7 @@ export default function DiagnosisCompareView({ compare }: { compare: DiagnosisCo
 
       {changes.returns_20d.length > 0 && (
         <div className="diagnosis-block">
-          <div className="muted small">{t('diagnosis.returns20_change', { fallback: '20거래일 수익률 변화' })}</div>
+          <h3 className="muted small diagnosis-heading">{t('diagnosis.returns20_change', { fallback: '20거래일 수익률 변화' })}</h3>
           <ul className="list">
             {changes.returns_20d.map((r) => (
               <li key={r.ticker}>
@@ -131,7 +131,7 @@ export default function DiagnosisCompareView({ compare }: { compare: DiagnosisCo
       {/* ETF 실질 노출 변화: 두 진단 모두 스냅샷(status ok)이 있을 때만 온다. 한쪽이 옛 진단이면 null이라 비교하지 않는다. */}
       {exposure ? (
         <div className="diagnosis-block">
-          <div className="muted small">{t('look_through.title')}</div>
+          <h3 className="muted small diagnosis-heading">{t('look_through.title')}</h3>
           <ul className="list">
             {exposure.companies.slice(0, 8).map((c) => (
               <li key={`${c.code}-${c.name}`}>

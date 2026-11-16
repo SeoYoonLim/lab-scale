@@ -9,6 +9,7 @@ import type { AssetType } from '../types'
 import { formatPct, formatPrice, trendClass } from '../utils/format'
 import ErrorNotice from '../components/ui/ErrorNotice'
 import LoadingNotice from '../components/ui/LoadingNotice'
+import LiveStatus from '../components/ui/LiveStatus'
 
 // GET /api/companies?q= 는 로그인 없이 바로 검색할 수 있다(별칭 포함, 종목명/티커 부분 일치).
 // 예전처럼 300종목을 그냥 쭉 나열하는 대신, 검색으로 찾게 한다.
@@ -68,6 +69,7 @@ export default function CompanyListPage() {
             key={type}
             type="button"
             className={type === assetTypeFilter ? 'seg active' : 'seg'}
+            aria-pressed={type === assetTypeFilter}
             onClick={() => setAssetTypeFilter(type)}
           >
             {t(ASSET_TYPE_LABELS[type].key, { fallback: ASSET_TYPE_LABELS[type].fallback })}
@@ -75,6 +77,12 @@ export default function CompanyListPage() {
         ))}
       </div>
 
+      {/* 검색 결과가 바뀌어도 소리로는 알 수 없어서, 끝나면 개수를 알린다 */}
+      <LiveStatus
+        message={
+          data && !isFetching ? t('companies.result_count', { fallback: '검색 결과 {n}개', vars: { n: data.length } }) : ''
+        }
+      />
       {isPending && <LoadingNotice />}
       {/* 검색어를 바꾸는 중에는 이전 결과를 그대로 보여주면서(깜빡임 없이) 이 표시만 띄운다 -
           안 그러면 느린 검색일 때 이전 검색어의 결과가 새 검색어 결과처럼 잠깐 보일 수 있다. */}
