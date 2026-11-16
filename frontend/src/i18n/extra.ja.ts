@@ -456,4 +456,10 @@ export const EXTRA_JA: Record<string, string> = {
   'research.question_filled': '質問が入力欄に入りました。確認して送信してください。',
   'stock_feed.order_aria': '並べ替え',
   'stock_feed.correction_aria': '訂正開示の絞り込み',
+  'watchlist.added_status': '{name}({ticker})をウォッチリストに追加しました。',
+  'watchlist.removed_status': '{name}をウォッチリストから削除しました。',
+  'diagnosis.done_status': '診断が完了しました。下で結果を確認してください。',
+  'diagnosis.deleted_status': '診断を削除しました。',
+  'diagnosis.delete_failed': '診断を削除できませんでした。',
+  'briefing.generated_status': 'ブリーフィングを作成しました。',
 }

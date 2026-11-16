@@ -456,4 +456,10 @@ export const EXTRA_EN: Record<string, string> = {
   'research.question_filled': 'The question was filled in. Check it and send.',
   'stock_feed.order_aria': 'Sort order',
   'stock_feed.correction_aria': 'Correction filings filter',
+  'watchlist.added_status': '{name} ({ticker}) was added to your watchlist.',
+  'watchlist.removed_status': '{name} was removed from your watchlist.',
+  'diagnosis.done_status': 'The diagnosis is done. Check the result below.',
+  'diagnosis.deleted_status': 'The diagnosis was deleted.',
+  'diagnosis.delete_failed': 'Could not delete the diagnosis.',
+  'briefing.generated_status': 'The briefing was created.',
 }

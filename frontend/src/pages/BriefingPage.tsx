@@ -16,6 +16,7 @@ import { toLocale } from '../i18n'
 import { useLocale } from '../i18n/useLocale'
 import { formatDateTime, formatTradingDate } from '../utils/format'
 import LoadingNotice from '../components/ui/LoadingNotice'
+import LiveStatus from '../components/ui/LiveStatus'
 
 type Tab = 'today' | 'history'
 const HISTORY_PAGE_SIZE = 10
@@ -90,11 +91,13 @@ function TodayTab({ onShowHistory }: { onShowHistory: () => void }) {
         <input type="checkbox" checked={!useLlm} onChange={(e) => setUseLlm(!e.target.checked)} disabled={busy} />
         <span>{t('briefing.no_use_llm', { fallback: '빠르게(AI 요약 없이)' })}</span>
       </label>
+      {/* disabled로 끄면 누른 버튼의 키보드 초점이 사라지므로 aria-disabled로 두고, 만드는 중에는 눌러도 무시한다 */}
       <button
         type="button"
         className="send"
-        disabled={busy}
+        aria-disabled={busy || undefined}
         onClick={() => {
+          if (busy) return
           if (regenerate && !confirm(t('briefing.regenerate_confirm', { fallback: '오늘 브리핑의 새 버전을 만들까요?' }))) return
           generate.mutate(regenerate)
         }}
@@ -106,6 +109,16 @@ function TodayTab({ onShowHistory }: { onShowHistory: () => void }) {
 
   return (
     <>
+      {/* 만드는 데 5~15초 걸려서, 시작과 끝을 소리로도 알린다 */}
+      <LiveStatus
+        message={
+          busy
+            ? t('briefing.generating_note', { fallback: 'AI 요약까지 만드는 데 보통 5~15초 걸려요.' })
+            : generate.isSuccess
+              ? t('briefing.generated_status', { fallback: '브리핑을 만들었어요.' })
+              : ''
+        }
+      />
       {current.isPending && <LoadingNotice />}
       {current.error && <ErrorNotice error={current.error} onRetry={() => void current.refetch()} />}
       {generate.error && (

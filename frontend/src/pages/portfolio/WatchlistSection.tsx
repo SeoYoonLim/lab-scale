@@ -5,6 +5,7 @@ import { api } from '../../api'
 import { ApiError } from '../../api/errors'
 import { queryKeys } from '../../api/queryKeys'
 import AssetTypeBadge from '../../components/AssetTypeBadge'
+import LiveStatus from '../../components/ui/LiveStatus'
 import { useLocale } from '../../i18n/useLocale'
 import type { WatchlistItem } from '../../types'
 import { formatDate, formatPct, formatPrice, trendClass } from '../../utils/format'
@@ -18,6 +19,8 @@ export default function WatchlistSection() {
   const [ticker, setTicker] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [formNotice, setFormNotice] = useState<string | null>(null)
+  // 화면 읽기 프로그램용 결과 알림(추가·삭제는 목록이 조용히 바뀌기만 해서 소리로는 알 수 없다)
+  const [announcement, setAnnouncement] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
   // 삭제한 줄의 위치. 그 줄(과 눌렀던 삭제 버튼)이 사라지면 초점이 문서 맨 위로 날아가므로, 목록이 바뀐 뒤 다음 줄의 삭제 버튼으로 옮긴다.
@@ -46,9 +49,13 @@ export default function WatchlistSection() {
     if (!ticker.trim() || addMutation.isPending) return
     setFormError(null)
     setFormNotice(null)
+    setAnnouncement('')
     try {
       const input = ticker.trim()
       const added = await addMutation.mutateAsync(input)
+      setAnnouncement(
+        t('watchlist.added_status', { fallback: '{name}({ticker})을(를) 관심종목에 추가했어요.', vars: { name: added.company_name, ticker: added.ticker } }),
+      )
       // 관심종목 추가는 유사 이름을 받아 가장 가까운 종목으로 등록한다(음차 "엘지전자" -> LG전자). 응답에는 "보정됨" 표시가 따로
       // 없어서, 입력과 등록된 이름·코드가 둘 다 다르면 실제로 어떤 종목이 등록됐는지 알려준다.
       if (input.toLowerCase() !== added.company_name.toLowerCase() && input !== added.ticker) {
@@ -65,6 +72,7 @@ export default function WatchlistSection() {
       // 안내로 보여준다 - 메시지 자체는 서버/mock이 주는 문구를 그대로 쓴다.
       if (err instanceof ApiError && err.status === 409) {
         setFormNotice(err.message)
+        setAnnouncement(err.message)
       } else {
         setFormError(err instanceof Error ? err.message : t('watchlist.add_failed', { fallback: '추가하지 못했어요.' }))
       }
@@ -73,8 +81,10 @@ export default function WatchlistSection() {
 
   async function handleRemove(item: WatchlistItem) {
     focusAfterRemove.current = data?.findIndex((row) => row.ticker === item.ticker) ?? null
+    setAnnouncement('')
     try {
       await removeMutation.mutateAsync(item.ticker)
+      setAnnouncement(t('watchlist.removed_status', { fallback: '{name}을(를) 관심종목에서 삭제했어요.', vars: { name: item.company_name } }))
     } catch (err) {
       focusAfterRemove.current = null
       setFormError(err instanceof Error ? err.message : t('watchlist.remove_failed', { fallback: '삭제하지 못했어요.' }))
@@ -97,6 +107,7 @@ export default function WatchlistSection() {
             {t('watchlist.add', { fallback: '추가' })}
           </button>
         </form>
+        <LiveStatus message={announcement} />
         {formError && <p className="notice notice-error" role="alert">{formError}</p>}
         {formNotice && <p className="muted small">{formNotice}</p>}
 
@@ -128,7 +139,13 @@ export default function WatchlistSection() {
                 ) : (
                   <span className="muted small">{t('watchlist.no_price', { fallback: '가격 없음' })}</span>
                 )}
-                <button type="button" className="delete-report" onClick={() => void handleRemove(item)}>
+                {/* 줄마다 "삭제"만 있으면 어느 종목인지 알 수 없어서 종목 이름을 이름에 붙인다 */}
+                <button
+                  type="button"
+                  className="delete-report"
+                  aria-label={`${t('watchlist.remove', { fallback: '삭제' })} (${item.company_name})`}
+                  onClick={() => void handleRemove(item)}
+                >
                   {t('watchlist.remove', { fallback: '삭제' })}
                 </button>
               </div>

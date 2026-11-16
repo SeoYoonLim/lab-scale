@@ -53,7 +53,9 @@ describe.each(screens)('$name 화면의 세 상태', ({ ui, mock, empty, emptyTe
   it('불러오는 중에는 role=status로 알린다', async () => {
     mock.mockImplementation(never)
     renderWith(ui())
-    expect((await screen.findAllByRole('status'))[0].textContent).toContain('불러')
+    // 알림 전용(보이지 않는) 영역이 같이 있을 수 있어서, 상태 영역 중 하나가 "불러오는 중"이면 된다
+    const statuses = await screen.findAllByRole('status')
+    expect(statuses.some((el) => (el.textContent ?? '').includes('불러'))).toBe(true)
     expect(screen.queryByRole('alert')).toBeNull()
   })
 

@@ -4,6 +4,7 @@ import type { FormEvent } from 'react'
 import { api } from '../../api'
 import { queryKeys } from '../../api/queryKeys'
 import AssetTypeBadge from '../../components/AssetTypeBadge'
+import LiveStatus from '../../components/ui/LiveStatus'
 import { useLocale } from '../../i18n/useLocale'
 import type { Portfolio } from '../../types'
 import { formatPct, formatPrice, trendClass } from '../../utils/format'
@@ -63,6 +64,26 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
     previewPrice && debouncedTicker
       ? { companyName: previewPrice.company_name, price: previewPrice.current_price }
       : null
+
+  const filled = orderMutation.data
+  const filledText = filled
+    ? t('holdings.filled', {
+        fallback: '{side} 체결: {name} {qty}주 @ {price} (잔액 {balance}{tail})',
+        vars: {
+          side: filled.side === 'buy' ? t('holdings.buy', { fallback: '매수' }) : t('holdings.sell', { fallback: '매도' }),
+          name: filled.company_name,
+          qty: filled.quantity,
+          price: `${formatPrice(filled.price)}${won}`,
+          balance: `${formatPrice(filled.cash_balance)}${won}`,
+          tail: filled.holding
+            ? t('holdings.filled_holding', {
+                fallback: ', 보유 {qty}주 · 평균 {avg}',
+                vars: { qty: filled.holding.quantity, avg: `${formatPrice(filled.holding.avg_price)}${won}` },
+              })
+            : t('holdings.filled_none', { fallback: ' · 전량 매도로 보유 종목 없음' }),
+        },
+      })
+    : ''
 
   useEffect(() => {
     const id = setTimeout(() => setDebouncedTicker(ticker.trim()), ORDER_PREVIEW_DEBOUNCE_MS)
@@ -143,7 +164,7 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
         </div>
 
         <div className="portfolio-actions">
-          <button type="button" className="reset-button" onClick={() => void handleReset()} disabled={!!mutating}>
+          <button type="button" className="reset-button" onClick={() => void handleReset()} aria-disabled={!!mutating || undefined}>
             {mutating === 'reset' ? t('holdings.resetting', { fallback: '초기화 중…' }) : t('common.reset')}
           </button>
         </div>
@@ -168,7 +189,7 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
             onChange={(e) => setQuantity(e.target.value)}
             aria-label={t('holdings.qty_aria', { fallback: '수량' })}
           />
-          <button type="submit" disabled={!!mutating}>
+          <button type="submit" aria-disabled={!!mutating || undefined}>
             {mutating === 'order' ? t('holdings.ordering', { fallback: '주문 중…' }) : t('holdings.order', { fallback: '주문' })}
           </button>
         </form>
@@ -186,32 +207,9 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
           </p>
         )}
         {formError && <p className="notice notice-error" role="alert">{formError}</p>}
-        {orderMutation.data && (
-          <p className="notice order-result">
-            {t('holdings.filled', {
-              fallback: '{side} 체결: {name} {qty}주 @ {price} (잔액 {balance}{tail})',
-              vars: {
-                side:
-                  orderMutation.data.side === 'buy'
-                    ? t('holdings.buy', { fallback: '매수' })
-                    : t('holdings.sell', { fallback: '매도' }),
-                name: orderMutation.data.company_name,
-                qty: orderMutation.data.quantity,
-                price: `${formatPrice(orderMutation.data.price)}${won}`,
-                balance: `${formatPrice(orderMutation.data.cash_balance)}${won}`,
-                tail: orderMutation.data.holding
-                  ? t('holdings.filled_holding', {
-                      fallback: ', 보유 {qty}주 · 평균 {avg}',
-                      vars: {
-                        qty: orderMutation.data.holding.quantity,
-                        avg: `${formatPrice(orderMutation.data.holding.avg_price)}${won}`,
-                      },
-                    })
-                  : t('holdings.filled_none', { fallback: ' · 전량 매도로 보유 종목 없음' }),
-              },
-            })}
-          </p>
-        )}
+        {/* 체결 결과는 눈으로는 보이지만 소리로는 알 수 없어서, 항상 있는 알림 영역에도 같은 문장을 넣는다 */}
+        <LiveStatus message={filledText} />
+        {orderMutation.data && <p className="notice order-result">{filledText}</p>}
 
         {portfolio.holdings.length === 0 ? (
           <p className="muted">{t('holdings.none', { fallback: '보유 종목이 없어요.' })}</p>
