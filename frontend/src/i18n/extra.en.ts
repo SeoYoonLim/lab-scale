@@ -446,4 +446,8 @@ export const EXTRA_EN: Record<string, string> = {
   'watchlist.registered_as': 'Added {name} ({ticker}) instead of \'{input}\'.',
   'watchlist.remove': 'Remove',
   'watchlist.remove_failed': 'Could not remove it.',
+  'errors.boundary_title': 'Could not show this page',
+  'errors.boundary_body': 'This may be temporary. If it keeps happening after reloading, please try again in a moment.',
+  'errors.reload': 'Reload',
+  'common.go_home': 'Go to the start page',
 }

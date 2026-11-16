@@ -10,6 +10,7 @@ import { formatSignedPct, formatTradingDate, trendClass } from '../utils/format'
 import Banner from './ui/Banner'
 import EmptyState from './ui/EmptyState'
 import ErrorNotice from './ui/ErrorNotice'
+import LoadingNotice from './ui/LoadingNotice'
 
 // 오늘의 시장(코스피·코스닥 종가와 상승·하락 종목 수). GET /api/market/overview는 공개 API라 로그인이나 오늘 브리핑 없이 읽힌다.
 // 숫자는 서버 값을 그대로 보여주고, 등락이 null이면 0%가 아니라 "—"와 이유를 보여준다(핸드오프 41차).
@@ -35,7 +36,7 @@ export default function MarketSummaryCard() {
         </Link>
       </div>
 
-      {isPending && <p className="muted small">{t('common.loading')}</p>}
+      {isPending && <LoadingNotice small />}
       {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
 
       {data?.status === 'no_data' && (

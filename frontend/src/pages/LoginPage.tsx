@@ -56,7 +56,7 @@ export default function LoginPage() {
             autoComplete="current-password"
           />
         </label>
-        {error && <p className="notice notice-error">{error}</p>}
+        {error && <p className="notice notice-error" role="alert">{error}</p>}
         <button type="submit" className="send auth-submit" disabled={pending || !username.trim() || !password}>
           {pending ? t('auth.logging_in', { fallback: '로그인 중…' }) : t('nav.login', { fallback: '로그인' })}
         </button>

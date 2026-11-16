@@ -446,4 +446,8 @@ export const EXTRA_JA: Record<string, string> = {
   'watchlist.registered_as': '\'{input}\'の代わりに{name}({ticker})を登録しました。',
   'watchlist.remove': '削除',
   'watchlist.remove_failed': '削除できませんでした。',
+  'errors.boundary_title': 'この画面を表示できませんでした',
+  'errors.boundary_body': '一時的な問題の可能性があります。再読み込みしても直らない場合は、しばらくしてからもう一度お試しください。',
+  'errors.reload': '再読み込み',
+  'common.go_home': '最初の画面へ',
 }

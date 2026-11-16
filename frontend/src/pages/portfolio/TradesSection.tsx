@@ -8,6 +8,7 @@ import Pagination from '../../components/Pagination'
 import { useLocale } from '../../i18n/useLocale'
 import { formatDate, formatPrice } from '../../utils/format'
 import ErrorNotice from '../../components/ui/ErrorNotice'
+import LoadingNotice from '../../components/ui/LoadingNotice'
 
 const TRADES_PAGE_SIZE = 20
 
@@ -45,7 +46,7 @@ export default function TradesSection() {
           <button type="submit">{t('trades.filter', { fallback: '필터' })}</button>
         </form>
 
-        {isPending && <p className="muted">{t('common.loading')}</p>}
+        {isPending && <LoadingNotice />}
         {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
         {data && data.items.length === 0 && <p className="muted">{t('trades.empty', { fallback: '체결 내역이 없어요.' })}</p>}
 

@@ -13,6 +13,7 @@ import { DEFAULT_FILTERS } from './stockFeed/filters'
 import type { FeedFilterState } from './stockFeed/filters'
 import EmptyState from './ui/EmptyState'
 import ErrorNotice from './ui/ErrorNotice'
+import LoadingNotice from './ui/LoadingNotice'
 
 const PAGE_SIZE = 10
 
@@ -53,7 +54,7 @@ export default function StockNewsCard({ ticker }: { ticker: string }) {
       </div>
       <FeedFilters value={filters} onChange={changeFilters} />
 
-      {isPending && !invalid && <p className="muted">{t('common.loading')}</p>}
+      {isPending && !invalid && <LoadingNotice />}
       {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
 
       {data && (

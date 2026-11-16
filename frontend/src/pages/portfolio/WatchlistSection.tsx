@@ -9,6 +9,7 @@ import { useLocale } from '../../i18n/useLocale'
 import type { WatchlistItem } from '../../types'
 import { formatDate, formatPct, formatPrice, trendClass } from '../../utils/format'
 import ErrorNotice from '../../components/ui/ErrorNotice'
+import LoadingNotice from '../../components/ui/LoadingNotice'
 
 export default function WatchlistSection() {
   const { t } = useLocale()
@@ -80,10 +81,10 @@ export default function WatchlistSection() {
             {t('watchlist.add', { fallback: '추가' })}
           </button>
         </form>
-        {formError && <p className="notice notice-error">{formError}</p>}
+        {formError && <p className="notice notice-error" role="alert">{formError}</p>}
         {formNotice && <p className="muted small">{formNotice}</p>}
 
-        {isPending && <p className="muted">{t('common.loading')}</p>}
+        {isPending && <LoadingNotice />}
         {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
         {data && data.length === 0 && <p className="muted">{t('watchlist.empty', { fallback: '아직 등록한 관심종목이 없어요.' })}</p>}
 

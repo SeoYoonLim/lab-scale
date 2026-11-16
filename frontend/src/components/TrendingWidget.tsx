@@ -6,6 +6,7 @@ import { useLocale } from '../i18n/useLocale'
 import type { AssetType, TrendingCategory } from '../types'
 import { formatPct, formatPrice, trendClass } from '../utils/format'
 import ErrorNotice from './ui/ErrorNotice'
+import LoadingNotice from './ui/LoadingNotice'
 
 const CATEGORY_LABELS: Record<TrendingCategory, { key: string; fallback: string }> = {
   gainers: { key: 'trending.gainers', fallback: '급등' },
@@ -65,7 +66,7 @@ export default function TrendingWidget({ onPick }: { onPick: (question: string) 
         </div>
       </div>
 
-      {isPending && <p className="muted small">{t('common.loading')}</p>}
+      {isPending && <LoadingNotice small />}
       {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
       {data && data.items.length === 0 && <p className="muted small">{t('trending.empty', { fallback: '조건에 맞는 종목이 없어요.' })}</p>}
 

@@ -58,11 +58,7 @@ export default function DiagnosisSection() {
           </p>
         )}
         {diagnosisMutation.error && (
-          <p className="notice notice-error">
-            {diagnosisMutation.error instanceof Error
-              ? diagnosisMutation.error.message
-              : t('diagnosis.failed', { fallback: '진단에 실패했어요.' })}
-          </p>
+          <ErrorNotice error={diagnosisMutation.error} fallback={t('diagnosis.failed', { fallback: '진단에 실패했어요.' })} />
         )}
 
         {result && (

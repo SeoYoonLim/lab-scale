@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { useLocale } from '../i18n/useLocale'
+import LoadingNotice from './ui/LoadingNotice'
 
 // 리서치/기록/포트폴리오처럼 로그인이 필요한 화면을 감싼다. 로그인 안 돼 있으면 /login으로 보내고,
 // 로그인 뒤 원래 가려던 곳(경로 + state, 예: CompanyPage가 넘긴 리서치 prefill)으로 돌아올 수 있게
@@ -14,7 +15,7 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
   if (loading) {
     return (
       <div className="container page">
-        <p className="muted">{t('common.loading')}</p>
+        <LoadingNotice />
       </div>
     )
   }
@@ -24,7 +25,7 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
   if (initError && !user) {
     return (
       <div className="container page">
-        <p className="notice notice-error">
+        <p className="notice notice-error" role="alert">
           {t('auth.init_failed', { fallback: initError })}
         </p>
         <button type="button" className="send" onClick={retryInit}>

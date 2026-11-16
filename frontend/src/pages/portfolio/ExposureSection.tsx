@@ -8,6 +8,7 @@ import EmptyState from '../../components/ui/EmptyState'
 import ErrorNotice from '../../components/ui/ErrorNotice'
 import { useLocale } from '../../i18n/useLocale'
 import { formatTradingDate } from '../../utils/format'
+import LoadingNotice from '../../components/ui/LoadingNotice'
 
 const COMPANY_LIMIT = 10
 
@@ -26,7 +27,7 @@ export default function ExposureSection() {
         {t('look_through.title')}
       </h2>
       <div className="card">
-        {isPending && <p className="muted">{t('common.loading')}</p>}
+        {isPending && <LoadingNotice />}
         {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
 
         {data && (
