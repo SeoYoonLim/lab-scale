@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from '../../api'
 import { ApiError } from '../../api/errors'
@@ -18,6 +18,19 @@ export default function WatchlistSection() {
   const [ticker, setTicker] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [formNotice, setFormNotice] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLUListElement>(null)
+  // 삭제한 줄의 위치. 그 줄(과 눌렀던 삭제 버튼)이 사라지면 초점이 문서 맨 위로 날아가므로, 목록이 바뀐 뒤 다음 줄의 삭제 버튼으로 옮긴다.
+  const focusAfterRemove = useRef<number | null>(null)
+
+  useEffect(() => {
+    const index = focusAfterRemove.current
+    if (index == null) return
+    focusAfterRemove.current = null
+    const buttons = listRef.current?.querySelectorAll<HTMLButtonElement>('button.delete-report')
+    if (buttons && buttons.length > 0) buttons[Math.max(0, Math.min(index, buttons.length - 1))].focus()
+    else inputRef.current?.focus()
+  }, [data])
 
   const addMutation = useMutation({
     mutationFn: (name: string) => api.addWatchlistItem(name),
@@ -59,9 +72,11 @@ export default function WatchlistSection() {
   }
 
   async function handleRemove(item: WatchlistItem) {
+    focusAfterRemove.current = data?.findIndex((row) => row.ticker === item.ticker) ?? null
     try {
       await removeMutation.mutateAsync(item.ticker)
     } catch (err) {
+      focusAfterRemove.current = null
       setFormError(err instanceof Error ? err.message : t('watchlist.remove_failed', { fallback: '삭제하지 못했어요.' }))
     }
   }
@@ -72,6 +87,7 @@ export default function WatchlistSection() {
       <div className="card">
         <form className="inline-form" onSubmit={handleAdd}>
           <input
+            ref={inputRef}
             value={ticker}
             onChange={(e) => setTicker(e.target.value)}
             placeholder={t('watchlist.placeholder', { fallback: '종목명 또는 종목코드 (예: 삼성전자)' })}
@@ -88,7 +104,7 @@ export default function WatchlistSection() {
         {error && <ErrorNotice error={error} onRetry={() => void refetch()} />}
         {data && data.length === 0 && <p className="muted">{t('watchlist.empty', { fallback: '아직 등록한 관심종목이 없어요.' })}</p>}
 
-        <ul className="ledger">
+        <ul className="ledger" ref={listRef}>
           {data?.map((item) => (
             <li key={item.ticker} className="ledger-row watch-row">
               <div>

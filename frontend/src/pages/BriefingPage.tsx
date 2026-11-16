@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { ApiError } from '../api/errors'
 import { groupHeaderIndexes } from '../api/contracts/history'
@@ -154,10 +154,40 @@ function HistoryTab() {
     enabled: openId != null,
   })
 
+  // 목록 ↔ 상세 전환과 "이 날짜 버전 모두 보기" 토글은 눌렀던 버튼이 사라진다. 초점이 문서 맨 위로 날아가지 않도록,
+  // 바뀐 화면에서 이어 쓸 요소(상세의 뒤로가기 / 목록의 방금 연 항목 / 목록 제목·닫기 버튼)로 옮긴다.
+  const backRef = useRef<HTMLButtonElement>(null)
+  const titleRef = useRef<HTMLHeadingElement>(null)
+  const versionsCloseRef = useRef<HTMLButtonElement>(null)
+  const returnToId = useRef<number | null>(null)
+  const pendingVersionsFocus = useRef<'close' | 'title' | null>(null)
+  useEffect(() => {
+    if (openId != null) {
+      backRef.current?.focus({ preventScroll: true })
+    } else if (returnToId.current != null) {
+      document.querySelector<HTMLElement>(`[data-briefing-id="${returnToId.current}"]`)?.focus()
+      returnToId.current = null
+    }
+  }, [openId])
+  useEffect(() => {
+    const target = pendingVersionsFocus.current
+    if (!target) return
+    pendingVersionsFocus.current = null
+    ;(target === 'close' ? versionsCloseRef : titleRef).current?.focus()
+  }, [allVersionsOn])
+
   if (openId != null) {
     return (
       <>
-        <button type="button" className="back-link-button" onClick={() => setOpenId(null)}>
+        <button
+          type="button"
+          className="back-link-button"
+          ref={backRef}
+          onClick={() => {
+            returnToId.current = openId
+            setOpenId(null)
+          }}
+        >
           ← {t('daily_briefing.history_title')}
         </button>
         {detail.isPending && <LoadingNotice />}
@@ -171,11 +201,20 @@ function HistoryTab() {
   const headers = new Set(groupHeaderIndexes(items))
   return (
     <div className="card">
-      <h2 className="briefing-title">{t('daily_briefing.history_title')}</h2>
+      <h2 className="briefing-title" ref={titleRef} tabIndex={-1}>{t('daily_briefing.history_title')}</h2>
       {allVersionsOn && (
         <p className="small">
           {allVersionsOn} · {t('daily_briefing.all_versions')}{' '}
-          <button type="button" className="link-button" onClick={() => { setAllVersionsOn(null); setPage(1) }}>
+          <button
+            type="button"
+            className="link-button"
+            ref={versionsCloseRef}
+            onClick={() => {
+              pendingVersionsFocus.current = 'title'
+              setAllVersionsOn(null)
+              setPage(1)
+            }}
+          >
             {t('common.close')}
           </button>
         </p>
@@ -189,7 +228,7 @@ function HistoryTab() {
           <li key={item.id}>
             {headers.has(index) && <h3 className="date-group-header">{t(`date_group.${item.date_group}`)}</h3>}
             <div className="history-row">
-              <button type="button" className="history-open" onClick={() => setOpenId(item.id)}>
+              <button type="button" className="history-open" data-briefing-id={item.id} onClick={() => setOpenId(item.id)}>
                 <span className="history-title">
                   {item.title}{' '}
                   <StatusBadge tone={item.market_data_status === 'latest' ? 'ok' : item.market_data_status === 'delayed' ? 'warn' : 'danger'}>
@@ -205,7 +244,15 @@ function HistoryTab() {
                 {item.headline && item.market_data_status !== 'latest' && <span className="small briefing-headline-warn">{item.headline}</span>}
               </button>
               {item.versions_on_date >= 2 && allVersionsOn == null && (
-                <button type="button" className="link-button" onClick={() => { setAllVersionsOn(item.local_date); setPage(1) }}>
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() => {
+                    pendingVersionsFocus.current = 'close'
+                    setAllVersionsOn(item.local_date)
+                    setPage(1)
+                  }}
+                >
                   {t('daily_briefing.versions_on_date', { vars: { n: item.versions_on_date } })}
                 </button>
               )}
@@ -222,6 +269,12 @@ function HistoryTab() {
 export default function BriefingPage() {
   const { t } = useLocale()
   const [tab, setTab] = useState<Tab>('today')
+  const historyTabRef = useRef<HTMLButtonElement>(null)
+  // 오늘 탭 안의 "지난 브리핑" 링크를 누르면 그 링크가 사라지므로, 초점을 지난 브리핑 탭 버튼으로 옮긴다.
+  function showHistory() {
+    setTab('history')
+    historyTabRef.current?.focus()
+  }
   return (
     <div className="container container-wide page briefing-page">
       <h1 className="page-title">{t('nav.briefing')}</h1>
@@ -229,11 +282,11 @@ export default function BriefingPage() {
         <button type="button" className={tab === 'today' ? 'seg active' : 'seg'} aria-pressed={tab === 'today'} onClick={() => setTab('today')}>
           {t('briefing.tab_today', { fallback: '오늘' })}
         </button>
-        <button type="button" className={tab === 'history' ? 'seg active' : 'seg'} aria-pressed={tab === 'history'} onClick={() => setTab('history')}>
+        <button type="button" ref={historyTabRef} className={tab === 'history' ? 'seg active' : 'seg'} aria-pressed={tab === 'history'} onClick={() => setTab('history')}>
           {t('briefing.tab_history', { fallback: '지난 브리핑' })}
         </button>
       </div>
-      {tab === 'today' ? <TodayTab onShowHistory={() => setTab('history')} /> : <HistoryTab />}
+      {tab === 'today' ? <TodayTab onShowHistory={showHistory} /> : <HistoryTab />}
     </div>
   )
 }

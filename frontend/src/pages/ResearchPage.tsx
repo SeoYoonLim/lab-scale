@@ -53,12 +53,22 @@ export default function ResearchPage() {
   const [threadReportId, setThreadReportId] = useState<number | null>(null)
   const nextId = useRef(1)
   const endRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const location = useLocation()
   const navigate = useNavigate()
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [entries, pending])
+
+  // 첫 질문을 보내면 입력창이 가운데(안내 화면)에서 아래쪽 고정 칸으로 옮겨 가며 새로 만들어져서, 키보드로 보낸 사용자의
+  // 초점이 사라진다(추천 질문 버튼을 눌러 보낸 경우도 그 버튼이 사라진다). 새 입력창으로 초점을 옮긴다.
+  const hasEntries = entries.length > 0
+  const hadEntries = useRef(false)
+  useEffect(() => {
+    if (hasEntries && !hadEntries.current) inputRef.current?.focus({ preventScroll: true })
+    hadEntries.current = hasEntries
+  }, [hasEntries])
 
   // 종목 상세 화면의 "이 종목으로 리서치해줘" 버튼처럼, 다른 화면에서 질문을 채워 넣고 넘어온 경우.
   // 한 번 소비하면 라우터 state를 비워서 뒤로/앞으로가기로 다시 채워지지 않게 한다.
@@ -132,7 +142,14 @@ export default function ResearchPage() {
         {threadReportId != null && (
           <div className="thread-hint">
             <span>{t('research.continuing', { fallback: '#{id}에 이어서 대화 중이에요', vars: { id: threadReportId } })}</span>
-            <button type="button" onClick={() => setThreadReportId(null)}>
+            <button
+              type="button"
+              onClick={() => {
+                // 이 버튼은 스레드가 끊기면 사라지므로 초점을 입력창으로 옮긴다
+                setThreadReportId(null)
+                inputRef.current?.focus()
+              }}
+            >
               {t('research.new_question', { fallback: '새 질문으로 시작' })}
             </button>
           </div>
@@ -142,6 +159,7 @@ export default function ResearchPage() {
             <IconSearch />
           </span>
           <textarea
+            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
