@@ -225,3 +225,23 @@ def test_compressed_size_is_measured_like_upload_artifact(tmp_path):
 
 def test_universe_still_350():
     assert len(ASSETS) == 350
+
+
+# ---------- 원천 값 이상으로 54차 검증이 거부한 날(실측: 2026-11-10 284430 거래량 -8) ----------
+
+def test_rejected_day_is_kept_as_unsealed_artifact_once_and_not_refetched(tmp_path):
+    api, src = FakeAPI(), Source(days=[D], dup={"005930"})  # 그날 한 종목이 54차 규칙에 걸린다
+    rc, rep, out, env = run(tmp_path, api, src, "--date", D.isoformat())
+    assert rep["collect"]["days"][0]["status"] == "session_validation_failed" and rep["status"] == "failed"
+    assert out["slot1_name"] == "session-minute-unsealed-2026-11-16"  # 최종본 이름(session-minute-<날짜>)이 아니다
+    slot = Path(out["slot1_path"])
+    assert not (slot / "manifest.json").exists() and len(list((slot / "raw").glob("*.json"))) == 350
+    assert json.loads((slot / "session_validate.json").read_text(encoding="utf-8"))["ok"] is False
+    do_uploads(api, out)
+    assert verify(tmp_path, api, env) == 1  # 처음 확인한 실행은 실패로 알린다(업로드 재검증 자체는 통과)
+    final = json.loads((tmp_path / "w" / "run_report.json").read_text(encoding="utf-8"))
+    assert final["verify_uploads"][0]["ok"] is True
+    calls = len(src.calls)
+    rc, rep2, out2, env2 = run(tmp_path, api, src, "--date", D.isoformat(), name="b", run_id="r2")
+    assert rep2["existing"][0]["state"] == "rejected_known" and len(src.calls) == calls and out2["slot1_name"] == ""
+    assert rep2["status"] == "ok" and verify(tmp_path, api, env2, name="b") == 0

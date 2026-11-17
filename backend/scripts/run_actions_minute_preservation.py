@@ -42,6 +42,7 @@ KST = cloud.KST
 API = "https://api.github.com"
 ART_PREFIX = "session-minute-"
 STATUS_PREFIX = "session-minute-status-"
+UNSEALED_PREFIX = "session-minute-unsealed-"  # 350종목 파일은 다 있지만 54차 세션 검증이 거부한 날(최종본 아님, 봉인 없음)
 MAX_SLOTS = cloud.PROVIDER_WINDOW_TRADING_DAYS  # 한 실행에서 올릴 수 있는 날짜 수(최근 7거래일)
 STORAGE_LIMIT_BYTES = 500 * 1000 * 1000  # GitHub Free 아티팩트 저장 한도(Packages와 공유)
 WARN_RATIO, STOP_RATIO = 0.6, 0.8  # 사용량이 한도의 60%를 넘으면 경고, 80%를 넘을 것 같으면 업로드 중단
@@ -230,6 +231,14 @@ def seed_existing(api, targets: list[date], seed: Path, work: Path, n_tickers: i
             shutil.copytree(tmp, dest)
             rec.update(state="preserved", artifact_id=a["id"], size=a.get("size_in_bytes"), expires_at=a.get("expires_at"),
                        verify=check)
+        elif _unsealed_exists(api, d):
+            # 68차: 원천 값 이상으로 54차 검증이 거부한 날은 원본을 비봉인 아티팩트로 이미 보존했다. 같은 원천을 다시 받지 않는다
+            st_dir = seed / cloud.PREFIX / "_status"
+            st_dir.mkdir(parents=True, exist_ok=True)
+            (st_dir / f"{d.isoformat()}.json").write_text(json.dumps(
+                {"status": "rejected_known", "trade_date": d.isoformat(), "reason": "unsealed artifact exists"}, ensure_ascii=False),
+                encoding="utf-8")
+            rec.update(state="rejected_known", unsealed_artifact=f"{UNSEALED_PREFIX}{d.isoformat()}")
         elif d.isoformat() in status_files:
             st_dir = seed / cloud.PREFIX / "_status"
             st_dir.mkdir(parents=True, exist_ok=True)
@@ -238,6 +247,26 @@ def seed_existing(api, targets: list[date], seed: Path, work: Path, n_tickers: i
         else:
             rec["state"] = "damaged" if rec.get("damaged") else ("expired_or_missing" if not arts else "missing")
         out.append(rec)
+    return out
+
+
+def _unsealed_exists(api, d: date) -> bool:
+    try:
+        return any(not a.get("expired") for a in api.list_named(f"{UNSEALED_PREFIX}{d.isoformat()}"))
+    except Exception:  # noqa: BLE001 - 못 읽으면 다시 수집해 본다
+        return False
+
+
+def pick_unsealed(seed: Path, before: set[str], collect_days: list[dict], n_tickers: int) -> list[dict]:
+    """54차 세션 검증만 거부한 날(350종목 원본·검증 결과는 버킷에 다 올라감, 봉인 없음). 원천이 7거래일 뒤 사라지므로 원본을 남긴다."""
+    out = []
+    for r in collect_days or []:
+        if r.get("status") != "session_validation_failed" or r.get("date") in before:
+            continue
+        dayd = seed / cloud.PREFIX / r["date"]
+        if (dayd / cloud.SEAL).exists() or len(list((dayd / psm.RAW).glob("*.json"))) != n_tickers:
+            continue
+        out.append({"date": r["date"], "path": dayd, "rejected": (r.get("session_validation") or {}).get("counts")})
     return out
 
 
@@ -307,8 +336,9 @@ def cmd_run(args, env: dict, api=None, now=None, get=None, sleep=None, retry_wai
     report["collect"] = {"rc": rc, "status": collect.get("status"), "days": collect.get("days"),
                          "source_blocked": collect.get("source_blocked")}
     days, status = ([], []) if args.dry_run else pick_uploads(seed, before, collect["run_id"])
+    unsealed = [] if args.dry_run else pick_unsealed(seed, before, collect.get("days"), len(assets))
     # 용량: 저장소 전체 사용량 + 이번에 올릴 압축 크기(실측)
-    sizes = {x["date"]: zipped_size(x["path"]) for x in days}
+    sizes = {x["date"]: zipped_size(x["path"]) for x in days + unsealed}
     try:
         used, used_minute = api.usage_bytes()
     except Exception as e:  # noqa: BLE001
@@ -322,7 +352,7 @@ def cmd_run(args, env: dict, api=None, now=None, get=None, sleep=None, retry_wai
         storage["decision"] = "upload_without_usage_check"
     elif used + planned > STOP_RATIO * STORAGE_LIMIT_BYTES:
         storage["decision"] = "stopped_over_limit"
-        days, status = [], []
+        days, status, unsealed = [], [], []
     elif used + planned > WARN_RATIO * STORAGE_LIMIT_BYTES:
         storage["decision"] = "warning"
     else:
@@ -330,10 +360,11 @@ def cmd_run(args, env: dict, api=None, now=None, get=None, sleep=None, retry_wai
     report["storage"] = storage
     uploads = work / "upload"
     slots = []
-    for i, x in enumerate(days[:MAX_SLOTS], 1):
+    staged = [(x, f"{ART_PREFIX}{x['date']}", "sealed") for x in days] +              [(x, f"{UNSEALED_PREFIX}{x['date']}", "unsealed") for x in unsealed]
+    for i, (x, name, kind) in enumerate(staged[:MAX_SLOTS], 1):
         dest = uploads / f"slot{i}"
         shutil.copytree(x["path"], dest)
-        slots.append({"slot": i, "name": f"{ART_PREFIX}{x['date']}", "path": str(dest), "date": x["date"],
+        slots.append({"slot": i, "name": name, "kind": kind, "path": str(dest), "date": x["date"],
                       "zip_bytes": sizes[x["date"]]})
     st_slots = []
     if status:
@@ -409,7 +440,12 @@ def cmd_verify(args, env: dict, api=None) -> int:
                 continue
             tmp = work / "verify" / name
             unzip_to(api.download(a["id"]), tmp)
-            c = verify_day_dir(tmp, date.fromisoformat(s["date"]), cloud.EXPECTED_ASSETS["stock"] + cloud.EXPECTED_ASSETS["etf"])
+            if s.get("kind") == "unsealed":
+                v = psm.verify(tmp)
+                c = {"ok": v["status"] != "failed" and not (tmp / cloud.SEAL).exists(),
+                     "problems": [] if v["status"] != "failed" else ["52차 verify 실패"]}
+            else:
+                c = verify_day_dir(tmp, date.fromisoformat(s["date"]), cloud.EXPECTED_ASSETS["stock"] + cloud.EXPECTED_ASSETS["etf"])
             local = Path(s["path"])
             same = all(psm.sha256_file(p)[0] == psm.sha256_file(tmp / p.relative_to(local))[0]
                        for p in local.rglob("*") if p.is_file())
