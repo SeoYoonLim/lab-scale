@@ -1,5 +1,7 @@
 # 67차 분봉 클라우드 자동 수집·보존 (GitHub Actions + Cloudflare R2)
 
+> **68차(2026-11-17)에 R2 방식을 중단했다.** 운영 방식은 GitHub Actions 아티팩트다: `docs/GITHUB_ACTIONS_MINUTE_AUTOMATION_68.md`. R2 workflow(`session-minute-cloud.yml`)는 지웠고, 이 문서는 기록으로 남긴다. 사용자가 할 R2 설정(8~10절)은 더 이상 필요 없다.
+
 작성 2026-11-17 · 브랜치 `feature/backend`
 
 **결론: 사용자 PC 없이 클라우드에서 돌릴 수집·보존 코드, workflow, 테스트, 운영 문서를 만들었다. 아직 운영 중은 아니다.**

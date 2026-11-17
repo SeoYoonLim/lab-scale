@@ -1,5 +1,8 @@
 """GitHub Actions에서 거래일 분봉 원본을 받아 Cloudflare R2에 날짜별로 보존한다(2026-11-17, 67차). DB·Ollama를 쓰지 않는다.
 
+68차부터: R2 운영(--store r2, R2Store)은 중단·보관이다. 이 모듈의 수집·보존·세션 검증·봉인 엔진은 --store local로
+scripts.run_actions_minute_preservation(GitHub Actions 아티팩트 보존)이 그대로 쓴다. docs/GITHUB_ACTIONS_MINUTE_AUTOMATION_68.md
+
 운영 문서: docs/SESSION_MINUTE_CLOUD_AUTOMATION_67.md (workflow: .github/workflows/session-minute-cloud.yml)
 
   python -m scripts.run_cloud_session_preservation --work-dir "$RUNNER_TEMP/smc"            # R2(환경 변수 4개 필요)

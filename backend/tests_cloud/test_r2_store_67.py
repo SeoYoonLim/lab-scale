@@ -1,4 +1,4 @@
-"""67차 R2Store(boto3) 단위 테스트. botocore Stubber로 응답을 흉내 낸다(네트워크·실제 R2 없음).
+"""67차 R2Store(boto3) 단위 테스트. 68차(2026-11-17)부터 보관: R2 workflow를 없애 어떤 CI job도 이 폴더를 돌리지 않는다(R2를 다시 쓸 때 수동 실행). botocore Stubber로 응답을 흉내 낸다(네트워크·실제 R2 없음).
 
 boto3는 requirements-cloud.txt에만 있으므로 기본 tests/에 두지 않는다. 실행:
   pip install -r requirements.txt -r requirements-cloud.txt

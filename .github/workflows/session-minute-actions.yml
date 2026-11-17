@@ -1,0 +1,130 @@
+name: Session minute artifacts
+
+# 68차-B: 거래일 분봉 원본(350종목)을 GitHub-hosted runner에서 받아 날짜별 GitHub Actions 아티팩트(session-minute-YYYY-MM-DD)로 보존한다.
+# Cloudflare R2·추가 Secrets가 필요 없다(GITHUB_TOKEN만). 사용자 PC·DB·Ollama와 무관하다. 문서: docs/GITHUB_ACTIONS_MINUTE_AUTOMATION_68.md
+#
+# - 아티팩트는 영구 저장소가 아니다: retention-days(ARTIFACT_RETENTION_DAYS) 뒤 자동으로 지워진다. 오래 두려면 내려받아 따로 보관한다.
+# - 예약은 이 파일이 기본 브랜치(main)에 있어야 동작한다. feature 브랜치에서는 push(관련 파일)로만 돈다.
+# - 휴장일은 cron이 아니라 Python(app/krx_calendar)이 판단한다(SKIP).
+# - 실행마다 최근 7거래일을 확인한다: 정상 아티팩트가 있는 날짜는 다시 받지 않고, 없거나 손상된 날짜만 원천(최근 7거래일만 제공)에서 다시 받는다.
+# - 저장소가 공개라 아티팩트는 GitHub에 로그인한 누구나 내려받을 수 있다(문서 10절).
+on:
+  schedule:
+    - cron: "20 20 * * 1-5"   # 20:20 KST = 11:20 UTC
+      timezone: "Asia/Seoul"
+    - cron: "20 23 * * 1-5"   # 23:20 KST = 14:20 UTC(예비)
+      timezone: "Asia/Seoul"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "이 거래일만(YYYY-MM-DD, 비우면 최근 lookback 거래일)"
+        type: string
+        default: ""
+      lookback:
+        description: "확인할 최근 거래일 수(1~7)"
+        type: string
+        default: "7"
+      dry_run:
+        description: "원천 요청·업로드 없이 기존 아티팩트 상태만 확인"
+        type: boolean
+        default: false
+  push:
+    branches: [feature/backend]
+    paths:
+      - ".github/workflows/session-minute-actions.yml"
+      - "backend/scripts/run_actions_minute_preservation.py"
+      - "backend/scripts/run_cloud_session_preservation.py"
+      - "backend/scripts/fetch_session_minute.py"
+      - "backend/scripts/preserve_session_minute.py"
+      - "backend/scripts/load_session_minute.py"
+      - "backend/app/session_*.py"
+      - "backend/app/krx_calendar.py"
+      - "backend/app/data/**"
+
+concurrency:
+  group: session-minute-actions
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read   # 이전 실행의 아티팩트 목록·내려받기(GITHUB_TOKEN). 지우기(actions: write)는 하지 않는다
+
+env:
+  ARTIFACT_RETENTION_DAYS: "30"
+
+jobs:
+  preserve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - name: 기존 아티팩트 확인 · 누락일 수집 · 검증
+        id: run
+        env:
+          TZ: Asia/Seoul
+          PYTHONIOENCODING: utf-8
+          GITHUB_TOKEN: ${{ github.token }}
+          IN_DATE: ${{ inputs.date }}
+          IN_LOOKBACK: ${{ inputs.lookback }}
+          IN_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          args=(run --work-dir "$RUNNER_TEMP/sma")
+          if [[ -n "${IN_DATE:-}" ]]; then
+            [[ "$IN_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "date 형식 오류"; exit 2; }
+            args+=(--date "$IN_DATE")
+          fi
+          if [[ -n "${IN_LOOKBACK:-}" ]]; then
+            [[ "$IN_LOOKBACK" =~ ^[1-7]$ ]] || { echo "lookback은 1~7"; exit 2; }
+            args+=(--lookback "$IN_LOOKBACK")
+          fi
+          [[ "${IN_DRY_RUN:-false}" == "true" ]] && args+=(--dry-run)
+          python -m scripts.run_actions_minute_preservation "${args[@]}"
+      # 이번 실행에서 350종목 검증·봉인까지 끝난 날짜만 칸(slot)에 들어 있다. 빈 칸은 건너뛴다. overwrite 없음(같은 이름이 있어도 새 실행의 별도 아티팩트)
+      - if: steps.run.outputs.slot1_name != ''
+        uses: actions/upload-artifact@v4
+        with: {name: "${{ steps.run.outputs.slot1_name }}", path: "${{ steps.run.outputs.slot1_path }}", retention-days: "${{ env.ARTIFACT_RETENTION_DAYS }}", compression-level: 6, if-no-files-found: error}
+      - if: steps.run.outputs.slot2_name != ''
+        uses: actions/upload-artifact@v4
+        with: {name: "${{ steps.run.outputs.slot2_name }}", path: "${{ steps.run.outputs.slot2_path }}", retention-days: "${{ env.ARTIFACT_RETENTION_DAYS }}", compression-level: 6, if-no-files-found: error}
+      - if: steps.run.outputs.slot3_name != ''
+        uses: actions/upload-artifact@v4
+        with: {name: "${{ steps.run.outputs.slot3_name }}", path: "${{ steps.run.outputs.slot3_path }}", retention-days: "${{ env.ARTIFACT_RETENTION_DAYS }}", compression-level: 6, if-no-files-found: error}
+      - if: steps.run.outputs.slot4_name != ''
+        uses: actions/upload-artifact@v4
+        with: {name: "${{ steps.run.outputs.slot4_name }}", path: "${{ steps.run.outputs.slot4_path }}", retention-days: "${{ env.ARTIFACT_RETENTION_DAYS }}", compression-level: 6, if-no-files-found: error}
+      - if: steps.run.outputs.slot5_name != ''
+        uses: actions/upload-artifact@v4
+        with: {name: "${{ steps.run.outputs.slot5_name }}", path: "${{ steps.run.outputs.slot5_path }}", retention-days: "${{ env.ARTIFACT_RETENTION_DAYS }}", compression-level: 6, if-no-files-found: error}
+      - if: steps.run.outputs.slot6_name != ''
+        uses: actions/upload-artifact@v4
+        with: {name: "${{ steps.run.outputs.slot6_name }}", path: "${{ steps.run.outputs.slot6_path }}", retention-days: "${{ env.ARTIFACT_RETENTION_DAYS }}", compression-level: 6, if-no-files-found: error}
+      - if: steps.run.outputs.slot7_name != ''
+        uses: actions/upload-artifact@v4
+        with: {name: "${{ steps.run.outputs.slot7_name }}", path: "${{ steps.run.outputs.slot7_path }}", retention-days: "${{ env.ARTIFACT_RETENTION_DAYS }}", compression-level: 6, if-no-files-found: error}
+      # 복구 불가 표시(원천 조회 기간이 지난 날짜). 다음 실행이 같은 날짜를 다시 요청하지 않게 한다(작은 JSON)
+      - if: steps.run.outputs.status_dir != ''
+        uses: actions/upload-artifact@v4
+        with: {name: "session-minute-status-${{ github.run_id }}", path: "${{ steps.run.outputs.status_dir }}", retention-days: "${{ env.ARTIFACT_RETENTION_DAYS }}", if-no-files-found: ignore}
+      - name: 업로드 재검증(API로 다시 내려받아 SHA-256 대조) · 최종 판정
+        if: always() && steps.run.outcome == 'success'
+        env:
+          PYTHONIOENCODING: utf-8
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python -m scripts.run_actions_minute_preservation verify --work-dir "$RUNNER_TEMP/sma"
+      - name: 실행 기록(상태·건수·용량, 원본 없음)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: session-minute-run-${{ github.run_id }}
+          path: ${{ runner.temp }}/sma/run_report.json
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+          if-no-files-found: ignore
