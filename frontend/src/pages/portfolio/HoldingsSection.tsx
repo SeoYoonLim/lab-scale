@@ -4,6 +4,7 @@ import type { FormEvent } from 'react'
 import { api } from '../../api'
 import { queryKeys } from '../../api/queryKeys'
 import AssetTypeBadge from '../../components/AssetTypeBadge'
+import { IconChart, IconSparkle, IconWallet } from '../../components/icons'
 import LiveStatus from '../../components/ui/LiveStatus'
 import { useLocale } from '../../i18n/useLocale'
 import type { Portfolio } from '../../types'
@@ -146,22 +147,31 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
       <h2 className="section-title">{t('holdings.title', { fallback: '모의투자' })}</h2>
       <div className="card">
         <div className="portfolio-summary">
-          <div>
-            <div className="muted small">{t('exposure.cash', { fallback: '현금' })}</div>
+          <div className="portfolio-stat portfolio-stat-cash">
+            <div className="portfolio-stat-label">
+              <IconWallet />
+              <span>{t('exposure.cash', { fallback: '현금' })}</span>
+            </div>
             <div className="num price-big">
               {formatPrice(portfolio.cash_balance)}
               {won}
             </div>
           </div>
-          <div>
-            <div className="muted small">{t('holdings.eval', { fallback: '평가금액' })}</div>
+          <div className="portfolio-stat portfolio-stat-eval">
+            <div className="portfolio-stat-label">
+              <IconChart />
+              <span>{t('holdings.eval', { fallback: '평가금액' })}</span>
+            </div>
             <div className="num price-big">
               {formatPrice(portfolio.total_eval_amount)}
               {won}
             </div>
           </div>
-          <div>
-            <div className="muted small">{t('holdings.total_asset', { fallback: '총 자산' })}</div>
+          <div className="portfolio-stat portfolio-stat-total">
+            <div className="portfolio-stat-label">
+              <IconSparkle />
+              <span>{t('holdings.total_asset', { fallback: '총 자산' })}</span>
+            </div>
             <div className="num price-big">
               {formatPrice(portfolio.total_asset)}
               {won}
@@ -185,7 +195,7 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
             placeholder={t('holdings.ticker_placeholder', { fallback: '종목명 또는 종목코드' })}
             aria-label={t('holdings.ticker_aria', { fallback: '주문할 종목' })}
           />
-          <select value={side} onChange={(e) => setSide(e.target.value as 'buy' | 'sell')} aria-label={t('holdings.side_aria', { fallback: '매수/매도' })}>
+          <select value={side} data-side={side} onChange={(e) => setSide(e.target.value as 'buy' | 'sell')} aria-label={t('holdings.side_aria', { fallback: '매수/매도' })}>
             <option value="buy">{t('holdings.buy', { fallback: '매수' })}</option>
             <option value="sell">{t('holdings.sell', { fallback: '매도' })}</option>
           </select>
@@ -223,7 +233,7 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
         ) : (
           <ul className="ledger">
             {portfolio.holdings.map((h) => (
-              <li key={h.ticker} className="ledger-row watch-row">
+              <li key={h.ticker} className={`ledger-row watch-row holding-row holding-${trendClass(h.profit_loss_pct)}`}>
                 <div>
                   <div className="ledger-question">
                     {h.company_name} <AssetTypeBadge assetType={h.asset_type} />
@@ -243,7 +253,7 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
                     {h.current_price != null && !h.is_realtime && (
                       <span className="muted small">{t('holdings.close_basis', { fallback: '종가 기준' })}</span>
                     )}
-                    <span className={`num ${trendClass(h.profit_loss_pct)}`}>
+                    <span className={`num ${trendClass(h.profit_loss_pct)} pl-pill pl-${trendClass(h.profit_loss_pct)}`}>
                       {h.profit_loss != null ? `${formatPrice(h.profit_loss)}${won} (${formatPct(h.profit_loss_pct)})` : '-'}
                     </span>
                   </div>

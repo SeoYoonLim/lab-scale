@@ -108,3 +108,24 @@ export const IconSettings = () => (
     <path d="M12 3.5v2.2M12 18.3v2.2M20.5 12h-2.2M5.7 12H3.5M18 6l-1.6 1.6M7.6 16.4 6 18M18 18l-1.6-1.6M7.6 7.6 6 6" />
   </Icon>
 )
+
+export const IconCheckCircle = () => (
+  <Icon size={16}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="m8 12.5 3 3 5-6" />
+  </Icon>
+)
+
+export const IconAlertTriangle = () => (
+  <Icon size={16}>
+    <path d="M12 4 3 19.5h18L12 4Z" />
+    <path d="M12 10v4.5" />
+    <path d="M12 17.2v.1" />
+  </Icon>
+)
+
+export const IconStar = () => (
+  <Icon>
+    <path d="m12 4 2.4 5 5.4.7-4 3.8 1 5.4-4.8-2.6-4.8 2.6 1-5.4-4-3.8 5.4-.7L12 4Z" />
+  </Icon>
+)
