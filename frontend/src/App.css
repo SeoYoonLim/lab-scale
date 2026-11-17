@@ -3952,3 +3952,68 @@ body {
 .pl-down {
   background: color-mix(in srgb, var(--down) 5%, var(--surface));
 }
+
+/* ---------- 주문 빠른 선택 ---------- */
+.order-picks {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 12px;
+}
+
+.order-picks-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.order-picks-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pick-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--rule));
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.pick-chip:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--accent-soft));
+}
+
+.pick-chip.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.pick-chip-qty {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.order-picks-sellall {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+/* 종목 상세의 "이 종목 주문하기": 관심종목 버튼 옆에 나란히 */
+.order-cta {
+  padding: 8px 16px;
+}

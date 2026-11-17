@@ -82,6 +82,13 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
     navigate('/', { state: { prefillQuestion: `${name} 전망 알려줘` } })
   }
 
+  // 포트폴리오의 주문 칸에 이 종목을 채워서 보낸다. 포트폴리오는 로그인이 필요해서 로그아웃 상태면 로그인 화면을 거치고,
+  // 로그인하면 이 state가 그대로 복원된다(RequireAuth).
+  function handleOrder() {
+    const code = realtime?.ticker ?? ticker
+    navigate('/portfolio', { state: { orderTicker: code, orderName: realtime?.company_name ?? code } })
+  }
+
   function handleResearch() {
     const name = realtime?.company_name ?? ticker
     navigate('/', {
@@ -178,6 +185,10 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
                 {t('company.watchlist_login', { fallback: '로그인하면 관심종목에 추가할 수 있어요' })}
               </Link>
             )}
+            {/* 종목 이름을 다시 칠 필요 없이 이 종목으로 바로 주문하러 간다 */}
+            <button type="button" className="send order-cta" onClick={handleOrder}>
+              {t('company.order_cta', { fallback: '이 종목 주문하기' })}
+            </button>
           </div>
         </div>
         {realtime ? (
