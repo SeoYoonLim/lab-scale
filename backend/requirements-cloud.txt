@@ -1,0 +1,4 @@
+# 67차 클라우드 분봉 보존(GitHub Actions)에만 쓰는 추가 의존성. 백엔드 서버·로컬 개발에는 필요 없다.
+# 설치: pip install -r requirements.txt -r requirements-cloud.txt
+# 1.43.100 = 2026-09-22 배포(최신판을 바로 쓰지 않음). R2 체크섬 헤더 호환은 R2Store의 Config(when_required)로 맞춘다.
+boto3==1.43.100

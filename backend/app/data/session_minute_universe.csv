@@ -1,0 +1,352 @@
+# 67차 클라우드 분봉 수집 대상 350종목(주식 300·ETF 50). 출처: docs/PRICE_DATA_MIGRATION_APPLY_47_tickers.csv = 2026-11-16 보존본 raw 350개와 같은 집합
+ticker,name,asset_type
+000080,하이트진로,stock
+000100,유한양행,stock
+000120,CJ대한통운,stock
+000150,두산,stock
+000210,DL,stock
+000240,한국앤컴퍼니,stock
+000250,삼천당제약,stock
+000270,기아,stock
+000500,가온전선,stock
+000660,SK하이닉스,stock
+000720,현대건설,stock
+000810,삼성화재,stock
+000880,한화,stock
+000990,DB하이텍,stock
+0009K0,에임드바이오,stock
+001040,CJ,stock
+001120,LX인터내셔널,stock
+001430,세아베스틸지주,stock
+001440,대한전선,stock
+001450,현대해상,stock
+001720,신영증권,stock
+001740,SK네트웍스,stock
+001800,오리온홀딩스,stock
+001820,삼화콘덴서,stock
+002380,KCC,stock
+002790,아모레퍼시픽홀딩스,stock
+003230,삼양식품,stock
+003380,하림지주,stock
+003490,대한항공,stock
+003540,대신증권,stock
+003550,LG,stock
+003670,포스코퓨처엠,stock
+003690,코리안리,stock
+004000,롯데정밀화학,stock
+004020,현대제철,stock
+004170,신세계,stock
+004370,농심,stock
+0043B0,TIGER 머니마켓액티브,etf
+004800,효성,stock
+004990,롯데지주,stock
+005070,코스모신소재,stock
+005290,동진쎄미켐,stock
+005380,현대차,stock
+005440,현대지에프홀딩스,stock
+005490,POSCO홀딩스,stock
+005830,DB손해보험,stock
+005850,에스엘,stock
+005930,삼성전자,stock
+005940,NH투자증권,stock
+006040,동원산업,stock
+006120,SK디스커버리,stock
+006260,LS,stock
+006280,녹십자,stock
+006340,대원전선,stock
+006360,GS건설,stock
+006400,삼성SDI,stock
+006800,미래에셋증권,stock
+007070,GS리테일,stock
+007310,오뚜기,stock
+007340,DN오토모티브,stock
+007390,네이처셀,stock
+007660,이수페타시스,stock
+007810,코리아써키트,stock
+008770,호텔신라,stock
+008930,한미사이언스,stock
+009150,삼성전기,stock
+009420,한올바이오파마,stock
+009540,HD한국조선해양,stock
+009830,한화솔루션,stock
+009970,영원무역홀딩스,stock
+010060,OCI홀딩스,stock
+010120,LS ELECTRIC,stock
+010130,고려아연,stock
+010140,삼성중공업,stock
+010170,대한광통신,stock
+010950,S-Oil,stock
+011070,LG이노텍,stock
+011170,롯데케미칼,stock
+011200,HMM,stock
+011210,현대위아,stock
+011780,금호석유화학,stock
+011790,SKC,stock
+012330,현대모비스,stock
+012450,한화에어로스페이스,stock
+012630,HDC,stock
+0126Z0,삼성에피스홀딩스,stock
+012750,에스원,stock
+014680,한솔케미칼,stock
+015760,한국전력,stock
+0162Z0,RISE 삼성전자SK하이닉스채권혼합50,etf
+016360,삼성증권,stock
+0167A0,SOL AI반도체TOP2플러스,etf
+017670,SK텔레콤,stock
+017800,현대엘리베이터,stock
+017960,한국카본,stock
+018260,삼성에스디에스,stock
+018670,SK가스,stock
+018880,한온시스템,stock
+020150,롯데에너지머티리얼즈,stock
+020560,아시아나항공,stock
+021240,코웨이,stock
+022100,포스코DX,stock
+023530,롯데쇼핑,stock
+023590,다우기술,stock
+024110,기업은행,stock
+026960,동서,stock
+028050,삼성E&A,stock
+028260,삼성물산,stock
+028300,HLB,stock
+028670,팬오션,stock
+029780,삼성카드,stock
+030000,제일기획,stock
+030200,KT,stock
+030530,원익홀딩스,stock
+030610,교보증권,stock
+031210,서울보증보험,stock
+031980,피에스케이홀딩스,stock
+032640,LG유플러스,stock
+032820,우리기술,stock
+032830,삼성생명,stock
+033780,KT&G,stock
+034020,두산에너빌리티,stock
+034220,LG디스플레이,stock
+034730,SK,stock
+035250,강원랜드,stock
+035420,NAVER,stock
+035720,카카오,stock
+035900,JYP Ent.,stock
+036460,한국가스공사,stock
+036540,SFA반도체,stock
+036570,NC,stock
+036930,주성엔지니어링,stock
+039030,이오테크닉스,stock
+039200,오스코텍,stock
+039490,키움증권,stock
+041510,에스엠,stock
+042660,한화오션,stock
+042700,한미반도체,stock
+043260,성호전자,stock
+047040,대우건설,stock
+047050,포스코인터내셔널,stock
+047810,한국항공우주,stock
+051600,한전KPS,stock
+051900,LG생활건강,stock
+051910,LG화학,stock
+052690,한전기술,stock
+055550,신한지주,stock
+058470,리노공업,stock
+058610,에스피지,stock
+060370,LS마린솔루션,stock
+062040,산일전기,stock
+064350,현대로템,stock
+064400,LG씨엔에스,stock
+064760,티씨케이,stock
+066570,LG전자,stock
+066970,엘앤에프,stock
+067310,하나마이크론,stock
+068270,셀트리온,stock
+068760,셀트리온제약,stock
+069500,KODEX 200,etf
+069620,대웅제약,stock
+069960,현대백화점,stock
+071050,한국금융지주,stock
+071970,HD현대마린엔진,stock
+073240,금호타이어,stock
+078600,대주전자재료,stock
+078930,GS,stock
+079550,LIG디펜스앤에어로스페이스,stock
+080220,제주반도체,stock
+081660,미스토홀딩스,stock
+082740,한화엔진,stock
+082920,비츠로셀,stock
+083650,비에이치아이,stock
+084370,유진테크,stock
+085620,미래에셋생명,stock
+086280,현대글로비스,stock
+086520,에코프로,stock
+086790,하나금융지주,stock
+087010,펩트론,stock
+088350,한화생명,stock
+088980,맥쿼리인프라,stock
+089030,테크윙,stock
+089860,롯데렌탈,stock
+089970,브이엠,stock
+090430,아모레퍼시픽,stock
+091160,KODEX 반도체,etf
+093370,후성,stock
+095340,ISC,stock
+095610,테스,stock
+096530,씨젠,stock
+096770,SK이노베이션,stock
+097230,HJ중공업,stock
+097950,CJ제일제당,stock
+098460,고영,stock
+102110,TIGER 200,etf
+102780,KODEX 삼성그룹,etf
+103140,풍산,stock
+103590,일진전기,stock
+105560,KB금융,stock
+108490,로보티즈,stock
+111770,영원무역,stock
+112610,씨에스윈드,stock
+114800,KODEX 인버스,etf
+120110,코오롱인더,stock
+122630,KODEX 레버리지,etf
+127120,제이에스링크,stock
+128940,한미약품,stock
+131290,티에스이,stock
+131970,두산테스나,stock
+133690,TIGER 미국나스닥100,etf
+138040,메리츠금융지주,stock
+138930,BNK금융지주,stock
+139130,iM금융지주,stock
+139260,TIGER 200 IT,etf
+139480,이마트,stock
+140410,메지온,stock
+140860,파크시스템스,stock
+141080,리가켐바이오,stock
+145020,휴젤,stock
+148020,RISE 200,etf
+161390,한국타이어앤테크놀로지,stock
+161510,PLUS 고배당주,etf
+161890,한국콜마,stock
+166090,하나머티리얼즈,stock
+175330,JB금융지주,stock
+178320,서진시스템,stock
+180640,한진칼,stock
+181710,NHN,stock
+183300,코미코,stock
+192080,더블유게임즈,stock
+192820,코스맥스,stock
+195940,HK이노엔,stock
+196170,알테오젠,stock
+204270,제이앤티씨,stock
+204320,HL만도,stock
+207940,삼성바이오로직스,stock
+214150,클래시스,stock
+214370,케어젠,stock
+214450,파마리서치,stock
+214980,KODEX 단기채권PLUS,etf
+218410,RFHIC,stock
+222800,심텍,stock
+226950,올릭스,stock
+229200,KODEX 코스닥150,etf
+229640,LS에코에너지,stock
+232140,와이씨,stock
+233740,KODEX 코스닥150레버리지,etf
+237690,에스티팜,stock
+240810,원익IPS,stock
+241560,두산밥캣,stock
+241710,코스메카코리아,stock
+247540,에코프로비엠,stock
+251270,넷마블,stock
+252990,샘씨엔에스,stock
+257720,실리콘투,stock
+259960,크래프톤,stock
+263750,펄어비스,stock
+267250,HD현대,stock
+267260,HD현대일렉트릭,stock
+267270,HD건설기계,stock
+271560,오리온,stock
+272210,한화시스템,stock
+273130,KODEX 종합채권(AA-이상)액티브,etf
+277810,레인보우로보틱스,stock
+278470,에이피알,stock
+278530,KODEX 200TR,etf
+278540,KODEX MSCI Korea TR,etf
+279570,케이뱅크,stock
+280360,롯데웰푸드,stock
+281820,케이씨텍,stock
+282330,BGF리테일,stock
+284430,KODEX 200미국채혼합50,etf
+290650,엘앤씨바이오,stock
+292150,TIGER 코리아TOP10,etf
+294870,IPARK현대산업개발,stock
+298020,효성티앤씨,stock
+298040,효성중공업,stock
+298380,에이비엘바이오,stock
+300720,한일시멘트,stock
+302440,SK바이오사이언스,stock
+305720,KODEX 2차전지산업,etf
+307950,현대오토에버,stock
+310210,보로노이,stock
+310970,TIGER MSCI Korea TR,etf
+316140,우리금융지주,stock
+319400,현대무벡스,stock
+319660,피에스케이,stock
+322000,HD현대에너지솔루션,stock
+323280,태성,stock
+323410,카카오뱅크,stock
+326030,SK바이오팜,stock
+329180,HD현대중공업,stock
+330590,롯데리츠,stock
+336260,두산퓨얼셀,stock
+347700,스피어,stock
+347850,디앤디파마텍,stock
+352820,하이브,stock
+353200,대덕전자,stock
+356860,티엘비,stock
+357780,솔브레인,stock
+357870,TIGER CD금리투자KIS(합성),etf
+360200,ACE 미국S&P500,etf
+360750,TIGER 미국S&P500,etf
+361610,SK아이이테크놀로지,stock
+367380,ACE 미국나스닥100,etf
+373220,LG에너지솔루션,stock
+375500,DL이앤씨,stock
+377300,카카오페이,stock
+379800,KODEX 미국S&P500,etf
+379810,KODEX 미국나스닥100,etf
+381170,TIGER 미국테크TOP10 INDXX,etf
+381180,TIGER 미국필라델피아반도체나스닥,etf
+383220,F&F,stock
+385540,RISE 종합채권(A-이상)액티브,etf
+395160,KODEX AI반도체TOP2플러스,etf
+395270,HANARO Fn K-반도체,etf
+395400,SK리츠,stock
+396500,TIGER 반도체TOP10,etf
+402340,SK스퀘어,stock
+403870,HPSP,stock
+411060,ACE KRX금현물,etf
+415640,KB발해인프라,stock
+420770,기가비스,stock
+423160,KODEX KOFR금리액티브(합성),etf
+426030,TIME 미국나스닥100액티브,etf
+437730,삼현,stock
+439260,대한조선,stock
+440110,파두,stock
+441640,KODEX 미국배당커버드콜액티브,etf
+443060,HD현대마린솔루션,stock
+449170,TIGER KOFR금리액티브(합성),etf
+450080,에코프로머티,stock
+454910,두산로보틱스,stock
+455890,RISE 머니마켓액티브,etf
+456600,TIME 글로벌AI인공지능액티브,etf
+457190,이수스페셜티케미컬,stock
+458730,TIGER 미국배당다우존스,etf
+459580,KODEX CD금리액티브(합성),etf
+462870,시프트업,stock
+472150,TIGER 배당커버드콜액티브,etf
+475150,SK이터닉스,stock
+481050,KODEX CD1년금리플러스액티브(합성),etf
+483650,달바글로벌,stock
+486290,TIGER 미국나스닥100타겟데일리커버드콜,etf
+487240,KODEX AI전력핵심설비,etf
+488770,KODEX 머니마켓액티브,etf
+489790,한화비전,stock
+498400,KODEX 200타겟위클리커버드콜,etf
+950160,코오롱티슈진,stock
+950260,인제니아테라퓨틱스(Reg.S),stock
