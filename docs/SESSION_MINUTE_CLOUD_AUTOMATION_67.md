@@ -8,7 +8,7 @@
 | --- | --- |
 | 수집·검증·R2 업로드 코드 | 완료. 가짜 원천·가짜 저장소로 테스트 통과(15절) |
 | R2 어댑터(boto3) | 완료. botocore Stubber 테스트 통과. **실제 R2 연결은 검증하지 않았다**(버킷·키가 없다) |
-| GitHub-hosted runner의 원천 접근 | `source-probe` job으로 확인한다. 결과는 17절 |
+| GitHub-hosted runner의 원천 접근 | **확인함**: 3종목 정상 응답, 차단 없음(17절). 350종목 연속 요청은 첫 실제 수집에서 확인 |
 | 예약 실행 | 설정만 했다. **main에 반영되기 전에는 돌지 않는다**(11절) |
 | Windows 작업 스케줄러 | 쓰지 않는다 |
 
@@ -407,7 +407,11 @@ python -m scripts.run_cloud_session_preservation --work-dir /tmp/smc --store loc
 
 | 확인 | 결과 |
 | --- | --- |
-| push 실행 | (커밋 뒤 채움) |
+| `6dd9b5d` push(run 44067358852) | `source-probe` 성공(종료 코드 0 = 3종목 모두 그날 봉 있음). 로그는 익명 열람이 막혀(403) 수치는 못 봤다 |
+| `89fc1cb` push(run 44068072408, 2026-11-17 19:47:34~19:48:03 KST, 29초) | **성공**. 대상일 2026-11-16(20:10 전이라 전 거래일). 005930 봉 639개, 000660 630개, 0043B0(ETF) 349개. 차단·제한 응답 없음 |
+
+- 결론: GitHub-hosted runner(해외 IP)에서 원천이 정상 응답했다. 3종목·2회만 확인했으므로, 350종목 연속 요청에서 제한이 없는지는 첫 실제 수집에서 확인한다(`fetch_attempts`의 `blocked` 수).
+- 결과는 Actions 주석(`::notice title=source-probe::…`)으로 남는다. 공개 API `check-runs/<job id>/annotations`로도 읽힌다.
 
 ## 18. 운영 중 장애와 대응
 
@@ -433,3 +437,27 @@ python -m scripts.run_cloud_session_preservation --work-dir /tmp/smc --store loc
 - DB 쓰기, 세션 표 생성·적재, 마이그레이션
 - 기존 API·프런트엔드·Ollama·`.env` 변경
 - Windows 작업 스케줄러 등록
+
+## 20. CI와 커밋
+
+| 커밋 | 내용 | CI |
+| --- | --- | --- |
+| `6dd9b5d` | 기능·workflow·테스트·문서 | CI run 44067358620 **실패**(backend-unit 2개), 새 workflow run 44067358852 cloud-unit 실패·source-probe 성공 |
+| `89fc1cb` | 실패 원인 수정 | CI run 44068072150 **성공**(secret-scan·backend-unit·backend-integration·eval-offline·detect-frontend, frontend skipped), 새 workflow run 44068072408 **성공**(cloud-unit·source-probe, collect skipped) |
+
+**`6dd9b5d` 실패 원인**
+- `write_summary`가 `os.environ`의 `GITHUB_STEP_SUMMARY`를 보고 요약을 쓰다가 `KeyError: 'date'`로 깨졌다. R2 인증 오류 항목에는 `date`가 없다.
+- 러너에는 이 변수가 있어 재현됐다. 로컬 테스트에는 없어서 드러나지 않았다.
+- 수정 내용
+  - 전달받은 env를 쓴다.
+  - 날짜 없는 항목을 허용한다.
+  - 주석 출력과 회귀 테스트를 추가했다.
+  - `cloud-unit` job에 junit 주석 단계를 추가했다.
+- 수정 뒤 로컬에서 러너와 같은 변수(`GITHUB_ACTIONS`·`GITHUB_STEP_SUMMARY`)를 켜고 67·52차 테스트 63개와 Stubber 6개가 통과했다.
+
+**로컬 검사**
+- 백엔드 단위 테스트 전체(CI 조건): 6,499 통과(`6dd9b5d` 작업 트리)
+- `scripts/secret_scan.sh --env-file backend/.env`: 통과
+- 테스트용 더미 키 이름은 검사 규칙에 맞게 `dummy`·`example`을 넣었다.
+
+모두 `feature/backend`에 push했다. main에는 병합하지 않았다.
