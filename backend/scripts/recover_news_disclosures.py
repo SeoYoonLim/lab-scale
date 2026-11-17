@@ -12,6 +12,8 @@
 - 종목은 새로 만들지 않는다(등록되지 않은 종목은 실패로 기록).
 - apply는 refresh_data와 같은 advisory lock을 잡는다(동시에 돌지 않는다). --state 파일로 끝난 종목을 기억해 실패 뒤 다시 실행할 수 있다.
 - 네이버 401·403·429(인증·호출 제한)가 나오면 나머지 종목을 요청하지 않고 멈춘다. --naver-budget(기본 20,000)을 넘기 전에 멈춘다.
+- DART 020(요청 제한)·010/011/012/901(키·인증)도 멈춘다(63차에 인증 오류 추가).
+- --relevant-only(63차): 관련성 낮음(is_relevant_news=False) 기사는 저장하지 않는다. 기본은 기존 수집처럼 is_relevant=false로 저장한다.
 
 예:
   python -m scripts.recover_news_disclosures                                  # plan
@@ -37,6 +39,8 @@ UNIVERSES = ("universe_top300.json", "universe_etf50.json")
 DEFAULT_START = date(2026, 11, 4)  # 61차: 뉴스·공시 마지막 수집 2026-11-03 19:54 KST
 DEV_DB = "ai_investment"
 _BLOCKED = re.compile(r"\b(?:401|403|429)\b")
+# DART 인증·키 오류(010 미등록 키, 011 사용할 수 없는 키, 012 접근할 수 없는 IP, 901 보유기간 만료 키): 다른 종목도 같은 결과라 멈춘다(63차)
+_DART_AUTH = re.compile(r"\[(?:010|011|012|901)\]")
 EST_SEC_PER_REQUEST = 0.35  # 요청 1건 응답 시간 가정(지연 별도). 61차 기록: 350종목 뉴스+공시 단계 약 6분
 TABLES_WRITTEN = ("news", "disclosure", "data_ingestion_quarantine", "data_refresh_run", "data_refresh_log")  # apply만 쓴다
 
@@ -160,8 +164,9 @@ def _save_state(path: str | None, st: dict) -> None:
 def run(targets: list[dict], *, mode: str, start: date, end: date, today: date, max_pages: int = R.MAX_PAGES,
         disc_days: int | None = None, delay: float = 0.2, naver_budget: int = R.DEFAULT_NAVER_BUDGET,
         news: bool = True, disclosures: bool = True, state_path: str | None = None, record_history: bool = True,
-        fetch=None, session_factory=None, sleep=time.sleep, log=print) -> dict:
-    """뉴스·공시 복구 본체. mode는 dry-run 또는 apply. fetch(네이버 한 페이지)·session_factory는 테스트에서 바꾼다."""
+        relevant_only: bool = False, fetch=None, session_factory=None, sleep=time.sleep, log=print) -> dict:
+    """뉴스·공시 복구 본체. mode는 dry-run 또는 apply. fetch(네이버 한 페이지)·session_factory는 테스트에서 바꾼다.
+    relevant_only: 관련성 낮음 기사를 저장하지 않는다(news_recovery.store_news)."""
     from sqlalchemy import select
 
     from app.models import Company
@@ -175,6 +180,8 @@ def run(targets: list[dict], *, mode: str, start: date, end: date, today: date, 
     disc_days = disc_days or R.disclosure_days(start, today)
     since, until = R.kst_window(start, end)
     key = {"start": start.isoformat(), "end": end.isoformat(), "max_pages": max_pages, "disc_days": disc_days}
+    if relevant_only:
+        key["relevant_only"] = True
     state = _load_state(state_path, key) if apply else {"key": key, "news": [], "disclosures": []}
     naver0, dart0 = C.naver_requests, C.dart_requests
     rows, stopped, pages_used = [], None, 0  # pages_used: 받은 네이버 페이지 수(예산 판단용, 재시도 제외)
@@ -221,7 +228,8 @@ def run(targets: list[dict], *, mode: str, start: date, end: date, today: date, 
                         stopped = "naver_blocked"
                 else:
                     others = [x for x in etf_names if x != company.name]
-                    s = R.store_news(db, company, scan.items, dry_run=not apply, listed_names=listed, etf_names=others)
+                    s = R.store_news(db, company, scan.items, dry_run=not apply, listed_names=listed, etf_names=others,
+                                     relevant_only=relevant_only)
                     n.update(ok=True, **s.__dict__)
                     if apply:
                         state["news"].append(t["ticker"])
@@ -239,6 +247,8 @@ def run(targets: list[dict], *, mode: str, start: date, end: date, today: date, 
                     _save_state(state_path, state)
                 if r.error and "020" in r.error:
                     stopped = "dart_limit"
+                elif r.error and _DART_AUTH.search(r.error):
+                    stopped = "dart_auth"
                 sleep(delay)
         finally:
             db.close()
@@ -270,6 +280,7 @@ def summarize(rows, targets, mode, key, naver_req, dart_req, stopped, started) -
                  "existing": sum(n.get("existing", 0) for n in news), "quarantined": sum(n.get("quarantined", 0) for n in news),
                  "non_financial": sum(n.get("non_financial", 0) for n in news),
                  "etf_name_missing": sum(n.get("etf_name_missing", 0) for n in news),
+                 "irrelevant_skipped": sum(n.get("irrelevant_skipped", 0) for n in news),
                  "truncated_companies": [r["ticker"] for r in rows if (r.get("news") or {}).get("truncated")],
                  "no_articles_in_window": [r["ticker"] for r in rows if (r.get("news") or {}).get("ok") and not r["news"]["in_window"]],
                  "stop_reasons": stops},
@@ -312,7 +323,9 @@ def _record_history(session_factory, run_id, summary: dict, end: date) -> None:
                                   warning_count=part.get("quarantined", 0)))
         db.commit()
         if run_id is not None:
-            note = (f"news new {summary['news']['new']} existing {summary['news']['existing']} truncated "
+            note = (f"news new {summary['news']['new']} existing {summary['news']['existing']} "
+                    + (f"irrelevant_skipped {summary['news']['irrelevant_skipped']} "
+                       if summary["news"].get("irrelevant_skipped") else "") + "truncated "
                     f"{len(summary['news']['truncated_companies'])} / disc new {summary['disclosures']['new']} / req naver "
                     f"{summary['requests']['naver']} dart {summary['requests']['dart']} / failed {len(summary['failed'])}"
                     + (f" / stopped {summary['stopped']}" if summary["stopped"] else ""))
@@ -334,6 +347,8 @@ def main(argv=None) -> int:
     ap.add_argument("--disclosure-days", type=int, default=None, help="DART 조회 기간(일, 기본 시작일~오늘, 최대 90)")
     ap.add_argument("--delay", type=float, default=0.2, help="요청 사이 대기(초)")
     ap.add_argument("--naver-budget", type=int, default=R.DEFAULT_NAVER_BUDGET, help="이 실행에서 쓸 네이버 요청 상한")
+    ap.add_argument("--relevant-only", action="store_true",
+                    help="관련성 낮음(is_relevant_news=False) 기사는 저장하지 않는다(기본: 기존 수집처럼 is_relevant=false로 저장)")
     ap.add_argument("--allow-network", action="store_true", help="dry-run·apply에 필요: 네이버·DART에 실제로 요청한다")
     ap.add_argument("--confirm-database", default=None, help="apply에 필요: ai_investment")
     ap.add_argument("--state", default=None, help="apply: 끝난 종목을 기록하는 파일(다시 실행하면 건너뛴다)")
@@ -389,7 +404,7 @@ def main(argv=None) -> int:
         try:
             out = run(targets, mode=args.mode, start=args.start, end=end, today=today, max_pages=args.max_pages,
                       disc_days=disc_days, delay=args.delay, naver_budget=args.naver_budget, news=not args.no_news,
-                      disclosures=not args.no_disclosures, state_path=args.state)
+                      disclosures=not args.no_disclosures, state_path=args.state, relevant_only=args.relevant_only)
         finally:
             if lock is not None:
                 lock.release()

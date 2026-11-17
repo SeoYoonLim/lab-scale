@@ -332,6 +332,44 @@ def test_blocked_and_budget_stop_before_other_companies(dev_db, cos):
 
 
 @pytest.mark.integration
+def test_relevant_only_apply_stores_no_irrelevant_rows_and_counts_them(dev_db, cos, tmp_path):
+    """63차: --relevant-only면 is_relevant_news가 False인 기사는 저장하지 않는다(is_relevant=false 행 0). 기본 dry-run과 합이 맞는다."""
+    stock = cos("stock")
+    newest = datetime(2026, 11, 14, 20, tzinfo=KST)
+    items = [article(i, newest - timedelta(hours=2 * i), f"https://www.mk.co.kr/news/r63/{stock.ticker}/{i}",
+                     f"{stock.name} 소식" if i % 3 else "업계 전반 소식") for i in range(60)]  # 3의 배수 번째는 종목 이름 없음
+    fetch = FakeNaver(items)
+    kw = dict(start=START, end=END, today=date(2026, 11, 15), fetch=fetch, disclosures=False, sleep=lambda s: None, log=lambda m: None)
+    dry = T.run(_targets(stock), mode="dry-run", **kw)
+    assert dry["news"]["new"] == 60 and dry["news"]["relevant_new"] == 40 and dry["news"]["irrelevant_skipped"] == 0
+    state = tmp_path / "state.json"
+    out = T.run(_targets(stock), mode="apply", state_path=str(state), relevant_only=True, **kw)
+    assert out["news"]["new"] == out["news"]["relevant_new"] == 40 and out["news"]["irrelevant_skipped"] == 20
+    assert json.loads(state.read_text(encoding="utf-8"))["key"]["relevant_only"] is True
+    got = dev_db.execute(text("SELECT is_relevant, count(*) FROM news WHERE company_id = :i GROUP BY 1"), {"i": stock.id}).all()
+    assert got == [(True, 40)]
+    note = dev_db.execute(text("SELECT note FROM data_refresh_run WHERE id = :r"), {"r": out["run_id"]}).scalar_one()
+    assert "irrelevant_skipped 20" in note
+    # 기본(관련성 낮음도 저장)과 섞여도 기존 행은 건드리지 않는다: 다시 돌리면 관련 40건은 기존, 나머지 20건만 새로 들어간다
+    again = T.run(_targets(stock), mode="apply", state_path=str(tmp_path / "s2.json"), **kw)
+    assert again["news"]["existing"] == 40 and again["news"]["new"] == 20
+
+
+@pytest.mark.integration
+def test_dart_auth_error_stops_before_other_companies(dev_db, cos, monkeypatch):
+    a, b = cos("stock"), cos("stock")
+    monkeypatch.setattr(C, "get_dart_corp_code", lambda t: "00000000")
+
+    def bad_key(corp, days=90):
+        raise RuntimeError("DART API 오류 [011] 사용할 수 없는 키입니다.")
+
+    monkeypatch.setattr(C, "fetch_dart_disclosures", bad_key)
+    out = T.run(_targets(a, b), mode="dry-run", start=START, end=END, today=date(2026, 11, 15), news=False,
+                sleep=lambda s: None, log=lambda m: None)
+    assert out["stopped"] == "dart_auth" and out["not_processed"] == [b.ticker]
+
+
+@pytest.mark.integration
 def test_disclosure_recovery_dedups_by_receipt_and_records_step(dev_db, cos, monkeypatch):
     co = cos("stock")
     serial = f"{secrets.randbelow(10**6):06d}"

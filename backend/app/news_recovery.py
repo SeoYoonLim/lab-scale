@@ -19,6 +19,7 @@
 - 기존 수집과 같다: 비금융 도메인 제외, ETF는 이름이 나오는 기사만, 저장 전 검증(V.check_news) 뒤 격리·경고 기록, is_relevant 판정.
 - 다른 점: 건수를 10건으로 자르지 않는다. 기간 밖 기사는 저장하지 않는다. 같은 응답 안·페이지 사이의 같은 URL은 한 번만 본다.
 - 이미 저장된 (종목, URL)은 다시 저장하지 않는다(기존 행 유지). dry_run이면 DB에 쓰지 않는다(격리 기록도 쓰지 않는다).
+- relevant_only(63차 apply에서 사용): 관련성 낮음(is_relevant_news가 False) 기사는 저장하지 않는다. 기본은 기존 수집과 같이 표지만 단다.
 """
 from __future__ import annotations
 
@@ -128,11 +129,14 @@ class StoreResult:
     relevant_new: int = 0
     quarantined: int = 0
     warned: int = 0
+    irrelevant_skipped: int = 0  # relevant_only일 때 is_relevant_news가 False라 저장하지 않은 기사(신규 후보 중)
 
 
 def store_news(db, company, items: list[dict], *, dry_run: bool, listed_names: list[str] | None = None,
-               etf_names: list[str] | None = None, now: datetime | None = None) -> StoreResult:
-    """기간 안 기사(items)를 기존 수집과 같은 규칙으로 걸러 저장한다. dry_run이면 쓰지 않는다. 쓰는 표: news, data_ingestion_quarantine."""
+               etf_names: list[str] | None = None, now: datetime | None = None, relevant_only: bool = False) -> StoreResult:
+    """기간 안 기사(items)를 기존 수집과 같은 규칙으로 걸러 저장한다. dry_run이면 쓰지 않는다. 쓰는 표: news, data_ingestion_quarantine.
+    relevant_only(63차): is_relevant_news가 False인 기사는 저장 전 검증·격리 기록 전에 뺀다(is_relevant=false 행을 만들지 않는다).
+    기본(False)은 기존 수집과 같다(관련성 낮음도 is_relevant=false로 저장하고 목록·도구에서 뺀다)."""
     from sqlalchemy import select
 
     from app import collectors as C, ingest_validation as V, quarantine
@@ -162,26 +166,34 @@ def store_news(db, company, items: list[dict], *, dry_run: bool, listed_names: l
     for i in range(0, len(urls), 500):
         chunk = urls[i:i + 500]
         existing |= {u for (u,) in db.execute(select(News.url).where(News.company_id == company.id, News.url.in_(chunk)))}
+    def relevance(rec: dict) -> bool:
+        return is_relevant_news(company.name, company.ticker, company.asset_type, rec["title"], rec["content"], listed_names)
+
     candidates = []
     for it in kept:
         url = item_url(it)
         if url in existing:
             res.existing += 1
             continue
-        candidates.append({
+        rec = {
             "title": C._clean_text(it.get("title") or ""), "content": C._clean_text(it.get("description") or ""),
             "source": urlparse(it.get("originallink") or url or "").netloc, "url": url, "published_at": item_time(it),
-        })
+        }
+        if relevant_only and relevance(rec) is False:
+            res.irrelevant_skipped += 1
+            continue
+        candidates.append(rec)
     checked = V.check_news(company.ticker, candidates, now=now)
     keep, bad = V.split(checked)
     res.quarantined, res.warned = len(bad), sum(c.status == V.WARNING for c in keep)
     rows = [
         News(company_id=company.id, title=c.record["title"], content=c.record["content"], source=c.record["source"],
-             url=c.record["url"], published_at=c.record["published_at"],
-             is_relevant=is_relevant_news(company.name, company.ticker, company.asset_type, c.record["title"],
-                                          c.record["content"], listed_names))
+             url=c.record["url"], published_at=c.record["published_at"], is_relevant=relevance(c.record))
         for c in keep
     ]
+    if relevant_only:  # 검증이 제목·본문을 바꿔 판정이 달라졌을 때도 is_relevant=false 행은 넣지 않는다
+        res.irrelevant_skipped += sum(1 for r in rows if r.is_relevant is False)
+        rows = [r for r in rows if r.is_relevant is not False]
     res.new, res.relevant_new = len(rows), sum(1 for r in rows if r.is_relevant is not False)
     if dry_run:
         db.rollback()
