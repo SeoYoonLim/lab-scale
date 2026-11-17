@@ -115,6 +115,15 @@ def explicitly_requested_tools(question: str) -> list[str]:
     return wanted if len(wanted) >= 2 else []
 
 
+# 68차(2026-11-17): 자금 흐름(순유입·순매수·수급)을 묻는 질문. 답은 기사 본문 속 집계(예: "순유입 1위는 KODEX 200, 1조515억원")에 있어
+# 목록 조회(news_tool)의 제목만으로는 답할 수 없다(실측: "KODEX 200 최근 자금 유입 알려줘" -> news_tool·stock_tool만 불러 주가 흐름만 답함).
+_FUND_FLOW_RE = re.compile(r"자금\s*(?:유입|유출|이탈|흐름)|순유입|순유출|순매수|순매도|뭉칫돈|(?:돈|자금)이?\s*몰|머니\s*플로우|수급")
+
+
+def is_fund_flow_question(question: str) -> bool:
+    return bool(_FUND_FLOW_RE.search(question or ""))
+
+
 # 주가가 오르내린 "원인"을 묻는 질문: 원인 표현과 등락 표현이 함께 있어야 한다.
 # 시스템 프롬프트가 "'왜 올랐는지/내렸는지' 같이 뉴스가 필요한 질문에는 news_tool"이라고 안내해서 모델은 이런 질문에
 # news_tool만 부른다(5개 질문 x 5회 = 25회 중 25회, stock_tool 0회). 그러면 실제 주가가 어떻게 움직였는지 모르는 채로

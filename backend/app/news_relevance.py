@@ -185,6 +185,23 @@ def title_names_subject(company_name: str, asset_type: str | None, title: str | 
     return title_mentions(company_name, title)
 
 
+# 68차(2026-11-17): 벡터 검색(rag_search_tool) 근거 판정. 제목만 보면 "자금 유입 1위는 'KODEX 200'으로 1조515억원"처럼 본문 첫 문장이
+# 질문에 바로 답하는 기사가 빠졌다(종목 지정 검색은 모두 그 종목에 저장된 기사라 본문 어딘가의 언급은 판별력이 없다: 수집 기준이 본문 언급).
+# 그래서 제목, 또는 본문 첫머리(LEAD_CHARS자, 네이버 요약의 첫 문장 정도)에 독립된 이름으로 나올 때만 근거로 본다. 이름 판정은 제목과 같다.
+LEAD_CHARS = 60
+
+
+def subject_match(company_name: str, asset_type: str | None, title: str | None, content: str | None,
+                  other_etf_names=()) -> str | None:
+    """"title"(제목에 이름) / "content_lead"(본문 첫머리에 이름) / None(근거 아님)."""
+    if title_names_subject(company_name, asset_type, title, other_etf_names):
+        return "title"
+    lead = (content or "")[:LEAD_CHARS]
+    if lead and title_names_subject(company_name, asset_type, lead, other_etf_names):
+        return "content_lead"
+    return None
+
+
 def evidence_news(company_name: str, asset_type: str | None, items: list[dict], since=None, other_etf_names=(),
                   date_key: str = "published_at") -> list[dict]:
     """근거 뉴스 후처리(입력 순서 유지). items는 {"title", date_key: ISO 문자열 또는 None, ...}. since(aware datetime)가 있으면

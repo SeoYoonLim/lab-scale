@@ -396,6 +396,80 @@ def unsupported_horizon_answer(h: Horizon) -> str:
             "(지표 계산과 과거 검증이 이 세 기간 기준입니다). 기간을 바꿔 다시 질문해 주세요.\n\n" + DISCLAIMER)
 
 
+# ---------- 68차(2026-11-17): 복합 질문·기간 후속·달력 일수·같은 결론 반복 ----------
+# 실사용 #43444 "하이닉스가 왜 올랐어? 그리고 앞으로 7일간 오를 거 같아?"는 "왜"(_OTHER_INTENT_RE) 때문에 전망 경로에서 빠져 LLM이
+# 전망 없이 기준일 뒤 기사로 원인을 지어냈다. #43447 "3개월 후는?"은 전망·후속 어느 쪽에도 걸리지 않아 LLM 경로가 "3개월"을 과거 67거래일로
+# 읽었다. #43446은 직전 간결 답과 같은 기준일·같은 결론을 그대로 다시 찍었다.
+_CAUSE_WORD_RE = re.compile(r"왜|이유|원인|무슨\s*일")
+# 기간만 바꿔 묻는 후속 질문("3개월 후는?", "그럼 한 달 뒤엔 어때?", "1개월은?"). 기간 표현 + 조사·어때 정도만 있다.
+_PERIOD_EXPR = (r"(?:\d+\s*(?:거래일|영업일|일|주|개월|달)|일주일|한\s*주|다음\s*주|이번\s*주|한\s*달|한달|다음\s*달|석\s*달|세\s*달|"
+                r"\d+\s*주일)")
+_PERIOD_FOLLOWUP_RE = re.compile(
+    r"^\s*(?:그럼|그러면|그리고|근데|그래서|그럼요|혹시)?\s*(?:향후|앞으로|이후)?\s*" + _PERIOD_EXPR +
+    r"\s*(?:뒤|후|이후|동안|간|짜리)?\s*(?:에는|엔|에|는|은|이면|라면|기준(?:으로는|으론|은|는)?)?\s*"
+    r"(?:어때|어때요|어떨까|어떨까요|어떻게\s*(?:돼|될까|봐)|봐줘|봐\s*줘|도|요)?\s*[?？.!~]*\s*$")
+_CALENDAR_DAYS_RE = re.compile(r"(\d+)\s*일(?!\s*선)(?:\s*(?:간|동안|뒤|후|이후))?")
+
+
+def is_cause_forecast_question(question: str) -> bool:
+    """원인(왜·이유·원인)과 앞으로의 방향을 한 질문에 함께 묻는가(#43444). 주문 요청은 아니다."""
+    q = question or ""
+    return bool(_CAUSE_WORD_RE.search(q)) and bool(_FORECAST_RE.search(q)) and not is_order_request(q)
+
+
+def is_period_followup(question: str) -> bool:
+    """기간만 바꿔 묻는 짧은 후속 질문인가(#43447 "3개월 후는?"). 직전 전망 답(표식)이 있을 때만 쓴다."""
+    return bool(_PERIOD_FOLLOWUP_RE.match(question or "")) and (period_in(question) is not None or horizon_in(question) is not None)
+
+
+def calendar_days_note(question: str, period: Period) -> str | None:
+    """질문이 달력 일수("7일간", "10일 뒤")로 기간을 말했으면 거래일 환산을 밝히는 한 줄. 거래일·영업일로 말했으면 None."""
+    q = question or ""
+    if re.search(r"\d+\s*(?:거래일|영업일)", q):
+        return None
+    m = _CALENDAR_DAYS_RE.search(q)
+    if not m:
+        return None
+    n = int(m.group(1))
+    return (f"기간 기준: 질문의 {n}일은 달력 기준이라 약 {max(1, round(n * 5 / 7))}거래일로 보고, 향후 {period.days}거래일"
+            f"({period.label}) 신호로 판단했습니다.")
+
+
+_TITLE_HEAD_RE = re.compile(r"^(?P<head>.+?\([0-9A-Z]{6}\) · 향후 \d+거래일 · 방향: [^·\n]+?)\s*(?:·|$)", re.MULTILINE)
+
+
+def same_conclusion(previous_answer: str | None, company, period: Period, res: dict) -> bool:
+    """직전 답이 이 경로의 답이고, 같은 종목·기간·방향 제목에 같은 시세 기준일이면 True(#43446: 같은 답을 다시 찍지 않는다)."""
+    if not previous_answer:
+        return False
+    m = _TITLE_HEAD_RE.search(previous_answer)
+    if not m:
+        return False
+    new = _TITLE_HEAD_RE.search(direction_title(company, period, res))
+    base = res["indicators"]["base_date"]
+    return bool(new) and m.group("head").strip() == new.group("head").strip() and (
+        f"{base} 종가" in previous_answer or f"기준일(최신 거래일): {base}" in previous_answer)
+
+
+def repeat_answer(company, period: Period, res: dict, now: datetime) -> str:
+    """같은 결론을 다시 물었을 때의 짧은 답(#43446). 제목·표식 줄은 유지해 다음 후속 질문이 종목·기간을 잇는다."""
+    ind, label, data = res["indicators"], res["label"], res["data"]
+    regime = classify_regime(ind, label)
+    ge = group_evidence(ind, res["signals"], period)
+    warn = "".join(f"\n- 데이터 경고: {w}" for w in data["warnings"])
+    return "\n".join([
+        f"{direction_title(company, period, res)} · 앞선 답과 같은 결론",
+        "",
+        f"앞선 답변과 같은 {ind['base_date']} 종가 기준이라 판단이 바뀌지 않았습니다. {direction_sentence(res, regime, period)}",
+        "새 시세가 들어오기 전에는 같은 질문에 같은 결론이 나옵니다.",
+        f"- 핵심 근거: {_support_text(ge, 1)} / 위험: {_risk_text(ge, 1)}",
+        _marker_line(company, period, label),
+        f"- 다른 기간으로 보려면 \"1개월 뒤는?\", \"3개월 후는?\", 근거 전체는 \"자세히 분석해줘\"라고 물어보세요.{warn}",
+        f"- 기준일(최신 거래일): {ind['base_date']}, 답변 생성 {now.astimezone(KST):%Y-%m-%d %H:%M} KST. "
+        "과거 시세 신호를 요약한 것이며 투자 권유가 아닙니다.",
+    ])
+
+
 def marker_of(answer: str | None) -> dict | None:
     """이 경로가 만든 답변이면 {"name", "ticker", "period"}, 아니면 None."""
     m = _MARKER_RE.search(answer or "")

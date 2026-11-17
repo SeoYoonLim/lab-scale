@@ -55,7 +55,7 @@ from app.answer_guard import (
     strip_narrative_mismatch,
     strip_untrusted_urls,
 )
-from app import answer_basis, answer_i18n, answer_tidy, earnings, intent_i18n, evidence_answer, market_ranking, outlook, price_flow, quote_freshness, related_news
+from app import answer_basis, answer_cause, answer_i18n, answer_tidy, earnings, intent_i18n, evidence_answer, market_ranking, outlook, price_flow, quote_freshness, related_news
 from app import market_overview, request_safety
 from app.data_status import last_business_day
 from app.etf_holdings import constituents_chat_answer, holding_weight_answer, requested_top_n
@@ -75,6 +75,7 @@ from app.routing import (
     explicitly_requested_tools,
     is_analysis_question,
     is_cause_question,
+    is_fund_flow_question,
     is_trend_question,
     mentions_own,
     needs_briefing,
@@ -803,6 +804,9 @@ def _apply_period_override(calls: list[dict], question: str) -> dict[int, object
     parsed = parse_period(question)
     if parsed is None:
         return {}
+    if outlook.horizon_in(question) is not None:
+        # 68차(#43447): "3개월 후", "향후 7일"은 미래 기간이다. 과거 조회 기간(period_days)으로 바꾸면 지난 3개월 수익률을 전망처럼 답한다
+        return {}
 
     overridden: dict[int, object] = {}
     for i, call in enumerate(calls):
@@ -877,6 +881,7 @@ _SATISFIED_BY = {
     "news_tool": {"news_tool", "rag_search_tool"},
     "disclosure_tool": {"disclosure_tool", "rag_search_tool"},
     "market_tool": {"market_tool"},
+    "rag_search_tool": {"rag_search_tool"},
 }
 
 # 등락의 원인을 묻는 질문(app.routing.is_cause_question)에서 뉴스와 함께 봐야 하는 tool. 모델은 이런 질문에 news_tool만
@@ -892,6 +897,9 @@ def _wanted_tools(question: str) -> list[str]:
     # 48차: 분석 질문은 주가(기준일) 없이 답하지 않는다("삼성전자 분석해줘" -> news_tool만 불렀다)
     if is_analysis_question(question) and "stock_tool" not in wanted:
         wanted.append("stock_tool")
+    # 68차: 자금 흐름 질문은 기사 본문 검색(rag_search_tool)이 있어야 한다(목록 제목만으로는 순유입 규모를 알 수 없다)
+    if is_fund_flow_question(question) and "rag_search_tool" not in wanted:
+        wanted.append("rag_search_tool")
     return wanted
 
 
@@ -938,7 +946,10 @@ def _add_requested_tools(calls: list[dict], question: str) -> list[int]:
     added = []
     for name in missing:
         added.append(len(calls))
-        calls.append({"function": {"name": name, "arguments": {_COMPANY_ARG[name]: company}}})
+        args = {_COMPANY_ARG[name]: company}
+        if name == "rag_search_tool":
+            args["query"] = question  # 검색어는 질문 원문(종목은 위에서 정한 하나)
+        calls.append({"function": {"name": name, "arguments": args}})
     return added
 
 
@@ -1483,6 +1494,31 @@ def _forecast_subject(question: str, previous: dict | None):
     저장 시 도구 결과의 종목이 정확히 1개일 때만 채워진다)을 이어받는다. 여러 개면 기존 흐름이다."""
     special = outlook.special_followup_kind(question)
     marker = outlook.marker_of(previous.get("answer")) if previous else None
+    # 68차: 원인 + 방향을 함께 묻는 질문(#43444 "왜 올랐어? 그리고 앞으로 7일간 오를 거 같아?")은 전망 경로에서 원인 단락을 붙여 답한다.
+    # "왜"가 있어 전에는 전망에서 빠졌다(LLM이 전망 없이 기준일 뒤 기사로 원인을 설명). 직전 분석에 이어 "왜?"만 묻는 것은 그대로 why 후속이다.
+    if outlook.is_cause_forecast_question(question) and not (marker and special == "why"):
+        companies = _question_companies(question)
+        if companies is not None and len(companies) == 1:
+            return companies[0], None, "cause_forecast"
+        if not companies and (previous or {}).get("company_name"):
+            company = _company_by_name((previous or {}).get("company_name"))
+            if company is not None:
+                return company, None, "cause_forecast"
+    # 68차: 직전 전망 답에 이어 기간만 바꿔 묻는 질문(#43447 "3개월 후는?")은 직전 종목의 그 기간 전망이다(전에는 LLM이 과거 67거래일로 답했다)
+    if outlook.is_period_followup(question) and (marker or (outlook.horizon_in(question) is not None
+                                                          and (previous or {}).get("company_name"))):
+        companies = _question_companies(question)
+        if not companies:
+            company = _company_by_name((previous or {}).get("company_name") or marker.get("name"))
+            if company is not None:
+                return company, None, "brief"
+    # 68차: 종목 하나 + 미래 기간 표현("삼성전자는 3개월 후 어때?", "카카오 향후 20거래일은?")은 방향을 묻는 말이 없어도 전망이다.
+    # 원인·뉴스·실적 같은 다른 의도 단어가 있으면(_excluded) 기존 흐름이다. 다른 종목으로 바꿔 묻는 후속 질문도 여기서 그 종목으로 간다.
+    if outlook.horizon_in(question) is not None and not outlook._excluded(question) and not special:
+        companies = _question_companies(question)
+        if companies is not None and len(companies) == 1:
+            prev_name = (previous or {}).get("company_name") or (marker or {}).get("name")
+            return companies[0], (marker if marker and companies[0].name == prev_name else None), _forecast_mode(question)
     if special == "detail":
         special = "forecast"  # 26차: "전체적으로 자세히 분석해 줘" -> 직전 종목·기간의 상세 리서치
     if special and marker:
@@ -1495,11 +1531,7 @@ def _forecast_subject(question: str, previous: dict | None):
             return None
         if companies:
             return companies[0], marker, special
-        db = SessionLocal()
-        try:
-            company = db.query(Company).filter(Company.name == prev_name).first()
-        finally:
-            db.close()
+        company = _company_by_name(prev_name)
         return (company, marker, special) if company is not None else None
     forecast = outlook.is_forecast_question(question)
     verdict = outlook.is_followup_verdict_question(question)
@@ -1515,11 +1547,7 @@ def _forecast_subject(question: str, previous: dict | None):
             return company, marker, outlook.followup_kind(question)
         return (company, marker if marker and company.name == prev_name else None, _forecast_mode(question)) if forecast else None
     if prev_name:
-        db = SessionLocal()
-        try:
-            company = db.query(Company).filter(Company.name == prev_name).first()
-        finally:
-            db.close()
+        company = _company_by_name(prev_name)
         if company is not None:
             # 25차: 직전 분석과 같은 기간을 다시 묻는 방향 질문("상승할까 하락할까?", "지금 사면 일주일 뒤 오를까?")도 전체 분석을
             # 다시 찍지 않고 짧은 후속 답이다. 기간이 다르면(예: "한 달 뒤는?") 그 기간의 전체 분석이다.
@@ -1529,6 +1557,16 @@ def _forecast_subject(question: str, previous: dict | None):
                 return company, marker, _forecast_mode(question)
             return None
     return (None, None, "ask") if outlook.asks_subject(question) else None
+
+
+def _company_by_name(name: str | None):
+    if not name:
+        return None
+    db = SessionLocal()
+    try:
+        return db.query(Company).filter(Company.name == name).first()
+    finally:
+        db.close()
 
 
 def _forecast_mode(question: str) -> str:
@@ -1561,6 +1599,12 @@ def _answer_forecast(question: str, previous: dict | None):
         if res is None:
             return _code_answer(outlook.no_data_answer(company))
         news, disclosures = outlook.evidence(db, company, period, now) if mode == "forecast" else ([], [])
+        cause = None
+        if mode == "cause_forecast":
+            mv = answer_cause.movement(res["indicators"])
+            base_day = date.fromisoformat(res["indicators"]["base_date"])
+            start_day = date.fromisoformat(mv["from_date"]) if mv["from_date"] else base_day
+            cause = answer_cause.collect(db, company, base_day, start_day)
         fx = outlook.fx_summary(db, period, res["indicators"]["base_date"]) if mode == "forecast" else None
         indirect, earnings_rows, extra = None, None, {}
         if mode == "signal":
@@ -1605,16 +1649,80 @@ def _answer_forecast(question: str, previous: dict | None):
                             "result": {"company_name": company.name, "found": bool(disclosures), "disclosures": disclosures,
                                        "called_via": "forecast"}})
         answer = outlook.forecast_answer(company, period, res, news, disclosures, fx, now, indirect, earnings_rows)
+    elif mode == "cause_forecast":
+        # 결론(방향)을 먼저, 그다음 실제 움직임과 원인 후보(기준일까지 발행된 기사·공시만)
+        records.append({"tool_name": "news_tool", "arguments": {"company_name": company.name, "until": res["indicators"]["base_date"]},
+                        "called_at": called_at, "elapsed_ms": 0,
+                        "result": {"company_name": company.name, "found": bool(cause["news"]), "news": cause["news"],
+                                   "called_via": "cause_forecast"}})
+        if company.asset_type != "etf":
+            records.append({"tool_name": "disclosure_tool", "arguments": {"company_name": company.name,
+                                                                          "until": res["indicators"]["base_date"]},
+                            "called_at": called_at, "elapsed_ms": 0,
+                            "result": {"company_name": company.name, "found": bool(cause["disclosures"]),
+                                       "disclosures": cause["disclosures"], "called_via": "cause_forecast"}})
+        answer = (outlook.brief_answer(company, period, res, now) + "\n\n"
+                  + answer_cause.section(company, res, question, cause))
+    elif mode in ("brief", "verdict") and previous and outlook.same_conclusion(previous.get("answer"), company, period, res):
+        # 68차(#43446): 직전 답과 같은 종목·기간·결론·기준일이면 같은 답을 다시 찍지 않고 짧게 같다고 답한다
+        _meta()["forecast_repeat"] = True
+        answer = outlook.repeat_answer(company, period, res, now)
     elif mode == "brief":
         answer = outlook.brief_answer(company, period, res, now)
     else:
         answer = outlook.followup_answer(company, period, res, mode, now, extra)
+    cal_note = outlook.calendar_days_note(question, period)
+    if cal_note and not (horizon is not None and horizon.note):
+        answer = f"{cal_note}\n\n{answer}"
     if horizon is not None and horizon.note:
         note = outlook.horizon_note(horizon)
         _meta()["forecast_horizon"] = {"kind": "note", "text": horizon.text.strip(), "requested_days": horizon.requested_days,
                                        "label": horizon.label, "note": note}
         answer = f"{note}\n\n{answer}"
     return _code_answer(answer, records)
+
+
+_FIRST_SENTENCE_RE = re.compile(r"^(.+?(?:다|요)[.。])(?:\s|$)")
+
+
+def _first_sentence(text: str, limit: int = 140) -> str:
+    t = re.sub(r"\s+", " ", (text or "")).strip().rstrip(".")
+    m = _FIRST_SENTENCE_RE.match(t + ".")
+    s = (m.group(1) if m else t)
+    return s if len(s) <= limit else s[:limit].rstrip() + "…"
+
+
+def _answer_fund_flow(question: str, companies: list | None):
+    """68차: 종목 하나의 자금 흐름(순유입·순매수·수급) 질문은 기사 본문 검색 결과를 코드로 정리해 답한다(LLM 없음).
+    실측: "KODEX 200 최근 자금 유입 알려줘"에 LLM은 주가 흐름만 답했고(ETF 답은 기사 수치를 LLM에 넘기지 않는다), 한 번은 영어 문장을 썼다.
+    수치는 기사 첫 문장을 그대로 인용하고 발행일을 붙인다. 이 서비스가 계산한 자금 흐름이 아니라고 밝힌다."""
+    if not is_fund_flow_question(question) or not companies or len(companies) != 1 or outlook._MEANING_RE.search(question):
+        return None
+    company = companies[0]
+    called_at = datetime.now(timezone.utc)
+    started = time.perf_counter()
+    args = {"query": question, "company_name": company.name, "limit": 5}
+    result = _run_tool("rag_search_tool", args)
+    records = [{"tool_name": "rag_search_tool", "arguments": args, "result": result, "called_at": called_at,
+                "elapsed_ms": round((time.perf_counter() - started) * 1000)}]
+    if not isinstance(result, dict) or not result.get("found"):
+        msg = (result or {}).get("message") if isinstance(result, dict) else None
+        return _code_answer(f"{company.name}의 자금 흐름을 다룬 기사를 찾지 못했습니다. {msg or ''}".strip(), records)
+    news = [r for r in result["results"] if r["type"] == "news"]
+    discs = [r for r in result["results"] if r["type"] == "disclosure"]
+    if not news:
+        return _code_answer(f"{company.name}의 자금 흐름을 다룬 기사를 찾지 못했습니다(관련 공시만 검색됐습니다).", records)
+    lines = [f"## {company.name} 자금 흐름 관련 기사(본문 검색, 질문과 비슷한 순)", ""]
+    for n in news:
+        day = (n.get("published_at") or "")[:10]
+        where = "제목" if n.get("match") == "title" else "본문 첫머리"
+        lines.append(f"- {day} \"{n['title']}\"")
+        lines.append(f"  - 기사 첫 문장: \"{_first_sentence(n.get('content_snippet'))}\" ({where}에 {company.name})")
+    lines += ["", f"- 수치는 각 기사의 집계(발행일 기준)를 인용한 것이며, 이 서비스가 {company.name}의 자금 흐름을 계산한 값이 아닙니다. "
+              "기사마다 집계 기간과 기준(순유입·순매수, 일간·주간)이 다를 수 있습니다."]
+    if discs:
+        lines.append(f"- 함께 검색된 공시 {len(discs)}건은 출처 목록에 있습니다.")
+    return _code_answer("\n".join(lines), records)
 
 
 def _answer_price_flow(question: str, companies: list | None):
@@ -2302,7 +2410,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
             return ambiguous
     # 시장 비교(_answer_market_period)는 범위 안내(_answer_period_scope)보다 먼저다: 종목 값만 답하면 지수 비교가 빠진다
     # 거래량 순위는 용어 사전보다 먼저다("거래량"이 사전 용어라 "거래량 많은 종목"이 정의 답이 된다)
-    for handler in (_answer_market_ranking, _answer_market_overview, _answer_concept, _answer_missing_subject, _answer_price_flow, _answer_etf_constituents, _answer_holding_return, _answer_market_period, _answer_period_scope, _answer_simple_quote,
+    for handler in (_answer_market_ranking, _answer_market_overview, _answer_concept, _answer_fund_flow, _answer_missing_subject, _answer_price_flow, _answer_etf_constituents, _answer_holding_return, _answer_market_period, _answer_period_scope, _answer_simple_quote,
                     _answer_period_quote, _answer_period_history):
         handled = handler(question, companies)
         if handled is not None:
