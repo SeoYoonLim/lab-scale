@@ -47,7 +47,7 @@ GitHub Actions (ubuntu-latest, 매 평일 20:20·23:20 KST)
 | `backend/scripts/run_cloud_session_preservation.py` | 클라우드 실행기(R2·로컬 저장소, 재시도, 봉인, 탐침) |
 | `backend/app/data/session_minute_universe.csv` | 350종목(ticker, name, asset_type) |
 | `backend/requirements-cloud.txt` | `boto3==1.43.100`. 클라우드 job만 설치한다 |
-| `backend/tests/test_cloud_session_preservation_67.py` | 단위 테스트 25개(가짜 원천·저장소) |
+| `backend/tests/test_cloud_session_preservation_67.py` | 단위 테스트 26개(가짜 원천·저장소) |
 | `backend/tests_cloud/test_r2_store_67.py` | R2 어댑터 테스트 6개(Stubber). boto3가 있어야 해서 `tests/` 밖에 둔다 |
 
 기존 파일은 바꾸지 않았다. 대상은 API·DB·프런트엔드·Ollama 설정·`ci.yml`이다.
@@ -342,7 +342,7 @@ python -m scripts.run_cloud_session_preservation --work-dir /tmp/smc --store loc
 
 ## 15. 테스트
 
-`backend/tests/test_cloud_session_preservation_67.py`(25개, 외부 요청 없음, 약 60초)와 `backend/tests_cloud/test_r2_store_67.py`(6개)가 있다. 지시서 9절 16개 항목과의 대응은 다음과 같다.
+`backend/tests/test_cloud_session_preservation_67.py`(26개, 외부 요청 없음, 약 60초)와 `backend/tests_cloud/test_r2_store_67.py`(6개)가 있다. 지시서 9절 16개 항목과의 대응은 다음과 같다.
 
 | # | 항목 | 테스트 |
 | --- | --- | --- |

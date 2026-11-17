@@ -134,7 +134,10 @@ jobs:
             backend/requirements.txt
             backend/requirements-cloud.txt
       - run: pip install -r requirements.txt -r requirements-cloud.txt
-      - run: python -m pytest tests/test_cloud_session_preservation_67.py tests/test_preserve_session_minute_52.py tests_cloud -q -p no:cacheprovider
+      - run: python -m pytest tests/test_cloud_session_preservation_67.py tests/test_preserve_session_minute_52.py tests_cloud -q -p no:cacheprovider --junitxml="$RUNNER_TEMP/junit.xml"
+      - name: 실패한 테스트 어노테이션
+        if: failure()
+        run: python ../scripts/ci_junit_annotations.py "$RUNNER_TEMP/junit.xml"
 
   # GitHub 클라우드 IP에서 원천(api.stock.naver.com 분봉)이 응답하는지 3종목만 확인한다. 403·429면 우회하지 않고 실패로 남긴다.
   source-probe:

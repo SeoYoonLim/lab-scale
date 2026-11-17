@@ -371,3 +371,20 @@ def test_probe_source_requests_three_tickers_only(tmp_path, capsys):
     blocked = Source(fail={t: requests.HTTPError("403 Client Error: Forbidden") for t in ASSETS})
     assert c.main(["--work-dir", str(tmp_path / "w"), "--probe-source"], now=NOW, get=blocked, env={}) == 1
     assert '"blocked": true' in capsys.readouterr().out
+
+
+def test_actions_summary_and_annotations_tolerate_dateless_entries(tmp_path, capsys):
+    """R2 인증 오류 항목에는 date가 없다. GitHub 요약·주석이 그 항목에서 깨지지 않아야 한다."""
+    class Denied(MemStore):
+        def head(self, key):
+            raise c.StoreAuthError("R2 권한 오류 403 AccessDenied")
+
+    summary = tmp_path / "summary.md"
+    env = {"GITHUB_ACTIONS": "true", "GITHUB_STEP_SUMMARY": str(summary), "GITHUB_RUN_ID": "42"}
+    rc, rep = run(tmp_path, Denied(), Source(days=[D]), "--date", D.isoformat(), env=env)
+    out = capsys.readouterr().out
+    assert rc == 1 and rep["run_id"].endswith("_42")
+    assert "::error title=session-minute::failed" in out and "-=store_auth_error" in out
+    assert "| - | store_auth_error |" in summary.read_text(encoding="utf-8")
+    assert c.main(["--work-dir", str(tmp_path / "p"), "--probe-source"], now=NOW, get=Source(days=[date(2026, 11, 17)]), env=env) == 0
+    assert "::notice title=source-probe::date=2026-11-17 ok=True" in capsys.readouterr().out

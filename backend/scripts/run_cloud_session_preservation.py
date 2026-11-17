@@ -566,15 +566,28 @@ def plan_targets(now: datetime, lookback: int, only: date | None, cal=None) -> t
     return st, window[-lookback:], info
 
 
-def write_summary(rep: dict) -> None:
-    p = os.environ.get("GITHUB_STEP_SUMMARY")
+def gh_annotate(level: str, title: str, msg: str, env: dict | None = None) -> None:
+    """GitHub Actions 주석(::notice:: 등). 공개 API(check-runs annotations)로도 읽힌다. 비밀값은 넣지 않는다."""
+    env = os.environ if env is None else env
+    if env.get("GITHUB_ACTIONS") != "true":
+        return
+    esc = msg.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(f"::{level} title={title}::{esc}", flush=True)
+
+
+def write_summary(rep: dict, env: dict | None = None) -> None:
+    env = os.environ if env is None else env
+    days = ", ".join(f"{r.get('date', '-')}={r['status']}" for r in rep["days"]) or "-"
+    gh_annotate("notice" if rep["status"] in ("ok", "skip_non_trading_day") else "error", "session-minute",
+                f"{rep['status']} · today {rep['plan'].get('today_status')} · {days}", env)
+    p = env.get("GITHUB_STEP_SUMMARY")
     if not p:
         return
     lines = [f"## 분봉 클라우드 보존 {rep['status']}", "", f"- 실행 {rep['run_id']} · 기준 {rep['now_kst']} · 오늘 {rep['plan'].get('today_status')}",
              "", "| 거래일 | 결과 | 받음 | 업로드 | 같음(건너뜀) | 충돌 | 세션 검증 | 초 |", "| --- | --- | --- | --- | --- | --- | --- | --- |"]
     for r in rep["days"]:
         up = r.get("upload", {})
-        lines.append(f"| {r['date']} | {r['status']} | {(r.get('local') or {}).get('raw_files', '')} | {up.get('uploaded', '')} | "
+        lines.append(f"| {r.get('date', '-')} | {r['status']} | {(r.get('local') or {}).get('raw_files', '')} | {up.get('uploaded', '')} | "
                      f"{up.get('skipped_same', '')} | {len(up.get('conflicts', []) or [])} | "
                      f"{(r.get('session_validation') or {}).get('ok', '')} | {r.get('seconds', '')} |")
     with open(p, "a", encoding="utf-8") as fh:
@@ -626,6 +639,9 @@ def main(argv=None, now: datetime | None = None, store=None, get=None, env: dict
             print(f"설정 오류: {e}", file=sys.stderr)
             return 2
         print(json.dumps(res, ensure_ascii=False, indent=1))
+        per = ", ".join(f"{t} day_bars={v.get('day_bars', '-')} ok={v['ok']}" + (" blocked" if v.get("blocked") else "")
+                        for t, v in res["tickers"].items())
+        gh_annotate("notice" if res["ok"] else "error", "source-probe", f"date={res['date']} ok={res['ok']} · {per}", env)
         return 0 if res["ok"] else 1
     clock = clock or (lambda: datetime.now(KST))
     run_id = f"{now.astimezone(KST).strftime('%Y%m%dT%H%M%S')}_{env.get('GITHUB_RUN_ID', 'local')}"
@@ -658,6 +674,7 @@ def main(argv=None, now: datetime | None = None, store=None, get=None, env: dict
         rep["status"] = "config_error"
         rep["error"] = redact(e, env)
         print(json.dumps(rep, ensure_ascii=False, indent=1))
+        gh_annotate("error", "session-minute", f"config_error: {rep['error']}", env)
         return 2
     work.mkdir(parents=True, exist_ok=True)
     ctx = Ctx(store=store, work=work, now=now, assets=assets, get=get, sleep=args.sleep if sleep is None else sleep,
@@ -695,7 +712,7 @@ def main(argv=None, now: datetime | None = None, store=None, get=None, env: dict
         except Exception as e:  # noqa: BLE001 - 기록 업로드 실패는 결과에 남기고 실패로 끝낸다
             print(f"실행 기록 업로드 실패: {redact(e, env)[:200]}", file=sys.stderr)
             rep["status"] = "failed"
-    write_summary(rep)
+    write_summary(rep, env)
     print(f"결과: {rep['status']} · " + ", ".join(f"{r.get('date', '-')}={r['status']}" for r in rep["days"]))
     return 0 if rep["status"] in ("ok", "skip_non_trading_day") else 1
 
