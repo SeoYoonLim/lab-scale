@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import type { FormEvent } from 'react'
 import { api } from '../../api'
 import { queryKeys } from '../../api/queryKeys'
@@ -7,8 +8,9 @@ import AssetTypeBadge from '../../components/AssetTypeBadge'
 import { IconChart, IconSparkle, IconWallet } from '../../components/icons'
 import LiveStatus from '../../components/ui/LiveStatus'
 import { useLocale } from '../../i18n/useLocale'
-import type { Portfolio } from '../../types'
+import type { Holding, Portfolio } from '../../types'
 import { formatPct, formatPrice, trendClass } from '../../utils/format'
+import OrderQuickPicks from './OrderQuickPicks'
 
 const ORDER_PREVIEW_DEBOUNCE_MS = 400
 const MAX_ORDER_QUANTITY = 100_000 // backend/API.md: 주문 수량은 1~100,000주(정수)
@@ -23,6 +25,11 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
   const [formError, setFormError] = useState<string | null>(null)
   const [debouncedTicker, setDebouncedTicker] = useState('')
   const tickerRef = useRef<HTMLInputElement>(null)
+  const quantityRef = useRef<HTMLInputElement>(null)
+  // 종목을 고르거나 다른 화면에서 채워 왔을 때 화면 읽기 프로그램에 알린다(칸의 값이 바뀌는 건 소리로는 알 수 없다)
+  const [pickedMessage, setPickedMessage] = useState('')
+  const location = useLocation()
+  const navigate = useNavigate()
 
   function invalidatePortfolioQueries() {
     void queryClient.invalidateQueries({ queryKey: queryKeys.portfolio })
@@ -87,10 +94,40 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
       })
     : ''
 
+  // 종목 상세 화면의 "이 종목 주문하기"로 넘어온 경우: 종목을 채우고 수량 칸으로 초점을 옮긴다. 한 번 쓰면 라우터 state를 비워서
+  // 뒤로/앞으로가기로 다시 채워지지 않게 한다.
+  useEffect(() => {
+    const order = (location.state as { orderTicker?: string; orderName?: string } | null) ?? null
+    if (!order?.orderTicker) return
+    setTicker(order.orderTicker)
+    setSide('buy')
+    setPickedMessage(
+      t('holdings.prefilled_status', {
+        fallback: '주문 칸에 {name}을(를) 채웠어요. 수량을 확인하고 주문하세요.',
+        vars: { name: order.orderName ?? order.orderTicker },
+      }),
+    )
+    quantityRef.current?.focus()
+    navigate('.', { replace: true, state: null })
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     const id = setTimeout(() => setDebouncedTicker(ticker.trim()), ORDER_PREVIEW_DEBOUNCE_MS)
     return () => clearTimeout(id)
   }, [ticker])
+
+  function handlePick(pick: { ticker: string; name: string }) {
+    setTicker(pick.ticker)
+    setFormError(null)
+    setPickedMessage(t('holdings.picked_status', { fallback: '{name}을(를) 선택했어요.', vars: { name: pick.name } }))
+  }
+
+  function handleSellAll(holding: Holding) {
+    setQuantity(String(holding.quantity))
+    setFormError(null)
+    setPickedMessage(t('holdings.sell_all_status', { fallback: '수량을 {n}주(전량)로 채웠어요.', vars: { n: holding.quantity } }))
+  }
 
   async function handleOrder(e: FormEvent) {
     e.preventDefault()
@@ -202,6 +239,7 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
           <input
             type="number"
             min={1}
+            ref={quantityRef}
             value={quantity}
             onChange={(e) => setQuantity(e.target.value)}
             aria-label={t('holdings.qty_aria', { fallback: '수량' })}
@@ -210,6 +248,8 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
             {mutating === 'order' ? t('holdings.ordering', { fallback: '주문 중…' }) : t('holdings.order', { fallback: '주문' })}
           </button>
         </form>
+        <OrderQuickPicks side={side} ticker={ticker} holdings={portfolio.holdings} onPick={handlePick} onSellAll={handleSellAll} />
+        <LiveStatus message={pickedMessage} />
         {preview && ticker.trim() && Number(quantity) > 0 && (
           <p className="muted small order-preview">
             {t('holdings.preview', {
