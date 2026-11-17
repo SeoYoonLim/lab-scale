@@ -8,6 +8,7 @@ name: Session minute artifacts
 # - 휴장일은 cron이 아니라 Python(app/krx_calendar)이 판단한다(SKIP).
 # - 실행마다 최근 7거래일을 확인한다: 정상 아티팩트가 있는 날짜는 다시 받지 않고, 없거나 손상된 날짜만 원천(최근 7거래일만 제공)에서 다시 받는다.
 # - 저장소가 공개라 아티팩트는 GitHub에 로그인한 누구나 내려받을 수 있다(문서 10절).
+# - 54차 세션 검증만 거부한 날(원천 값 이상, 예: 2026-11-10 거래량 -8)은 session-minute-unsealed-<날짜>(봉인 없음)로 한 번 남기고 다시 받지 않는다.
 on:
   schedule:
     - cron: "20 20 * * 1-5"   # 20:20 KST = 11:20 UTC
