@@ -108,6 +108,20 @@ describe('내 기록: 유형 탭', () => {
     expect(screen.getByRole('tablist').getAttribute('aria-label')).toBe('기록 유형')
   })
 
+  it('탭과 카드가 유형(전체·리서치·진단)별 색 구분을 위한 표식을 가진다', async () => {
+    renderPage()
+    await waitFor(() => expect(document.querySelectorAll('.history-card').length).toBe(2))
+    expect(screen.getAllByRole('tab').map((tab) => tab.getAttribute('data-kind'))).toEqual(['all', 'research', 'diagnosis'])
+    // 목록 순서와 상관없이, 카드의 유형 표식과 그 카드 안 배지의 색 톤이 같은 유형이어야 한다
+    const cards = Array.from(document.querySelectorAll('.history-card'))
+    expect(cards.filter((c) => c.classList.contains('history-card-research'))).toHaveLength(1)
+    expect(cards.filter((c) => c.classList.contains('history-card-diagnosis'))).toHaveLength(1)
+    for (const card of cards) {
+      const kind = card.classList.contains('history-card-research') ? 'research' : 'diagnosis'
+      expect(card.querySelector(`.status-badge-${kind}`)).not.toBeNull()
+    }
+  })
+
   it('탭을 누르면 그 type으로 다시 요청하고 첫 페이지부터 본다', async () => {
     renderPage()
     fireEvent.click(await screen.findByRole('tab', { name: /포트폴리오 진단/ }))
