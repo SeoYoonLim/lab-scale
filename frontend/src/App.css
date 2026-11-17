@@ -3767,3 +3767,188 @@ body {
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--card-kind, var(--rule)) 8%, var(--surface));
 }
+
+/* ---------- 색 디자인: AI 진단 결과 · 포트폴리오 ---------- */
+/* 진단 지표: 줄로 나열하던 숫자를 카드로 */
+.diagnosis-metrics {
+  gap: 12px;
+  padding: 0;
+  border: 0;
+}
+
+.diagnosis-metrics > div {
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.diagnosis-metrics > div > .num {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+/* 진단 칸의 색조: 강점=초록, 위험 요인·확인된 항목=주황, 제안=파랑. 색은 보조이고 제목 글자·아이콘이 항상 같이 있다. */
+.diagnosis-col {
+  --tone: var(--accent);
+  --tone-text: var(--accent-strong);
+  --tone-pct: 8%;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--tone) 28%, var(--rule));
+  border-top: 3px solid var(--tone);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--tone) var(--tone-pct), var(--surface));
+}
+
+.diagnosis-col-strengths {
+  --tone: var(--success);
+  --tone-text: var(--success-text);
+  --tone-pct: 10%;
+}
+
+.diagnosis-col-risks {
+  --tone: var(--warn);
+  --tone-text: var(--warn-text);
+  --tone-pct: 12%;
+}
+
+.diagnosis-col-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  color: var(--tone-text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.diagnosis-col .list {
+  margin: 0;
+}
+
+/* 포트폴리오 탭: 내 기록 탭처럼 알약 모양 + 아이콘 */
+.portfolio-tabs {
+  gap: 8px;
+  margin: -6px -6px 14px;
+  padding: 6px;
+  border-bottom: 0;
+}
+
+.portfolio-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 16px 0 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--rule));
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.portfolio-tab-icon {
+  display: inline-flex;
+}
+
+.portfolio-tab-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.portfolio-tab:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--accent-soft));
+  color: var(--accent-strong);
+}
+
+.portfolio-tab.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* 요약 카드: 현금(회색) / 평가금액(옅은 파랑) / 총 자산(진한 파랑으로 강조) */
+.portfolio-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.portfolio-stat-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.portfolio-stat-label svg {
+  width: 16px;
+  height: 16px;
+}
+
+.portfolio-summary .portfolio-stat-cash .portfolio-stat-label {
+  color: var(--ink-muted);
+}
+
+.portfolio-summary .portfolio-stat-eval {
+  background: var(--accent-soft);
+}
+
+.portfolio-summary .portfolio-stat-eval .portfolio-stat-label {
+  color: var(--accent-strong);
+}
+
+.portfolio-summary .portfolio-stat-total {
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: var(--accent-text);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.portfolio-summary .portfolio-stat-total .portfolio-stat-label,
+.portfolio-summary .portfolio-stat-total .price-big {
+  color: inherit;
+}
+
+/* 매수=빨강 / 매도=파랑(한국 증권 관례, 상승·하락 색과 같다). 글자(매수/매도)가 항상 같이 보인다. */
+.order-form select[data-side='buy'] {
+  border-color: var(--up);
+  background: color-mix(in srgb, var(--up) 5%, var(--surface));
+  color: var(--up);
+  font-weight: 700;
+}
+
+.order-form select[data-side='sell'] {
+  border-color: var(--down);
+  background: color-mix(in srgb, var(--down) 5%, var(--surface));
+  color: var(--down);
+  font-weight: 700;
+}
+
+/* 보유 종목: 손익 방향을 왼쪽 띠와 알약 배경으로(글자의 +/- 부호는 그대로) */
+.holding-row {
+  padding-left: 12px;
+  border-left: 3px solid transparent;
+}
+
+.holding-up {
+  border-left-color: var(--up);
+}
+
+.holding-down {
+  border-left-color: var(--down);
+}
+
+.pl-pill {
+  padding: 2px 10px;
+  border-radius: 999px;
+}
+
+.pl-up {
+  background: color-mix(in srgb, var(--up) 5%, var(--surface));
+}
+
+.pl-down {
+  background: color-mix(in srgb, var(--down) 5%, var(--surface));
+}

@@ -1,7 +1,9 @@
 import AssetTypeBadge from './AssetTypeBadge'
 import DiagnosisLookThrough from './DiagnosisLookThrough'
+import { IconAlertTriangle, IconBulb, IconCheckCircle } from './icons'
 import { useLocale } from '../i18n/useLocale'
 import ScrollRegion from './ui/ScrollRegion'
+import StatusBadge from './ui/StatusBadge'
 import type { DiagnosisDetail, DiagnosisResponse } from '../types'
 import { formatDate, formatPct, formatPrice, trendClass } from '../utils/format'
 
@@ -22,11 +24,11 @@ export default function DiagnosisResultView({ result }: { result: DiagnosisRespo
   return (
     <div className="diagnosis-result">
       <div className="meta">
-        <span className="diagnosis-source">
+        <StatusBadge tone={result.source === 'llm' ? 'accent' : 'neutral'}>
           {result.source === 'llm'
             ? `${t('diagnosis.source_llm', { fallback: 'AI 설명' })} (${result.model})`
             : t('diagnosis.source_rule_based', { fallback: '규칙 기반 설명' })}
-        </span>
+        </StatusBadge>
         <span className="muted small">
           {t('diagnosis.as_of', { fallback: '{date} 기준', vars: { date: formatDate(result.generated_at) } })}
         </span>
@@ -123,8 +125,9 @@ export default function DiagnosisResultView({ result }: { result: DiagnosisRespo
       <DiagnosisLookThrough snapshot={result.look_through} />
 
       {result.flags.length > 0 && (
-        <div className="diagnosis-block">
-          <h3 className="muted small diagnosis-heading">{t('diagnosis.flags_title', { fallback: '확인된 항목' })}</h3>
+        <div className="diagnosis-block diagnosis-col diagnosis-col-risks">
+          <h3 className="diagnosis-col-title">
+            <IconAlertTriangle />{t('diagnosis.flags_title', { fallback: '확인된 항목' })}</h3>
           <ul className="list">
             {result.flags.map((flag, i) => (
               <li key={i}>{flag.message}</li>
@@ -134,24 +137,27 @@ export default function DiagnosisResultView({ result }: { result: DiagnosisRespo
       )}
 
       <div className="diagnosis-columns">
-        <div>
-          <h3 className="muted small diagnosis-heading">{t('diagnosis.strengths', { fallback: '강점' })}</h3>
+        <div className="diagnosis-col diagnosis-col-strengths">
+          <h3 className="diagnosis-col-title">
+            <IconCheckCircle />{t('diagnosis.strengths', { fallback: '강점' })}</h3>
           <ul className="list">
             {result.strengths.map((s, i) => (
               <li key={i}>{s}</li>
             ))}
           </ul>
         </div>
-        <div>
-          <h3 className="muted small diagnosis-heading">{t('diagnosis.risks', { fallback: '위험 요인' })}</h3>
+        <div className="diagnosis-col diagnosis-col-risks">
+          <h3 className="diagnosis-col-title">
+            <IconAlertTriangle />{t('diagnosis.risks', { fallback: '위험 요인' })}</h3>
           <ul className="list">
             {result.risks.map((s, i) => (
               <li key={i}>{s}</li>
             ))}
           </ul>
         </div>
-        <div>
-          <h3 className="muted small diagnosis-heading">{t('diagnosis.suggestions', { fallback: '제안' })}</h3>
+        <div className="diagnosis-col diagnosis-col-suggestions">
+          <h3 className="diagnosis-col-title">
+            <IconBulb />{t('diagnosis.suggestions', { fallback: '제안' })}</h3>
           <ul className="list">
             {result.suggestions.map((s, i) => (
               <li key={i}>{s}</li>

@@ -2,6 +2,7 @@ import type { MetricChange } from '../api/contracts/diagnosis'
 import { useLocale } from '../i18n/useLocale'
 import type { DiagnosisCompareResponse } from '../types'
 import { formatDate, formatPct, formatPrice, formatSignedPp, trendClass } from '../utils/format'
+import { IconAlertTriangle, IconCheckCircle } from './icons'
 import Banner from './ui/Banner'
 
 const STATUS_KEY = { added: 'diagnosis.status_added', removed: 'diagnosis.status_removed', kept: 'diagnosis.status_kept' } as const
@@ -93,8 +94,9 @@ export default function DiagnosisCompareView({ compare }: { compare: DiagnosisCo
 
       {(changes.flags.added.length > 0 || changes.flags.resolved.length > 0) && (
         <div className="diagnosis-columns">
-          <div>
-            <h3 className="muted small diagnosis-heading">{t('diagnosis.flags_added')}</h3>
+          <div className="diagnosis-col diagnosis-col-risks">
+            <h3 className="diagnosis-col-title">
+              <IconAlertTriangle />{t('diagnosis.flags_added')}</h3>
             <ul className="list">
               {changes.flags.added.length === 0 && <li className="muted">{none}</li>}
               {changes.flags.added.map((f, i) => (
@@ -102,8 +104,9 @@ export default function DiagnosisCompareView({ compare }: { compare: DiagnosisCo
               ))}
             </ul>
           </div>
-          <div>
-            <h3 className="muted small diagnosis-heading">{t('diagnosis.flags_resolved')}</h3>
+          <div className="diagnosis-col diagnosis-col-strengths">
+            <h3 className="diagnosis-col-title">
+              <IconCheckCircle />{t('diagnosis.flags_resolved')}</h3>
             <ul className="list">
               {changes.flags.resolved.length === 0 && <li className="muted">{none}</li>}
               {changes.flags.resolved.map((f, i) => (
