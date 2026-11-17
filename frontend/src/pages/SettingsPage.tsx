@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from '../api'
-import { LOCALES } from '../api/contracts/common'
+import { SELECTABLE_LOCALES } from '../api/contracts/common'
 import type { Locale } from '../api/contracts/common'
 import { queryKeys } from '../api/queryKeys'
 import ErrorNotice from '../components/ui/ErrorNotice'
@@ -34,6 +34,8 @@ export default function SettingsPage() {
   const current = query.data ?? preferences
   const locale = localeDraft ?? (current?.preferred_locale as Locale | undefined) ?? 'ko-KR'
   const timezone = timezoneDraft ?? current?.preferred_timezone ?? ''
+  // 일본어·중국어는 선택지에서 숨기지만, 이미 그 언어로 저장한 계정은 현재 값이 보이도록 선택지에 남긴다
+  const localeOptions = SELECTABLE_LOCALES.includes(locale) ? SELECTABLE_LOCALES : [...SELECTABLE_LOCALES, locale]
 
   const save = useMutation({
     mutationFn: () =>
@@ -77,7 +79,7 @@ export default function SettingsPage() {
             onChange={(e) => setLocaleDraft(e.target.value as Locale)}
             aria-describedby="settings-language-help"
           >
-            {LOCALES.map((code) => (
+            {localeOptions.map((code) => (
               <option key={code} value={code}>
                 {LOCALE_NATIVE_NAMES[code]}
               </option>

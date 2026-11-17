@@ -34,7 +34,9 @@ function inResource(locale: Locale, key: string): boolean {
   return typeof node === 'string'
 }
 
-const TRANSLATED: Locale[] = LOCALES.filter((l) => l !== 'ko-KR')
+// 일본어·중국어 번역은 더 이상 관리하지 않는다(초안, 선택지에서도 숨김) - 새 라벨은 영어 번역만 필수로 점검한다.
+// 기존 ja/zh 번역 파일은 그대로 두며, 번역이 없는 키는 영어·한국어 문구로 대체된다.
+const TRANSLATED: Locale[] = LOCALES.filter((l) => l === 'en-US')
 
 describe('라벨 번역 범위', () => {
   it('키를 실제로 찾았다(정규식이 아무것도 못 찾으면 점검이 무의미하다)', () => {

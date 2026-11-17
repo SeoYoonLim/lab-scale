@@ -125,9 +125,9 @@ function HistoryCard({ item, terms, onDelete, deleting }: { item: HistoryItem; t
   }, [confirming])
 
   return (
-    <article className="history-card">
+    <article className={`history-card history-card-${item.kind}`}>
       <header className="history-card-head">
-        <StatusBadge tone={item.kind === 'research' ? 'accent' : 'neutral'}>
+        <StatusBadge tone={item.kind === 'research' ? 'research' : 'diagnosis'}>
           {item.kind === 'research' ? t('history.kind_research') : t('history.kind_diagnosis')}
         </StatusBadge>
         {item.research && <StatusBadge>{t(`analysis_type.${item.research.analysis_type}`)}</StatusBadge>}
@@ -384,6 +384,7 @@ export default function HistoryPage() {
               tabRefs.current[tab.value] = node
             }}
             id={`history-tab-${tab.value}`}
+            data-kind={tab.value}
             type="button"
             role="tab"
             aria-selected={type === tab.value}

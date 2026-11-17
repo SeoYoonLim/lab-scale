@@ -29,6 +29,17 @@
   /* 입력칸 테두리: 카드 구분선(--rule)보다 진하게(비텍스트 대비 3:1) */
   --field-border: #7d8aa8;
 
+  /* 내 기록의 유형 색(전체=accent 파랑은 따로). solid=선택된 탭·테두리(흰 글자 4.5:1 이상, 배경 대비 3:1 이상),
+     soft=옅은 배경, text=soft 위 글자(4.5:1 이상), on=solid 위 글자. 상승(빨강)·하락(파랑)과 겹치지 않게 보라·청록을 쓴다. */
+  --kind-research: #6a3fd6;
+  --kind-research-soft: #efe9fc;
+  --kind-research-text: #5a2cc0;
+  --kind-research-on: #ffffff;
+  --kind-diagnosis: #0b7a6b;
+  --kind-diagnosis-soft: #e0f5f0;
+  --kind-diagnosis-text: #0a6b5d;
+  --kind-diagnosis-on: #ffffff;
+
   --radius: 16px;
   --radius-sm: 10px;
   --shadow-card: 0 1px 2px rgba(20, 44, 96, 0.04), 0 4px 16px rgba(20, 44, 96, 0.06);
@@ -71,6 +82,14 @@
     --warn-text: #f0a93a;
     --on-warn: #08102a;
     --field-border: #66739a;
+    --kind-research: #a78bfa;
+    --kind-research-soft: #2a2150;
+    --kind-research-text: #c4b0ff;
+    --kind-research-on: #12082e;
+    --kind-diagnosis: #2fc7a6;
+    --kind-diagnosis-soft: #123a35;
+    --kind-diagnosis-text: #6fe0c4;
+    --kind-diagnosis-on: #06201b;
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
   }
 }

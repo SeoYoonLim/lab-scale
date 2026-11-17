@@ -3458,11 +3458,16 @@ body {
   align-items: center;
   gap: 8px;
   min-height: 40px;
-  padding: 0 12px 0 16px;
-  border: 1px solid var(--rule);
+  padding: 0 12px 0 14px;
+  /* 유형마다 색이 다르다: 쓰는 색은 아래 data-kind 규칙이 --tab* 변수로 바꾼다(기본은 전체 = accent 파랑) */
+  --tab: var(--accent);
+  --tab-soft: var(--accent-soft);
+  --tab-text: var(--accent-strong);
+  --tab-on: var(--accent-text);
+  border: 1px solid color-mix(in srgb, var(--tab) 32%, var(--rule));
   border-radius: 999px;
-  background: var(--surface);
-  color: var(--ink-muted);
+  background: var(--tab-soft);
+  color: var(--tab-text);
   font: inherit;
   font-size: 14px;
   font-weight: 600;
@@ -3471,20 +3476,48 @@ body {
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
+.history-tab[data-kind='research'] {
+  --tab: var(--kind-research);
+  --tab-soft: var(--kind-research-soft);
+  --tab-text: var(--kind-research-text);
+  --tab-on: var(--kind-research-on);
+}
+
+.history-tab[data-kind='diagnosis'] {
+  --tab: var(--kind-diagnosis);
+  --tab-soft: var(--kind-diagnosis-soft);
+  --tab-text: var(--kind-diagnosis-text);
+  --tab-on: var(--kind-diagnosis-on);
+}
+
+/* 글자 앞의 색 점: 색을 못 보는 사람에게는 의미가 없지만 글자가 함께 있어서 정보가 빠지지 않는다 */
+.history-tab::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tab);
+}
+
 .history-tab:hover {
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--rule));
-  background: var(--surface-2);
-  color: var(--ink);
+  border-color: var(--tab);
+  background: color-mix(in srgb, var(--tab) 14%, var(--tab-soft));
 }
 
 .history-tab.active {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--accent-text);
+  border-color: var(--tab);
+  background: var(--tab);
+  color: var(--tab-on);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--tab) 35%, transparent);
+}
+
+.history-tab.active::before {
+  background: var(--tab-on);
 }
 
 .history-tab.active:hover {
-  background: var(--accent-strong);
+  background: var(--tab);
+  filter: brightness(1.08);
 }
 
 .history-tab-count {
@@ -3495,15 +3528,15 @@ body {
   height: 20px;
   padding: 0 7px;
   border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--ink-muted);
+  background: var(--surface);
+  color: var(--tab-text);
   font-size: 12px;
   font-weight: 700;
 }
 
 .history-tab.active .history-tab-count {
-  background: rgba(255, 255, 255, 0.22);
-  color: var(--accent-text);
+  background: color-mix(in srgb, var(--tab-on) 22%, transparent);
+  color: var(--tab-on);
 }
 
 /* 기록 카드: 머리(유형·날짜) / 제목 / 종목 / 요약 / 세부 / 액션이 한눈에 구분된다 */
@@ -3703,4 +3736,34 @@ body {
 .diagnosis-heading {
   margin: 0;
   font-weight: 400;
+}
+
+/* 내 기록 카드·배지: 유형(AI 리서치=보라, 포트폴리오 진단=청록)이 색으로도 구분된다. 글자가 항상 같이 있어서 색은 보조다. */
+.status-badge-research {
+  background: var(--kind-research-soft);
+  color: var(--kind-research-text);
+}
+
+.status-badge-diagnosis {
+  background: var(--kind-diagnosis-soft);
+  color: var(--kind-diagnosis-text);
+}
+
+.history-card {
+  border-left: 4px solid var(--card-kind, var(--rule));
+}
+
+.history-card-research {
+  --card-kind: var(--kind-research);
+}
+
+.history-card-diagnosis {
+  --card-kind: var(--kind-diagnosis);
+}
+
+.history-card-head {
+  margin: -6px -8px 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--card-kind, var(--rule)) 8%, var(--surface));
 }
