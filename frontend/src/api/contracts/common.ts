@@ -7,6 +7,10 @@ export const LOCALES = ['ko-KR', 'en-US', 'ja-JP', 'zh-CN'] as const
 export type Locale = (typeof LOCALES)[number]
 export const DEFAULT_LOCALE: Locale = 'ko-KR'
 
+// 설정 화면에서 고를 수 있는 언어. 일본어·중국어 번역은 초안이라 더 이상 관리하지 않고(새 라벨은 영어만 추가한다) 선택지에서 숨긴다.
+// 서버·타입은 4개 언어를 그대로 지원하고, 이미 일본어·중국어로 저장한 계정은 설정 화면에서 그 값이 그대로 보인다.
+export const SELECTABLE_LOCALES: readonly Locale[] = ['ko-KR', 'en-US']
+
 // 응답의 locale은 "실제로 답한 언어"다. 지원하지 않는 값을 보내면 ko-KR로 오지만, 문자열로 받아두고
 // 화면에서 isLocale()로 좁혀 쓴다(서버가 나중에 언어를 늘려도 응답 검증이 깨지지 않게).
 export function isLocale(value: unknown): value is Locale {
