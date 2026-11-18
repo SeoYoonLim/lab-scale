@@ -27,6 +27,9 @@ const MOVING_AVERAGES = [
 
 // 기간별 수익률(N거래일 전 종가 대비). 달력 일이 아니라 거래일이다.
 const RETURN_WINDOWS = [{ tradingDays: 5 }, { tradingDays: 20 }, { tradingDays: 60 }] as const
+// N거래일 수익률은 기준 종가(N거래일 전)까지 N+1개 행이 필요하다. 차트 범위(기본 60거래일 = 60행)와 상관없이 따로 받는다
+// (2026-11-18: 60행만 받아 60거래일 칸이 늘 '—'였다. 백엔드·AI 답의 'N거래일 수익률'과 같은 정의).
+const RETURN_BASE_ROWS = Math.max(...RETURN_WINDOWS.map((w) => w.tradingDays)) + 1
 
 const LAYOUT: ChartLayout = {
   width: 720,
@@ -54,6 +57,14 @@ export default function PriceChartCard({ ticker }: { ticker: string }) {
     retry: false,
     staleTime: 60_000,
   })
+
+  const returnsQuery = useQuery({
+    queryKey: queryKeys.priceHistory(ticker, RETURN_BASE_ROWS),
+    queryFn: () => api.getPriceHistory(ticker, RETURN_BASE_ROWS),
+    retry: false,
+    staleTime: 60_000,
+  })
+  const returnItems = returnsQuery.data?.items ?? []
 
   const items = data?.items ?? []
   const geometry = computeChart(items, LAYOUT)
@@ -199,7 +210,8 @@ export default function PriceChartCard({ ticker }: { ticker: string }) {
                     ? '-'
                     : t('chart.period_change', {
                         fallback: '{pct} ({n}거래일)',
-                        vars: { pct: formatPct(summary.changePct), n: data.count },
+                        // 첫 행 종가 대비 마지막 종가: 비교 구간은 행 수 - 1 거래일이다(60행 = 59거래일)
+                        vars: { pct: formatPct(summary.changePct), n: items.length - 1 },
                       })}
                 </span>
                 <span className="num muted">
@@ -299,7 +311,7 @@ export default function PriceChartCard({ ticker }: { ticker: string }) {
 
           <dl className="return-list" aria-label={t('chart.returns_aria', { fallback: '기간별 수익률' })}>
             {RETURN_WINDOWS.map((w) => {
-              const value = periodReturn(items, w.tradingDays)
+              const value = periodReturn(returnItems, w.tradingDays)
               return (
                 <div key={w.tradingDays}>
                   <dt className="muted small">{t('chart.range_days', { fallback: '{n}거래일', vars: { n: w.tradingDays } })}</dt>
@@ -308,6 +320,20 @@ export default function PriceChartCard({ ticker }: { ticker: string }) {
               )
             })}
           </dl>
+          {returnsQuery.isError && (
+            <p className="muted small" role="status">
+              {t('chart.returns_failed', { fallback: '기간별 수익률을 불러오지 못했어요.' })}
+            </p>
+          )}
+          {returnsQuery.data &&
+            RETURN_WINDOWS.some((w) => returnItems.length < w.tradingDays + 1) && (
+              <p className="muted small">
+                {t('chart.returns_shortfall', {
+                  fallback: '저장된 시세가 {count}거래일이라 그보다 긴 기간의 수익률은 계산하지 않았어요({date} 기준).',
+                  vars: { count: Math.max(returnItems.length - 1, 0), date: formatDate(returnsQuery.data.price_as_of ?? null) },
+                })}
+              </p>
+            )}
           {maLines.some((m) => !m.enough) && (
             <p className="muted small">
               {t('chart.ma_not_enough', { fallback: '이동평균은 그 기간만큼 거래일이 쌓여야 그려져요(지금 {n}거래일).', vars: { n: data.count } })}

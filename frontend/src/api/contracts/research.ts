@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import type { AnalysisType, DateGroup, TranslationStatus } from './common'
 import { analysisTypeSchema, dateGroupSchema, pageInfoShape, translationStatusSchema } from './common'
-import type { Source } from '../../types'
+import type { Source, SourceStatus } from '../../types'
+import { sourceStatusSchema } from '../schemas'
 
 // GET /api/research/{id}?view=record, GET /api/research?view=record (핸드오프 I18N_HISTORY 3-3·3-4절).
 // 기본 응답(view 없음)에는 이 필드들이 없다 - 기록 화면만 view=record로 부른다.
@@ -58,6 +59,8 @@ export interface ReportRecordDetail {
   created_at: string
   used_tools: string[]
   sources: Source[]
+  // sources가 빈 이유(하위 호환 추가). 없을 수 있다
+  source_status?: SourceStatus | null
   disclaimer: string
   title: string
   company_names: string[]
@@ -128,6 +131,7 @@ export const reportRecordDetailSchema = z.object({
   ...reportRecordItemShape,
   answer: z.string(),
   sources: z.array(sourceSchema),
+  source_status: sourceStatusSchema.nullish(),
   disclaimer: z.string(),
   data_basis: z.array(dataBasisItemSchema),
   timezone: z.string(),

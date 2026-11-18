@@ -196,3 +196,48 @@ describe('PriceChartCard 기간 버튼(180·365)', () => {
     expect((long as HTMLButtonElement).disabled).toBe(false)
   })
 })
+
+describe('PriceChartCard 기간별 수익률(5·20·60거래일)', () => {
+  // n개 행: 마지막 종가 190,300원, 60거래일 전 종가 247,500원(2026-11-18 삼성전자 실측과 같은 값)
+  const rows = (n: number) =>
+    Array.from({ length: n }, (_, i) => {
+      const fromEnd = n - 1 - i
+      const close = fromEnd === 0 ? 190300 : fromEnd === 5 ? 198900 : fromEnd === 20 ? 211500 : fromEnd === 60 ? 247500 : 200000
+      const d = new Date(Date.UTC(2026, 7, 19) + i * 86400000).toISOString().slice(0, 10)
+      return { date: d, close, volume: 1000, change_pct: 0, open: close, high: close, low: close }
+    })
+  const response = (days: number, n = days): PriceHistoryResponse => ({
+    ticker: '005930', company_name: '삼성전자', asset_type: 'stock', days, count: n, price_as_of: '2026-11-17',
+    items: rows(n), available_count: 743, first_date: '2023-10-30', missing_trading_days: 0,
+  })
+
+  it('차트가 60거래일(60행)이어도 60거래일 수익률을 N거래일 전 종가 대비로 보여준다(예전에는 늘 —)', async () => {
+    getPriceHistory.mockImplementation((_t: string, days: number) => Promise.resolve(response(days)))
+    renderWithProviders(<PriceChartCard ticker="005930" />)
+    const list = await screen.findByLabelText('기간별 수익률')
+    await waitFor(() => expect(list.textContent).toContain('-23.11%'))
+    expect(list.textContent).toContain('-4.32%')
+    expect(list.textContent).toContain('-10.02%')
+    expect(list.textContent).not.toContain('—')
+    expect(getPriceHistory).toHaveBeenCalledWith('005930', 61)
+    // 머리글: 60행이면 첫 행 대비 59거래일 구간이다
+    expect(screen.getByText(/\(59거래일\)/)).toBeTruthy()
+  })
+
+  it('저장된 시세가 모자라면 계산하지 않고(—) 이유와 기준일을 알린다', async () => {
+    getPriceHistory.mockImplementation((_t: string, days: number) => Promise.resolve(response(days, Math.min(days, 30))))
+    renderWithProviders(<PriceChartCard ticker="005930" />)
+    const list = await screen.findByLabelText('기간별 수익률')
+    await waitFor(() => expect(list.textContent).toContain('—'))
+    expect(await screen.findByText(/저장된 시세가 29거래일이라 그보다 긴 기간의 수익률은 계산하지 않았어요\(2026\.11\.17 기준\)/)).toBeTruthy()
+  })
+
+  it('수익률 조회가 실패하면 데이터 없음이 아니라 조회 실패라고 알린다', async () => {
+    getPriceHistory.mockImplementation((_t: string, days: number) =>
+      days === 61 ? Promise.reject(new Error('network')) : Promise.resolve(response(days)),
+    )
+    renderWithProviders(<PriceChartCard ticker="005930" />)
+    expect(await screen.findByText('기간별 수익률을 불러오지 못했어요.')).toBeTruthy()
+    expect(screen.queryByText(/계산하지 않았어요/)).toBeNull()
+  })
+})

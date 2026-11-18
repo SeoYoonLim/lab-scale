@@ -250,7 +250,9 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
         </form>
         <p className="muted small order-price-note">
           {t('holdings.price_note', {
-            fallback: '체결가는 주문하는 순간의 실시간 시세예요. 다른 화면에 보이는 종가와 다를 수 있어요.',
+            // 백엔드(app/realtime_price.py): 네이버 marketStatus가 OPEN이고 애프터마켓이 아닐 때만 실시간 체결가,
+            // 그 밖(장외·애프터마켓·조회 실패)은 DB에 저장된 최근 종가로 체결한다(price_source=fallback)
+            fallback: '정규장 중에는 실시간 시세를, 장외에는 저장된 최근 종가를 기준으로 모의 체결해요. 체결 기준 가격은 시세 시점에 따라 다른 화면의 종가와 다를 수 있어요.',
           })}
         </p>
         <OrderQuickPicks side={side} ticker={ticker} holdings={portfolio.holdings} onPick={handlePick} onSellAll={handleSellAll} />
