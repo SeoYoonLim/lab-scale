@@ -61,7 +61,7 @@ _EN_N = r"(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twel
 _CJK_N = r"(\d+|[一二两兩三四五六七八九十]+)"
 
 # ---------- 단위 ----------
-_EN_UNIT = r"(trading\s+days?|business\s+days?|sessions?|days?|weeks?|months?|quarters?|years?)"
+_EN_UNIT = r"(trading\s+days?|business\s+days?|sessions?|calendar\s+days?|days?|weeks?|months?|quarters?|years?)"
 _JA_UNIT = r"(営業日|取引日|日間|日|週間|週|か月|ヶ月|カ月|ヵ月|ケ月|か月間|ヶ月間|年間|年)"
 _ZH_UNIT = r"(个交易日|個交易日|交易日|个工作日|個工作日|天|日|个星期|個星期|星期|周|週|个月|個月|月|年)"
 
@@ -70,7 +70,8 @@ def _unit_ko(unit: str) -> str:
     u = unit.lower()
     if "trading" in u or "business" in u or "session" in u or u in ("営業日", "取引日") or "交易日" in u or "工作日" in u:
         return "거래일"
-    if u.startswith("day") or u in ("日", "日間", "天"):
+    # "5 calendar days"는 달력 일수 그대로("최근 5일"). 2026-11-18
+    if u.startswith("day") or u.startswith("calendar") or u in ("日", "日間", "天"):
         return "일"
     if u.startswith("week") or u in ("週間", "週", "周", "星期") or "星期" in u:
         return "주"
