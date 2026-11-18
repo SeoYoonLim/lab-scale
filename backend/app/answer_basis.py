@@ -89,6 +89,40 @@ def fx_lag(latest: date, now: datetime) -> int:
     return n
 
 
+# 72차: LLM 경로(환율이 종목·업종에 미치는 영향 같은 설명 질문)에서 하루 등락률을 기간 등락률처럼 쓴 문장을 뺀다.
+# 70차 실측 "최근 5일간 -0.93% 하락"(11-02 하루 값). 기간 표현과 하루 값이 한 문장에 있고 하루 표현이 없으면 잘못 붙인 것으로 본다.
+_FX_PERIOD_WORD_RE = re.compile(r"\d+\s*(?:거래일|영업일|일|주|개월)\s*(?:간|동안|사이)|최근\s*\d+|일주일|한\s*달|한\s*주|주간|기간\s*(?:동안|중)?|추세")
+_FX_DAY_WORD_RE = re.compile(r"하루|전일|전날|일일|당일|직전\s*(?:기록|거래일)|대비")
+# 문장 경계 = 마침표·물음표·느낌표 뒤에 공백이 오는 자리("-0.93%"의 소수점에서 자르지 않는다). split 위치로만 쓴다
+_SENT_RE = re.compile(r"(?<=[.!?])(?=\s)")
+
+
+def _pct_forms(v: float) -> list[str]:
+    a = abs(v)
+    return [f"{a:.2f}%", f"{a:.1f}%"] if round(a, 1) == a else [f"{a:.2f}%"]
+
+
+def drop_fx_mislabels(answer: str, fx: dict) -> tuple[str, list[str]]:
+    """하루 등락률(daily_change_pct)을 기간 표현과 함께 쓴 문장을 뺀다. 기간 등락률과 값이 같으면 건드리지 않는다."""
+    day, per = fx.get("daily_change_pct"), fx.get("period_change_pct")
+    if day is None or (per is not None and round(abs(day), 2) == round(abs(per), 2)):
+        return answer, []
+    forms = _pct_forms(day)
+    dropped, out = [], []
+    for line in (answer or "").split("\n"):
+        keep, cut = [], False
+        for sent in _SENT_RE.split(line):
+            if (any(f in sent for f in forms) and _FX_PERIOD_WORD_RE.search(sent) and not _FX_DAY_WORD_RE.search(sent)
+                    and re.search(r"환율|원\s*/?\s*달러|달러", sent)):
+                dropped.append(sent.strip())
+                cut = True
+                continue
+            keep.append(sent)
+        joined = "".join(keep)
+        out.append(joined.strip() if cut else joined)  # 뺀 문장 뒤에 남는 앞 공백 정리
+    return "\n".join(out), dropped
+
+
 def fx_basis(answer: str, records: list[dict], now: datetime) -> str:
     """환율 도구 결과가 있으면 기준일(없으면)과 지연(있으면)을 밝힌다. 지연이면 '현재 환율'·'거래되고 있습니다' 같은 최신 표현을 바꾼다."""
     fx = next((r.get("result") for r in records or [] if r.get("tool_name") == "fx_tool" and isinstance(r.get("result"), dict)
@@ -97,7 +131,7 @@ def fx_basis(answer: str, records: list[dict], now: datetime) -> str:
         return answer
     latest = date.fromisoformat(str(fx["latest_date"])[:10])
     lag = fx_lag(latest, now)
-    out = answer
+    out, _dropped = drop_fx_mislabels(answer, fx)
     if lag > 0:
         out = _FX_NOW_RE.sub(f"{latest.isoformat()} 종가 기준 ", out)
         out = _FX_TRADING_RE.sub("입니다", out)
@@ -106,6 +140,11 @@ def fx_basis(answer: str, records: list[dict], now: datetime) -> str:
         note.append(f"환율 기준일: {latest.isoformat()} 종가(DB에 저장된 값이며 실시간 환율이 아닙니다).")
     if lag > 0:
         note.append(f"마지막 환율({latest.isoformat()})은 {lag}영업일 전 값이라 최신 환율이 아닙니다.")
+    from app.answer_fx import facts_line
+
+    facts = facts_line(fx)  # 72차: 하루·기간 변동률을 이름을 붙여 코드 값으로 따로 밝힌다(LLM 문장의 수치보다 이 줄이 기준)
+    if facts and facts not in out:
+        note.append(facts)
     return out if not note else out.rstrip() + "\n\n" + " ".join(note)
 
 

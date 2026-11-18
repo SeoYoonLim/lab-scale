@@ -23,7 +23,7 @@ from app.db.session import SessionLocal
 from app.history_terms import term_variants
 from app.models import Company, ResearchReport, ToolCallLog
 from app.pagination import escape_like, order_by_clauses
-from app.sources import build_sources
+from app.sources import build_sources, source_status
 
 logger = logging.getLogger(__name__)
 
@@ -346,6 +346,7 @@ def get_report(report_id: int, *, user_id: int | None) -> dict | None:
             "created_at_dt": report.created_at,
             "used_tools": [log.tool_name for log in logs],
             "sources": sources,
+            "source_status": source_status(((log.tool_name, log.result) for log in logs), sources),
             **_extra_fields(report, company, metas, _tickers_by_name(db, metas), len(sources)),
             "data_basis": _data_basis(logs),
             "locale": report.locale,

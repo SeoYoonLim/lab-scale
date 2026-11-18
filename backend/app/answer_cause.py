@@ -505,7 +505,8 @@ def period_spec(question: str, now: datetime | None = None) -> dict | None:
 
     - "N거래일"이면 trading=True, n=N: 시세 기준일부터 KRX 거래일로 N일을 거슬러 간다(68·69차 '최근 5거래일'과 같은 정의).
     - 그 밖(지난주·이번 주·한 달·지난달·N주·N일·N개월)은 질문이 가리키는 달력 범위 start~end(period_parser)다.
-    - 3개월(달력 93일, 63거래일)을 넘으면 too_long=True(호출측은 기존 경로로 보낸다)."""
+    - 3개월(달력 93일, 63거래일)을 넘으면 too_long=True. 72차부터는 이것도 코드 답이다: 등락·지수는 계산하고(기간 전체 시세가 있을 때만),
+      기사·공시는 원인 후보로 고르지 않고 건수만 밝힌다(long_evidence_lines)."""
     from app.period_parser import parse_period
 
     q = question or ""
@@ -528,8 +529,8 @@ def is_period_cause_question(question: str, now: datetime | None = None) -> bool
     q = question or ""
     if not _cause_gate(q):
         return False
-    spec = period_spec(q, now)
-    return spec is not None and not spec["too_long"]
+    # 72차: 3개월 초과도 코드 답이다(전에는 LLM 경로라 전제 확인 없이 답했다, 71차 보고서 7절 "삼성전자 100거래일 왜 올랐어?")
+    return period_spec(q, now) is not None
 
 
 def period_window(spec: dict, rows: list[tuple], today: date) -> dict:
@@ -564,6 +565,11 @@ def period_window(spec: dict, rows: list[tuple], today: date) -> dict:
     prev = krx_calendar.previous_trading_day(window[0])
     before = [d for d in days if d < window[0]]
     start_partial = False
+    if spec.get("too_long") and not before:
+        # 72차: 3개월 초과 기간은 시작 전 종가가 없으면(저장 시세가 기간 중간부터) 계산하지 않는다. 짧은 기간(71차)처럼 일부 구간을 계산해
+        # 보여주면 긴 기간 전체의 등락처럼 읽힌다
+        out.update(status="short_history", first_stored=days[0].isoformat(), expected_from=prev.isoformat())
+        return out
     if before:
         from_day = before[-1]
     elif len(in_stored) >= 2:
@@ -661,6 +667,11 @@ def period_cause_answer(company, spec: dict, win: dict, idx: dict | None, found:
     req = _days(win["req_start"], win["req_end"])
     if win["status"] != "ok":
         head = f"{name}({company.ticker}) · {label} 주가 움직임과 원인 · 시세 기준일 {win['last_stored']}"
+        if win["status"] == "short_history":
+            why = (f"질문하신 {label}({req})을 계산하려면 {win['expected_from']} 종가가 필요하지만, {name}의 저장 시세는 "
+                   f"{win['first_stored']}부터 {win['last_stored']}까지입니다. 기간 전체의 등락을 계산할 수 없어 일부 구간 수치로 대신하지 않고, "
+                   f"원인도 말씀드리지 않습니다. {win['first_stored']} 이후 기간(예: \"최근 1년\", \"최근 3개월\")으로 다시 물어봐 주세요.")
+            return f"{head}\n\n## 기간 주가 움직임과 원인\n- {why}\n\n{DISCLAIMER}"
         if win["status"] == "no_data":
             why = (f"질문하신 {label}({req})의 시세가 아직 저장되지 않았습니다(마지막 저장 거래일 {win['last_stored']}). "
                    "이 기간의 주가 움직임을 계산할 수 없어 원인도 말씀드릴 수 없습니다. 없는 시세를 추정해 채우지 않습니다.")
@@ -713,6 +724,12 @@ def period_cause_answer(company, spec: dict, win: dict, idx: dict | None, found:
         lines.append(f"- {josa(name, '은/는')} {kind} 시장 지수와 비교하지 않았습니다. 이 수치는 {name} 자체의 등락이며 구성 종목이나 "
                      "지수의 등락이 아닙니다.")
     found = found or {"news": [], "disclosures": []}
+    if found.get("long"):
+        lines += long_evidence_lines(company, win, found)
+        fresh = (data or {}).get("freshness") or ""
+        if fresh and fresh != "최신 시세":
+            lines.append(f"- 시세가 {fresh} 상태입니다(마지막 저장 거래일 {win['last_stored']}). 그 뒤의 움직임은 알 수 없습니다.")
+        return f"{head}\n\n" + "\n".join(lines) + f"\n\n{DISCLAIMER}"
     news, discs = found.get("news") or [], found.get("disclosures") or []
     cut = found.get("cutoff") or cutoff_at(date.fromisoformat(win["end_date"])).strftime("%H:%M")
     rng = f"{win['from_date']} 장 마감 뒤~{win['end_date']} 장 마감 {cut} 전"
@@ -745,4 +762,256 @@ def period_cause_answer(company, spec: dict, win: dict, idx: dict | None, found:
     fresh = (data or {}).get("freshness") or ""
     if fresh and fresh != "최신 시세":
         lines.append(f"- 시세가 {fresh} 상태입니다(마지막 저장 거래일 {win['last_stored']}). 그 뒤의 움직임은 알 수 없습니다.")
+    return f"{head}\n\n" + "\n".join(lines) + f"\n\n{DISCLAIMER}"
+
+
+# ---------- 72차(2026-11-18): 3개월 초과 기간·복수 종목 원인 질문 ----------
+# 71차는 3개월(93일·63거래일)을 넘는 원인 질문과 종목 둘 이상의 원인 질문을 LLM 경로에 남겼다. LLM은 전제('올랐어')를 실제 등락과 대조하지
+# 않았고(삼성전자 100거래일 -39.97%) 종목마다 수치·기사를 나눠 쓰는지 코드가 확인하지 않았다. 이제 둘 다 코드 답이다.
+# - 긴 기간: 등락·지수는 71차와 같은 창 규칙으로 계산한다(기간 시작 전 종가가 없으면 계산하지 않는다 = short_history). 기사·공시는 기간이 길어
+#   몇 건을 골라 원인으로 연결할 수 없으므로 목록을 붙이지 않고 건수·저장 범위만 밝힌다(출처 sources는 비고 source_status=long_period).
+# - 복수 종목: 종목마다 단일 종목 경로(69차 원인 단독·71차 기간)를 그대로 따로 돌리고, 결과를 종목 단락으로 잇는다. 공통 문장만 코드가 붙인다.
+MAX_CAUSE_COMPANIES = 3
+
+
+def long_price_rows(db, company, now: datetime) -> list[tuple]:
+    """저장 시세 전체 [(date, close, volume)] 오름차순(장중 행 제외). 긴 기간 창은 outlook.PRICE_ROWS(260행)를 넘는다."""
+    from app.briefing import drop_open_session
+    from app.models import StockPrice
+
+    rows = (db.query(StockPrice.price_date, StockPrice.close_price, StockPrice.volume)
+            .filter(StockPrice.company_id == company.id).order_by(StockPrice.price_date.asc()).all())
+    return drop_open_session(list(rows), now, lambda r: r[0])
+
+
+def count_evidence(db, company, frm: date, end: date) -> dict:
+    """긴 기간 창(frm 장 마감 뒤 ~ end 장 마감 전)의 이 종목 뉴스·공시 건수와 저장 범위. 목록은 만들지 않는다(원인 후보로 고르지 않는다).
+
+    건수는 SQL로 센다(제목 판정 없음): 뉴스는 company_id 연결 + is_relevant가 False가 아닌 행, 공시는 접수일 frm 다음 날 ~ end 전날.
+    기준일 뒤·장 마감 뒤 건수는 collect()와 같은 규칙이다."""
+    from sqlalchemy import func
+
+    from app.models import Disclosure, News
+    from app.outlook import kst_date
+
+    lo, cut = cutoff_at(frm), cutoff_at(end)
+    hi = datetime.combine(end + timedelta(days=1), datetime.min.time(), KST)
+    base_midnight = datetime.combine(end, datetime.min.time(), KST)
+    rel = [News.company_id == company.id, News.is_relevant.isnot(False)]
+    news_count = (db.query(func.count(News.id)).filter(*rel, News.published_at >= lo, News.published_at < cut,
+                                                         News.published_at != base_midnight).scalar())
+    news_first = db.query(func.min(News.published_at)).filter(*rel).scalar()
+    after_close = db.query(func.count(News.id)).filter(*rel, News.published_at >= cut, News.published_at < hi).scalar()
+    unknown_news = db.query(func.count(News.id)).filter(*rel, News.published_at == base_midnight).scalar()
+    after_count, after_min = db.query(func.count(News.id), func.min(News.published_at)).filter(*rel, News.published_at >= hi).one()
+    out = {"long": True, "news": [], "disclosures": [], "news_count": int(news_count or 0), "news_first": kst_date(news_first),
+           "after_close": int(after_close or 0), "unknown_news": int(unknown_news or 0), "after_count": int(after_count or 0),
+           "after_first": kst_date(after_min), "unknown_disclosures": 0, "cutoff": cut.strftime("%H:%M"),
+           "disclosure_count": None, "disclosure_first": None, "disclosure_collection_first": None}
+    if getattr(company, "asset_type", None) != "etf":
+        dlo = datetime.combine(frm + timedelta(days=1), datetime.min.time(), KST)
+        dhi = datetime.combine(end, datetime.min.time(), KST)
+        out["disclosure_count"] = int(db.query(func.count(Disclosure.id)).filter(
+            Disclosure.company_id == company.id, Disclosure.disclosed_at >= dlo, Disclosure.disclosed_at < dhi).scalar() or 0)
+        out["disclosure_first"] = kst_date(db.query(func.min(Disclosure.disclosed_at))
+                                           .filter(Disclosure.company_id == company.id).scalar())
+        out["disclosure_collection_first"] = kst_date(db.query(func.min(Disclosure.disclosed_at)).scalar())
+    return out
+
+
+def long_evidence_lines(company, win: dict, found: dict) -> list[str]:
+    """긴 기간 원인 질문의 근거 문단: 원인을 특정하지 않고 건수·저장 범위·짧은 기간으로 나눠 묻는 방법만 밝힌다."""
+    name = company.name
+    etf = getattr(company, "asset_type", None) == "etf"
+    rng = f"{win['from_date']} 장 마감 뒤~{win['end_date']} 장 마감 {found.get('cutoff') or '15:30'} 전"
+    counts = f"뉴스 {found.get('news_count', 0):,}건" + ("" if etf else f"·공시 {found.get('disclosure_count') or 0:,}건")
+    lines = [f"- 기간이 3개월보다 길어, 같은 기간({rng}) 저장된 {name} {counts} 중 몇 건을 골라 주가 움직임의 원인으로 연결할 수 없습니다. "
+             "원인을 특정하지 않고, 기사·공시 목록도 원인 후보로 붙이지 않았습니다."]
+    nf = found.get("news_first")
+    if nf and nf > win["from_date"]:
+        lines.append(f"- {name} 기사는 {nf}부터 저장돼 있어 기간 앞부분({win['from_date']}~{nf})의 기사는 없습니다.")
+    if not etf:
+        cf = found.get("disclosure_collection_first")
+        if cf and cf > win["from_date"]:
+            lines.append(f"- 공시는 {cf} 접수분부터 수집돼 있어 그 전 공시는 세지 못했습니다.")
+    lines.append("- 원인을 보시려면 \"최근 1개월\", \"지난달\", \"최근 20거래일\"처럼 3개월 이내 기간으로 나눠 물어봐 주세요. "
+                 "그 기간 안·시세 기준 시점 전에 나온 기사·공시만 근거로 보여 드립니다.")
+    if found.get("after_count"):
+        lines.append(f"- 시세 기준일 뒤({found['after_first']}~)에 수집된 {name} 기사 {found['after_count']:,}건은 {win['end_date']} "
+                     "시세에 반영되지 않아 세지 않았습니다.")
+    return lines
+
+
+def cause_cutoff_info(base, found: dict | None, policy: str = "cause_window") -> dict:
+    """코드 원인 경로가 news_tool·disclosure_tool 기록에 남기는 기준 시점 정보(app.sources.source_status가 읽는다).
+
+    excluded_after는 DB에 저장된 그 종목 자료 중 기준일 장 마감 뒤라 원인 후보에서 뺀 건수(기준일 뒤 + 당일 마감 뒤)다."""
+    f = found or {}
+    day = date.fromisoformat(str(base)[:10])
+    return {"base_date": day.isoformat(), "cutoff": f.get("cutoff") or cutoff_at(day).strftime("%H:%M"),
+            "evidence_cutoff": cutoff_at(day).isoformat(), "policy": policy,
+            "excluded_after": int(f.get("after_count") or 0) + int(f.get("after_close") or 0),
+            "excluded_unknown_time": int(f.get("unknown_news") or 0) + int(f.get("unknown_disclosures") or 0)}
+
+
+def _strip_disclaimer(text: str) -> str:
+    from app.disclaimer import DISCLAIMER
+
+    t = (text or "").rstrip()
+    return t[: -len(DISCLAIMER)].rstrip() if t.endswith(DISCLAIMER) else t
+
+
+def _move_of(records: list[dict]) -> dict | None:
+    """단일 종목 경로 기록에서 (출발일, 끝일, 수익률). 기간 경로는 stock_tool의 period_*, 원인 단독은 최근 5거래일(regime_inputs)."""
+    for r in records:
+        res = r.get("result")
+        if r.get("tool_name") != "stock_tool" or not isinstance(res, dict):
+            continue
+        if res.get("period_change_pct") is not None:
+            return {"from": res["period_start_date"], "end": res["period_end_date"], "pct": res["period_change_pct"]}
+        ind = res.get("indicators") or {}
+        if ind.get("base_date"):
+            mv = movement(ind)
+            if mv["from_date"] and mv["r"] is not None:
+                return {"from": mv["from_date"], "end": mv["base"], "pct": mv["r"]}
+    return None
+
+
+def multi_too_many_answer(companies: list) -> str:
+    from app.disclaimer import DISCLAIMER
+
+    names = ", ".join(c.name for c in companies)
+    return (f"질문에서 종목 {len(companies)}개({names})를 찾았습니다. 원인 분석은 종목마다 시세·지수·기사·공시를 따로 계산하므로 한 번에 "
+            f"{MAX_CAUSE_COMPANIES}종목까지만 답합니다. 종목 수를 줄이거나 종목별로 나눠 물어봐 주세요.\n\n{DISCLAIMER}")
+
+
+def multi_cause_answer(parts: list[tuple], question: str) -> str:
+    """복수 종목 원인 질문의 코드 답. parts = [(company, 단일 종목 답, 그 종목 기록)]. 수치·기사는 각 종목 단락의 것을 그대로 쓴다."""
+    from app.disclaimer import DISCLAIMER
+
+    names = "·".join(c.name for c, _, _ in parts)
+    lines = [f"종목별 주가 움직임과 원인 · {names}",
+             "",
+             f"- {len(parts)}종목의 시세·수익률·시장 지수·기사·공시를 종목마다 따로 조회하고 계산했습니다. 한 종목의 수치나 기사를 다른 종목에 "
+             "쓰지 않았습니다. 각 종목의 기사·공시는 그 종목에 연결되고 제목에 그 종목 이름이 있는 자료만입니다."]
+    moves = [(c, _move_of(recs)) for c, _, recs in parts]
+    for c, mv in moves:
+        if mv:
+            lines.append(f"- {c.name}({c.ticker}): {mv['from']} 종가 → {mv['end']} 종가, {_pct(mv['pct'])}")
+        else:
+            lines.append(f"- {c.name}({c.ticker}): 이 기간 등락을 계산하지 못했습니다(아래 {c.name} 단락의 사유).")
+    got = [(c, mv) for c, mv in moves if mv]
+    if len(got) >= 2:
+        spans = {(mv["from"], mv["end"]) for _, mv in got}
+        if len(spans) == 1:
+            hi = max(got, key=lambda x: x[1]["pct"])
+            lo = min(got, key=lambda x: x[1]["pct"])
+            if hi[1]["pct"] != lo[1]["pct"]:
+                lines.append(f"- 같은 두 날짜의 종가로 계산해 나란히 볼 수 있습니다: {josa(hi[0].name, '이/가')} {lo[0].name}보다 "
+                             f"{hi[1]['pct'] - lo[1]['pct']:.2f}%p 높았습니다. 수익률 차이가 원인을 뜻하지는 않습니다.")
+        else:
+            lines.append("- 종목마다 계산한 날짜가 달라(시세 기준일 차이) 수익률을 서로 직접 비교하지 않습니다.")
+    body = [f"### {i}. {c.name}\n\n{_strip_disclaimer(text)}" for i, (c, text, _) in enumerate(parts, 1)]
+    return "\n".join(lines) + "\n\n" + "\n\n".join(body) + f"\n\n{DISCLAIMER}"
+
+
+# 72차: "카카오랑 삼송전자 왜 떨어졌어?"처럼 종목 이름 옆에 접속 조사로 붙은 다른 이름을 찾지 못했으면(오타·미등록) 그 사실을 밝힌다.
+# 찾은 종목만 조용히 답하면 질문의 두 종목 중 하나가 빠진 것을 모른다. 일반어(시장·관련·주가 등)로 시작하는 말은 이름으로 보지 않는다.
+_CONJ = r"(?:이랑|랑|와|과|하고|및|,|·)"
+_PARTICLE_RE = re.compile(r"(?:이랑|랑|와|과|하고|은|는|이|가|의|도|을|를|만)$")
+_NOT_NAME_RE = re.compile(r"^(?:시장|코스피|코스닥|지수|증시|업종|관련|같은|함께|비교|경쟁|최근|지난|이번|오늘|어제|요즘|주가|주식|종목|"
+                          r"뉴스|공시|실적|환율|달러|반도체|섹터|그룹|계열|동종|다른|우리|내|제|그|이|저|왜|어떻|얼마|기간|한|두|세|\d)")
+ASK_CAUSE_SUBJECT = ("질문에서 종목을 찾지 못했습니다. 어떤 종목의 움직임 원인을 물으시는지 종목명 또는 종목코드로 알려주세요. "
+                     "예: \"삼성전자 지난달 왜 떨어졌어?\"")
+
+
+def unmatched_names(question: str, companies: list) -> list[str]:
+    """질문에서 찾은 종목 이름(별칭·코드 포함) 바로 옆에 접속 조사로 붙었는데 종목으로 찾지 못한 이름들(나온 순서)."""
+    from app.tools.company_resolver import _ALIASES_BY_NAME
+
+    q = question or ""
+    known = set()
+    for c in companies or []:
+        known |= {c.name.casefold(), str(c.ticker).casefold(), *(a.casefold() for a in _ALIASES_BY_NAME.get(c.name, ()))}
+    out = []
+    for c in companies or []:
+        for token in sorted({c.name, *(_ALIASES_BY_NAME.get(c.name, ()))}, key=len, reverse=True):
+            t = re.escape(token)
+            pats = [re.compile(r"(?:^|\s)([0-9A-Za-z가-힣]{2,20}?)" + _CONJ + r"\s*" + t, re.IGNORECASE),
+                    re.compile(t + r"\s*" + _CONJ + r"\s*([0-9A-Za-z가-힣]{2,20})", re.IGNORECASE)]
+            for pat in pats:
+                for m in pat.finditer(q):
+                    word = _PARTICLE_RE.sub("", m.group(1)) if pat is pats[1] else m.group(1)
+                    w = word.casefold()
+                    if len(word) < 2 or _NOT_NAME_RE.match(word) or any(w == k or w.startswith(k) or k.startswith(w) for k in known):
+                        continue
+                    if word not in out:
+                        out.append(word)
+    return out
+
+
+def unmatched_note(names: list[str]) -> str:
+    quoted = ", ".join(f"'{n}'" for n in names)
+    return (f"- 질문의 {quoted}{'은' if josa(names[-1], '은/는').endswith('은') else '는'} 등록된 종목에서 찾지 못해 이 답에 넣지 않았습니다. "
+            "오타라면 정확한 종목명이나 종목코드로 다시 물어봐 주세요. 찾지 못한 종목의 수치·기사는 만들지 않습니다.")
+
+
+# 72차: 종목 없이 시장(코스피·코스닥·증시)의 등락 원인을 묻는 질문. 시장 전체를 다룬 뉴스는 수집 대상이 아니라(뉴스는 종목에 연결) 원인 근거가
+# 없다. 전에는 LLM 경로라 근거 없이 원인을 쓸 수 있었다. 지수 등락만 종목 기간 창과 같은 규칙으로 계산하고 원인은 특정하지 않는다.
+_KOSPI_RE = re.compile(r"코스피|KOSPI", re.IGNORECASE)
+_KOSDAQ_RE = re.compile(r"코스닥|KOSDAQ", re.IGNORECASE)
+
+
+def is_market_cause_question(question: str) -> bool:
+    q = question or ""
+    return _cause_gate(q) and is_market_subject(q)
+
+
+def market_codes(question: str) -> list[str]:
+    q = question or ""
+    codes = (["KS11"] if _KOSPI_RE.search(q) else []) + (["KQ11"] if _KOSDAQ_RE.search(q) else [])
+    return codes or ["KS11", "KQ11"]
+
+
+def market_spec(question: str, now: datetime) -> dict:
+    """시장 원인 질문의 기간: 기간 표현이 있으면 period_spec, 오늘·어제는 1거래일(요청일 확인), 없으면 최근 5거래일."""
+    spec = period_spec(question, now)
+    if spec is not None:
+        return spec
+    day = requested_day(question, now)
+    if day is not None:
+        return {"kind": "trading", "text": day[0], "start": None, "end": None, "trading": True, "n": 1, "too_long": False,
+                "day": day[1].isoformat()}
+    return {"kind": "trading", "text": f"최근 {CAUSE_DAYS}거래일", "start": None, "end": None, "trading": True, "n": CAUSE_DAYS,
+            "too_long": False}
+
+
+def market_cause_answer(spec: dict, wins: list[tuple[str, dict]], question: str) -> str:
+    """wins = [(지수 이름, period_window 결과)]. 지수 등락은 코드 계산, 원인은 특정하지 않는다."""
+    from app.disclaimer import DISCLAIMER
+
+    head = "시장 지수 움직임과 원인 · " + "·".join(n for n, _ in wins)
+    if spec["kind"] in ("future", "invalid", "unsupported"):
+        why = {"future": f"질문하신 {_quote_topic(spec['text'])} 아직 오지 않은 기간이라 계산하지 않았습니다.",
+               "invalid": f"질문의 기간 {_quote_topic(spec['text'])} 계산할 수 있는 기간이 아닙니다.",
+               "unsupported": f"질문의 기간 표현 {_quote_topic(spec['text'])} 해석하지 못해 다른 기간으로 바꿔 계산하지 않았습니다."}[spec["kind"]]
+        return f"{head}\n\n## 지수 움직임과 원인\n- {why}\n\n{DISCLAIMER}"
+    lines = ["## 지수 움직임과 원인(저장된 지수 종가로 코드 계산)"]
+    label = spec["text"] if spec["trading"] else f"'{spec['text']}'"
+    if spec.get("day") and wins and (wins[0][1].get("last_stored") or "") < spec["day"]:
+        lines.append(f"- 질문하신 '{spec['text']}'({spec['day']}) 지수 종가는 아직 저장되지 않아 마지막 저장 거래일 기준으로 답합니다.")
+        label = "마지막 저장 거래일 하루"  # 요청한 날이 아닌 값을 '오늘'이라고 부르지 않는다
+    for name, w in wins:
+        if w.get("status") != "ok":
+            lines.append(f"- {name}: {label} 기간의 저장된 지수 종가가 없어 계산하지 않았습니다(마지막 저장 거래일 {w.get('last_stored')}).")
+            continue
+        extra = " 요청 기간 끝까지 저장되지 않아 기간 전체 등락이 아닙니다." if w.get("missing_tail") else ""
+        lines.append(f"- {name} 지수({label}): {w['from_date']} {_num(w['from_close'])} → {w['end_date']} {_num(w['end_close'])}, "
+                     f"{_pct(w['pct'])}({w['trading_days']}거래일).{extra}")
+        pl = _period_premise(question, w["pct"], f"{name} 지수")
+        if pl:
+            lines.append(pl.replace(f"{name} 지수 주가는", f"{name} 지수는"))
+    lines.append("- 시장 전체의 움직임을 설명하는 뉴스·지표(금리·환율·수급 등)는 이 서비스가 원인 근거로 수집하지 않아 원인을 특정할 수 없습니다. "
+                 "위 수치는 지수 움직임의 크기와 방향일 뿐입니다.")
+    lines.append("- 종목의 움직임 원인을 보시려면 \"삼성전자 지난달 왜 떨어졌어?\"처럼 종목을 넣어 물어봐 주세요.")
     return f"{head}\n\n" + "\n".join(lines) + f"\n\n{DISCLAIMER}"

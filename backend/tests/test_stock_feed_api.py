@@ -24,7 +24,10 @@ KST = ZoneInfo("Asia/Seoul")
 NEWS_KEYS = {"ticker", "company_name", "asset_type", "total", "limit", "offset", "has_next", "total_pages", "filters",
              "freshness", "items"}
 DISC_KEYS = NEWS_KEYS | {"supported", "message"}
-FRESH_KEYS = {"last_collected_at", "collection_lag_weekdays", "stale", "company_latest_at", "last_collection"}
+# 72차(하위 호환 추가): 데이터 최신 시각·마지막 성공·마지막 시도를 나눈 필드
+FRESH_KEYS = {"last_collected_at", "collection_lag_weekdays", "stale", "company_latest_at", "last_collection",
+              "latest_record_at", "record_lag_weekdays", "freshness_state", "last_successful_collection_at",
+              "last_attempt_finished_at", "last_collection_status", "last_collection_step"}
 NEWS_ITEM_KEYS = {"id", "title", "summary", "source", "url", "published_at", "collected_at", "is_relevant", "related_tickers"}
 DISC_ITEM_KEYS = {"id", "title", "disclosure_type", "rcept_no", "disclosed_date", "disclosed_at", "source_url", "is_correction",
                   "collected_at"}

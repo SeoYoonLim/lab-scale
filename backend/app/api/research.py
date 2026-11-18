@@ -53,10 +53,31 @@ class Source(BaseModel):
     url: str | None = None
 
 
+SourceStatusValue = Literal["available", "not_applicable", "none_found", "excluded_after_cutoff", "long_period", "error"]
+
+
+class SourceStatus(BaseModel):
+    """72차(하위 호환 추가): sources가 비었을 때 그 이유. 계산은 app.sources.source_status(tool 기록만 읽는다)."""
+
+    # available=출처 있음, not_applicable=뉴스·공시를 조회하지 않는 답, none_found=조회했지만 기간 안에 그 종목 자료 없음,
+    # excluded_after_cutoff=시세 기준 시점 뒤 자료만 있어 원인 근거에서 뺌(69차 정책), long_period=3개월 초과 원인 질문이라 기사를 고르지 않음,
+    # error=조회 오류. 오류는 error 하나뿐이고 나머지는 정상 상태다
+    status: SourceStatusValue
+    count: int  # len(sources)
+    is_error: bool
+    empty_reason: SourceStatusValue | None = None  # sources가 비었을 때만 status와 같은 값, 있으면 null
+    message: str | None = None  # 화면에 그대로 쓸 수 있는 한국어 안내(available이면 null)
+    excluded_after_cutoff_count: int = 0  # 기준 시점 뒤라 뺀 자료 수(코드 원인 경로=그 종목 DB 전체, LLM 경로=도구가 읽은 것 중)
+    excluded_unknown_time_count: int = 0  # 기준일 당일인데 발행·접수 시각을 몰라 뺀 자료 수
+    market_data_as_of: str | None = None  # 원인 분석의 시세 기준일(YYYY-MM-DD). 원인 경로가 아니면 null
+    evidence_cutoff: str | None = None  # 근거로 쓸 수 있는 마지막 시각(기준일 정규장 마감, ISO 8601 KST). 원인 경로가 아니면 null
+
+
 class ResearchResponse(BaseModel):
     answer: str
     used_tools: list[str]
     sources: list[Source] = []
+    source_status: SourceStatus | None = None  # 72차: sources가 빈 이유(하위 호환 추가, 없던 클라이언트는 무시하면 된다)
     # 저장에 실패하면 None. 답변은 저장 성공 여부와 무관하게 정상 반환된다.
     report_id: int | None = None
     # 요청에서 이어받은 직전 보고서. 후속 질문이 아니면 None.
@@ -84,6 +105,7 @@ class ReportDetail(BaseModel):
     created_at: str
     used_tools: list[str]
     sources: list[Source]
+    source_status: SourceStatus | None = None  # 72차: POST 응답과 같은 계산(저장된 tool 기록으로 복원)
     disclaimer: str = DISCLAIMER
 
 

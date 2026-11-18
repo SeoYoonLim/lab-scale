@@ -295,8 +295,9 @@ def test_future_invalid_unparsed_periods_are_not_replaced_by_another_window(q, k
 
 @pytest.mark.parametrize("q", ["삼성전자 4개월 동안 왜 떨어졌어?", "삼성전자 100거래일 동안 왜 올랐어?", "삼성전자 지난 1년 동안 왜 올랐어?",
                                "삼성전자 올해 왜 올랐어?"])
-def test_longer_than_three_months_stays_on_existing_path(q):
-    assert spec(q)["too_long"] and not answer_cause.is_period_cause_question(q, NOW)
+def test_longer_than_three_months_is_marked_too_long_and_now_on_code_path(q):
+    # 72차(의도된 기대 변경): too_long 표시는 그대로이고, 코드 경로가 받는다(등락만 계산·기사는 건수만, test_answer_cause_round72)
+    assert spec(q)["too_long"] and answer_cause.is_period_cause_question(q, NOW)
 
 
 @pytest.mark.parametrize("q", ["카카오 3개월 동안 왜 떨어졌어?", "카카오 최근 60거래일 왜 올랐어?", "카카오 2주 동안 왜 빠졌어?",

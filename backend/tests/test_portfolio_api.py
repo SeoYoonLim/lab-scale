@@ -95,7 +95,8 @@ class TestCreateOrder:
         r = self._order()
 
         assert r.status_code == 200
-        assert r.json() == ORDER_RESULT
+        # 72차: 체결가 출처·기준 시각(가짜 place_order가 주지 않아 null)
+        assert r.json() == {**ORDER_RESULT, "price_source": None, "price_is_realtime": None, "price_as_of": None}
 
     def test_unknown_company_is_404_and_place_order_not_called(self, monkeypatch):
         mock_resolution(monkeypatch, Resolution(message="'없는종목' 종목을 찾지 못했습니다."))

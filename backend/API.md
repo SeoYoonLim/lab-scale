@@ -3453,7 +3453,14 @@ curl "http://localhost:8000/api/stocks/005930/news?limit=20&offset=0"
 | `freshness.collection_lag_weekdays` | int \| null | 그 날짜가 최근 평일보다 늦은 평일 수. 뉴스·공시는 KRX 휴장과 무관해 평일 기준이다 |
 | `freshness.stale` | bool | `collection_lag_weekdays >= 2`이거나 수집 기록이 없으면 `true` |
 | `freshness.company_latest_at` | string \| null | 이 종목(목록 조건)의 가장 최근 게시 시각. 오래돼도 수집 지연이 아닐 수 있다(기사가 원래 없을 수 있다) |
-| `freshness.last_collection` | object \| null | `refresh_data` 뉴스·공시 단계(`news`)의 마지막 실제 시도(시장 요약의 `last_collection`과 같은 모양) |
+| `freshness.last_collection` | object \| null | `refresh_data` 뉴스·공시 단계(`news`)의 마지막 실제 시도(시장 요약의 `last_collection`과 같은 모양). **복구 단계(`news_recovery`·`disclosure_recovery`)는 보지 않는다.** 마지막 수집 판단에는 아래 72차 필드를 쓴다(2026-11-17 복구가 이 값에 없어 11-03으로 보였다) |
+| `freshness.latest_record_at` | string \| null | 72차: 뉴스 **전체**의 가장 최근 게시 시각(KST) = 데이터 자체의 최신 시점 |
+| `freshness.record_lag_weekdays` | int \| null | 72차: `latest_record_at`이 최근 평일보다 늦은 평일 수 |
+| `freshness.freshness_state` | `"fresh"` \| `"stale"` \| `"no_data"` | 72차: 데이터 최신성만(`record_lag_weekdays >= 2`면 stale). 수집 성공 여부와 별개다 |
+| `freshness.last_successful_collection_at` | string \| null | 72차: 뉴스를 저장하는 모든 수집 단계(`news`·`news_recovery`)의 마지막 **성공** 종료 시각(partial·failed 제외) |
+| `freshness.last_attempt_finished_at` | string \| null | 72차: 같은 단계들의 마지막 **시도**(성공·부분·실패) 종료 시각 |
+| `freshness.last_collection_status` | `"success"` \| `"partial"` \| `"failed"` \| null | 72차: 그 마지막 시도의 상태 |
+| `freshness.last_collection_step` | string \| null | 72차: 그 마지막 시도의 단계 이름 |
 | `items[].id` | int | 뉴스 행 id |
 | `items[].title`, `url`, `source` | string, string \| null, string \| null | 제목, 원문 URL, 언론사 도메인(예: `www.mk.co.kr`) |
 | `items[].summary` | string \| null | 수집 때 네이버 뉴스 검색 API가 준 기사 앞부분 발췌. **우리가 만든 요약이 아니다**. 비어 있으면 `null` |
@@ -5118,3 +5125,68 @@ API 요청·응답은 바뀌지 않았다. 아래 1~5는 지금 응답으로 할
 현재 프런트 스키마(`z.object`, strict 아님)는 모르는 키를 버리므로 위 필드를 더해도 파싱이 깨지지 않는다.
 
 정규장 OHLCV(세션별 저장 `stock_price_session`)는 승인 전이다. 만들지 않았고 응답에도 없다. 승인되면 `items[].regular`(정규장 값, 수집한 날만)를 따로 협의한다. 정규장 값은 2026-11-05 이후 날짜만 생길 수 있다.
+
+---
+
+## 72차(2026-11-18): 출처가 빈 이유, 뉴스·공시 freshness 시각 분리, 가격 출처·기준 시각
+
+모두 **하위 호환 추가**다. 기존 키의 이름·뜻·값은 그대로이고, 새 키는 모르는 클라이언트가 무시해도 된다.
+
+### `source_status`: `POST /api/research`, `GET /api/research/{report_id}`(view=record 포함)
+
+`sources: []`는 그대로 둔다. 그 대신 비어 있는 **이유**를 따로 준다. 값은 tool 기록만으로 정하므로 저장된 리포트를 다시 열어도 같다(`app/sources.py`의 `source_status`).
+
+| 키 | 타입 | 뜻 |
+| --- | --- | --- |
+| `status` | string | `available`(출처 있음) / `not_applicable`(뉴스·공시를 조회하지 않는 답: 시세·계산·환율·안내) / `none_found`(조회했지만 분석 기간 안에 그 종목 자료가 없음) / `excluded_after_cutoff`(시세 기준 시점 뒤 자료만 있어 원인 근거에서 뺌, 69차 정책) / `long_period`(3개월 초과 원인 질문이라 기사를 원인 후보로 고르지 않음, 건수만 답에 씀) / `error`(조회 오류) |
+| `count` | int | `len(sources)` |
+| `is_error` | bool | `status == "error"`일 때만 true. **나머지 빈 상태는 모두 정상 상태다** |
+| `empty_reason` | string \| null | `sources`가 비었을 때 `status`와 같은 값, 있으면 null |
+| `message` | string \| null | 화면에 그대로 쓸 수 있는 한국어 안내(available이면 null) |
+| `excluded_after_cutoff_count` | int | 기준 시점 뒤라 뺀 자료 수. 코드 원인 경로는 DB에 저장된 그 종목 자료 전체(기준일 다음 날부터 + 기준일 장 마감 뒤), LLM 경로는 도구가 읽어 온 자료 중 뺀 수 |
+| `excluded_unknown_time_count` | int | 기준일 당일인데 발행·접수 시각을 몰라 뺀 자료 수 |
+| `market_data_as_of` | string \| null | 원인 분석의 시세 기준일(YYYY-MM-DD). 원인 경로가 아니면 null |
+| `evidence_cutoff` | string \| null | 근거로 쓸 수 있는 마지막 시각(기준일 정규장 마감, ISO 8601 KST). 원인 경로가 아니면 null |
+
+실데이터 예("삼성전자 오늘 왜 올랐어?", 시세 기준일 2026-11-12):
+
+```json
+"sources": [],
+"source_status": {"status": "excluded_after_cutoff", "count": 0, "is_error": false, "empty_reason": "excluded_after_cutoff",
+  "message": "시세 기준일 2026-11-12 장 마감(15:30) 뒤 자료 993건은 그 시세에 반영되지 않아 분석에 쓰지 않았고, 기준 시점 전의 유효한 근거가 없어 출처가 없습니다. 원인을 특정하지 않았습니다.",
+  "excluded_after_cutoff_count": 993, "excluded_unknown_time_count": 0,
+  "market_data_as_of": "2026-11-12", "evidence_cutoff": "2026-11-12T15:30:00+09:00"}
+```
+
+`sources[].company_names`: 같은 문서가 여러 종목 결과에 있으면(복수 종목 원인 답) 한 번만 담고 종목 이름을 모두 넣는다. 전에는 처음 나온 종목만 있었다.
+
+### 뉴스·공시 freshness: `GET /api/stocks/{ticker}/news`, `/disclosures`의 `freshness`
+
+| 시각 | 키 | 뜻 |
+| --- | --- | --- |
+| 데이터 자체의 최신 시점 | `latest_record_at` (+ `record_lag_weekdays`, `freshness_state`) | 테이블 전체의 가장 최근 게시(뉴스)·접수(공시) 시각 |
+| 마지막 성공 수집 | `last_successful_collection_at` | 뉴스: `news`·`news_recovery` 단계, 공시: `news`·`disclosure_recovery` 단계 중 status=success인 마지막 종료 시각 |
+| 마지막 수집 시도 | `last_attempt_finished_at`, `last_collection_status`, `last_collection_step` | 같은 단계들의 skipped를 뺀 마지막 기록(성공·부분·실패) |
+| 마지막 저장 | `last_collected_at`(기존) | 테이블 전체 `max(created_at)`. 수동 수집도 반영된다 |
+| refresh_data `news` 단계 | `last_collection`(기존) | 뜻 그대로(복구 단계 제외). 화면의 "마지막 수집" 판단에 단독으로 쓰지 않는다 |
+
+- 2026-11-18 개발 DB(삼성전자): `last_collection.finished_at` 2026-11-03 19:54(news 단계), `last_successful_collection_at` 2026-11-17 09:34(`news_recovery`), `latest_record_at` 2026-11-17 09:32, `freshness_state` fresh. 서윤 씨가 본 불일치(11-17 대 11-03)는 `last_collection`이 복구 단계를 보지 않아서였다.
+- `freshness_state`는 데이터 최신성만 본다. 수집 실패 여부는 `last_collection_status`로 따로 본다(마지막 시도가 실패해도 데이터는 최신일 수 있다).
+
+### 가격 출처·기준 시각: `POST /api/portfolio/orders`, `GET /api/portfolio`의 `holdings[]`
+
+| 키 | 위치 | 뜻 |
+| --- | --- | --- |
+| `price_source` | 주문 응답, `holdings[]` | `naver`(네이버 금융 비공식 실시간 체결가, 정규장 OPEN일 때만) / `fallback`(DB 저장 종가) |
+| `price_is_realtime` | 주문 응답 | 체결가가 실시간 값인가 |
+| `price_as_of` | 주문 응답, `holdings[]` | naver면 체결 시각(`localTradedAt`), fallback이면 저장 종가의 거래일(YYYY-MM-DD) |
+
+모의 주문 체결가(장중 네이버 실시간, 예: 189,800원)와 차트·종목 상세의 저장 종가(예: 2026-11-12 종가 208,000원)는 **다른 시점의 가격**이다. 화면에는 "현재가(실시간, 10:01 기준)"와 "최근 저장 종가(2026-11-12)"처럼 기준을 붙여 따로 보인다. `GET /api/stocks/{ticker}/realtime-price`는 이미 `is_realtime`·`source`·`as_of`를 준다.
+
+### 72차 리서치 경로 변경(응답 키 변화 없음)
+
+- 3개월 초과 원인 질문("삼성전자 지난 6개월 동안 왜 올랐어?"): 코드 답. 등락·지수는 계산한다(기간 시작 전 종가가 없으면 계산하지 않음). 기사·공시는 건수만 쓰고 출처는 비운다(`source_status=long_period`).
+- 종목 2~3개 원인 질문: 종목마다 따로 계산한 코드 답을 종목 단락으로 잇는다. 4종목 이상은 나눠 묻도록 안내한다. 질문에 함께 적었지만 찾지 못한 이름은 답 맨 앞에 밝힌다.
+- 종목 없는 원/달러 환율 수준·등락·흐름 질문: 코드 답(`used_tools`는 `["fx_tool"]`). 하루 변동률(마지막 기록과 바로 앞 기록)과 기간 변동률(N거래일 = 저장 기록 N개 구간, 달력 기간 = 기간 직전 기록 → 기간 안 마지막 기록)을 다른 줄에 쓴다. 환율 기록일은 원천 날짜 그대로다(주말 날짜 행이 있으면 밝힌다).
+- 종목 없는 시장 등락 원인 질문("코스피 한 달 동안 왜 떨어졌어?"): 지수 등락만 계산하고 원인은 특정하지 않는다.
+- 종목도 직전 종목도 없는 원인 질문("최근 6개월 동안 상승한 이유가 뭐야?"): 종목을 되묻는다.
