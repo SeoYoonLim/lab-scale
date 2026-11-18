@@ -133,7 +133,10 @@ _GENERIC_RE = re.compile(
     r"|(?:주가|주식\s*시장)(?:은|는)\s*(?:예측하기\s*어렵|예측할\s*수\s*없|불확실)"
     r"|향후\s*(?:주가|동향|추이|흐름)(?:를|을)?\s*(?:지켜|주시|살펴)"
 )
-_TOOL_LEAK_RE = re.compile(r"\b(?:stock|news|disclosure|rag_search|market|fx|discovery|event_reaction)_tool\b")
+# 2026-11-18: "news_tool에"처럼 한글 조사가 바로 붙으면 \b가 경계로 보지 않았고, "Disclosure_tool"·"RAG_search_tool"처럼 대소문자를 바꿔 쓰면
+# 놓쳤다(최종 리허설 SK하이닉스 흐름 답). 영문·숫자·밑줄이 앞뒤에 없을 때를 경계로 보고 대소문자를 가리지 않는다
+_TOOL_LEAK_RE = re.compile(r"(?<![A-Za-z0-9_])(?:stock|news|disclosure|rag_search|market|fx|discovery|event_reaction)_tool(?![A-Za-z0-9_])",
+                           re.IGNORECASE)
 _INTRO_RE = re.compile(r"(?:다음과|아래와)\s*같습니다[.。]?$")
 _CAUSE_HEAD_RE = re.compile(r"^#{1,6}\s*원인")
 _CAUSE_WORD_RE = re.compile(
