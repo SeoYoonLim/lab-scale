@@ -1,5 +1,9 @@
 # 68차 분봉 자동 수집·보존: Cloudflare R2 제거, GitHub Actions 아티팩트 사용 (2026-11-17)
 
+> **69차(2026-11-18) 임시 중단**: 원천(`api.stock.naver.com`, 비공식 웹 엔드포인트)의 자동 수집·저장·재배포 허용 근거가 확인되지 않아
+> workflow의 `push`·`schedule`을 없애고 원본 수집·업로드를 잠갔다(`RAW_UPLOAD_ENABLED: "false"`, 수동 실행도 dry-run만).
+> 아래 내용은 68차 당시 설계 기록이다. 현재 상태와 다시 여는 조건은 [BACKEND_69_REPORT.md](BACKEND_69_REPORT.md) 5~8절을 본다.
+
 **결론**: Cloudflare 계정·R2 버킷·API 토큰·추가 Secrets 없이, GitHub Actions만으로 거래일 분봉 350종목을 받아 날짜별 아티팩트로 보존하는 구조를 만들었다.
 
 - 구현·테스트를 마쳤고, `feature/backend` push로 GitHub-hosted runner에서 실제로 돌려 확인했다(12절).
