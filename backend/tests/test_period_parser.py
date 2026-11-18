@@ -251,3 +251,12 @@ def test_english_return_windows_follow_the_same_rules():
     assert parse_period(five_day, _NOW_1118).period_days == 5
     assert "최근 5일" in calendar and parse_period(calendar, _NOW_1118).period_days == 3
     assert parse_period(trading, _NOW_1118).period_days == 5
+
+
+def test_trading_days_flag_marks_trading_windows_only():
+    # 에이전트·원인·환율 경로는 이 값으로 "저장된 최근 N개 거래일" 창을 고른다(matched_text는 원문 그대로)
+    assert parse_period("삼성전자 5일 수익률은?", _NOW_1118).trading_days is True
+    assert parse_period("삼성전자 최근 5거래일 수익률은?", _NOW_1118).trading_days is True
+    assert parse_period("삼성전자 최근 20일 수익률은?", _NOW_1118).trading_days is False
+    assert parse_period("삼성전자 지난주 수익률", _NOW_1118).trading_days is False
+    assert parse_period("삼성전자 한 달 수익률", _NOW_1118).trading_days is False

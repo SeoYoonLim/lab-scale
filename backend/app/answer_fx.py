@@ -89,7 +89,7 @@ def spec_of(question: str, now: datetime) -> dict:
             return {"kind": "unsupported", "text": special["text"]}
         return {"kind": "default", "text": None, "n": DEFAULT_RECORDS}
     text = p.matched_text.strip()
-    if "거래일" in text or "영업일" in text:
+    if getattr(p, "trading_days", False) or "거래일" in text or "영업일" in text:
         return {"kind": "records", "text": text, "n": p.period_days}
     return {"kind": "range", "text": text, "start": p.start_date, "end": p.end_date}
 

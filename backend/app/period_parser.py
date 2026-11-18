@@ -59,6 +59,9 @@ class ParsedPeriod:
     period_days: int
     # 질문에서 실제로 인식한 원문 조각(로깅/디버깅/테스트용).
     matched_text: str
+    # 거래일 수로 말한 기간인가("최근 5거래일", "5일 수익률"). True면 날짜 창이 아니라 저장된 최근 N개 거래일이 창이다(2026-11-18).
+    # matched_text는 질문 속 위치를 찾는 데도 쓰여(app.period_scope) 원문 그대로 두고, 판정은 이 값으로 한다.
+    trading_days: bool = False
 
 
 def _today(now: datetime | None = None) -> date:
@@ -255,25 +258,25 @@ def _candidates(question: str, today: date) -> list[tuple[int, str, tuple[date, 
     for pattern, to_range in _FIXED_PATTERNS:
         m = pattern.search(question)
         if m and free(m):
-            found.append((m.start(), m.group(), to_range(today)))
+            found.append((m.start(), m.group(), to_range(today), False))
     for m in _QUANTITY_RE.finditer(question):
         if m.group(2) == "일" and _is_return_window(question, m):
             n = int(m.group(1))
             if 1 <= n <= _MAX_TRADING_DAYS and free(m):
-                found.append((m.start(), m.group(), (_trading_days_back(today, n), today)))
+                found.append((m.start(), m.group(), (_trading_days_back(today, n), today), True))
             continue
         rng = _quantity_range(today, int(m.group(1)), m.group(2))
         if rng is not None and free(m):
-            found.append((m.start(), m.group(), rng))
+            found.append((m.start(), m.group(), rng, False))
     for pattern, quantity, unit in _NATIVE_PATTERNS:
         for m in pattern.finditer(question):
             rng = _quantity_range(today, quantity(m), unit)
             if rng is not None:
-                found.append((m.start(), m.group(), rng))
+                found.append((m.start(), m.group(), rng, False))
     for m in _TRADING_DAYS_RE.finditer(question):
         n = int(m.group(1))
         if 1 <= n <= _MAX_TRADING_DAYS and free(m):
-            found.append((m.start(), m.group(), (_trading_days_back(today, n), today)))
+            found.append((m.start(), m.group(), (_trading_days_back(today, n), today), True))
     return found
 
 
@@ -289,9 +292,9 @@ def parse_period(question: str, now: datetime | None = None) -> ParsedPeriod | N
         return None
 
     found.sort(key=lambda c: c[0])
-    _, matched_text, (start, end) = found[0]
+    _, matched_text, (start, end), trading = found[0]
     period_days = max(1, _business_days_between(start, end))
-    return ParsedPeriod(start_date=start, end_date=end, period_days=period_days, matched_text=matched_text)
+    return ParsedPeriod(start_date=start, end_date=end, period_days=period_days, matched_text=matched_text, trading_days=trading)
 
 
 # --- "기간을 말했는가"만 판단 ---------------------------------------------------

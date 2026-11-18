@@ -519,7 +519,7 @@ def period_spec(question: str, now: datetime | None = None) -> dict | None:
     text = p.matched_text.strip()
     if text in _CAUSE_ONLY_PERIODS:
         return None
-    trading = "거래일" in text
+    trading = getattr(p, "trading_days", False) or "거래일" in text
     too_long = (p.period_days > MAX_PERIOD_TRADING_DAYS) if trading else ((p.end_date - p.start_date).days > MAX_PERIOD_CAL_DAYS)
     return {"kind": "trading" if trading else "range", "text": text, "start": p.start_date, "end": p.end_date,
             "trading": trading, "n": p.period_days if trading else None, "too_long": too_long}

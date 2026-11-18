@@ -2288,7 +2288,7 @@ def _answer_period_quote(question: str, companies: list | None):
     if kind is None:
         return None
     called_at = datetime.now(timezone.utc)
-    trading = parsed.period_days if _TRADING_DAYS_TEXT_RE.match(parsed.matched_text.strip()) else None
+    trading = parsed.period_days if (getattr(parsed, "trading_days", False) or _TRADING_DAYS_TEXT_RE.match(parsed.matched_text.strip())) else None
     results = [_price_window(c, parsed.period_days, parsed.start_date, parsed.end_date, trading) for c in companies]
     if any(r is None for r in results):
         return None
