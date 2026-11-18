@@ -248,6 +248,11 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
             {mutating === 'order' ? t('holdings.ordering', { fallback: '주문 중…' }) : t('holdings.order', { fallback: '주문' })}
           </button>
         </form>
+        <p className="muted small order-price-note">
+          {t('holdings.price_note', {
+            fallback: '체결가는 주문하는 순간의 실시간 시세예요. 다른 화면에 보이는 종가와 다를 수 있어요.',
+          })}
+        </p>
         <OrderQuickPicks side={side} ticker={ticker} holdings={portfolio.holdings} onPick={handlePick} onSellAll={handleSellAll} />
         <LiveStatus message={pickedMessage} />
         {preview && ticker.trim() && Number(quantity) > 0 && (

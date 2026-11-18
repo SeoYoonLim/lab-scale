@@ -184,6 +184,12 @@ export default function ResearchPage() {
             <IconSend />
           </button>
         </div>
+        {/* 지원 범위: 종목 목록에 없는 해외 종목을 물으면 "찾지 못했다"만 나오므로 미리 알려준다 */}
+        <p className="muted small scope-hint">
+          {t('research.scope_hint', {
+            fallback: '국내 상장 종목만 지원해요(예: 삼성전자). 엔비디아·애플 같은 해외 종목은 답할 수 없어요.',
+          })}
+        </p>
         {/* 한국어가 아닌 언어로 쓰는 사용자에게: 질문은 한국어가 가장 정확하다 */}
         {locale !== 'ko-KR' && (
           <p className="muted small question-hint">

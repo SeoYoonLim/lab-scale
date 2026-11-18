@@ -212,6 +212,11 @@ describe('리서치 화면', () => {
     expect(screen.getByRole('heading', { level: 1 })).toBeTruthy()
   })
 
+  it('입력창 아래에 국내 상장 종목만 지원한다는 안내가 보인다', () => {
+    renderWith(<ResearchPage />)
+    expect(screen.getByText(/국내 상장 종목만 지원해요/)).toBeTruthy()
+  })
+
   it('급등·급락 같은 분류 버튼이 선택 상태(aria-pressed)를 알린다', async () => {
     getTrending.mockResolvedValue(trending)
     renderWith(<ResearchPage />)
