@@ -45,6 +45,14 @@ def extract_sources(fn_name: str, result: dict) -> list[dict]:
     return []
 
 
+def unique_tool_names(names: Iterable[str]) -> list[str]:
+    """API의 used_tools: 실행된 tool 이름을 처음 호출된 순서로 한 번씩만 담는다.
+
+    두 종목을 함께 묻는 질문은 종목마다 같은 tool을 부른다(2026-11-18 시연 리허설: stock_tool 등이 두 번씩 나와
+    화면 칩이 겹치고 React key가 중복됐다). 호출 기록(tool_call_log)은 그대로 두고 응답 목록만 중복을 뺀다."""
+    return list(dict.fromkeys(names))
+
+
 def build_sources(tool_results: Iterable[tuple[str, dict]]) -> list[dict]:
     """(tool 이름, 결과) 목록에서 sources를 만들고, 같은 문서(type + url)는 한 번만 담는다.
 

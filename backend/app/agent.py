@@ -66,7 +66,7 @@ from app.models import Company, StockPrice
 from app.period_parser import KST, mentions_period, parse_period
 from app.price_history import last_row_before, market_has_rows, price_range, price_rows_between, recent_price_rows
 from app.reports import save_report as save_report_row
-from app.sources import build_sources, source_status
+from app.sources import build_sources, source_status, unique_tool_names
 from app.tools.company_resolver import MAX_CANDIDATES, extract_from_text, normalize_name, resolve_company
 from app.routing import (
     event_keyword_for,
@@ -1321,7 +1321,7 @@ def _code_answer(answer: str, records: list[dict] | None = None) -> tuple[dict, 
     records = records or []
     response = {
         "answer": answer,
-        "used_tools": [r["tool_name"] for r in records],
+        "used_tools": unique_tool_names(r["tool_name"] for r in records),
         "sources": build_sources((r["tool_name"], r["result"]) for r in records),
     }
     return response, records
@@ -2856,7 +2856,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
         answer = answer_basis.ensure_basis(answer, records, datetime.now(KST))
     response = {
         "answer": answer,
-        "used_tools": [r["tool_name"] for r in records],
+        "used_tools": unique_tool_names(r["tool_name"] for r in records),
         "sources": build_sources((r["tool_name"], r["result"]) for r in records),
     }
     return response, records
