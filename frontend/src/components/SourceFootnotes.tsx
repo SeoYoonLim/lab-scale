@@ -7,19 +7,16 @@ import NewTabHint from './ui/NewTabHint'
 // 아래 각주는 번호 매긴 원문 링크다. stock_tool·market_tool처럼 근거 문서가 없는 도구는 칩으로만 보여준다.
 export default function SourceFootnotes({ usedTools, sources }: { usedTools: string[]; sources: Source[] }) {
   const { t } = useLocale()
-  if (usedTools.length === 0) return null
+  // 근거 문서가 없으면 영역 자체를 숨긴다(도구 칩만 남으면 근거가 있는 것처럼 보인다). 출처를 만들어 보여주지도 않는다.
+  // 기준일 이후 자료만 있어 근거가 없다는 안내는 답변 본문에 들어 있다.
+  if (usedTools.length === 0 || sources.length === 0) return null
 
   const newsCount = sources.filter((s) => s.type === 'news').length
   const disclosureCount = sources.filter((s) => s.type === 'disclosure').length
 
   return (
     <footer className="evidence">
-      {/* 근거 문서가 하나도 없으면 "근거 자료"라고 부르지 않는다(도구 칩만 있는데 근거가 있는 것처럼 보이면 안 된다) */}
-      <div className="evidence-title">
-        {sources.length > 0
-          ? t('sources.title', { fallback: '주요 근거 자료' })
-          : t('sources.tools_title', { fallback: '사용한 분석 도구' })}
-      </div>
+      <div className="evidence-title">{t('sources.title', { fallback: '주요 근거 자료' })}</div>
       <ul className="evidence-chips">
         {newsCount > 0 && (
           <li className="chip chip-strong">{t('sources.news_count', { fallback: '뉴스 {n}건', vars: { n: newsCount } })}</li>

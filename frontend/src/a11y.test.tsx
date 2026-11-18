@@ -212,6 +212,59 @@ describe('리서치 화면', () => {
     expect(screen.getByRole('heading', { level: 1 })).toBeTruthy()
   })
 
+  it('질문은 기본이 새 질문이고, 이어서 묻기를 켠 다음 한 번만 이어서 보낸다', async () => {
+    const answer = (report_id: number) => ({
+      answer: '답', report_id, previous_report_id: null, used_tools: [], sources: [], disclaimer: '', locale: 'ko-KR',
+    })
+    askResearch.mockReset()
+    askResearch.mockResolvedValueOnce(answer(11)).mockResolvedValueOnce(answer(12)).mockResolvedValueOnce(answer(13))
+    renderWith(<ResearchPage />)
+    const send = async (q: string) => {
+      fireEvent.change(screen.getByRole('textbox', { name: '질문 입력' }), { target: { value: q } })
+      fireEvent.click(screen.getByRole('button', { name: '질문 보내기' }))
+    }
+
+    await send('삼성전자 알려줘')
+    const follow = await screen.findByRole('button', { name: '이 답변에 이어서 묻기' })
+    expect(follow.getAttribute('aria-pressed')).toBe('false')
+    // 답변이 왔어도 "이어서 대화 중" 표시는 자동으로 뜨지 않는다
+    expect(screen.queryByText(/이어서 대화 중/)).toBeNull()
+
+    // 켜지 않고 보내면 새 질문
+    await send('네이버 알려줘')
+    await waitFor(() => expect(askResearch).toHaveBeenCalledTimes(2))
+    expect(askResearch.mock.calls[1][1]).toBeNull()
+
+    // 켜고 보내면 그 답변(#12)에 이어서, 그다음 질문은 다시 새 질문
+    fireEvent.click(await screen.findByRole('button', { name: '이 답변에 이어서 묻기' }))
+    expect(screen.getByText(/#12에 이어서 대화 중/)).toBeTruthy()
+    await send('그럼 최근 뉴스는?')
+    await waitFor(() => expect(askResearch).toHaveBeenCalledTimes(3))
+    expect(askResearch.mock.calls[2][1]).toBe(12)
+    await screen.findByRole('button', { name: '이 답변에 이어서 묻기' })
+    expect(screen.queryByText(/이어서 대화 중/)).toBeNull()
+  })
+
+  it('이어서 묻기를 켰다가 같은 버튼으로 끌 수 있다', async () => {
+    askResearch.mockReset()
+    askResearch.mockResolvedValue({
+      answer: '답', report_id: 21, previous_report_id: null, used_tools: [], sources: [], disclaimer: '', locale: 'ko-KR',
+    })
+    renderWith(<ResearchPage />)
+    fireEvent.change(screen.getByRole('textbox', { name: '질문 입력' }), { target: { value: '삼성전자' } })
+    fireEvent.click(screen.getByRole('button', { name: '질문 보내기' }))
+    const follow = await screen.findByRole('button', { name: '이 답변에 이어서 묻기' })
+    fireEvent.click(follow)
+    expect(follow.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(follow)
+    expect(follow.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('입력창 아래에 국내 상장 종목만 지원한다는 안내가 보인다', () => {
+    renderWith(<ResearchPage />)
+    expect(screen.getByText(/국내 상장 종목만 지원해요/)).toBeTruthy()
+  })
+
   it('급등·급락 같은 분류 버튼이 선택 상태(aria-pressed)를 알린다', async () => {
     getTrending.mockResolvedValue(trending)
     renderWith(<ResearchPage />)
