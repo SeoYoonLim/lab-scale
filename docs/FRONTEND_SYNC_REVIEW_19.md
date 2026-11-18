@@ -127,7 +127,7 @@
 
 ## 12. GitHub CI
 
-이 보고서 커밋을 push한 뒤 결과를 아래에 적는다.
+`ca39643`(이 보고서 첫 커밋) push 뒤 run 44308744147: secret-scan, backend-unit, backend-integration, eval-offline, detect-frontend, frontend **6 job 모두 성공**. 로컬 secret scan(`scripts/secret_scan.sh`)도 통과했다.
 
 ## 13. 남은 문제
 
