@@ -3296,8 +3296,14 @@ body {
 }
 
 /* 한국어가 아닌 언어에서 입력창 아래에 보이는 질문 언어 안내 */
-.question-hint {
+.question-hint,
+.scope-hint {
   margin: 6px 4px 0;
+}
+
+/* 주문 칸 아래: 체결가(실시간)와 종가가 다를 수 있다는 안내 */
+.order-price-note {
+  margin: 6px 0 0;
 }
 
 /* ---------- 내 기록: 검색·필터·유형 탭·기록 카드 ---------- */

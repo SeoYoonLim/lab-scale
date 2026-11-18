@@ -391,7 +391,8 @@ export const EXTRA_EN: Record<string, string> = {
   'sources.disclosure_count': 'Filings: {n}',
   'sources.news_count': 'News: {n}',
   'sources.title': 'Key evidence',
-  'sources.tools_title': 'Analysis tools used',
+  'research.scope_hint': 'Only Korean-listed stocks are supported (e.g. Samsung Electronics). Overseas stocks such as NVIDIA or Apple cannot be answered.',
+  'holdings.price_note': 'Orders fill at the real-time price at the moment you order. It can differ from the closing price shown elsewhere.',
 
   'stock_feed.also_mentioned': 'Also mentioned',
   'stock_feed.collection_failed': 'The latest collection failed, so new items may be missing.',
