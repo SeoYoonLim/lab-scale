@@ -76,6 +76,9 @@ _PRICE_STATUS = {
     o.PRICE_STATUS_FAILED: {"en-US": "collection failed", "ja-JP": "収集失敗", "zh-CN": "采集失败"},
     o.PRICE_STATUS_HOLIDAY: {"en-US": "presumed market holiday", "ja-JP": "休場日と推定", "zh-CN": "推定为休市日"},
     o.PRICE_STATUS_STOCK_ONLY: {"en-US": "missing for this stock only", "ja-JP": "この銘柄のみ欠落", "zh-CN": "仅该股票缺失"},
+    o.PRICE_STATUS_OFFICIAL_PENDING: {"en-US": "official close pending (stored after the next trading day)",
+                                      "ja-JP": "公式終値の確定待ち(翌営業日の収集後に保存)", "zh-CN": "等待官方收盘价确认(下一交易日采集后保存)"},
+    o.PRICE_STATUS_SOURCE_MISSING: {"en-US": "not provided by the source", "ja-JP": "提供元に未掲載", "zh-CN": "数据源未提供"},
 }
 
 # 문장 틀. {…}는 코드가 채운다(숫자·날짜·이름은 계산 결과 그대로).

@@ -549,7 +549,7 @@ _JUDGE24 = re.compile(r"현재 판단: (상승|하락|중립|판단 유보)(?:\(
 _PICK24 = re.compile(r"^굳이 하나를 (?:고르면 (상승|하락) 쪽입니다|고를 근거가 부족합니다)\(현재 판단: (상승|하락|중립|판단 유보)\)")
 _FAKE_PROB = re.compile(r"(?:상승|하락|오를|내릴)\s*(?:확률|가능성)(?:은|이|는)?\s*(?:약\s*)?\d+(?:\.\d+)?\s*%|\d+(?:\.\d+)?\s*%\s*(?:의\s*)?(?:확률|가능성)")
 _BUY_PUSH = re.compile(r"매수하세요|사세요|살 만합니다|매수를 (?:추천|권)합니다|매수 추천|지금이 매수 기회|팔아야 합니다|매도하세요")
-_STATUS24 = ("최신", "미수집", "수집 실패", "휴장일 추정", "종목만 누락")
+_STATUS24 = ("최신", "미수집", "수집 실패", "휴장일 추정", "종목만 누락", "공식 종가 대기", "원천 미제공")
 _MARKET_CLOSE_MIN = 15 * 60 + 30  # 정규 일정 마감. 56차: 판정은 _close_min(그날)을 쓴다(달력 특수 마감, 2026-11-19 16:30)
 TREND_OF = {"상승 추세 지속": 1, "상승 추세 중 조정": 1, "하락 추세 지속": -1}
 
@@ -969,7 +969,11 @@ def status24(db, company_name: str, base: str, gen: str) -> tuple[str, str]:
     if runs and runs[0][0] == "failed":
         return exp.isoformat(), "수집 실패"
     if runs:
-        return exp.isoformat(), "휴장일 추정"
+        # 최종 점검(2026-11-18): 제품(app.outlook.price_status)과 같게 KRX 달력으로 거래일이 확정된 날은 휴장일로 추정하지 않는다
+        from evals import krx_days as KD
+        if not KD.is_trading_day(exp):
+            return exp.isoformat(), "휴장일 추정"
+        return exp.isoformat(), "공식 종가 대기" if base >= KD.previous_trading_day(exp).isoformat() else "원천 미제공"
     return exp.isoformat(), "미수집"
 
 

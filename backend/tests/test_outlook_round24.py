@@ -210,7 +210,12 @@ def test_price_status_kinds():
     assert outlook.price_status(Q(base, []), date(2026, 11, 4), now)["status"] == "최신"
     assert outlook.price_status(Q(date(2026, 11, 4), []), base, now)["status"] == "종목만 누락"
     assert outlook.price_status(Q(base, [run("failed", 19)]), base, now)["status"] == "수집 실패"
-    assert outlook.price_status(Q(base, [run("success", 19)]), base, now)["status"] == "휴장일 추정"
+    # 최종 점검(의도된 기대 변경): 11-04는 KRX 달력의 확정 거래일이라 휴장일로 추정하지 않는다. 주식 종가는 다음 거래일 기준가로
+    # 공식 종가를 확인해 저장하므로 직전 거래일(11-03)까지면 '공식 종가 대기'다
+    st = outlook.price_status(Q(base, [run("success", 19)]), base, now)
+    assert st["status"] == "공식 종가 대기" and "다음 거래일 수집 뒤 저장" in st["detail"]
+    old = outlook.price_status(Q(date(2026, 10, 30), [run("success", 19)]), date(2026, 10, 30), now)
+    assert old["status"] == "원천 미제공"  # 그보다 오래됐으면 원천이 그 사이 거래일을 주지 않은 것
     st = outlook.price_status(Q(base, [run("success", 10)]), base, now)  # 장 마감 전 실행은 그날 시세를 받을 수 없다
     assert st["status"] == "미수집" and "마지막 시세 수집 2026-11-04 10:00" in st["detail"]
 
