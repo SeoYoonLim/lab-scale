@@ -77,3 +77,9 @@ def test_correct_period_return_and_other_sentences_pass():
     ok = ("삼성전자는 최근 20거래일간 -10.02%의 변동률을 나타내고 있습니다. "
           "마지막 거래일 하루 등락률은 -3.30%입니다. 같은 5거래일 코스피 대비 -4.24%p였습니다.")
     assert period_return_violations(ok, _flow_records()) == []
+
+
+def test_daily_change_put_on_spaced_n_day_period_is_a_violation():
+    from app.answer_guard import period_return_violations
+    wrong = "삼성전자는 20일 간의 주가 흐름에서 3.30%의 하락률을 기록했습니다. 주가는 20거래일간 10.02% 하락했습니다."
+    assert period_return_violations(wrong, _flow_records()) == ["3.30%"]
