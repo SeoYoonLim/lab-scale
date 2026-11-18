@@ -3301,6 +3301,26 @@ body {
   margin: 6px 4px 0;
 }
 
+/* 최근 답변 아래 "이어서 묻기" 토글(켜면 다음 질문 한 번만 이어서 보낸다) */
+.entry-actions {
+  margin-top: 10px;
+}
+.followup-btn {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--field-border);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.followup-btn[aria-pressed='true'] {
+  border-color: var(--accent, #2563eb);
+  color: var(--accent, #2563eb);
+  font-weight: 600;
+}
+
 /* 주문 칸 아래: 체결가(실시간)와 종가가 다를 수 있다는 안내 */
 .order-price-note {
   margin: 6px 0 0;

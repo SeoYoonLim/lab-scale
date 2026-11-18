@@ -50,8 +50,11 @@ export default function ResearchPage() {
   const [pending, setPending] = useState(false)
   // 화면 읽기 프로그램용 알림. 진행 카드가 답변 카드로 바뀌는 건 소리로는 알 수 없어서 따로 알려준다.
   const [announcement, setAnnouncement] = useState('')
-  // 직전 성공한 report_id. 있으면 다음 질문에 이어서(previous_report_id) 물어본다.
-  // (backend/API.md: "그럼 최근 뉴스는?"처럼 종목명이 빠진 후속 질문도 이어받아 답함)
+  // 가장 최근에 성공한 답변의 report_id. 이 답변 아래에만 "이어서 묻기" 버튼이 보인다.
+  const [lastReportId, setLastReportId] = useState<number | null>(null)
+  // 이어서 묻기를 켠 report_id. 있으면 다음 질문 "한 번"만 이어서(previous_report_id) 물어본다.
+  // 기본은 새 질문이다: 자동으로 이어지면 다른 종목을 물을 때마다 끊어야 하고, 종목을 못 찾는 질문이
+  // 직전 종목의 답으로 둔갑하는 일도 생긴다. (backend/API.md: "그럼 최근 뉴스는?"처럼 종목명이 빠진 후속 질문용)
   const [threadReportId, setThreadReportId] = useState<number | null>(null)
   const nextId = useRef(1)
   const endRef = useRef<HTMLDivElement>(null)
@@ -85,14 +88,17 @@ export default function ResearchPage() {
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function send(text: string) {
+  // previous: 이 질문이 이어받을 답변. 다시 시도는 그 질문이 원래 이어받던 답변을 그대로 넘긴다.
+  async function send(text: string, previous: number | null = threadReportId) {
     const question = text.trim()
     if (!question || pending) return
 
     setInput('')
     setAnnouncement('')
+    // 이어서 묻기는 한 번만 쓴다
+    setThreadReportId(null)
     const id = nextId.current++
-    const previousReportId = threadReportId
+    const previousReportId = previous
     setEntries((prev) => [
       ...prev,
       { id, question, askedAt: new Date().toISOString(), status: 'pending', previousReportId },
@@ -120,8 +126,8 @@ export default function ResearchPage() {
         ),
       )
       setAnnouncement(t('research.answer_ready', { fallback: '분석 결과가 도착했어요.' }))
-      // 저장에 실패하면(report_id: null) 이어받을 리포트가 없으니 대화 스레드를 끊는다.
-      setThreadReportId(res.report_id)
+      // 저장에 실패하면(report_id: null) 이어받을 리포트가 없으니 이어서 묻기 버튼이 나오지 않는다.
+      setLastReportId(res.report_id)
     } catch (error) {
       setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, status: 'error', error } : e)))
     } finally {
@@ -133,6 +139,18 @@ export default function ResearchPage() {
   function pickQuestion(question: string) {
     setInput(question)
     setAnnouncement(t('research.question_filled', { fallback: '질문이 입력창에 채워졌어요. 확인하고 보내주세요.' }))
+    inputRef.current?.focus()
+  }
+
+  // 최근 답변 아래 버튼: 이어서 묻기를 켜고 끈다. 켜면 입력창으로 초점을 옮긴다.
+  function toggleFollowUp(reportId: number) {
+    if (threadReportId === reportId) {
+      setThreadReportId(null)
+      setAnnouncement(t('research.followup_off_status', { fallback: '이어서 묻기를 껐어요. 새 질문으로 보내요.' }))
+      return
+    }
+    setThreadReportId(reportId)
+    setAnnouncement(t('research.followup_on_status', { fallback: '#{id} 답변에 이어서 질문해요.', vars: { id: reportId } }))
     inputRef.current?.focus()
   }
 
@@ -257,7 +275,7 @@ export default function ResearchPage() {
                   <ErrorNotice
                     error={entry.error}
                     fallback={t('research.answer_failed', { fallback: '답변을 가져오지 못했어요.' })}
-                    onRetry={() => void send(entry.question)}
+                    onRetry={() => void send(entry.question, entry.previousReportId ?? null)}
                   />
                 )}
                 {entry.status === 'done' && (
@@ -274,6 +292,18 @@ export default function ResearchPage() {
                     />
                     <SourceFootnotes usedTools={entry.usedTools ?? []} sources={entry.sources ?? []} />
                     {entry.disclaimer && <p className="disclaimer-note muted small">{entry.disclaimer}</p>}
+                  </div>
+                )}
+                {entry.status === 'done' && entry.reportId != null && entry.reportId === lastReportId && !pending && (
+                  <div className="entry-actions">
+                    <button
+                      type="button"
+                      className="btn followup-btn"
+                      aria-pressed={threadReportId === entry.reportId}
+                      onClick={() => toggleFollowUp(entry.reportId as number)}
+                    >
+                      {t('research.followup_btn', { fallback: '이 답변에 이어서 묻기' })}
+                    </button>
                   </div>
                 )}
               </article>
