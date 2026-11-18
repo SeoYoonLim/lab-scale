@@ -53,7 +53,7 @@ class HoldingItem(BaseModel):
     is_realtime: bool = False
     # 72차(하위 호환 추가): current_price의 출처와 기준 시각. naver=실시간 체결가(as_of=체결 시각),
     # fallback=DB 저장 종가(as_of=그 종가의 거래일). 차트의 저장 종가와 기준 시점이 다를 수 있다
-    price_source: Literal["naver", "fallback"] | None = None
+    price_source: str | None = None  # 보통 "naver" | "fallback". 응답 검증 실패로 체결된 주문이 500이 되지 않게 str로 둔다
     price_as_of: str | None = None
     eval_amount: float | None = None
     profit_loss: float | None = None
@@ -84,7 +84,7 @@ class OrderResponse(BaseModel):
     price: float
     # 72차(하위 호환 추가): 체결가의 출처·기준 시각. naver=실시간 체결가(price_as_of=체결 시각), fallback=DB 저장 종가
     # (price_as_of=그 종가의 거래일). 종목 상세·차트의 "저장 종가"와 다른 시점의 가격일 수 있다
-    price_source: Literal["naver", "fallback"] | None = None
+    price_source: str | None = None  # 보통 "naver" | "fallback". 응답 검증 실패로 체결된 주문이 500이 되지 않게 str로 둔다
     price_is_realtime: bool | None = None
     price_as_of: str | None = None
     executed_at: str

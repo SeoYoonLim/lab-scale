@@ -96,7 +96,8 @@ class TestOrderEndpoint:
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["company_name"] == name
-        assert set(body) == {"ticker", "company_name", "asset_type", "side", "quantity", "price", "executed_at", "cash_balance", "holding"}
+        assert set(body) == {"ticker", "company_name", "asset_type", "side", "quantity", "price", "executed_at", "cash_balance", "holding",
+                             "price_source", "price_is_realtime", "price_as_of"}  # 72차 체결가 출처·기준 시각 추가
 
     def test_stock_price_path_still_corrects_typos(self, user):
         r = client.get("/api/stocks/삼성SD1/realtime-price")

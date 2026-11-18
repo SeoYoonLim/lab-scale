@@ -923,7 +923,7 @@ export interface OrderResponse {
   side: "buy" | "sell";
   quantity: number;
   price: number;
-  price_source?: "naver" | "fallback" | null;
+  price_source?: string | null;
   price_is_realtime?: boolean | null;
   price_as_of?: string | null;
   executed_at: string;
@@ -1577,7 +1577,7 @@ export interface app__api__portfolio__HoldingItem {
   avg_price: number;
   current_price?: number | null;
   is_realtime?: boolean;
-  price_source?: "naver" | "fallback" | null;
+  price_source?: string | null;
   price_as_of?: string | null;
   eval_amount?: number | null;
   profit_loss?: number | null;

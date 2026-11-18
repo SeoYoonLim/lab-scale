@@ -295,10 +295,10 @@ class TestDevDb:
             assert all(str(q).lstrip().upper().startswith("SELECT") for q in n)
             return len(n)
 
-        # 종목 해석 1 + 건수·페이지·같은 URL·신선도·수집 시도(뉴스 5, 공시 4). 페이지 크기와 무관(N+1 없음)
-        assert count(f"/api/stocks/{seeded.tick['A']}/news?limit=50") == 6
-        assert count(f"/api/stocks/{seeded.tick['A']}/disclosures?limit=50") == 5
-        assert count(f"/api/stocks/{seeded.tick['E']}/disclosures") == 3
+        # 종목 해석 1 + 건수·페이지·같은 URL·신선도·수집 시도 + 72차 수집 요약 1(뉴스 6, 공시 5). 페이지 크기와 무관(N+1 없음)
+        assert count(f"/api/stocks/{seeded.tick['A']}/news?limit=50") == 7
+        assert count(f"/api/stocks/{seeded.tick['A']}/disclosures?limit=50") == 6
+        assert count(f"/api/stocks/{seeded.tick['E']}/disclosures") == 4
 
     def test_sql_correction_filter_agrees_with_python_on_stored_titles(self, dev_db):
         """저장된 모든 공시 제목(읽기만)에서 PostgreSQL 정규식 판정과 is_correction이 같다. CI 빈 DB면 0건이라 자명하게 맞는다."""
