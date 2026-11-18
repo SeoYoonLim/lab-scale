@@ -491,6 +491,37 @@ def period_violations(answer: str, records: list[dict]) -> list[str]:
         for num in extract_numbers(sentence):
             if num.unit == "%" and not is_supported(num, right) and is_supported(num, wrong):
                 bad.append(num.raw)
+    return bad + [raw for raw in period_return_violations(answer, records) if raw not in bad]
+
+
+# 2026-11-18 최종 리허설: "20거래일 동안 종가가 20.02% 하락했습니다"(실제 -10.02%)가 통과했다. '%'는 도구 결과의 아무 두 가격으로 만든
+# 파생값도 근거로 인정해서, 우연히 맞는 파생값이 있으면 기간 수익률 자리에 틀린 값이 들어가도 걸리지 않았다.
+# 이제 "N거래일"과 등락 낱말이 함께 있는 기간 문장(하루 표현 없음)의 %는, 같은 N의 도구 결과가 있으면 그 기간 등락률(종목·지수)과만 맞춘다.
+_N_TRADING_RE = re.compile(r"(\d+)\s*(?:거래일|영업일)")
+_RETURN_WORDS_RE = re.compile(r"하락|상승|수익률|등락|변동|올랐|내렸|떨어|빠졌|움직")
+
+
+def period_return_violations(answer: str, records: list[dict]) -> list[str]:
+    by_days: dict[int, list[float]] = {}
+    for rec in records:
+        r = rec.get("result")
+        if not isinstance(r, dict):
+            continue
+        n, pct = r.get("period_days"), r.get("period_change_pct")
+        if isinstance(n, int) and isinstance(pct, (int, float)) and not isinstance(pct, bool):
+            by_days.setdefault(n, []).append(abs(float(pct)))
+    if not by_days:
+        return []
+    bad = []
+    for sentence in _SENTENCE_SPLIT_RE.split(answer or ""):
+        if _DAY_WORDS_RE.search(sentence) or not _RETURN_WORDS_RE.search(sentence):
+            continue
+        allowed = [v for m in _N_TRADING_RE.finditer(sentence) for v in by_days.get(int(m.group(1)), [])]
+        if not allowed:
+            continue
+        for num in extract_numbers(sentence):
+            if num.unit == "%" and not num.raw.endswith("p") and not is_supported(num, allowed):
+                bad.append(num.raw)
     return bad
 
 

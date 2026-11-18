@@ -52,3 +52,28 @@ def test_tool_name_leak_sentence_is_removed_even_with_korean_particle_or_case():
     assert removed == 1 and "_tool" not in text.lower() and "-10.22%" in text
     # 도구 이름이 아닌 영문 낱말(예: stock_tools_guide 같은 다른 식별자)은 건드리지 않는다
     assert strip_generic("참고: mystock_toolbox 문서")[1] == 0
+
+
+def _flow_records():
+    return [{"tool_name": "stock_tool", "result": {
+        "found": True, "company_name": "삼성전자", "period_days": 20, "period_change_pct": -10.02, "change_pct": -3.3,
+        "period_start_date": "2026-10-20", "period_end_date": "2026-11-17",
+        "prices": [{"price_date": "2026-10-20", "close_price": 211500.0, "change_pct": 0.5, "volume": 1},
+                   {"price_date": "2026-10-28", "close_price": 242000.0, "change_pct": 1.0, "volume": 1},
+                   {"price_date": "2026-11-17", "close_price": 190300.0, "change_pct": -3.3, "volume": 16773338}],
+        "summary": "삼성전자의 2026-11-17 종가는 190,300원으로, 2026-10-20 종가 211,500원 대비 20거래일간 -10.02%입니다."}}]
+
+
+def test_wrong_period_return_in_n_trading_day_sentence_is_a_violation():
+    from app.answer_guard import guard_answer, period_return_violations
+    wrong = "삼성전자의 최근 주가 흐름을 분석해 보면, 20거래일 동안 종가가 20.02% 하락했습니다."
+    assert period_return_violations(wrong, _flow_records()) == ["20.02%"]
+    text, log = guard_answer(wrong, _flow_records(), "삼성전자 최근 주가 흐름을 분석해 줘.")
+    assert log["replaced"] and "20.02%" not in text and "-10.02%" in text
+
+
+def test_correct_period_return_and_other_sentences_pass():
+    from app.answer_guard import period_return_violations
+    ok = ("삼성전자는 최근 20거래일간 -10.02%의 변동률을 나타내고 있습니다. "
+          "마지막 거래일 하루 등락률은 -3.30%입니다. 같은 5거래일 코스피 대비 -4.24%p였습니다.")
+    assert period_return_violations(ok, _flow_records()) == []
