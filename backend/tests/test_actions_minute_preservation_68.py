@@ -60,9 +60,12 @@ class FakeAPI:
         return self.blobs[aid]
 
 
-def run(tmp_path, api, src, *extra, name="w", now=NOW, run_id="r1"):
+def run(tmp_path, api, src, *extra, name="w", now=NOW, run_id="r1", raw_enabled=True):
+    """68차 업로드 로직 시험은 69차 잠금을 연 상태(raw_enabled=True)로 돈다. 잠금 기본 동작은 69차 시험이 본다."""
     out = tmp_path / f"{name}_out.txt"
     env = {"GITHUB_RUN_ID": run_id, "GITHUB_OUTPUT": str(out), "GITHUB_REPOSITORY": "o/r", "GITHUB_TOKEN": TOKEN}
+    if raw_enabled:
+        env[am.RAW_ENABLE_ENV] = "true"
     rc = am.main(["run", "--work-dir", str(tmp_path / name), *extra], env=env, api=api, now=now, get=src, sleep=0,
                  retry_waits=(0, 0), wait=lambda s: None, clock=lambda: now)
     rep = json.loads((tmp_path / name / "run_report.json").read_text(encoding="utf-8"))
@@ -245,3 +248,59 @@ def test_rejected_day_is_kept_as_unsealed_artifact_once_and_not_refetched(tmp_pa
     rc, rep2, out2, env2 = run(tmp_path, api, src, "--date", D.isoformat(), name="b", run_id="r2")
     assert rep2["existing"][0]["state"] == "rejected_known" and len(src.calls) == calls and out2["slot1_name"] == ""
     assert rep2["status"] == "ok" and verify(tmp_path, api, env2, name="b") == 0
+
+
+# ---------- 69차: 원본 수집·업로드 잠금 ----------
+
+@pytest.mark.parametrize("flag", [None, "false", "True", "1", ""])
+def test_raw_lock_forces_dry_run_no_source_no_upload_slots(tmp_path, flag):
+    api, src = FakeAPI(), Source(days=[D])
+    out = tmp_path / "o.txt"
+    env = {"GITHUB_RUN_ID": "r1", "GITHUB_OUTPUT": str(out), "GITHUB_REPOSITORY": "o/r", "GITHUB_TOKEN": TOKEN}
+    if flag is not None:
+        env[am.RAW_ENABLE_ENV] = flag
+    rc = am.main(["run", "--work-dir", str(tmp_path / "w"), "--date", D.isoformat()], env=env, api=api, now=NOW, get=src,
+                 sleep=0, retry_waits=(0, 0), wait=lambda s: None, clock=lambda: NOW)
+    rep = json.loads((tmp_path / "w" / "run_report.json").read_text(encoding="utf-8"))
+    outputs = dict(line.split("=", 1) for line in out.read_text(encoding="utf-8").splitlines())
+    assert rc == 0
+    assert src.calls == []                      # 원천 요청 0
+    assert rep["forced_dry_run"] is True and rep["raw_locked"] is True and rep["dry_run"] is True
+    assert rep["uploads"] == [] and rep["status_uploads"] == []
+    assert all(outputs[f"slot{i}_name"] == "" for i in range(1, am.MAX_SLOTS + 1)) and outputs["status_dir"] == ""
+    assert api.arts == []
+
+
+def test_raw_lock_still_lists_existing_artifacts_read_only(tmp_path):
+    api, src = FakeAPI(), Source(days=[D])
+    rc, rep, out, env = run(tmp_path, api, src, "--date", D.isoformat(), name="a")
+    do_uploads(api, out)
+    n = len(api.arts)
+    src2 = Source(days=[D])
+    rc2, rep2, out2, _ = run(tmp_path, api, src2, "--date", D.isoformat(), name="b", run_id="r2", raw_enabled=False)
+    assert rc2 == 0 and src2.calls == [] and len(api.arts) == n
+    assert [r["state"] for r in rep2["existing"]] == ["preserved"]
+    assert rep2["forced_dry_run"] is True and rep2["uploads"] == []
+
+
+def test_workflow_has_no_automatic_triggers_and_upload_is_locked():
+    """PyYAML 없이 줄 단위로 본다: on: 블록의 최상위 키는 workflow_dispatch 하나, 원본 업로드 단계는 모두 잠금 조건."""
+    path = Path(__file__).resolve().parents[2] / ".github/workflows/session-minute-actions.yml"
+    lines = path.read_text(encoding="utf-8").splitlines()
+    start = lines.index("on:")
+    end = next(i for i in range(start + 1, len(lines)) if lines[i] and not lines[i].startswith(" "))
+    on_block = lines[start + 1:end]
+    triggers = [ln.strip().rstrip(":") for ln in on_block if ln.startswith("  ") and not ln.startswith("   ") and ln.strip()]
+    assert triggers == ["workflow_dispatch"]  # push·schedule·pull_request 없음
+    i = next(k for k, ln in enumerate(on_block) if ln.strip() == "dry_run:")
+    assert "default: true" in [ln.strip() for ln in on_block[i:i + 4]]
+    assert '  RAW_UPLOAD_ENABLED: "false"' in lines
+    uses = [k for k, ln in enumerate(lines) if "uses: actions/upload-artifact" in ln]
+    gated = [k for k in uses if "steps.run.outputs.slot" in lines[k - 1] or "steps.run.outputs.status_dir" in lines[k - 1]]
+    assert len(gated) == am.MAX_SLOTS + 1
+    assert all(lines[k - 1].strip().startswith("- if: env.RAW_UPLOAD_ENABLED == 'true' && ") for k in gated)
+    rest = [k for k in uses if k not in gated]  # 잠금 없는 업로드 = 원본이 없는 실행 기록 하나
+    assert len(rest) == 1 and any("run_report.json" in ln for ln in lines[rest[0]:rest[0] + 5])
+    text = "\n".join(lines)
+    assert "SESSION_MINUTE_RAW_ENABLED: ${{ env.RAW_UPLOAD_ENABLED }}" in text
+    assert 'if [[ "${SESSION_MINUTE_RAW_ENABLED:-false}" != "true" ]]; then' in text

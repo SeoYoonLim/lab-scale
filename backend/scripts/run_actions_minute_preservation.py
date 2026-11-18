@@ -17,6 +17,9 @@ run:
  5. GITHUB_OUTPUT에 slotN_name/slotN_path를 쓴다. 업로드는 workflow의 actions/upload-artifact가 한다.
 verify: 이번 실행이 올린 아티팩트를 API로 다시 내려받아 SHA-256을 대조하고, 결과를 합쳐 종료 코드를 정한다.
 
+69차 잠금: 환경 변수 SESSION_MINUTE_RAW_ENABLED가 "true"가 아니면 run은 --dry-run으로만 돈다(원천 요청·원본 업로드 칸 0).
+  원천(api.stock.naver.com)의 수집·저장·재배포 허용 근거가 확인되지 않았기 때문이다(docs/BACKEND_69_REPORT.md).
+
 권한: GITHUB_TOKEN(workflow가 자동 발급)에 contents: read, actions: read. 추가 PAT·Secrets 없음. 아티팩트를 지우지 않는다(actions: write 불필요).
 종료 코드: 0 = 대상일이 모두 보존됨(또는 휴장 SKIP), 1 = 실패·미완료, 2 = 설정 오류.
 """
@@ -47,6 +50,12 @@ MAX_SLOTS = cloud.PROVIDER_WINDOW_TRADING_DAYS  # 한 실행에서 올릴 수 �
 STORAGE_LIMIT_BYTES = 500 * 1000 * 1000  # GitHub Free 아티팩트 저장 한도(Packages와 공유)
 WARN_RATIO, STOP_RATIO = 0.6, 0.8  # 사용량이 한도의 60%를 넘으면 경고, 80%를 넘을 것 같으면 업로드 중단
 SECRET_ENV = ("GITHUB_TOKEN", *cloud.SECRET_ENV)
+# 69차: 원본 수집·업로드 잠금. 이 값이 정확히 "true"일 때만 원천을 요청하고 업로드 칸을 채운다
+RAW_ENABLE_ENV = "SESSION_MINUTE_RAW_ENABLED"
+
+
+def raw_enabled(env: dict) -> bool:
+    return env.get(RAW_ENABLE_ENV) == "true"
 
 
 def redact(msg, env: dict | None = None) -> str:
@@ -296,10 +305,15 @@ def cmd_run(args, env: dict, api=None, now=None, get=None, sleep=None, retry_wai
         print(f"설정 오류: --work-dir가 비어 있지 않습니다: {work}", file=sys.stderr)
         return 2
     work.mkdir(parents=True)
+    forced_dry = not args.dry_run and not raw_enabled(env)
+    if forced_dry:
+        print(f"69차 잠금: {RAW_ENABLE_ENV}!=true → 원천 요청·원본 업로드 없이 dry-run으로만 실행합니다")
+        args.dry_run = True
     now = now or datetime.now(KST)
     run_id = f"{now.astimezone(KST).strftime('%Y%m%dT%H%M%S')}_{env.get('GITHUB_RUN_ID', 'local')}"
     report: dict = {"tool": TOOL, "run_id": run_id, "now_kst": now.astimezone(KST).isoformat(timespec="seconds"),
-                    "repo": env.get("GITHUB_REPOSITORY"), "retention_days": env.get("ARTIFACT_RETENTION_DAYS"), "days": []}
+                    "repo": env.get("GITHUB_REPOSITORY"), "retention_days": env.get("ARTIFACT_RETENTION_DAYS"), "days": [],
+                    "dry_run": args.dry_run, "raw_locked": not raw_enabled(env), "forced_dry_run": forced_dry}
     try:
         assets = cloud.load_universe()
         st, targets, info = cloud.plan_targets(now, args.lookback, args.date)

@@ -4,17 +4,19 @@ name: Session minute artifacts
 # Cloudflare R2·추가 Secrets가 필요 없다(GITHUB_TOKEN만). 사용자 PC·DB·Ollama와 무관하다. 문서: docs/GITHUB_ACTIONS_MINUTE_AUTOMATION_68.md
 #
 # - 아티팩트는 영구 저장소가 아니다: retention-days(ARTIFACT_RETENTION_DAYS) 뒤 자동으로 지워진다. 오래 두려면 내려받아 따로 보관한다.
-# - 예약은 이 파일이 기본 브랜치(main)에 있어야 동작한다. feature 브랜치에서는 push(관련 파일)로만 돈다.
+# - (68차) 예약은 이 파일이 기본 브랜치(main)에 있어야 동작했다. 69차에서 push·schedule을 모두 없앴다(아래).
 # - 휴장일은 cron이 아니라 Python(app/krx_calendar)이 판단한다(SKIP).
 # - 실행마다 최근 7거래일을 확인한다: 정상 아티팩트가 있는 날짜는 다시 받지 않고, 없거나 손상된 날짜만 원천(최근 7거래일만 제공)에서 다시 받는다.
 # - 저장소가 공개라 아티팩트는 GitHub에 로그인한 누구나 내려받을 수 있다(문서 10절).
 # - 54차 세션 검증만 거부한 날(원천 값 이상, 예: 2026-11-10 거래량 -8)은 session-minute-unsealed-<날짜>(봉인 없음)로 한 번 남기고 다시 받지 않는다.
+#
+# 69차-B 임시 중단(docs/BACKEND_69_REPORT.md 5~7절):
+# - 원천(api.stock.naver.com, 비공식 웹 엔드포인트)의 수집·저장·재배포 허용 근거가 확인되지 않아 원본 수집·업로드를 잠근다.
+# - push·schedule 트리거를 없앴다. 수동 실행(workflow_dispatch)만 남기고 기본값은 dry_run=true다.
+# - RAW_UPLOAD_ENABLED가 "false"인 동안에는 입력과 관계없이 --dry-run으로만 돈다(원천 요청 0, 원본 업로드 0).
+#   dry-run은 이 저장소의 기존 아티팩트 목록·검증만 하고, 원본이 없는 실행 기록(run_report.json)만 남긴다.
+# - 다시 여는 일은 이용 조건 확인 뒤 사용자 결정으로만 한다(이 파일의 RAW_UPLOAD_ENABLED를 바꾸는 커밋이 필요).
 on:
-  schedule:
-    - cron: "20 20 * * 1-5"   # 20:20 KST = 11:20 UTC
-      timezone: "Asia/Seoul"
-    - cron: "20 23 * * 1-5"   # 23:20 KST = 14:20 UTC(예비)
-      timezone: "Asia/Seoul"
   workflow_dispatch:
     inputs:
       date:
@@ -26,21 +28,9 @@ on:
         type: string
         default: "7"
       dry_run:
-        description: "원천 요청·업로드 없이 기존 아티팩트 상태만 확인"
+        description: "원천 요청·업로드 없이 기존 아티팩트 상태만 확인(69차: RAW_UPLOAD_ENABLED가 false면 항상 dry-run)"
         type: boolean
-        default: false
-  push:
-    branches: [feature/backend]
-    paths:
-      - ".github/workflows/session-minute-actions.yml"
-      - "backend/scripts/run_actions_minute_preservation.py"
-      - "backend/scripts/run_cloud_session_preservation.py"
-      - "backend/scripts/fetch_session_minute.py"
-      - "backend/scripts/preserve_session_minute.py"
-      - "backend/scripts/load_session_minute.py"
-      - "backend/app/session_*.py"
-      - "backend/app/krx_calendar.py"
-      - "backend/app/data/**"
+        default: true
 
 concurrency:
   group: session-minute-actions
@@ -52,6 +42,8 @@ permissions:
 
 env:
   ARTIFACT_RETENTION_DAYS: "30"
+  # 69차: 원천 이용 조건 확인 전까지 "false" 고정. "true"가 아니면 원천 요청·원본 업로드를 하지 않는다
+  RAW_UPLOAD_ENABLED: "false"
 
 jobs:
   preserve:
@@ -77,6 +69,7 @@ jobs:
           IN_DATE: ${{ inputs.date }}
           IN_LOOKBACK: ${{ inputs.lookback }}
           IN_DRY_RUN: ${{ inputs.dry_run }}
+          SESSION_MINUTE_RAW_ENABLED: ${{ env.RAW_UPLOAD_ENABLED }}
         run: |
           args=(run --work-dir "$RUNNER_TEMP/sma")
           if [[ -n "${IN_DATE:-}" ]]; then
@@ -87,32 +80,37 @@ jobs:
             [[ "$IN_LOOKBACK" =~ ^[1-7]$ ]] || { echo "lookback은 1~7"; exit 2; }
             args+=(--lookback "$IN_LOOKBACK")
           fi
-          [[ "${IN_DRY_RUN:-false}" == "true" ]] && args+=(--dry-run)
+          if [[ "${SESSION_MINUTE_RAW_ENABLED:-false}" != "true" ]]; then
+            echo "::notice title=session-minute-artifacts::69차 잠금: 원본 수집·업로드 비활성(RAW_UPLOAD_ENABLED=false) → dry-run만 실행"
+            args+=(--dry-run)
+          elif [[ "${IN_DRY_RUN:-true}" != "false" ]]; then
+            args+=(--dry-run)
+          fi
           python -m scripts.run_actions_minute_preservation "${args[@]}"
       # 이번 실행에서 350종목 검증·봉인까지 끝난 날짜만 칸(slot)에 들어 있다. 빈 칸은 건너뛴다. overwrite 없음(같은 이름이 있어도 새 실행의 별도 아티팩트)
-      - if: steps.run.outputs.slot1_name != ''
+      - if: env.RAW_UPLOAD_ENABLED == 'true' && steps.run.outputs.slot1_name != ''
         uses: actions/upload-artifact@v4
         with: {name: "${{ steps.run.outputs.slot1_name }}", path: "${{ steps.run.outputs.slot1_path }}", retention-days: "${{ env.ARTIFACT_RETENTION_DAYS }}", compression-level: 6, if-no-files-found: error}
-      - if: steps.run.outputs.slot2_name != ''
+      - if: env.RAW_UPLOAD_ENABLED == 'true' && steps.run.outputs.slot2_name != ''
         uses: actions/upload-artifact@v4
         with: {name: "${{ steps.run.outputs.slot2_name }}", path: "${{ steps.run.outputs.slot2_path }}", retention-days: "${{ env.ARTIFACT_RETENTION_DAYS }}", compression-level: 6, if-no-files-found: error}
-      - if: steps.run.outputs.slot3_name != ''
+      - if: env.RAW_UPLOAD_ENABLED == 'true' && steps.run.outputs.slot3_name != ''
         uses: actions/upload-artifact@v4
         with: {name: "${{ steps.run.outputs.slot3_name }}", path: "${{ steps.run.outputs.slot3_path }}", retention-days: "${{ env.ARTIFACT_RETENTION_DAYS }}", compression-level: 6, if-no-files-found: error}
-      - if: steps.run.outputs.slot4_name != ''
+      - if: env.RAW_UPLOAD_ENABLED == 'true' && steps.run.outputs.slot4_name != ''
         uses: actions/upload-artifact@v4
         with: {name: "${{ steps.run.outputs.slot4_name }}", path: "${{ steps.run.outputs.slot4_path }}", retention-days: "${{ env.ARTIFACT_RETENTION_DAYS }}", compression-level: 6, if-no-files-found: error}
-      - if: steps.run.outputs.slot5_name != ''
+      - if: env.RAW_UPLOAD_ENABLED == 'true' && steps.run.outputs.slot5_name != ''
         uses: actions/upload-artifact@v4
         with: {name: "${{ steps.run.outputs.slot5_name }}", path: "${{ steps.run.outputs.slot5_path }}", retention-days: "${{ env.ARTIFACT_RETENTION_DAYS }}", compression-level: 6, if-no-files-found: error}
-      - if: steps.run.outputs.slot6_name != ''
+      - if: env.RAW_UPLOAD_ENABLED == 'true' && steps.run.outputs.slot6_name != ''
         uses: actions/upload-artifact@v4
         with: {name: "${{ steps.run.outputs.slot6_name }}", path: "${{ steps.run.outputs.slot6_path }}", retention-days: "${{ env.ARTIFACT_RETENTION_DAYS }}", compression-level: 6, if-no-files-found: error}
-      - if: steps.run.outputs.slot7_name != ''
+      - if: env.RAW_UPLOAD_ENABLED == 'true' && steps.run.outputs.slot7_name != ''
         uses: actions/upload-artifact@v4
         with: {name: "${{ steps.run.outputs.slot7_name }}", path: "${{ steps.run.outputs.slot7_path }}", retention-days: "${{ env.ARTIFACT_RETENTION_DAYS }}", compression-level: 6, if-no-files-found: error}
       # 복구 불가 표시(원천 조회 기간이 지난 날짜). 다음 실행이 같은 날짜를 다시 요청하지 않게 한다(작은 JSON)
-      - if: steps.run.outputs.status_dir != ''
+      - if: env.RAW_UPLOAD_ENABLED == 'true' && steps.run.outputs.status_dir != ''
         uses: actions/upload-artifact@v4
         with: {name: "session-minute-status-${{ github.run_id }}", path: "${{ steps.run.outputs.status_dir }}", retention-days: "${{ env.ARTIFACT_RETENTION_DAYS }}", if-no-files-found: ignore}
       - name: 업로드 재검증(API로 다시 내려받아 SHA-256 대조) · 최종 판정
