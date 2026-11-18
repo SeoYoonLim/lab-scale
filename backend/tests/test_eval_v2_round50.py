@@ -12,7 +12,8 @@ V2 = EVALS / "multilingual_cases_49_v2.txt"
 
 def test_v1_file_is_unchanged():
     # 49차에 구현 전 고정한 해시(docs/LLM_ANSWER_QUALITY_49.md)
-    assert hashlib.sha256(V1.read_bytes()).hexdigest().startswith("29a21346ada5050b")
+    # 72차: Windows 체크아웃(core.autocrlf=true)은 줄 끝이 CRLF라 LF로 맞춰 해시한다(리눅스 CI 값은 그대로)
+    assert hashlib.sha256(V1.read_bytes().replace(b"\r\n", b"\n")).hexdigest().startswith("29a21346ada5050b")
 
 
 def test_v2_differs_only_in_one_month_days():
