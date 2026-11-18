@@ -1555,10 +1555,22 @@ def _forecast_subject(question: str, previous: dict | None):
         companies = _question_companies(question)
         if companies is not None and len(companies) == 1:
             return companies[0], None, "cause"
-        if not companies and (previous or {}).get("company_name") and not answer_cause.is_market_subject(question):
+        if (not companies and (previous or {}).get("company_name") and not answer_cause.is_market_subject(question)
+                and answer_cause.is_subjectless(question)):
             company = _company_by_name((previous or {}).get("company_name"))
             if company is not None:
                 return company, None, "cause"
+    # 71차: 기간을 붙인 원인 질문(종목 하나, 3개월 이내: "셀트리온 지난주 급등 이유", "카카오 한 달 동안 왜 떨어졌어?")도 코드 답이다.
+    # 전에는 LLM 경로라 전제('급등')를 실제 등락과 대조하지 않았고 코스피 수치를 종목 주어에 붙였다(70차 5.2). 두 종목·시장 질문은 기존 경로
+    if answer_cause.is_period_cause_question(question) and not (marker and special == "why"):
+        companies = _question_companies(question)
+        if companies is not None and len(companies) == 1:
+            return companies[0], None, "cause_period"
+        if (not companies and (previous or {}).get("company_name") and not answer_cause.is_market_subject(question)
+                and answer_cause.is_subjectless(question)):
+            company = _company_by_name((previous or {}).get("company_name"))
+            if company is not None:
+                return company, None, "cause_period"
     # 68차: 직전 전망 답에 이어 기간만 바꿔 묻는 질문(#43447 "3개월 후는?")은 직전 종목의 그 기간 전망이다(전에는 LLM이 과거 67거래일로 답했다)
     if outlook.is_period_followup(question) and (marker or (outlook.horizon_in(question) is not None
                                                           and (previous or {}).get("company_name"))):
@@ -1637,6 +1649,8 @@ def _answer_forecast(question: str, previous: dict | None):
     company, marker, mode = found
     if mode == "ask":
         return _code_answer(outlook.ASK_SUBJECT_ANSWER)
+    if mode == "cause_period":
+        return _answer_cause_period(company, question)
     # 49차: 숫자로 말한 미래 기간("향후 20거래일", "3주 뒤", "내년"). 지원 밖이면 도구 없이 안내, 다른 기간으로 분석하면 답 맨 앞에 밝힌다
     horizon = outlook.horizon_in(question)
     if horizon is not None and horizon.unsupported:
@@ -1751,6 +1765,63 @@ def _answer_forecast(question: str, previous: dict | None):
         _meta()["forecast_horizon"] = {"kind": "note", "text": horizon.text.strip(), "requested_days": horizon.requested_days,
                                        "label": horizon.label, "note": note}
         answer = f"{note}\n\n{answer}"
+    return _code_answer(answer, records)
+
+
+def _answer_cause_period(company, question: str):
+    """71차: 기간을 붙인 원인 질문의 코드 답(app/answer_cause.period_cause_answer). LLM을 부르지 않는다.
+
+    순서: 기간 창(KRX 거래일, 저장 시세만) -> 종목 수익률 -> 같은 두 날짜의 상장 시장 지수 수익률(따로) -> 창 안·기준 시점 전
+    뉴스·공시(69차 규칙) -> 답. 시세가 요청 기간 끝까지 없으면 끝나지 않은 기간이라고 밝힌다."""
+    now = datetime.now(KST)
+    called_at = datetime.now(timezone.utc)
+    started = time.perf_counter()
+    spec = answer_cause.period_spec(question, now)
+    db = SessionLocal()
+    try:
+        rows = outlook.price_rows(db, company, now)
+        if len(rows) < 2:
+            return _code_answer(outlook.no_data_answer(company))
+        if spec["kind"] in ("future", "invalid", "unsupported"):
+            # 미래·0·해석 못 한 기간: 다른 기간으로 바꿔 계산하지 않고 그 사실만 밝힌다
+            win = {"status": spec["kind"], "last_stored": rows[-1][0].isoformat(), "missing_tail": [], "missing_mid": []}
+        else:
+            win = answer_cause.period_window(spec, rows, now.date())
+        res = outlook.analyze(db, company, outlook.PERIODS[outlook.DEFAULT_PERIOD], now, rows=rows)
+        idx = found = None
+        if win["status"] == "ok":
+            idx = answer_cause.index_change(db, company, win)
+            frm, end = date.fromisoformat(win["from_date"]), date.fromisoformat(win["end_date"])
+            found = answer_cause.collect(db, company, end, frm, after=answer_cause.cutoff_at(frm),
+                                         news_limit=answer_cause.PERIOD_NEWS_LIMIT,
+                                         disclosure_limit=answer_cause.PERIOD_DISCLOSURE_LIMIT)
+    finally:
+        db.close()
+    elapsed = round((time.perf_counter() - started) * 1000)
+    answer = answer_cause.period_cause_answer(company, spec, win, idx, found, (res or {}).get("data"), question)
+    args = {"ticker": company.name, "period": spec["text"]}
+    stock = {"company_name": company.name, "ticker": company.ticker, "found": win["status"] == "ok", "called_via": "cause_period",
+             "window": win}
+    if win["status"] == "ok":
+        stock.update(period_start_date=win["from_date"], period_end_date=win["end_date"], period_change_pct=win["pct"])
+    records = [{"tool_name": "stock_tool", "arguments": args, "result": stock, "called_at": called_at, "elapsed_ms": elapsed}]
+    if idx and idx.get("status") == "ok":
+        records.append({"tool_name": "market_tool", "arguments": args, "called_at": called_at, "elapsed_ms": 0,
+                        "result": {"company_name": company.name, "found": True, "called_via": "cause_period",
+                                   "index_name": idx["name"], "index_code": idx["code"], "start_date": idx["from_date"],
+                                   "end_date": idx["end_date"], "market_change_pct": idx["pct"], "stock_change_pct": win["pct"]}})
+    if found is not None:
+        until = {"company_name": company.name, "from": win["from_date"], "until": win["end_date"]}
+        records.append({"tool_name": "news_tool", "arguments": until, "called_at": called_at, "elapsed_ms": 0,
+                        "result": {"company_name": company.name, "found": bool(found["news"]), "news": found["news"],
+                                   "called_via": "cause_period"}})
+        if company.asset_type != "etf":
+            records.append({"tool_name": "disclosure_tool", "arguments": until, "called_at": called_at, "elapsed_ms": 0,
+                            "result": {"company_name": company.name, "found": bool(found["disclosures"]),
+                                       "disclosures": found["disclosures"], "called_via": "cause_period"}})
+    _meta()["cause_period"] = {"period": spec["text"], "status": win["status"], "from": win.get("from_date"),
+                               "end": win.get("end_date"), "pct": win.get("pct"), "index_pct": (idx or {}).get("pct"),
+                               "missing_tail": len(win.get("missing_tail") or []), "missing_mid": len(win.get("missing_mid") or [])}
     return _code_answer(answer, records)
 
 

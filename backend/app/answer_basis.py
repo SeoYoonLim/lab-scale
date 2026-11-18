@@ -68,10 +68,52 @@ def _evidence_dates(records: list[dict]) -> list[date]:
     return days
 
 
+# 71차: 환율(fx_tool) 답도 기준일을 밝힌다. 70차 실측 "현재 환율은 약 1,325.52원에 거래되고 있습니다"는 11-02 값(11영업일 전)이었다.
+FX_CLOSE_HOUR = 15  # 서울 외환시장 종가(15:30) 전이면 그날 값은 아직 없다
+_FX_NOW_RE = re.compile(r"현재\s*(?=(?:원\s*[·/]?\s*달러|원달러|달러\s*[·/]?\s*원)?\s*환율)")
+_FX_TRADING_RE = re.compile(r"에\s*거래되고\s*있습니다")
+
+
+def fx_lag(latest: date, now: datetime) -> int:
+    """환율 마지막 값 뒤로 지난 평일 수(기대 기준일까지). 0이면 최신."""
+    from datetime import timedelta
+
+    today = now.date()
+    expected = today if now.hour > FX_CLOSE_HOUR or (now.hour == FX_CLOSE_HOUR and now.minute >= 30) else today - timedelta(days=1)
+    while expected.weekday() >= 5:
+        expected -= timedelta(days=1)
+    n, d = 0, latest + timedelta(days=1)
+    while d <= expected:
+        n += d.weekday() < 5
+        d += timedelta(days=1)
+    return n
+
+
+def fx_basis(answer: str, records: list[dict], now: datetime) -> str:
+    """환율 도구 결과가 있으면 기준일(없으면)과 지연(있으면)을 밝힌다. 지연이면 '현재 환율'·'거래되고 있습니다' 같은 최신 표현을 바꾼다."""
+    fx = next((r.get("result") for r in records or [] if r.get("tool_name") == "fx_tool" and isinstance(r.get("result"), dict)
+               and r["result"].get("found") and r["result"].get("latest_date")), None)
+    if not answer or fx is None:
+        return answer
+    latest = date.fromisoformat(str(fx["latest_date"])[:10])
+    lag = fx_lag(latest, now)
+    out = answer
+    if lag > 0:
+        out = _FX_NOW_RE.sub(f"{latest.isoformat()} 종가 기준 ", out)
+        out = _FX_TRADING_RE.sub("입니다", out)
+    note = []
+    if not states_date(out, latest):
+        note.append(f"환율 기준일: {latest.isoformat()} 종가(DB에 저장된 값이며 실시간 환율이 아닙니다).")
+    if lag > 0:
+        note.append(f"마지막 환율({latest.isoformat()})은 {lag}영업일 전 값이라 최신 환율이 아닙니다.")
+    return out if not note else out.rstrip() + "\n\n" + " ".join(note)
+
+
 def ensure_basis(answer: str, records: list[dict], now: datetime) -> str:
     """답에 데이터 기준 시점이 없으면 표준 문장을 덧붙인 답. 붙일 것이 없으면 answer 그대로."""
     if not answer:
         return answer
+    answer = fx_basis(answer, records, now)
     lines = []
     bases = _price_bases(records)
     missing = {n: d for n, d in bases.items() if not states_date(answer, d)}

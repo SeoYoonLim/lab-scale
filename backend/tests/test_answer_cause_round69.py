@@ -164,7 +164,10 @@ def test_two_companies_or_long_period_stay_on_llm_path(cause_route):
     cause_route["companies"] = [COMPANY, SAMSUNG]
     assert agent._forecast_subject("SK하이닉스랑 삼성전자 왜 올랐어?", None) is None
     cause_route["companies"] = [COMPANY]
-    assert agent._forecast_subject("SK하이닉스 지난 한 달 동안 왜 떨어졌어?", None) is None
+    # 71차: 3개월 이내 기간 원인 질문은 기간 코드 경로(cause_period)다. 69차에는 LLM 경로였다(70차 5.2의 2b 문제)
+    assert agent._forecast_subject("SK하이닉스 지난 한 달 동안 왜 떨어졌어?", None)[2] == "cause_period"
+    # 3개월을 넘는 기간은 여전히 기존 LLM 경로(+69차 기준 시점 필터)
+    assert agent._forecast_subject("SK하이닉스 4개월 동안 왜 떨어졌어?", None) is None
 
 
 # ---------- 3. 오늘·어제 ----------
