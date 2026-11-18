@@ -286,6 +286,10 @@ def test_raw_lock_still_lists_existing_artifacts_read_only(tmp_path):
 def test_workflow_has_no_automatic_triggers_and_upload_is_locked():
     """PyYAML 없이 줄 단위로 본다: on: 블록의 최상위 키는 workflow_dispatch 하나, 원본 업로드 단계는 모두 잠금 조건."""
     path = Path(__file__).resolve().parents[2] / ".github/workflows/session-minute-actions.yml"
+    if not path.exists():
+        # 72차: 병합 브랜치(main 대상)는 이 workflow를 넣지 않는다. 없으면 자동·수동 실행 모두 불가능하므로 더 안전한 상태다
+        assert not any(p.name == "session-minute-actions.yml" for p in path.parent.glob("*.yml"))
+        return
     lines = path.read_text(encoding="utf-8").splitlines()
     start = lines.index("on:")
     end = next(i for i in range(start + 1, len(lines)) if lines[i] and not lines[i].startswith(" "))
