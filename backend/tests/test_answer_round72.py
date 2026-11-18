@@ -286,6 +286,9 @@ def test_two_companies_are_computed_and_sourced_separately(route):
     assert route["collect"] == ["삼성전자", "에코프로비엠"]
     assert {s["url"]: s["company_names"] for s in resp["sources"]} == {"https://n/1": ["삼성전자"], "https://n/2": ["에코프로비엠"]}
     assert text.count("이 서비스는") == 1  # 면책은 한 번
+    # 종목마다 같은 tool을 부르지만 used_tools는 처음 호출 순서로 한 번씩(화면 칩·React key 중복 방지), 기록은 둘 다 남는다
+    assert len(resp["used_tools"]) == len(set(resp["used_tools"])) and "stock_tool" in resp["used_tools"]
+    assert [r["tool_name"] for r in records].count("stock_tool") == 2
     multi = agent._meta()["cause_multi"]
     assert [c["company"] for c in multi["companies"]] == ["삼성전자", "에코프로비엠"] and multi["mode"] == "cause_period"
     st = source_status(((r["tool_name"], r["result"]) for r in records), resp["sources"])
@@ -465,3 +468,10 @@ def test_order_response_carries_price_source_and_as_of(monkeypatch):
         "current_price": 208000.0, "is_realtime": False, "source": "fallback", "as_of": "2026-11-12"})
     out = portfolio.place_order(FakeSession(None), "owner", SAMSUNG, "buy", 1)
     assert out["price_source"] == "fallback" and out["price_as_of"] == "2026-11-12" and out["price_is_realtime"] is False
+
+
+def test_unique_tool_names_keeps_first_call_order():
+    from app.sources import unique_tool_names
+    calls = ["stock_tool", "market_tool", "news_tool", "stock_tool", "market_tool", "news_tool", "disclosure_tool"]
+    assert unique_tool_names(calls) == ["stock_tool", "market_tool", "news_tool", "disclosure_tool"]
+    assert unique_tool_names(iter([])) == []

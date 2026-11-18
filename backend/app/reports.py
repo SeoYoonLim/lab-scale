@@ -23,7 +23,7 @@ from app.db.session import SessionLocal
 from app.history_terms import term_variants
 from app.models import Company, ResearchReport, ToolCallLog
 from app.pagination import escape_like, order_by_clauses
-from app.sources import build_sources, source_status
+from app.sources import build_sources, source_status, unique_tool_names
 
 logger = logging.getLogger(__name__)
 
@@ -344,7 +344,7 @@ def get_report(report_id: int, *, user_id: int | None) -> dict | None:
             "company_name": report.company.name if report.company else None,
             "created_at": report.created_at.isoformat(),
             "created_at_dt": report.created_at,
-            "used_tools": [log.tool_name for log in logs],
+            "used_tools": unique_tool_names(log.tool_name for log in logs),
             "sources": sources,
             "source_status": source_status(((log.tool_name, log.result) for log in logs), sources),
             **_extra_fields(report, company, metas, _tickers_by_name(db, metas), len(sources)),
@@ -391,7 +391,7 @@ def _list_items(db, rows: list[tuple]) -> list[dict]:
             "company_name": company_name,
             "created_at": r.created_at.isoformat(),
             "created_at_dt": r.created_at,
-            "used_tools": [m[0] for m in metas],
+            "used_tools": unique_tool_names(m[0] for m in metas),
             "locale": r.locale,
             **_extra_fields(r, (company_name, ticker) if company_name else None, metas, tickers_by_name,
                             len(build_sources((m[0], m[5]) for m in metas))),
