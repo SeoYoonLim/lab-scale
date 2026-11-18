@@ -3,6 +3,8 @@ company.market(상장 시장)이 비어 있는 종목의 시장 구분을 채운
 
 market_tool은 종목이 상장된 시장의 지수와 등락률을 비교하므로 두 데이터가 모두 필요하다.
 이미 저장된 날짜는 갱신하므로 다시 실행해도 안전하다(멱등).
+50차: 저장 전에 확정 검증을 한다(app/index_confirm.py). 장중 값(지수 캐시 13:30~15:00 갱신분)·네이버 지수 일별과 다른 값·
+대조할 수 없는 마지막 행은 저장하지 않고 "저장 보류"로 출력한다(기존 값 유지). 확정값은 21~23시 캐시 갱신 뒤 또는 다음 날 오전 실행에서 저장된다.
 
 사용 예:
   python -m scripts.collect_market_index --dry-run     # DB에 쓰지 않고 확인
@@ -26,7 +28,9 @@ def main():
     for code, name in MARKET_INDEXES.items():
         res = fetch_and_save_market_index(code, days=args.days, dry_run=args.dry_run)
         status = "OK" if res.ok else f"FAIL ({res.error})"
-        print(f"{name}({code}) {status} 조회 {res.fetched}건 / 신규 {res.saved}건 / 소스 {res.source}")
+        held = ", ".join(f"{h['date']}({h['status']})" for h in res.held_dates)
+        print(f"{name}({code}) {status} 조회 {res.fetched}건 / 신규 {res.saved}건 / 소스 {res.source}"
+              + (f" / 확정 전이라 저장 보류 {len(res.held_dates)}건: {held}" if res.held_dates else ""))
         failed |= not res.ok
 
     if not args.skip_market_backfill:

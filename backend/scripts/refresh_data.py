@@ -107,11 +107,16 @@ def mask_secrets(text: str, secrets: tuple[str, ...] | None = None) -> str:
 
 
 def is_market_hours(now: datetime) -> bool:
-    """거래일 09:00~15:30 KST이면 True. 2026-11-08(36차)부터 KRX 휴장일은 장중이 아니다(app.krx_calendar)."""
-    from app.krx_calendar import HOLIDAY, day_status
+    """거래일 09:00~정규장 마감(15:30) KST이면 True. 2026-11-08(36차)부터 KRX 휴장일은 장중이 아니다(app.krx_calendar).
+    55차: 마감은 krx_calendar.close_time(그날)이다(수능일 2026-11-19는 16:30까지 장중).
+    56차: 시작은 krx_calendar.open_time(그날)이다(수능일은 10:00부터. 09:00~09:59는 장 시작 전이라 경고하지 않는다).
+    양 끝 분을 포함하는 50차 규칙은 그대로다(일반 거래일 09:00·15:30 True, 15:31 False)."""
+    from app.krx_calendar import HOLIDAY, close_time, day_status, open_time
 
     now = now.astimezone(KST)
-    return now.weekday() < 5 and day_status(now.date()) != HOLIDAY and (9, 0) <= (now.hour, now.minute) <= (15, 30)
+    start, close = open_time(now.date()), close_time(now.date())
+    return (now.weekday() < 5 and day_status(now.date()) != HOLIDAY
+            and (start.hour, start.minute) <= (now.hour, now.minute) <= (close.hour, close.minute))
 
 
 def select_steps(only: list[str] | None, skip: list[str] | None) -> list[str]:
@@ -467,7 +472,8 @@ def resolve_days(days: int | None, today: date) -> tuple[int, str]:
     return n, f"자동(마지막 시세 {last}, 최근 {GAP_LOOKBACK_DAYS}일 안의 빈 평일 포함, 상한 {DAYS_CAP}일)"
 
 
-def build_steps(days: int, timeout_min: float, news_only: bool = False, news_state: str | None = None) -> list[Step]:
+def build_steps(days: int, timeout_min: float, news_only: bool = False, news_state: str | None = None,
+                close_basis: str = "official") -> list[Step]:
     from app.data_status import _kst_date
 
     def prices():
@@ -476,7 +482,8 @@ def build_steps(days: int, timeout_min: float, news_only: bool = False, news_sta
         warnings, failed = [], []
         for universe in ("universe_top300.json", "universe_etf50.json"):
             try:
-                out = _call_script(collect_prices.main, ["--universe", universe, "--days", str(days)], timeout_min)
+                out = _call_script(collect_prices.main, ["--universe", universe, "--days", str(days), "--close-basis", close_basis],
+                                   timeout_min)
                 if w := check_failure_ratio(out):
                     warnings.append(f"{universe}: {w}")
             except (Exception, SystemExit, StepTimeout) as e:  # 한 유니버스가 실패해도 나머지는 진행한다
@@ -596,10 +603,10 @@ def write_log(res: StepResult, run_id: int | None = None) -> None:
         db.close()
 
 
-def print_plan(selected: list[str], days: int, timeout_min: float):
+def print_plan(selected: list[str], days: int, timeout_min: float, close_basis: str = "official"):
     print("[dry-run] 실제 호출·DB 기록 없이 계획만 출력합니다.")
     plan = {
-        "prices": f"collect_prices x2 (universe_top300 + universe_etf50, --days {days})",
+        "prices": f"collect_prices x2 (universe_top300 + universe_etf50, --days {days}, --close-basis {close_basis})",
         "index": f"collect_market_index (--days {max(days, 10)}, 소스 폴백 체인)",
         "fx": f"collect_exchange_rate (--days {max(days, 10)})",
         "news": "collect_universe x2 (universe_top300: 뉴스+공시, universe_etf50: 뉴스만)",
@@ -636,6 +643,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--prune-logs", action="store_true", help="오래된 갱신 기록 정리(--keep-days, --dry-run이면 세기만)")
     ap.add_argument("--keep-days", type=int, default=180, help="--prune-logs 보관 기간(일, 30 이상)")
     ap.add_argument("--trigger", default="manual", choices=["manual", "scheduler"], help="실행 기록에 남길 실행 주체")
+    ap.add_argument("--close-basis", choices=["source", "official"], default="official",
+                    help="주가 종가 기준. official(기본, 47차): 공식 종가(app/official_close.py). source: FinanceDataReader 그대로"
+                         "(주식 2026-09-14 이후 행은 collect_prices가 저장하지 않는다)")
     ap.add_argument("--days", type=int, default=None,
                     help=f"주가/지수/환율 조회 기간(달력 일). 생략하면 DB의 마지막 시세 날짜·최근 빈 평일부터 오늘까지 + {DAYS_SLACK}일"
                          f"(최소 {DAYS_MIN}, 상한 {DAYS_CAP})")
@@ -724,7 +734,7 @@ def main(argv: list[str] | None = None) -> int:
         "15:30 이후 다시 실행하면 같은 날짜가 종가로 덮어써집니다."
     )
     if args.dry_run and not args.retry_failed:
-        print_plan(selected, args.days, args.timeout_min)
+        print_plan(selected, args.days, args.timeout_min, args.close_basis)
         if args.earnings:
             print("  +. earnings 실행            app.earnings.collect (DART fnlttSinglAcnt, 종목당 최대 12회, 요청 간격 0.15초)")
         if is_market_hours(now):
@@ -777,7 +787,7 @@ def _locked_run(args, selected: list[str]) -> int:
     finally:
         db.close()
 
-    steps = [st for st in build_steps(args.days, args.timeout_min, args.news_only, args.news_state)
+    steps = [st for st in build_steps(args.days, args.timeout_min, args.news_only, args.news_state, args.close_basis)
              if st.key in STEP_ORDER or st.key in selected]  # 선택 단계(etf_holdings)는 고른 경우에만 skipped 행을 남긴다
     from app import quarantine
 

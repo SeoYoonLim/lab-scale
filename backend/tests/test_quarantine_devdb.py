@@ -83,7 +83,8 @@ class TestPriceIngestion:
         dev_db.add(StockPrice(company_id=co.id, price_date=D2, open_price=100, high_price=100, low_price=100, close_price=100, volume=10))
         dev_db.commit()
         monkeypatch.setattr(collectors, "_read_fdr", lambda *a, **k: frame([(D1, 98, 5), (D2, 40, 5), (D3, 0, 5), (D4, 99, 5)]))
-        r = collectors.fetch_and_save_stock(co.ticker, co.name, start_date="2026-11-02", end_date="2026-11-05")
+        r = collectors.fetch_and_save_stock(co.ticker, co.name, start_date="2026-11-02", end_date="2026-11-05",
+                                       close_basis="source", allow_source_after_market=True)
         assert r.ok and r.quarantined == 2 and r.fetched == 4
         assert close_of(dev_db, co.id, D2) == 100.0  # 기존 정상 값 유지(40으로 덮어쓰지 않음)
         assert close_of(dev_db, co.id, D1) == 98.0 and close_of(dev_db, co.id, D4) == 99.0  # 정상 레코드는 저장
@@ -92,7 +93,8 @@ class TestPriceIngestion:
         assert [(x.error_code, x.validation_status, x.occurrences) for x in rows] == [
             ("conflicts_existing", "quarantined", 1), ("close_nonpositive", "quarantined", 1)]
         # 같은 데이터를 다시 수집: 저장 결과는 같고 격리 기록은 새로 생기지 않는다(occurrences만 증가)
-        collectors.fetch_and_save_stock(co.ticker, co.name, start_date="2026-11-02", end_date="2026-11-05")
+        collectors.fetch_and_save_stock(co.ticker, co.name, start_date="2026-11-02", end_date="2026-11-05",
+                                       close_basis="source", allow_source_after_market=True)
         rows = q_rows(dev_db, co.ticker)
         assert len(rows) == 2 and [x.occurrences for x in rows] == [2, 2] and close_of(dev_db, co.id, D2) == 100.0
 
@@ -100,7 +102,8 @@ class TestPriceIngestion:
         bad = "BAD-" + secrets.token_hex(2)
         monkeypatch.setattr(collectors, "_read_fdr", lambda *a, **k: frame([(D1, 98, 5)]))
         try:
-            r = collectors.fetch_and_save_stock(bad, "captest_q36 bad", start_date="2026-11-02", end_date="2026-11-02")
+            r = collectors.fetch_and_save_stock(bad, "captest_q36 bad", start_date="2026-11-02", end_date="2026-11-02",
+                                       close_basis="source", allow_source_after_market=True)
             assert r.ok and r.quarantined == 1 and r.saved == 0
             assert dev_db.query(Company).filter(Company.ticker == bad).count() == 0
             assert len(q_rows(dev_db, bad)) == 1
@@ -113,7 +116,8 @@ class TestPriceIngestion:
         dev_db.add(StockPrice(company_id=co.id, price_date=D2, open_price=100, high_price=100, low_price=100, close_price=100, volume=10))
         dev_db.commit()
         monkeypatch.setattr(collectors, "_read_fdr", lambda *a, **k: frame([(D2, 40, 5), (D3, 0, 5)]))
-        collectors.fetch_and_save_stock(co.ticker, co.name, start_date="2026-11-03", end_date="2026-11-04")
+        collectors.fetch_and_save_stock(co.ticker, co.name, start_date="2026-11-03", end_date="2026-11-04",
+                                       close_basis="source", allow_source_after_market=True)
         conflict = next(x for x in q_rows(dev_db, co.ticker) if x.error_code == "conflicts_existing")
         zero = next(x for x in q_rows(dev_db, co.ticker) if x.error_code == "close_nonpositive")
         assert Q.revalidate(dev_db, conflict.id) == "still_quarantined"  # 기존 값이 그대로면 여전히 격리

@@ -12,7 +12,7 @@ import re
 import xml.etree.ElementTree as ET
 import zipfile
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
@@ -120,7 +120,9 @@ def _load_dart_corp_code_map() -> dict[str, str]:
     if _dart_stock_to_corp_code is not None:
         return _dart_stock_to_corp_code
 
+    global dart_requests
     key = os.environ["DART_API_KEY"]
+    dart_requests += 1
     # corpCode.xml은 11만 건이 넘는 zip이라 읽기 timeout을 길게 둔다
     resp = http_retry.get(DART_CORP_CODE_URL, params={"crtfc_key": key}, timeout=(5, 60), label="DART corpCode")
 
@@ -157,6 +159,8 @@ def resolve_ticker(name: str) -> str | None:
 
 
 def fetch_dart_disclosures(corp_code: str, days: int = 90) -> list[dict]:
+    """최근 days일(오늘 포함) 접수 공시를 total_page까지 모두 받는다. 013(조회 결과 없음)은 빈 목록, 그 밖의 status는 RuntimeError."""
+    global dart_requests
     key = os.environ["DART_API_KEY"]
     end_de = datetime.now().strftime("%Y%m%d")
     bgn_de = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
@@ -164,6 +168,7 @@ def fetch_dart_disclosures(corp_code: str, days: int = 90) -> list[dict]:
     items = []
     page_no = 1
     while True:
+        dart_requests += 1
         resp = http_retry.get(
             DART_DISCLOSURE_LIST_URL,
             params={
@@ -246,6 +251,8 @@ class CollectResult:
     source: str | None = None
     quarantined: int = 0
     warned: int = 0
+    # 46차: 공식 종가 모드에서 교정하지 않고 원천 값을 둔 날(기업 이벤트 경계, app.official_close.EVENT_BOUNDARY). 주가 수집만 채운다
+    held_dates: list = field(default_factory=list)
 
 
 _API_KEY_RE = re.compile(r"(crtfc_key=)[^&\s]+")
@@ -264,6 +271,7 @@ def _safe_error(e: Exception) -> str:
 
 
 naver_requests = 0  # 이 프로세스에서 네이버 뉴스 API에 보낸 요청 수(재시도 포함)
+dart_requests = 0  # 62차: 이 프로세스에서 DART에 보낸 요청 수(corpCode 1 + 공시 목록 페이지, 재시도는 세지 않음)
 
 
 class _CountingSession:
@@ -273,13 +281,14 @@ class _CountingSession:
         return requests.get(*args, **kwargs)
 
 
-def fetch_naver_news(company_name: str, display: int = 10, sort: str = "date") -> list[dict]:
+def fetch_naver_news(company_name: str, display: int = 10, sort: str = "date", start: int = 1) -> list[dict]:
+    """네이버 뉴스 검색 한 페이지. start(1~1000, 62차 추가, 기본 1 = 예전과 같음)는 검색 결과의 시작 위치다(app/news_recovery.py가 페이지를 넘긴다)."""
     client_id = os.environ["NAVER_CLIENT_ID"]
     client_secret = os.environ["NAVER_CLIENT_SECRET"]
 
     resp = http_retry.get(
         NAVER_NEWS_URL,
-        params={"query": company_name, "display": display, "start": 1, "sort": sort},
+        params={"query": company_name, "display": display, "start": start, "sort": sort},
         headers={
             "X-Naver-Client-Id": client_id,
             "X-Naver-Client-Secret": client_secret,
@@ -320,29 +329,101 @@ def _price_values(record: dict) -> tuple:
 
 # FinanceDataReader(KRX 로그인 불필요)로 주가 수집 후 DB에 upsert하는 함수.
 # 이미 있는 날짜는 최신 값으로 갱신한다. 장 마감 전에 저장된 행(거래량 등)이 남지 않게 하기 위해서다.
+CLOSE_BASIS_SOURCE = "source"  # FinanceDataReader(네이버 일봉) 값 그대로. 2026-09-14 이후 주식 종가는 애프터마켓 종료가다
+CLOSE_BASIS_OFFICIAL = "official"  # 공식 종가(KRX 정규장) 기준. app/official_close.py
+# 47차: 개발 DB 가격 교정 뒤 기본을 official로 바꿨다. source로 교정된 행을 다시 덮어쓰지 않게 source_after_market_guard를 둔다
+CLOSE_BASIS_DEFAULT = CLOSE_BASIS_OFFICIAL
+
+
+def _stored_asset_type(ticker: str) -> str | None:
+    """DB에 등록된 종목의 asset_type. 없으면 None. 공식 종가 분류(주식 vs ETF)와 source 보호가 호출자 인자에 기대지 않게 한다
+    (47차: backfill_history는 asset_type을 넘기지 않아 ETF가 주식으로 분류될 수 있었다)."""
+    db = SessionLocal()
+    try:
+        return db.query(Company.asset_type).filter(Company.ticker == ticker).scalar()
+    finally:
+        db.close()
+
+
+def source_after_market_guard(records: list[dict], asset_type: str, allow: bool) -> tuple[list[dict], list]:
+    """47차: source 모드에서 주식의 애프터마켓 개장일(2026-09-14) 이후 행은 저장하지 않는다(교정된 공식 종가를 애프터마켓 종료가로
+    덮어쓰지 않게). ETF는 애프터마켓 대상이 아니라 source = 공식 종가라 그대로 둔다. allow=True면 막지 않는다(시험·비상용).
+    반환: (저장할 레코드, 막은 날짜 목록)."""
+    from app.official_close import AFTER_MARKET_START
+
+    if allow or asset_type == "etf":
+        return records, []
+    blocked = [r["price_date"] for r in records if r["price_date"] >= AFTER_MARKET_START]
+    return [r for r in records if r["price_date"] < AFTER_MARKET_START], blocked
+
+
 def fetch_and_save_stock(
-    ticker: str, name: str, days: int = 7, dry_run: bool = False, start_date: str | None = None, end_date: str | None = None
+    ticker: str, name: str, days: int = 7, dry_run: bool = False, start_date: str | None = None, end_date: str | None = None,
+    close_basis: str = CLOSE_BASIS_DEFAULT, asset_type: str | None = None, allow_source_after_market: bool = False,
 ) -> CollectResult:
-    """start_date/end_date(YYYY-MM-DD)를 주면 days 대신 그 기간을 받는다(scripts/backfill_history.py가 장기 이력에 쓴다)."""
+    """start_date/end_date(YYYY-MM-DD)를 주면 days 대신 그 기간을 받는다(scripts/backfill_history.py가 장기 이력에 쓴다).
+
+    close_basis="official"(2026-11-11 44차, 기본은 아님): 주식 종가를 공식 종가(다음 거래일 기준가로 복원)로, ETF 종가를 실제 종가
+    (FDR 일봉은 분배락 뒤 과거 전체를 조정한 수정주가)로 저장한다. 주식의 최신 거래일은 확정할 수 없어 저장하지 않는다.
+    """
     today = datetime.now(KST)
     start_date = start_date or (today - timedelta(days=days)).strftime("%Y-%m-%d")
     end_date = end_date or today.strftime("%Y-%m-%d")
 
-    print(f"[{name}({ticker})] {start_date} ~ {end_date} 주가 데이터 수집 중...")
+    # 47차: 자산 구분은 DB 등록값을 먼저 쓴다(공식 종가 분류와 source 보호가 이 값에 달려 있다). 등록 전이면 인자, 그것도 없으면 stock
+    stored_type = _stored_asset_type(ticker) if V.valid_ticker(ticker) else None
+    if stored_type and asset_type and stored_type != asset_type:
+        print(f"[주의] {ticker} asset_type 인자 {asset_type} != DB {stored_type}: DB 값을 쓴다")
+    asset_type = stored_type or asset_type or "stock"
+    print(f"[{name}({ticker})] {start_date} ~ {end_date} 주가 데이터 수집 중... (종가 기준: {close_basis}, {asset_type})")
 
-    try:
-        df = _read_fdr(fdr.DataReader, ticker, start_date, end_date)
-    except Exception as e:
-        msg = _safe_error(e)
-        print(f"오류 발생: {msg}")
-        return CollectResult(ok=False, error=msg)
+    if close_basis == CLOSE_BASIS_OFFICIAL:
+        from app import official_close
 
-    if df is None or df.empty:
-        msg = f"FinanceDataReader가 '{ticker}'의 {start_date}~{end_date} 주가 데이터를 반환하지 않았습니다."
-        print(msg)
-        return CollectResult(ok=False, error=msg)
+        try:
+            # 45차: 원천(FDR) 행을 같은 기간(+ 직전 거래일) 함께 읽어, 공식 종가를 원천의 수정주가 체계로 맞춘다(연속성 유지)
+            src_start = (date.fromisoformat(start_date) - timedelta(days=14)).isoformat()
+            df = _read_fdr(fdr.DataReader, ticker, src_start, end_date)
+            source = ({i.date(): _price_row(i, r) for i, r in df.dropna(subset=["Close"]).iterrows()}
+                      if df is not None and not df.empty else {})
+            records, basis_stats = official_close.official_records(ticker, asset_type, date.fromisoformat(start_date),
+                                                                       now=today.replace(tzinfo=None), source=source)
+        except Exception as e:
+            msg = _safe_error(e)
+            print(f"오류 발생(공식 종가 조회): {msg}")
+            return CollectResult(ok=False, error=msg)
+        records = [r for r in records if r["price_date"] <= date.fromisoformat(end_date)]
+        after_market_dates = {date.fromisoformat(x) for x in basis_stats.pop("after_market_dates", [])}
+        held_dates = [x for x in basis_stats.pop("event_boundary_dates", []) if x <= end_date]
+        print(f"공식 종가 분류: {basis_stats}, 애프터마켓 교정일 {len(after_market_dates)}건"
+              + (f", 교정 보류(원천 값 유지) {held_dates}" if held_dates else ""))
+        if not records:
+            msg = f"'{ticker}'의 {start_date}~{end_date} 공식 종가를 확정할 수 있는 날이 없습니다(최신 거래일은 다음 거래일에 확정)."
+            print(msg)
+            return CollectResult(ok=True, saved=0, fetched=0)
+    elif close_basis != CLOSE_BASIS_SOURCE:
+        return CollectResult(ok=False, error=f"알 수 없는 close_basis: {close_basis}")
+    else:
+        held_dates = []
+        try:
+            df = _read_fdr(fdr.DataReader, ticker, start_date, end_date)
+        except Exception as e:
+            msg = _safe_error(e)
+            print(f"오류 발생: {msg}")
+            return CollectResult(ok=False, error=msg)
 
-    records = [_price_row(i, r) for i, r in df.dropna(subset=["Close"]).iterrows()]
+        if df is None or df.empty:
+            msg = f"FinanceDataReader가 '{ticker}'의 {start_date}~{end_date} 주가 데이터를 반환하지 않았습니다."
+            print(msg)
+            return CollectResult(ok=False, error=msg)
+
+        records = [_price_row(i, r) for i, r in df.dropna(subset=["Close"]).iterrows()]
+        records, blocked = source_after_market_guard(records, asset_type, allow_source_after_market)
+        if blocked:
+            print(f"[보호] source 모드: 애프터마켓 개장(2026-09-14) 뒤 주식 {len(blocked)}행은 저장하지 않음"
+                  f"({min(blocked)}~{max(blocked)}). 공식 종가는 --close-basis official로 받는다")
+        if not records:
+            return CollectResult(ok=True, saved=0, fetched=0)
     if not V.valid_ticker(ticker):
         # 2026-11-08(36차): 잘못된 종목코드로 회사를 새로 만들지 않는다. 받은 시세는 전부 격리한다
         checked = V.check_prices(ticker, records)
@@ -373,7 +454,10 @@ def fetch_and_save_stock(
         prev = db.query(StockPrice.close_price).filter(
             StockPrice.company_id == company.id, StockPrice.price_date < records[0]["price_date"]
         ).order_by(StockPrice.price_date.desc()).limit(1).scalar()
-        checked = V.check_prices(ticker, records, {d: v[3] for d, v in existing.items()},
+        # 45차: 공식 종가 모드에서 애프터마켓 교정일은 "기존 값과 충돌" 검사에서 뺀다(차이의 이유가 확인된 교정이다.
+        # 예: 펩트론 2026-10-07 정규장 130,600 vs 저장된 애프터마켓 종료가 96,900, +34.8%). 직전 종가 대비 급변 검사는 그대로다.
+        skip_conflict = after_market_dates if close_basis == CLOSE_BASIS_OFFICIAL else set()
+        checked = V.check_prices(ticker, records, {d: v[3] for d, v in existing.items() if d not in skip_conflict},
                                  float(prev) if prev is not None else None, today.date())
         keep, bad = V.split(checked)
         warned = sum(c.status == V.WARNING for c in keep)
@@ -386,11 +470,11 @@ def fetch_and_save_stock(
 
         if dry_run:
             print(f"[dry-run] {summary} (조회 {fetched}건)")
-            return CollectResult(ok=True, saved=len(new), fetched=fetched, quarantined=len(bad), warned=warned)
+            return CollectResult(ok=True, saved=len(new), fetched=fetched, quarantined=len(bad), warned=warned, held_dates=held_dates)
         quarantine.record("stock_price", checked, {"ticker": ticker})
         if not records:
             print(f"DB 저장 없음: {summary}")
-            return CollectResult(ok=True, saved=0, fetched=fetched, quarantined=len(bad), warned=warned)
+            return CollectResult(ok=True, saved=0, fetched=fetched, quarantined=len(bad), warned=warned, held_dates=held_dates)
 
         stmt = pg_insert(StockPrice).values([{**r, "company_id": company.id} for r in records])
         stmt = stmt.on_conflict_do_update(
@@ -398,9 +482,22 @@ def fetch_and_save_stock(
             set_={col: stmt.excluded[col] for col in _STOCK_PRICE_COLUMNS},
         )
         db.execute(stmt)
+        if close_basis == CLOSE_BASIS_OFFICIAL:
+            # 확정 범위 뒤의 기존 행(예: 이전 실행이 저장한 최신일): 종가는 확인할 수 없어 그대로 두고(다음 거래일 실행에서 확정),
+            # 등락률만 저장 종가로 다시 계산한다. 그대로 두면 그 행의 저장 등락률이 옛 전일 종가 기준으로 남아 차트(종가로 계산)와
+            # 실시간 대체 카드(저장 등락률)가 서로 다른 값을 보인다(2026-11-11 검증 DB: +3.57% vs +4.41%).
+            last = max(r["price_date"] for r in records)
+            prev = next(r["close_price"] for r in records if r["price_date"] == last)
+            later = (db.query(StockPrice).filter(StockPrice.company_id == company.id, StockPrice.price_date > last)
+                     .order_by(StockPrice.price_date).all())
+            for row in later:
+                row.change_pct = round((float(row.close_price) / prev - 1) * 100, 2)
+                prev = float(row.close_price)
+            if later:
+                summary += f", 확정 전 최신 행 {len(later)}건(종가 유지, 등락률만 다시 계산)"
         db.commit()
         print(f"DB 저장 완료: {summary}")
-        return CollectResult(ok=True, saved=len(new), fetched=fetched, quarantined=len(bad), warned=warned)
+        return CollectResult(ok=True, saved=len(new), fetched=fetched, quarantined=len(bad), warned=warned, held_dates=held_dates)
     except Exception as e:
         db.rollback()
         msg = _safe_error(e)
@@ -459,16 +556,44 @@ def fetch_index_frame(index_code: str, start_date: str, end_date: str, reader=No
     return None, None, errors
 
 
+def krx_calendar_now(now: datetime | None = None) -> datetime:
+    """KST 현재 시각(테스트는 now를 준다). tz 없는 now는 KST로 본다."""
+    if now is None:
+        return datetime.now(KST)
+    return now if now.tzinfo else now.replace(tzinfo=KST)
+
+
+def confirm_index_records(index_code: str, records: list[dict], now: datetime, naver_get=None) -> tuple[list[dict], list]:
+    """50차: 저장 전 확정 검증(app/index_confirm.py). 장중 행, 네이버 지수 일별과 다른 행, 대조할 수 없는 마지막 행은 빼고
+    (저장할 레코드, 뺀 날의 판정 dict 목록)을 돌려준다. 네이버를 읽지 못해도 수집은 계속한다(마지막 행만 보류)."""
+    from app import index_confirm
+
+    try:
+        naver = index_confirm.fetch_naver_closes(index_code, get=naver_get)
+    except Exception as e:
+        print(f"[market_index {index_code}] 확정 대조 실패(네이버 지수 일별): {_safe_error(e)} -> 마지막 행은 저장하지 않음")
+        naver = None
+    keep, held = index_confirm.split(records, naver, now)
+    for h in held:
+        ref = f", 네이버 {h.reference}" if h.reference is not None else ""
+        print(f"[market_index {index_code}] 저장 보류 {h.day} {h.value} ({h.status}{ref}): 기존 값 유지, 다음 실행에서 다시 확인")
+    return keep, [h.as_dict() for h in held]
+
+
 def fetch_and_save_market_index(
-    index_code: str, days: int = 7, dry_run: bool = False, start_date: str | None = None, end_date: str | None = None
+    index_code: str, days: int = 7, dry_run: bool = False, start_date: str | None = None, end_date: str | None = None,
+    now: datetime | None = None, reader=None, naver_get=None,
 ) -> CollectResult:
     """지수 일별 종가를 폴백 체인(MARKET_INDEX_SOURCES)으로 받아 market_index에 upsert한다(멱등).
-    start_date/end_date를 주면 days 대신 그 기간을 받는다."""
-    today = datetime.now(KST)
+    start_date/end_date를 주면 days 대신 그 기간을 받는다.
+
+    50차: 저장 전에 확정 검증을 한다(confirm_index_records). 장중 값·대조 불일치·대조 불가 마지막 행은 저장하지 않고
+    held_dates에 판정을 남긴다. now(KST)·reader(FDR DataReader 대신)·naver_get(네이버 응답 대신)은 테스트용이다."""
+    today = krx_calendar_now(now)
     start_date = start_date or (today - timedelta(days=days)).strftime("%Y-%m-%d")
     end_date = end_date or today.strftime("%Y-%m-%d")
 
-    df, source, errors = fetch_index_frame(index_code, start_date, end_date, today=today.date())
+    df, source, errors = fetch_index_frame(index_code, start_date, end_date, reader=reader, today=today.date())
     for msg in errors:
         print(f"[market_index {index_code}] 소스 실패 - {msg}")
     if df is None:
@@ -478,6 +603,9 @@ def fetch_and_save_market_index(
     print(f"[market_index {index_code}] 소스 사용: {source}")
 
     records = [_index_row(i, r) for i, r in df.sort_index().iterrows()]
+    records, held = confirm_index_records(index_code, records, today, naver_get=naver_get)
+    if not records:
+        return CollectResult(ok=True, saved=0, fetched=0, source=source, held_dates=held)
 
     db = SessionLocal()
     try:
@@ -497,12 +625,14 @@ def fetch_and_save_market_index(
         records = [c.record for c in keep]
         new = [r for r in records if r["price_date"] not in existing]
         if dry_run:
-            return CollectResult(ok=True, saved=len(new), fetched=fetched, source=source, quarantined=len(bad), warned=warned)
+            return CollectResult(ok=True, saved=len(new), fetched=fetched, source=source, quarantined=len(bad), warned=warned,
+                                 held_dates=held)
         quarantine.record("market_index", checked, {"index_code": index_code})
         if bad:
             print(f"[market_index {index_code}] 격리 {len(bad)}건(저장하지 않음)")
         if not records:
-            return CollectResult(ok=True, saved=0, fetched=fetched, source=source, quarantined=len(bad), warned=warned)
+            return CollectResult(ok=True, saved=0, fetched=fetched, source=source, quarantined=len(bad), warned=warned,
+                                 held_dates=held)
 
         stmt = pg_insert(MarketIndex).values([{**r, "index_code": index_code} for r in records])
         stmt = stmt.on_conflict_do_update(
@@ -511,7 +641,8 @@ def fetch_and_save_market_index(
         )
         db.execute(stmt)
         db.commit()
-        return CollectResult(ok=True, saved=len(new), fetched=fetched, source=source, quarantined=len(bad), warned=warned)
+        return CollectResult(ok=True, saved=len(new), fetched=fetched, source=source, quarantined=len(bad), warned=warned,
+                                 held_dates=held)
     except Exception as e:
         db.rollback()
         return CollectResult(ok=False, fetched=len(records), error=_safe_error(e))
@@ -799,9 +930,11 @@ def fetch_and_save_disclosures(
         items = fetch_dart_disclosures(corp_code, days=days)
 
         candidates = []
+        not_company = 0  # 62차: 회사 명의가 아니라 뺀 수(CollectResult.skipped). 기존 저장 수 = fetched - skipped - saved - quarantined
         for item in items:
             # 임원/주요주주 개인 명의 공시는 제외하고, 회사 명의 공시만 저장
             if item.get("flr_nm") != item.get("corp_name"):
+                not_company += 1
                 continue
 
             source_url = f"https://dart.fss.or.kr/dsaf001/main.do?rcptNo={item.get('rcept_no')}"
@@ -834,14 +967,15 @@ def fetch_and_save_disclosures(
                 f"(전체 조회 {len(items)}건 중, 회사 명의만 필터링)"
             )
             return CollectResult(ok=True, saved=len(to_insert), fetched=len(items), records=to_insert,
-                                 quarantined=len(bad), warned=warned)
+                                 quarantined=len(bad), warned=warned, skipped=not_company)
 
         quarantine.record("disclosure", checked, {"ticker": company.ticker})
         for record in to_insert:
             db.add(record)
         db.commit()
         print(f"DB 저장 완료: 신규 {len(to_insert)}건 데이터 추가됨" + (f"(격리 {len(bad)}건)" if bad else ""))
-        return CollectResult(ok=True, saved=len(to_insert), fetched=len(items), quarantined=len(bad), warned=warned)
+        return CollectResult(ok=True, saved=len(to_insert), fetched=len(items), quarantined=len(bad), warned=warned,
+                             skipped=not_company)
     except Exception as e:
         db.rollback()
         msg = _safe_error(e)

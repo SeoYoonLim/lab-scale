@@ -116,6 +116,31 @@ def last_attempt(db: Session, step: str) -> dict | None:
             "error_code": row.error_code}
 
 
+# 72차(2026-11-18): 뉴스·공시 수집 기록은 refresh_data의 "news" 단계만이 아니다. 63차 복구(scripts/recover_news_disclosures.py)는
+# news_recovery·disclosure_recovery 단계로 기록한다. last_attempt("news")만 보면 2026-11-17 복구(뉴스 +112,787·공시 +1,214)를 모르고
+# 11-03을 마지막 수집으로 보여 last_collected_at(11-17)과 어긋났다(서윤 씨 통합 테스트). 기존 last_collection(news 단계)은 뜻을 바꾸지 않고,
+# 이 함수가 뉴스·공시를 실제로 저장하는 모든 단계를 본 요약을 따로 준다.
+FEED_COLLECTION_STEPS = {"news": ("news", "news_recovery"), "disclosure": ("news", "disclosure_recovery")}
+
+
+def collection_summary(db: Session, kind: str) -> dict:
+    """뉴스(kind="news")·공시(kind="disclosure")를 저장하는 수집 단계 전체의 마지막 시도·마지막 성공. 쿼리 1개.
+
+    - last_attempt_finished_at / last_collection_status / last_collection_step: skipped를 뺀 가장 최근 기록(성공·부분·실패 모두)
+    - last_successful_collection_at: status=success인 가장 최근 기록의 종료 시각(partial·failed는 성공으로 치지 않는다)
+    기록이 없으면 모두 None. 수동 수집 스크립트(collect_universe 등)는 기록을 남기지 않는다."""
+    steps = FEED_COLLECTION_STEPS[kind]
+    base = select(DataRefreshLog.step, DataRefreshLog.status, DataRefreshLog.finished_at).where(
+        DataRefreshLog.step.in_(steps), DataRefreshLog.status != "skipped")
+    last = base.order_by(DataRefreshLog.id.desc()).limit(1).subquery()
+    ok = base.where(DataRefreshLog.status == "success").order_by(DataRefreshLog.id.desc()).limit(1).subquery()
+    row = db.execute(select(select(last.c.step).scalar_subquery(), select(last.c.status).scalar_subquery(),
+                            select(last.c.finished_at).scalar_subquery(), select(ok.c.finished_at).scalar_subquery())).one()
+    iso = (lambda t: t.astimezone(KST).isoformat() if t else None)
+    return {"last_collection_step": row[0], "last_collection_status": row[1], "last_attempt_finished_at": iso(row[2]),
+            "last_successful_collection_at": iso(row[3])}
+
+
 def build_status(db: Session, now: datetime | None = None) -> dict:
     now = (now or datetime.now(KST)).astimezone(KST)
     today = now.date()

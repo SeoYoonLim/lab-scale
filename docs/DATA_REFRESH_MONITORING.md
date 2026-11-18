@@ -372,3 +372,15 @@ GitHub Actions scheduled workflow는 쓰지 않는다. CI 러너는 개발 DB·`
 | 실제 외부 수집(FinanceDataReader·네이버·DART·운용사) | 실행하지 않음(보호 규칙) | **검증 안 함**. 수집 코드는 바꾸지 않았다 |
 | Windows 작업 스케줄러·cron 등록 | 등록하지 않음 | 명령만 문서화 |
 | (36차) 저장 전 검증·격리, 기존 정상 값 보호, 재검증·재처리, 실행기 부분 성공(`quality_quarantined`), KRX 거래일 달력·데이터별 최신성 정책 | `tests/test_data_quality_calendar.py`(순수), `tests/test_quarantine_devdb.py`(개발 DB, 가짜 종목·가짜 원격 응답) | 통과. 실제 외부 수집 응답으로는 **검증 안 함** |
+
+## 17. 누락 구간 복구(62차, 2026-11-15)
+
+수집이 며칠 멈췄을 때 뉴스는 기존 `news` 단계로 채워지지 않는다(종목당 최신 10건). 공시는 90일 재조회로 채워진다.
+`python -m scripts.recover_news_disclosures`가 뉴스를 날짜순으로 페이지를 넘겨(종목당 최대 1,000건) 기간 안 기사를 저장하고, 공시는 시작일부터 다시 조회한다.
+
+- 모드: `plan`(기본, 외부 요청 없음) / `dry-run`(외부 요청, DB 쓰기 없음) / `apply`(외부 요청 + DB 쓰기).
+- dry-run·apply는 `--allow-network`가 필요하다. apply는 `--confirm-database ai_investment`도 필요하다.
+- 실행 기록: `data_refresh_run.trigger=recovery`, 단계 `news_recovery`·`disclosure_recovery`.
+  - 기존 단계 이름을 쓰지 않으므로 `GET /api/status`의 `last_refresh` 뜻은 그대로다.
+- 같은 advisory lock을 잡는다. `--state`로 이어 실행한다.
+- 계획·요청량·승인 대기 사항·정기 실행 등록안: `docs/NEWS_DISCLOSURE_RECOVERY_PLAN_62.md`.

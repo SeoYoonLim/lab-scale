@@ -230,10 +230,17 @@ class TestOtherQuestionsUntouched:
     @pytest.mark.parametrize(
         "q",
         ["삼성전자 최근 뉴스 알려줘", "삼성전자 공시 알려줘", "삼성전자 뉴스랑 주가 움직임 같이 알려줘", "투자를 처음 시작하려면 뭐부터 해야 해?",
-         "삼성전자 왜 올랐어?", "KODEX 200 최근 흐름 알려줘"],
+         "KODEX 200 최근 흐름 알려줘"],
     )
     def test_non_gate_questions_go_through_existing_path(self, env, monkeypatch, q):
         self._normal_path(env, monkeypatch, q)
+
+    def test_cause_only_question_is_not_an_event_question_and_uses_the_cause_code_path(self, env, monkeypatch):
+        """69차: "삼성전자 왜 올랐어?"는 사건 반응 경로가 아니라 원인 단독 코드 경로(app/answer_cause, LLM 없음)다.
+        전에는 기존 LLM 경로였고 시세 기준일 뒤 기사가 LLM에 들어갔다(docs/BACKEND_69_REPORT.md)."""
+        assert agent._event_subject("삼성전자 왜 올랐어?", None) is None
+        company, marker, mode = agent._forecast_subject("삼성전자 왜 올랐어?", None)
+        assert mode == "cause" and marker is None
 
     def test_gate_without_company_goes_through_existing_path(self, env, monkeypatch):
         self._normal_path(env, monkeypatch, "공시 이후 주가 반응은 어떻게 봐야 해?")
@@ -259,7 +266,7 @@ class TestResearchRoute:
         r = client.post("/api/research", json={"question": "삼성전자 공시 이후 주가 반응은?"})
         assert r.status_code == 200, r.text
         body = r.json()
-        assert set(body) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer", "locale", "translation_status"}
+        assert set(body) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer", "locale", "translation_status", "source_status"}  # 72차 추가
         assert body["used_tools"] == ["event_reaction_tool"] and body["report_id"] == 99
         assert body["sources"][0]["type"] == "disclosure" and body["sources"][0]["url"]
         assert ("※ " + DISCLAIMER) in body["answer"]

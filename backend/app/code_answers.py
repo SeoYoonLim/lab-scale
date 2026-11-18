@@ -18,6 +18,7 @@ from datetime import date, datetime
 
 from app import routing
 from app.briefing import KST, drop_open_session
+from app.krx_calendar import close_time
 from app.korean import josa
 from app.tools.stock_tool import summarize_period
 
@@ -110,7 +111,8 @@ def intraday_note(records: list[dict]) -> str | None:
         r = rec.get("result")
         if isinstance(r, dict) and r.get("intraday_excluded") and r.get("prices"):
             last = r["prices"][-1]["price_date"]
-            return f"오늘({r['intraday_excluded']})은 장 마감(15:30) 전이라 직전 거래일 {last} 종가 기준입니다."
+            close = close_time(date.fromisoformat(r["intraday_excluded"])).strftime("%H:%M")  # 55차: 수능일 16:30
+            return f"오늘({r['intraday_excluded']})은 장 마감({close}) 전이라 직전 거래일 {last} 종가 기준입니다."
     return None
 
 

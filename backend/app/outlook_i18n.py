@@ -729,9 +729,9 @@ def followup_answer(company, period: o.Period, res: dict, kind: str, now: dateti
         if (ri := ind.get("regime_inputs") or {}).get("ma20") is not None:
             key = "risk_ma20_down" if ind["close"] < ri["ma20"] else "risk_ma20_up"
             levels.append(_t(key, L, won=_won(round(ri["ma20"]), L)))
-        levels.append(_t("risk_low", L, won=_won(rg["low"], L), d=rg["low_date"], n=rg["days"] - 1))
+        levels.append(_t("risk_low", L, won=_won(rg["low"], L), d=rg["low_date"], n=rg["days"]))
         if r52:
-            levels.append(_t("risk_low52", L, won=_won(r52["low"], L), d=r52["low_date"], n=r52["days"] - 1))
+            levels.append(_t("risk_low52", L, won=_won(r52["low"], L), d=r52["low_date"], n=r52["days"]))
         lines.append(_t("risk_levels", L, x=_t("list_sep", L).join(levels)))
         return o._blocks([[head], [first], lines])
     if kind == "probability":

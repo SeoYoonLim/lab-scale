@@ -14,6 +14,7 @@
   전일대비/등락률은 하락이면 이미 음수로 온다(부호 별도 계산 불필요).
 - `marketStatus`가 "OPEN"이 아니면(장 마감 후/주말/공휴일 등) 마지막 체결가만 반복해서 내려주고 더는 "실시간"이
   아니므로, 이 모듈은 `marketStatus == "OPEN"`일 때만 성공으로 보고 그 외는 전부 폴백 대상으로 취급한다.
+- 2026-11-11(44차): 애프터마켓 중에도 `marketStatus`가 "OPEN"이다. 애프터마켓 세션(`_after_market`)도 폴백 대상이다.
 
 ## 설계 전제
 
@@ -43,6 +44,17 @@ CACHE_TTL_SECONDS = 4.0
 _cache: dict[str, tuple[float, dict]] = {}
 
 
+def _after_market(row: dict) -> bool:
+    """애프터마켓 세션인가(2026-11-11 44차). 애프터마켓(NXT 15:40~, KRX 16:00~20:00) 중에도 marketStatus는 "OPEN"이라
+    그 체결가가 "실시간 시세"로 나갔다. 애프터마켓 체결가는 공식 종가가 아니고(한국거래소 안내, 경북매일 2026-09-17 보도),
+    전일 대비는 정규장 기준가 대비라 저장 종가·차트와 섞여 보였다. 판정은 실제로 관측한 값만 쓴다(16:34 응답):
+    marketSessionType="afterMarket" 또는 overMarketPriceInfo가 AFTER_MARKET이면서 OPEN. 프리마켓 값은 관측하지 못해 넣지 않았다."""
+    if row.get("marketSessionType") == "afterMarket":
+        return True
+    over = row.get("overMarketPriceInfo") or {}
+    return over.get("tradingSessionType") == "AFTER_MARKET" and over.get("overMarketStatus") == "OPEN"
+
+
 def _fetch_from_naver(ticker: str) -> dict | None:
     """네이버 폴링 API 호출. 실패/장시간 외/형식 이상 등 어떤 사유로든 실패하면 None(예외를 던지지 않음)."""
     try:
@@ -60,7 +72,7 @@ def _fetch_from_naver(ticker: str) -> dict | None:
     if not datas:
         return None
     row = datas[0]
-    if row.get("marketStatus") != "OPEN":
+    if row.get("marketStatus") != "OPEN" or _after_market(row):
         return None
 
     try:

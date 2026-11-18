@@ -28,7 +28,7 @@ from datetime import date, datetime, time, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased
 
-from app.data_status import KST, last_attempt, last_weekday, weekdays_behind
+from app.data_status import KST, collection_summary, last_attempt, last_weekday, weekdays_behind
 from app.ingest_validation import _CORRECTION_RE, is_correction
 from app.models import Company, Disclosure, News
 from app.pagination import page_meta
@@ -63,14 +63,29 @@ def rcept_no(url: str | None) -> str | None:
 
 
 def freshness(last_collected: datetime | None, company_latest: datetime | None, today: date,
-              last_collection: dict | None = None) -> dict:
+              last_collection: dict | None = None, latest_record: datetime | None = None,
+              summary: dict | None = None) -> dict:
     """last_collected: 그 테이블 전체의 마지막 저장 시각. company_latest: 이 종목의 가장 최근 게시·접수 시각.
-    last_collection: refresh_data 뉴스·공시 단계의 마지막 시도(app.data_status.last_attempt). status=failed면 수집 실패라 목록이 비거나
-    오래됐을 수 있고, success인데 items가 비면 이 종목에 저장된 항목이 원래 없는 것이다."""
+    last_collection: refresh_data 뉴스·공시 단계("news")의 마지막 시도(app.data_status.last_attempt). status=failed면 수집 실패라 목록이 비거나
+    오래됐을 수 있고, success인데 items가 비면 이 종목에 저장된 항목이 원래 없는 것이다.
+
+    72차 추가(하위 호환, 기존 키는 뜻 그대로): 네 가지 시각을 나눠 준다.
+    - latest_record_at: 그 테이블 전체의 가장 최근 게시(뉴스)·접수(공시) 시각 = 데이터 자체의 최신 시점
+    - last_successful_collection_at: 뉴스·공시를 저장하는 모든 수집 단계(news·news_recovery / news·disclosure_recovery) 중 마지막 성공 종료 시각
+    - last_attempt_finished_at·last_collection_status·last_collection_step: 같은 단계들의 마지막 시도(성공·부분·실패)
+    - freshness_state: 데이터 최신성만(latest_record_at 기준 평일 지연): fresh / stale / no_data. 수집 성공 여부는 last_collection_status로 따로 본다"""
     lag = weekdays_behind(last_collected.astimezone(KST).date(), last_weekday(today)) if last_collected else None
+    rec_lag = weekdays_behind(latest_record.astimezone(KST).date(), last_weekday(today)) if latest_record else None
+    state = "no_data" if latest_record is None else ("stale" if rec_lag >= STALE_WEEKDAYS else "fresh")
+    s = summary or {}
     return {"last_collected_at": _iso(last_collected), "collection_lag_weekdays": lag,
             "stale": lag is None or lag >= STALE_WEEKDAYS, "company_latest_at": _iso(company_latest),
-            "last_collection": last_collection}
+            "last_collection": last_collection,
+            "latest_record_at": _iso(latest_record), "record_lag_weekdays": rec_lag, "freshness_state": state,
+            "last_successful_collection_at": s.get("last_successful_collection_at"),
+            "last_attempt_finished_at": s.get("last_attempt_finished_at"),
+            "last_collection_status": s.get("last_collection_status"),
+            "last_collection_step": s.get("last_collection_step")}
 
 
 def _base(company: Company, total: int, limit: int, offset: int, date_from: date | None, date_to: date | None, order: str) -> dict:
@@ -95,7 +110,8 @@ def news_item(row, related: list[str]) -> dict:
 
 def news_page(db: Session, company: Company, limit: int, offset: int, date_from: date | None, date_to: date | None,
               order: str, today: date) -> dict:
-    """쿼리 5개: 건수, 페이지, 같은 URL의 다른 종목, 신선도(전체 마지막 저장 + 이 종목 최신), 마지막 수집 시도."""
+    """쿼리 6개: 건수, 페이지, 같은 URL의 다른 종목, 신선도(전체 마지막 저장·전체 최신 게시 + 이 종목 최신), 마지막 수집 시도(news 단계),
+    수집 요약(72차: 복구 단계 포함 마지막 시도·성공)."""
     start, end = kst_range(date_from, date_to)
     # 같은 종목에 같은 URL이 두 번 저장됐으면(유니크 제약이 없다, DATA_QUALITY_AND_TRADING_CALENDAR.md) id가 가장 큰 행 하나만 보인다.
     # 다른 종목의 같은 URL 행은 건드리지 않는다(종목별 관계 유지).
@@ -116,10 +132,11 @@ def news_page(db: Session, company: Company, limit: int, offset: int, date_from:
                                       .where(News.url.in_(urls), News.company_id != company.id)
                                       .distinct().order_by(News.url, Company.ticker)).all():
             related.setdefault(url, []).append(ticker)
-    last, latest = db.execute(select(select(func.max(News.created_at)).scalar_subquery(),
-                                     select(func.max(News.published_at)).where(*cond).scalar_subquery())).one()
+    last, latest, newest = db.execute(select(select(func.max(News.created_at)).scalar_subquery(),
+                                             select(func.max(News.published_at)).where(*cond).scalar_subquery(),
+                                             select(func.max(News.published_at)).scalar_subquery())).one()
     return {**_base(company, total, limit, offset, date_from, date_to, order),
-            "freshness": freshness(last, latest, today, last_attempt(db, REFRESH_STEP)),
+            "freshness": freshness(last, latest, today, last_attempt(db, REFRESH_STEP), newest, collection_summary(db, "news")),
             "items": [news_item(r, related.get(r.url, [])) for r in rows]}
 
 
@@ -136,11 +153,13 @@ def disclosure_page(db: Session, company: Company, limit: int, offset: int, date
     공시는 DART 접수번호가 행마다 달라 같은 종목에 같은 원문 URL이 두 번 저장되면 그것은 중복이다. 그 경우 id가 큰 행 하나만 보인다."""
     start, end = kst_range(date_from, date_to)
     if company.asset_type == "etf":
-        last = db.execute(select(func.max(Disclosure.created_at))).scalar()
+        last, newest = db.execute(select(select(func.max(Disclosure.created_at)).scalar_subquery(),
+                                         select(func.max(Disclosure.disclosed_at)).scalar_subquery())).one()
         base = _base(company, 0, limit, offset, date_from, date_to, order)
         base["filters"]["correction"] = correction
         return {**base, "supported": False, "message": ETF_DISCLOSURE_MESSAGE.replace("{ticker}", company.ticker),
-                "freshness": freshness(last, None, today, last_attempt(db, REFRESH_STEP)), "items": []}
+                "freshness": freshness(last, None, today, last_attempt(db, REFRESH_STEP), newest,
+                                       collection_summary(db, "disclosure")), "items": []}
     newer = aliased(Disclosure)
     dup = select(newer.id).where(newer.company_id == company.id, newer.source_url == Disclosure.source_url,
                                  newer.id > Disclosure.id).exists()
@@ -155,11 +174,13 @@ def disclosure_page(db: Session, company: Company, limit: int, offset: int, date
     rows = db.execute(_window(select(Disclosure.id, Disclosure.title, Disclosure.disclosure_type, Disclosure.source_url,
                                      Disclosure.disclosed_at, Disclosure.created_at).where(*cond),
                               Disclosure.disclosed_at, start, end).order_by(*sort).limit(limit).offset(offset)).all()
-    last, latest = db.execute(select(select(func.max(Disclosure.created_at)).scalar_subquery(),
-                                     select(func.max(Disclosure.disclosed_at)).where(Disclosure.company_id == company.id)
-                                     .scalar_subquery())).one()
+    last, latest, newest = db.execute(select(select(func.max(Disclosure.created_at)).scalar_subquery(),
+                                             select(func.max(Disclosure.disclosed_at)).where(Disclosure.company_id == company.id)
+                                             .scalar_subquery(),
+                                             select(func.max(Disclosure.disclosed_at)).scalar_subquery())).one()
     base = _base(company, total, limit, offset, date_from, date_to, order)
     base["filters"]["correction"] = correction
-    return {**base, "supported": True, "message": None, "freshness": freshness(last, latest, today, last_attempt(db, REFRESH_STEP)),
+    return {**base, "supported": True, "message": None,
+            "freshness": freshness(last, latest, today, last_attempt(db, REFRESH_STEP), newest, collection_summary(db, "disclosure")),
             "items": [disclosure_item(r) for r in rows]}
 

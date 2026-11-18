@@ -120,8 +120,8 @@ def test_rsi_macd_volatility_match_independent_calculation():
 def test_high_low_range_is_labeled_and_separate_from_returns():
     rows = _rows()
     ind = outlook.compute_indicators(rows, outlook.PERIODS["1주일"])
-    window = [c for _, c, _ in rows[-21:]]
-    assert ind["range"]["high"] == max(window) and ind["range"]["from_date"] == rows[-21][0].isoformat()
+    window = [c for _, c, _ in rows[-20:]]  # 42차: 기준일 포함 최근 20개 종가(비교 기준일 종가는 빼고)
+    assert ind["range"]["high"] == max(window) and ind["range"]["from_date"] == rows[-20][0].isoformat()
     assert ind["range"]["from_high_pct"] == round((rows[-1][1] / max(window) - 1) * 100, 2)
     lines = outlook.indicator_lines(ind, outlook.PERIODS["1주일"])
     assert any(line.startswith("- 최고 종가 대비:") and "조회 기간" in line for line in lines)

@@ -1,0 +1,40 @@
+{
+ "version": "2026-11-14.1",
+ "updated": "2026-11-14",
+ "market": "KRX",
+ "note": "분봉 세션 분류 일정(app/session_schedule.py). 시각은 KST 분봉 '시작 시각'(HH:MM, 양 끝 포함). 정규 일정은 default, 날짜별 변경은 overrides에 날짜 전체 일정을 적는다(부분 상속 없음). 공식 근거(sources) 없는 일정은 넣지 않는다. NXT 일정은 넣지 않는다(이 원천은 KRX 체결만).",
+ "statuses": {
+  "data_verified": "실제 보존 분봉으로 규칙을 검증함",
+  "announced": "한국거래소 발표(보도 포함)로 등록, 실제 분봉 검증 전. 분류는 하지만 적재는 --allow-unverified-schedule이 있어야 한다"
+ },
+ "default": {
+  "label": "KRX 정규 일정(마감 15:30)",
+  "status": "data_verified",
+  "verified_by": "53차 보존 분봉 전수 조사 2026-11-05~11-13, 1,192,628봉(docs/SESSION_MARKET_DATA_IMPLEMENTATION_REHEARSAL_53.md 3·4절)",
+  "sources": ["https://regulation.krx.co.kr/contents/RGL/03/03010301/RGL03010301.jsp"],
+  "regular": {"start": "09:00", "end": "15:20"},
+  "closing_auction": {"at": "15:30", "late_window": {"start": "15:31", "end": "15:39"}},
+  "post_close": {"start": "15:40", "end": "15:59"},
+  "after_market": {"start": "16:00", "end": "19:59", "asset_types": ["stock"], "effective_from": "2026-09-14"}
+ },
+ "overrides": [
+  {
+   "date": "2026-11-19",
+   "label": "2027학년도 대학수학능력시험일: 정규시장·시간외 1시간 순연, 애프터마켓 종료는 그대로",
+   "status": "announced",
+   "reason": "한국거래소 2026-11-05 발표: 정규시장 10:00~16:30, 장후 시간외 종가매매 16:40~17:00, 애프터마켓 17:00~20:00(ETF·ETN·상장형 수익증권 제외)",
+   "sources": [
+    "https://www.yna.co.kr/view/AKR20261105065500008",
+    "https://www.fnnews.com/news/202611051033061345",
+    "https://view.asiae.co.kr/article/2026110510203377880",
+    "https://www.kado.net/news/articleView.html?idxno=2082847",
+    "https://regulation.krx.co.kr/contents/RGL/03/03010301/RGL03010301.jsp"
+   ],
+   "regular": {"start": "10:00", "end": "16:20"},
+   "closing_auction": {"at": "16:30", "late_window": null},
+   "late_window_note": "정규 일정의 15:31~15:39 지연 체결 규칙은 관찰로만 확인했다. 이날은 관찰이 없어 열지 않는다(16:30 봉이 없으면 그 종목-날짜를 거부)",
+   "post_close": {"start": "16:40", "end": "16:59"},
+   "after_market": {"start": "17:00", "end": "19:59", "asset_types": ["stock"], "effective_from": "2026-09-14"}
+  }
+ ]
+}

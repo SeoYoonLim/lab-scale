@@ -942,3 +942,119 @@ def freshness_note(question: str, records: list[dict], today, period_text: str |
     if latest is None or not is_stale(latest, today):
         return None
     return f"마지막 데이터는 {latest.isoformat()} 기준입니다."
+
+
+# ---------- 기사 속 과거 가격과 현재 시세 분리 (49차, 2026-11-13) ----------
+# 48차 holdout D4: "LG電子の最近の状況を分析して"의 한국어 답 "## 주가 동향"이 2026-10-30 기사의 마감가("30일 KRX 마감 기준, LG전자 주가가
+# 147,800원으로")를 현재 시세처럼 썼다. 숫자 검증은 기사 본문에 있는 값이라 통과시켰고, 위 undated_article_quote는 "30일"을 날짜로 보고
+# 통과시켰다. 원칙(주식·ETF 같음):
+# - 현재 주가·등락률·계산값은 DB 시세(도구 결과의 구조화 값)만 쓴다. "주가 동향" 절에는 기사에서만 나온 시세형 숫자를 두지 않는다.
+# - 기사 시세를 다른 절에서 쓰려면 그 기사의 발행일을 같은 문장에 밝혀야 한다(역사적 맥락). "30일"처럼 일만 쓰거나 다른 날짜면 안 된다.
+# - 발행일이 없는 기사의 시세형 숫자는 쓰지 않는다.
+# - 실적·매출·영업이익·수주 같은 숫자(억·조 단위, 또는 실적 낱말 문맥의 %)는 시세가 아니라서 건드리지 않는다.
+# 시세형 숫자: 원·% 단위이고 1억 미만이며, 실적 낱말만 있고 시세 낱말이 없는 문장은 아니다.
+# DB 값과 맞는지는 그 숫자의 표기 자리수로 반올림해 본다("16만원대"는 DB 152,300원과 같은 값이 아니다).
+ARTICLE_NOTE_RE = re.compile(r"\[기사 (\d{4}-\d{2}-\d{2}) 시점\]")
+_CURRENT_SECTION_RE = re.compile(r"^#{1,6}\s*(?:주가\s*동향|현재\s*주가|시세)")
+_PRICE_WORD_RE = re.compile(r"주가|종가|시가|고가|저가|장중|마감|낙폭|등락률|시세|거래를\s*마쳤|거래됐|원에\s*거래|원대")
+_MOVE_WORD_RE = re.compile(r"상승|하락|급등|급락|올랐|내렸|올라|내려|떨어|반등|약세|강세")
+
+
+def _doc_date(item: dict) -> date | None:
+    v = item.get("published_at") or item.get("disclosed_at")
+    if isinstance(v, str) and re.match(r"\d{4}-\d{2}-\d{2}", v):
+        return date.fromisoformat(v[:10])
+    return None
+
+
+def _states_day(text: str, d: date) -> bool:
+    """문장이 날짜 d를 말하는지(ISO·점·'YYYY년 M월 D일'·'M월 D일'). '30일'처럼 일만 쓴 것은 아니다."""
+    if any(f in text for f in (d.isoformat(), f"{d.year}.{d.month:02d}.{d.day:02d}", f"{d.year}.{d.month}.{d.day}")):
+        return True
+    for m in re.finditer(r"(?:(\d{4})\s*년\s*)?(\d{1,2})\s*월\s*(\d{1,2})\s*일", text):
+        y, mo, dd = m.groups()
+        if int(mo) == d.month and int(dd) == d.day and (y is None or int(y) == d.year):
+            return True
+    return False
+
+
+def _price_like(n: Number, sentence: str) -> bool:
+    if n.unit not in ("원", "%") or n.value >= 1e8:
+        return False
+    price_ctx = bool(_PRICE_WORD_RE.search(sentence))
+    if _FIN_NOUN_RE.search(sentence) and not price_ctx:
+        return False
+    return price_ctx or (n.unit == "%" and bool(_MOVE_WORD_RE.search(sentence))) or n.unit == "원"
+
+
+def _matches_db(n: Number, structured: list[float]) -> bool:
+    """표기 자리수 기준으로 같은 값(반올림 범위 안)이 DB 값에 있는지. "152,300원"은 정확히, "16만원"은 15.5만~16.5만."""
+    half = max(n.tolerance / 2, 1e-9)
+    return any(abs(n.value - v) <= half + 1e-9 for v in structured)
+
+
+def strip_article_prices(answer: str, records: list[dict]) -> tuple[str, list[str]]:
+    """(답변, 지운 이유 목록). 기사에서만 나온 시세형 숫자를 현재 시세처럼 쓴 문장을 지운다(위 설명).
+    "주가 동향" 절이 비면 그 절을 DB 시세 요약(stock_tool의 summary)으로 채운다. 지울 것이 없으면 answer 그대로."""
+    if not answer:
+        return answer, []
+    docs = _doc_items(records)
+    if not docs:
+        return answer, []
+    answer = ARTICLE_NOTE_RE.sub(lambda m: f"({m.group(1)} 기사 기준)", answer)
+    results = [{k: v for k, v in r.items() if k not in _DOC_KEYS} if isinstance(r, dict) else r
+               for r in (rec.get("result") for rec in records)]
+    structured = support_values(results) + derived_values(results) + cross_differences(results)
+    doc_support = [(it, support_values(it), _doc_date(it)) for it in docs]
+    titles = [it["title"].strip() for it in docs if isinstance(it.get("title"), str) and len(it["title"].strip()) >= 8]
+    reasons: list[str] = []
+    out_lines: list[str] = []
+    current = False
+    section_start, section_removed = 0, 0
+    summaries = [r["summary"] for r in results if isinstance(r, dict) and r.get("found") and isinstance(r.get("summary"), str)
+                 and r.get("prices")]
+
+    def close_section():
+        # 현재 시세 절에서 지운 문장이 있고 남은 본문이 없으면 DB 요약으로 채운다
+        if current and section_removed and not any(line.strip() for line in out_lines[section_start:]):
+            if summaries:
+                del out_lines[section_start:]
+                out_lines.extend(["\n".join(summaries), ""])
+
+    for line in answer.split("\n"):
+        if line.lstrip().startswith("#"):
+            close_section()
+            current = bool(_CURRENT_SECTION_RE.match(line.strip()))
+            out_lines.append(line)
+            section_start, section_removed = len(out_lines), 0
+            continue
+        if any(t and t in line for t in titles):
+            out_lines.append(line)  # 기사·공시 제목을 그대로 인용한 줄은 출처 표시다(제목은 원문 그대로 둔다)
+            continue
+        kept = []
+        for sent in _SENTENCE_SPLIT_RE.split(line):
+            if not sent:
+                continue
+            bad = None
+            for n in extract_numbers(sent):
+                if not _price_like(n, sent) or _matches_db(n, structured):
+                    continue
+                sources = [d for it, vals, d in doc_support if is_supported(n, vals)]
+                if not sources:
+                    continue  # 기사에도 없는 값은 숫자 검증(guard_answer)의 몫이다
+                dated_ok = any(d is not None and _states_day(sent, d) for d in sources)
+                if current or not dated_ok:
+                    bad = f"article_price:{n.raw}" + (":current_section" if current else ":no_article_date")
+                    break
+            if bad:
+                reasons.append(bad)
+                section_removed += 1
+                continue
+            kept.append(sent)
+        if kept or not line.strip():
+            out_lines.append(" ".join(kept))
+    close_section()
+    if not reasons:
+        return answer, []
+    text = re.sub(r"\n{3,}", "\n\n", "\n".join(out_lines)).strip()
+    return text, reasons

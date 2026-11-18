@@ -115,6 +115,15 @@ def explicitly_requested_tools(question: str) -> list[str]:
     return wanted if len(wanted) >= 2 else []
 
 
+# 68차(2026-11-17): 자금 흐름(순유입·순매수·수급)을 묻는 질문. 답은 기사 본문 속 집계(예: "순유입 1위는 KODEX 200, 1조515억원")에 있어
+# 목록 조회(news_tool)의 제목만으로는 답할 수 없다(실측: "KODEX 200 최근 자금 유입 알려줘" -> news_tool·stock_tool만 불러 주가 흐름만 답함).
+_FUND_FLOW_RE = re.compile(r"자금\s*(?:유입|유출|이탈|흐름)|순유입|순유출|순매수|순매도|뭉칫돈|(?:돈|자금)이?\s*몰|머니\s*플로우|수급")
+
+
+def is_fund_flow_question(question: str) -> bool:
+    return bool(_FUND_FLOW_RE.search(question or ""))
+
+
 # 주가가 오르내린 "원인"을 묻는 질문: 원인 표현과 등락 표현이 함께 있어야 한다.
 # 시스템 프롬프트가 "'왜 올랐는지/내렸는지' 같이 뉴스가 필요한 질문에는 news_tool"이라고 안내해서 모델은 이런 질문에
 # news_tool만 부른다(5개 질문 x 5회 = 25회 중 25회, stock_tool 0회). 그러면 실제 주가가 어떻게 움직였는지 모르는 채로
@@ -230,3 +239,27 @@ def briefing_scope(question: str) -> str:
     if hold and not watch:
         return "holdings"
     return "all"
+
+
+# ---------- 종목 분석 질문 (48차, 2026-11-13) ----------
+# "삼성전자 분석해줘"에 모델이 news_tool만 불러 주가·기준일이 없는 답이 나왔다(48차 d01). 분석·상태를 묻는 질문이면 주가 조회를
+# 코드가 덧붙인다(app/agent.py의 _add_requested_tools, 원인 질문과 같은 방식). 뉴스·공시만 요약·정리해 달라는 질문은 아니다.
+# 질문은 여러 언어로 온다(locale은 답 언어일 뿐): 영어·일본어·중국어 표현도 본다.
+_ANALYSIS_RE = re.compile(
+    r"분석|어때|어떤가|어떻게\s*(?:봐|보여|보이|생각)|평가해|투자\s*포인트|현황"
+    r"|\banaly[sz]e\b|\banalysis\b|\bhow\s+(?:is|are|has|have)\b[^?]{0,60}\b(?:doing|performed|performing|going|look)\b|\bhow'?s\b"
+    r"|\bwhat(?:'s|\s+is)\s+(?:going\s+on|happening)\b|分析|どう(?:です|でしょう|なって|ですか)?|状況|怎么样|怎樣|怎么樣|如何|情况|表现",
+    re.IGNORECASE,
+)
+_NEWS_ONLY_RE = re.compile(r"(?:뉴스|기사|공시)[^?]{0,10}(?:요약|정리|목록|알려|보여|뭐|있)|\bnews\b|ニュース|新闻|新聞|公告|開示")
+
+
+_PRICE_WORD_RE = re.compile(r"주가|시세|\bstock\b|\bshares?\b|\bprice\b|株価|股价|股價", re.IGNORECASE)
+
+
+def is_analysis_question(question: str) -> bool:
+    """종목의 분석·현재 상태를 묻는 질문이면 True. 뉴스·공시만 요약·나열해 달라는 질문은 False(주가를 덧붙이지 않는다)."""
+    q = question or ""
+    # 49차: "주가와 뉴스"처럼 주가도 함께 물으면 뉴스만 묻는 질문이 아니다(재확인 X01: "… stock and recent news?"가 뉴스만 조회)
+    news_only = bool(_NEWS_ONLY_RE.search(q)) and not _PRICE_WORD_RE.search(q)
+    return bool(_ANALYSIS_RE.search(q)) and not news_only

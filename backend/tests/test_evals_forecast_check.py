@@ -309,3 +309,12 @@ def test_signal26():
           "- 지금: 2026-11-02 골든크로스\n- 판정: 개별로는 상승 쪽이지만 이 신호가 속한 중기 추세 묶음은 중립입니다.")
     assert FC.check_signal26(ok, "골든크로스") == []
     assert FC.check_signal26(ok.replace("묶음은 중립", "묶음 판정 없음"), "골든크로스")
+
+
+def test_state_regex_skips_neutral_sentence_in_oneline_answer():
+    """46차: 한 줄 답에서 방향이 중립이면 "현재는"이 두 번 나온다. 국면은 마지막 "현재는 … (기준일 … 종가)"여야 한다."""
+    from evals.forecast_check import _STATE
+    a = ("삼성바이오로직스(207940) · 향후 5거래일 · 방향: 중립 · 현재는 상승과 하락 중 어느 쪽도 뚜렷하게 우세하지 않습니다"
+         "(5개 묶음 중 상승 2·하락 1·중립 2). 현재는 횡보, 방향 불분명 (기준일 2026-11-11 종가).")
+    assert _STATE.search(a).group("regime") == "횡보, 방향 불분명"
+    assert _STATE.search("현재는 판단 유보(데이터 부족) (기준일 2026-11-03 종가)").group("regime") == "판단 유보(데이터 부족)"

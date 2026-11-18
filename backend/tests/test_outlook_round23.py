@@ -249,8 +249,8 @@ def _skhynix_like():
            "returns": {5: {"pct": 2.91, "from_date": "2026-10-27", "from_close": 1_374_000.0}}, "day_change_pct": -4.46,
            "volume": {"value": 2_291_781, "avg": 3_635_655, "ratio": 0.63}, "macd": {"macd": -64_873.44, "signal": -88_478.87},
            "rsi": 49.49, "relative": {"period_days": 5, "index_name": "코스피", "diff_pct_point": 2.92},
-           "range": {"days": 21, "low": 1_190_000.0, "low_date": "2026-10-20", "high": 1_842_000.0, "high_date": "2026-10-02"},
-           "range52": {"days": 251, "low": 510_000.0, "low_date": "2025-10-24", "high": 2_919_000.0, "high_date": "2026-06-22"}}
+           "range": {"days": 20, "low": 1_190_000.0, "low_date": "2026-10-20", "high": 1_784_000.0, "high_date": "2026-10-06"},
+           "range52": {"days": 250, "low": 519_000.0, "low_date": "2025-11-25", "high": 2_919_000.0, "high_date": "2026-06-22"}}
     sig = [_sig("close_vs_ma_short", "down", "종가가 5일 이동평균 아래"), _sig("close_vs_ma_long", "down", "종가가 20일 이동평균 아래"),
            _sig("ma_alignment", "up", "5일선이 20일선 위"), _sig("cross", "up", "2026-11-02 골든크로스"),
            _sig("period_return", "up", "5거래일 수익률 +2.91%"), _sig("rsi", "neutral"), _sig("macd", "up", "MACD가 시그널 위"),
@@ -322,7 +322,7 @@ def test_high_and_low_lines_name_their_window():
     assert len(hl) == 4
     assert all("조회 기간 " in x for x in hl)
     assert sum("분석 기간 기준 최근 20거래일" in x for x in hl) == 2 and sum("52주 기준 최근 250거래일" in x for x in hl) == 2
-    assert f"조회 기간 {rows[-251][0].isoformat()}~{rows[-1][0].isoformat()}" in [x for x in hl if "52주" in x][0]
+    assert f"조회 기간 {rows[-250][0].isoformat()}~{rows[-1][0].isoformat()}" in [x for x in hl if "52주" in x][0]
 
 
 def test_index_lag_names_the_last_index_date():
@@ -375,7 +375,7 @@ def test_risk_followup_shows_risks_and_price_levels_only(backtest):
     levels = next(x for x in lines if x.startswith("- 확인할 가격대: "))
     assert "20일선 1,421,300원(종가가 아래)" in levels
     assert "분석 기간 최저 종가 1,190,000원(2026-10-20, 최근 20거래일 기준)" in levels
-    assert "52주 최저 종가 510,000원(2025-10-24, 최근 250거래일 기준)" in levels
+    assert "52주 최저 종가 519,000원(2025-11-25, 최근 250거래일 기준)" in levels
 
 
 def test_probability_followup_states_no_verified_probability(backtest):
