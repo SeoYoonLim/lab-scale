@@ -123,6 +123,7 @@ export const EXTRA_EN: Record<string, string> = {
   'company.not_found': 'This stock is not registered.',
   'company.price_stale': 'Could not load the latest price. Showing the previous value.',
   'company.realtime': 'Real-time price',
+  'company.realtime_at': 'Real-time price · as of {time}',
   'company.watchlist_add': 'Add to watchlist',
   'company.watchlist_added': 'Added to your watchlist',
   'company.watchlist_adding': 'Adding…',
@@ -390,6 +391,7 @@ export const EXTRA_EN: Record<string, string> = {
   'sources.disclosure_count': 'Filings: {n}',
   'sources.news_count': 'News: {n}',
   'sources.title': 'Key evidence',
+  'sources.tools_title': 'Analysis tools used',
 
   'stock_feed.also_mentioned': 'Also mentioned',
   'stock_feed.collection_failed': 'The latest collection failed, so new items may be missing.',

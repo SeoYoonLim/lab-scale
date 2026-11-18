@@ -14,7 +14,7 @@ import StockDisclosuresCard from '../components/StockDisclosuresCard'
 import StockNewsCard from '../components/StockNewsCard'
 import ErrorNotice from '../components/ui/ErrorNotice'
 import LoadingNotice from '../components/ui/LoadingNotice'
-import { formatDate, formatPct, formatPrice, trendClass } from '../utils/format'
+import { formatDate, formatPct, formatPrice, formatTime, trendClass } from '../utils/format'
 
 // backend/API.md: 서버가 종목별로 3~5초 캐싱하므로 이 주기로 폴링해도 안전하다.
 const REALTIME_POLL_MS = 3000
@@ -209,7 +209,9 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
             </div>
             <div className="muted small">
               {realtime.is_realtime
-                ? t('company.realtime', { fallback: '실시간 시세' })
+                ? realtime.as_of
+                  ? t('company.realtime_at', { fallback: '실시간 시세 · {time} 기준', vars: { time: formatTime(realtime.as_of) } })
+                  : t('company.realtime', { fallback: '실시간 시세' })
                 : t('company.close_basis', { fallback: '{date} 종가 기준', vars: { date: formatDate(realtime.as_of) } })}
             </div>
             {/* 한 번 성공한 뒤 폴링이 실패해도 마지막으로 받은 가격은 그대로 보여준다 - 대신 최신화가

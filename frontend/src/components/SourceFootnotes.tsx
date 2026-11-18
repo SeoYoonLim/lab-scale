@@ -14,7 +14,12 @@ export default function SourceFootnotes({ usedTools, sources }: { usedTools: str
 
   return (
     <footer className="evidence">
-      <div className="evidence-title">{t('sources.title', { fallback: '주요 근거 자료' })}</div>
+      {/* 근거 문서가 하나도 없으면 "근거 자료"라고 부르지 않는다(도구 칩만 있는데 근거가 있는 것처럼 보이면 안 된다) */}
+      <div className="evidence-title">
+        {sources.length > 0
+          ? t('sources.title', { fallback: '주요 근거 자료' })
+          : t('sources.tools_title', { fallback: '사용한 분석 도구' })}
+      </div>
       <ul className="evidence-chips">
         {newsCount > 0 && (
           <li className="chip chip-strong">{t('sources.news_count', { fallback: '뉴스 {n}건', vars: { n: newsCount } })}</li>
