@@ -953,6 +953,36 @@ def _add_requested_tools(calls: list[dict], question: str) -> list[int]:
     return added
 
 
+def _add_cause_price_tools(calls: list[dict], question: str) -> list[int]:
+    """69차: 여러 종목의 등락 원인 질문("삼성전자랑 SK하이닉스 왜 올랐어?")에도 종목마다 stock_tool을 덧붙인다.
+    _add_requested_tools는 종목이 하나일 때만 덧붙여서, 모델이 news_tool만 부르면 시세 기준일이 없어 기준일 뒤 기사를 거를 수 없었다
+    (answer_cause.filter_records는 기준일을 모르면 추정하지 않는다). 기존 호출은 건드리지 않고 끝에만 추가한다."""
+    if not is_cause_question(question):
+        return []
+    order: list[str] = []
+    priced = set()
+    for call in calls:
+        name = call["function"]["name"]
+        key = _COMPANY_ARG.get(name)
+        value = normalize_name(_as_args(call["function"]["arguments"]).get(key)) if key else None
+        if not value:
+            continue
+        if name == "stock_tool":
+            priced.add(value)
+        elif value not in order:
+            order.append(value)
+    if len(set(order) | priced) < 2:
+        return []  # 종목 하나는 _add_requested_tools가 맡는다
+    added = []
+    for company in order:
+        if company in priced:
+            continue
+        added.append(len(calls))
+        calls.append({"function": {"name": "stock_tool", "arguments": {"ticker": company}}})
+        priced.add(company)
+    return added
+
+
 # llama3.1 채팅 템플릿의 역할 헤더("<|start_header_id|>assistant<|end_header_id|>\n\n")가 본문으로 새어 나온 것.
 # 특수 토큰은 Ollama가 지우고 "assistant\n\n"만 남는다. 뒤에 줄바꿈이 올 때만(또는 특수 토큰이 그대로 남은 경우만)
 # 접두어로 본다 - "assistant는 ..."처럼 같은 줄에서 문장이 이어지는 정상 본문은 건드리지 않는다.
@@ -974,13 +1004,28 @@ def strip_role_prefix(content):
     return _ROLE_PREFIX_RE.sub("", content, count=1)
 
 
+# 69차: 코드만 쓰는 도구 인자(LLM 도구 스키마에 없다). 모델이 보내도 지운다
+_INTERNAL_TOOL_ARGS = frozenset({"before_kst"})
+
+
+def _refetch_before(fn_name: str, args: dict) -> dict:
+    """answer_cause.filter_records가 기준 시점 전 자료로 다시 읽을 때 쓴다(내부 인자 before_kst를 그대로 넘긴다)."""
+    fn = AVAILABLE_FUNCTIONS.get(fn_name)
+    if fn is None:
+        return {"found": False}
+    try:
+        return fn(**args)
+    except Exception as e:  # noqa: BLE001
+        return {"found": False, "error": f"{fn_name} 실행 중 오류: {e}"}
+
+
 def _run_tool(fn_name: str, fn_args) -> dict:
     """tool을 안전하게 실행한다. 모르는 tool/인자, 필수 인자 누락, 실행 중 예외도 예외 대신 결과로 돌려준다."""
     fn = AVAILABLE_FUNCTIONS.get(fn_name)
     if fn is None:
         return {"found": False, "error": f"unknown tool: {fn_name}"}
 
-    fn_args = _as_args(fn_args)
+    fn_args = {k: v for k, v in _as_args(fn_args).items() if k not in _INTERNAL_TOOL_ARGS}
 
     params = inspect.signature(fn).parameters
     kwargs = {k: v for k, v in fn_args.items() if k in params}
@@ -1504,6 +1549,16 @@ def _forecast_subject(question: str, previous: dict | None):
             company = _company_by_name((previous or {}).get("company_name"))
             if company is not None:
                 return company, None, "cause_forecast"
+    # 69차: 원인 단독 질문(종목 하나, 기간 없음·오늘·어제: "삼성전자 오늘 왜 올랐어?")은 68차 원인 단락으로 코드가 답한다.
+    # 전에는 LLM 경로라 모델이 부른 news_tool의 최근 기사(시세 기준일 뒤 포함)가 그대로 LLM에 들어갔다. 종목이 없으면 직전 종목(시장 질문 제외)
+    if answer_cause.is_cause_only_question(question) and not (marker and special == "why"):
+        companies = _question_companies(question)
+        if companies is not None and len(companies) == 1:
+            return companies[0], None, "cause"
+        if not companies and (previous or {}).get("company_name") and not answer_cause.is_market_subject(question):
+            company = _company_by_name((previous or {}).get("company_name"))
+            if company is not None:
+                return company, None, "cause"
     # 68차: 직전 전망 답에 이어 기간만 바꿔 묻는 질문(#43447 "3개월 후는?")은 직전 종목의 그 기간 전망이다(전에는 LLM이 과거 67거래일로 답했다)
     if outlook.is_period_followup(question) and (marker or (outlook.horizon_in(question) is not None
                                                           and (previous or {}).get("company_name"))):
@@ -1589,18 +1644,26 @@ def _answer_forecast(question: str, previous: dict | None):
         return _code_answer(outlook.unsupported_horizon_answer(horizon))
     label = ((horizon.label if horizon else None) or outlook.period_in(question) or (marker or {}).get("period")
              or outlook.DEFAULT_PERIOD)
+    if mode == "cause":
+        label = outlook.DEFAULT_PERIOD  # 원인 단락은 최근 5거래일(1주일) 창이다(answer_cause.CAUSE_DAYS)
     period = outlook.PERIODS[label]
     now = datetime.now(KST)
     called_at = datetime.now(timezone.utc)
     started = time.perf_counter()
     db = SessionLocal()
     try:
-        res = outlook.analyze(db, company, period, now)
+        day_note, trimmed = None, False
+        if mode == "cause":
+            # 69차: "어제 왜 올랐어?"는 어제 종가까지로 잘라 같은 지표 계산을 쓴다(그 뒤 기사는 원인 후보가 아니다)
+            rows, day_note, trimmed = answer_cause.rows_until(outlook.price_rows(db, company, now), question, now)
+            res = outlook.analyze(db, company, period, now, rows=rows)
+        else:
+            res = outlook.analyze(db, company, period, now)
         if res is None:
             return _code_answer(outlook.no_data_answer(company))
         news, disclosures = outlook.evidence(db, company, period, now) if mode == "forecast" else ([], [])
         cause = None
-        if mode == "cause_forecast":
+        if mode in ("cause_forecast", "cause"):
             mv = answer_cause.movement(res["indicators"])
             base_day = date.fromisoformat(res["indicators"]["base_date"])
             start_day = date.fromisoformat(mv["from_date"]) if mv["from_date"] else base_day
@@ -1649,8 +1712,8 @@ def _answer_forecast(question: str, previous: dict | None):
                             "result": {"company_name": company.name, "found": bool(disclosures), "disclosures": disclosures,
                                        "called_via": "forecast"}})
         answer = outlook.forecast_answer(company, period, res, news, disclosures, fx, now, indirect, earnings_rows)
-    elif mode == "cause_forecast":
-        # 결론(방향)을 먼저, 그다음 실제 움직임과 원인 후보(기준일까지 발행된 기사·공시만)
+    elif mode in ("cause_forecast", "cause"):
+        # 결론(방향)을 먼저, 그다음 실제 움직임과 원인 후보(기준일까지 발행된 기사·공시만). 원인 단독(69차)은 결론 없이 원인 단락만
         records.append({"tool_name": "news_tool", "arguments": {"company_name": company.name, "until": res["indicators"]["base_date"]},
                         "called_at": called_at, "elapsed_ms": 0,
                         "result": {"company_name": company.name, "found": bool(cause["news"]), "news": cause["news"],
@@ -1661,6 +1724,15 @@ def _answer_forecast(question: str, previous: dict | None):
                             "called_at": called_at, "elapsed_ms": 0,
                             "result": {"company_name": company.name, "found": bool(cause["disclosures"]),
                                        "disclosures": cause["disclosures"], "called_via": "cause_forecast"}})
+        if mode == "cause":
+            for rec in records:
+                if isinstance(rec.get("result"), dict) and rec["result"].get("called_via") in ("cause_forecast", "forecast_cause"):
+                    rec["result"]["called_via"] = "cause_only"
+            _meta()["cause_cutoff"] = {"base_date": res["indicators"]["base_date"], "cutoff": cause.get("cutoff"),
+                                       "after_close": cause.get("after_close", 0), "after_count": cause.get("after_count", 0),
+                                       "unknown_news": cause.get("unknown_news", 0),
+                                       "unknown_disclosures": cause.get("unknown_disclosures", 0), "trimmed": trimmed}
+            return _code_answer(answer_cause.cause_only_answer(company, res, question, cause, day_note, trimmed), records)
         answer = (outlook.brief_answer(company, period, res, now) + "\n\n"
                   + answer_cause.section(company, res, question, cause))
     elif mode in ("brief", "verdict") and previous and outlook.same_conclusion(previous.get("answer"), company, period, res):
@@ -2305,6 +2377,8 @@ def _answer_evidence(question: str, companies: list | None, model: str):
             result = _run_tool(name, args)
             records.append({"tool_name": name, "arguments": args, "result": result, "called_at": called_at,
                             "elapsed_ms": round((time.perf_counter() - started) * 1000)})
+    # 69차: 이 경로(기본 꺼짐)도 원인 질문이면 시세 기준 시점 뒤 기사·공시를 근거에서 뺀다(_answer와 같은 필터)
+    answer_cause.filter_records(records, question, refetch=_refetch_before)
     price_lines = []
     for rec in records:
         r = rec["result"]
@@ -2459,7 +2533,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     _expand_multi_company_calls(tool_calls, question, companies)
     repaired = _repair_company_args(tool_calls, question, previous["question"] if previous else None,
                                     (previous or {}).get("company_name"))
-    added = set(_add_requested_tools(tool_calls, question)) | set(etf_added)
+    added = set(_add_requested_tools(tool_calls, question)) | set(etf_added) | set(_add_cause_price_tools(tool_calls, question))
     subjects = _question_subjects(question, tool_calls)
     etf_mode = any(t == "etf" for _, t in subjects)
     if etf_mode:
@@ -2504,9 +2578,17 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
                 "elapsed_ms": elapsed_ms,
             }
         )
+
+    # 69차: 원인 질문이면 시세 기준 시점(기준일 정규장 마감) 뒤 기사·공시와 기준일 당일 시각 모름 자료를 LLM에 넘기기 전에 뺀다
+    # (app/answer_cause.filter_records). 기준일은 stock_tool 결과에서 오므로 모든 도구를 실행한 뒤에 거르고, 그다음 tool 메시지를 붙인다.
+    cut = answer_cause.filter_records(records, question, refetch=_refetch_before)
+    if cut is not None and (cut["excluded_after"] or cut["excluded_unknown_time"]):
+        _meta()["cause_cutoff"] = cut
+    for rec in records:
         # ETF 질문이면 뉴스 기사 속 수치는 LLM에 넘기지 않는다(기록·출처에는 원문이 남는다).
         # 49차: 주식 질문은 기사 속 시세형 숫자에 기사 발행일을 붙여 넘긴다(실적 수치는 그대로, app/etf.news_result_for_llm)
-        llm_result = news_result_for_llm(result, etf=etf_mode) if fn_name == "news_tool" else result
+        result = rec["result"]
+        llm_result = news_result_for_llm(result, etf=etf_mode) if rec["tool_name"] == "news_tool" else result
         messages.append(
             {
                 "role": "tool",

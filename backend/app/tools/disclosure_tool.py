@@ -5,9 +5,14 @@ from app.models import Disclosure
 from app.tools.company_resolver import not_found_response, resolve_company, to_int
 
 
-def disclosure_tool(company_name: str, limit: int = 5) -> dict:
-    """지정한 종목(이름 또는 티커)의 최근 공시(DART)를 DB에서 조회한다."""
+def disclosure_tool(company_name: str, limit: int = 5, before_kst: str | None = None) -> dict:
+    """지정한 종목(이름 또는 티커)의 최근 공시(DART)를 DB에서 조회한다.
+
+    before_kst(69차, 내부 전용): 이 시각 전에 접수된 공시만 읽는다(news_tool과 같다, LLM 인자로는 받지 않는다)."""
+    from app.tools.news_tool import _before
+
     limit = to_int(limit, default=5)
+    before = _before(before_kst)
     db = SessionLocal()
     try:
         res = resolve_company(db, company_name)
@@ -29,9 +34,11 @@ def disclosure_tool(company_name: str, limit: int = 5) -> dict:
                 **corrected,
             }
 
+        query = db.query(Disclosure).filter(Disclosure.company_id == company.id)
+        if before is not None:
+            query = query.filter(Disclosure.disclosed_at < before)
         rows = (
-            db.query(Disclosure)
-            .filter(Disclosure.company_id == company.id)
+            query
             .order_by(Disclosure.disclosed_at.desc())
             .limit(limit)
             .all()
