@@ -73,7 +73,7 @@ def test_price_status_is_one_of_the_kinds(dev_db):
     base = dev_db.query(func.max(StockPrice.price_date)).filter(StockPrice.company_id == c.id).scalar()
     now = datetime.now(KST)
     st = outlook.price_status(dev_db, base, now)
-    assert st["status"] in ("최신", "미수집", "수집 실패", "휴장일 추정", "종목만 누락")
+    assert st["status"] in ("최신", "미수집", "수집 실패", "휴장일 추정", "종목만 누락", "공식 종가 대기", "원천 미제공")
     assert st["status"] == FC.status24(dev_db, "SK하이닉스", base.isoformat(), f"{now:%Y-%m-%d %H:%M}")[1]
 
 

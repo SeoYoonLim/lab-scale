@@ -900,6 +900,10 @@ def direction_summary_line(res: dict, period: Period) -> str:
 
 PRICE_STATUS_LATEST, PRICE_STATUS_NOT_COLLECTED, PRICE_STATUS_FAILED = "최신", "미수집", "수집 실패"
 PRICE_STATUS_HOLIDAY, PRICE_STATUS_STOCK_ONLY = "휴장일 추정", "종목만 누락"
+# 최종 점검(2026-11-18): KRX 달력(36차)으로 거래일이 확정된 날은 "휴장일 추정"이 아니다. 주식은 정규장 공식 종가를 다음 거래일
+# 기준가로 확인해 저장해서(47차 app.official_close, 최신 거래일은 provisional로 건너뜀) 장 마감 뒤 수집이 성공해도 그날 주식 종가는
+# 다음 거래일 수집 뒤에 생긴다. 2026-11-18 15:51 수집 뒤 답이 정상 거래일 11-18을 "휴장일 추정"이라고 썼다.
+PRICE_STATUS_OFFICIAL_PENDING, PRICE_STATUS_SOURCE_MISSING = "공식 종가 대기", "원천 미제공"
 
 
 def price_status(db, base_date: date, now: datetime) -> dict:
@@ -929,8 +933,17 @@ def price_status(db, base_date: date, now: datetime) -> dict:
     if after and after[0].status == "failed":
         out.update(status=PRICE_STATUS_FAILED, detail=f"{after[0].started_at.astimezone(KST):%Y-%m-%d %H:%M} 시세 수집 실패 기록")
     elif after:
-        out.update(status=PRICE_STATUS_HOLIDAY,
-                   detail=f"{after[0].started_at.astimezone(KST):%Y-%m-%d %H:%M} 수집에서 시장 전체에 그날 시세 없음")
+        from app import krx_calendar
+
+        at = f"{after[0].started_at.astimezone(KST):%Y-%m-%d %H:%M}"
+        if krx_calendar.day_status(expected) != krx_calendar.TRADING:
+            out.update(status=PRICE_STATUS_HOLIDAY, detail=f"{at} 수집에서 시장 전체에 그날 시세 없음")
+        elif base_date >= krx_calendar.previous_trading_day(expected):
+            out.update(status=PRICE_STATUS_OFFICIAL_PENDING,
+                       detail=(f"주식 종가는 정규장 공식 종가를 다음 거래일 기준가로 확인해 저장하므로 {expected.isoformat()} 종가는 "
+                               "다음 거래일 수집 뒤 저장됨"))
+        else:
+            out.update(status=PRICE_STATUS_SOURCE_MISSING, detail=f"{at} 수집에서 그 사이 거래일 시세를 받지 못함")
     else:
         last = f"마지막 시세 수집 {runs[0].started_at.astimezone(KST):%Y-%m-%d %H:%M}" if runs else "시세 수집 기록 없음"
         out.update(status=PRICE_STATUS_NOT_COLLECTED, detail=f"장 마감 뒤 시세 수집 기록 없음, {last}")
@@ -1564,7 +1577,7 @@ def forecast_answer(company, period: Period, res: dict, news: list[dict], disclo
 
 
 FOLLOWUP_POINTER = "자세한 근거는 바로 위 분석에 있습니다."
-DATA_POLICY = ("시세가 1~5영업일 늦으면 기준일과 늦은 이유(미수집·수집 실패·휴장일 추정·종목만 누락)를 밝히고 최신 전망이라고 하지 않습니다. "
+DATA_POLICY = ("시세가 1~5영업일 늦으면 기준일과 늦은 이유(미수집·수집 실패·휴장일 추정·종목만 누락·공식 종가 대기·원천 미제공)를 밝히고 최신 전망이라고 하지 않습니다. "
                f"{MAX_LAG_BUSINESS_DAYS}영업일을 넘게 늦거나 계산 구간에 빠진 거래일이 있으면 판단을 유보합니다. "
                "KRX 휴장일 달력이 없어 휴장일은 수집 기록으로 추정합니다.")
 

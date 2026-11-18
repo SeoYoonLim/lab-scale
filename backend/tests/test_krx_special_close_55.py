@@ -199,10 +199,12 @@ def test_price_status_counts_refresh_runs_only_after_the_real_close():
     out = outlook.price_status(db(during), date(2026, 11, 18), at(CSAT, "21:00"))
     assert out["status"] == outlook.PRICE_STATUS_NOT_COLLECTED
     after = [SimpleNamespace(status="success", started_at=at(CSAT, "16:45"))]
-    assert outlook.price_status(db(after), date(2026, 11, 18), at(CSAT, "21:00"))["status"] == outlook.PRICE_STATUS_HOLIDAY
+    # 최종 점검(의도된 기대 변경): 11-19는 확정 거래일이라 휴장일 추정이 아니라 공식 종가 대기다(마감 판정 16:30은 그대로 검사)
+    assert outlook.price_status(db(after), date(2026, 11, 18), at(CSAT, "21:00"))["status"] == outlook.PRICE_STATUS_OFFICIAL_PENDING
     # 일반 거래일은 그대로 15:30
     normal = [SimpleNamespace(status="success", started_at=at(date(2026, 11, 18), "16:00"))]
-    assert outlook.price_status(db(normal), date(2026, 11, 17), at(date(2026, 11, 18), "21:00"))["status"] == outlook.PRICE_STATUS_HOLIDAY
+    assert (outlook.price_status(db(normal), date(2026, 11, 17), at(date(2026, 11, 18), "21:00"))["status"]
+            == outlook.PRICE_STATUS_OFFICIAL_PENDING)
 
 
 def test_etf_latest_row_is_intraday_until_16_30_on_csat():

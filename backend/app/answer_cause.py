@@ -464,7 +464,8 @@ def filter_records(records: list[dict], question: str, refetch=None) -> dict | N
 # 70차 실검증(docs/FINAL_INTEGRATION_AUDIT_70.md 5.2의 2b·10): 이 질문들은 LLM 경로라 (1) '급등' 전제를 실제 -0.71%와 대조하지 않았고
 # (2) "시장 흐름과도 관련" 같은 근거 없는 인과를 썼고 (3) 코스피 -16.31%를 카카오 주어에 붙였다. 이제 코드가 기간 창을 정하고
 # 종목·지수 수익률을 따로 계산해 답한다(LLM 없음). 기준 시점 규칙(cutoff_at·time_state·당일 공시 제외)은 69차 그대로다.
-MAX_PERIOD_CAL_DAYS = 93     # 달력 기간 상한(3개월). 넘으면 기존 경로
+MAX_PERIOD_CAL_DAYS = 93     # 달력 기간 상한(3개월). 넘으면 긴 기간 규칙(72차)
+SHARP_MOVE_PCT = 5.0  # '급등'·'급락' 전제를 크기로 확인하는 기준(기간 등락률 절댓값). 이보다 작으면 그렇게 부르기 어렵다고 밝힌다
 MAX_PERIOD_TRADING_DAYS = 63  # "N거래일" 상한(3개월 안팎)
 PERIOD_NEWS_LIMIT = 5
 PERIOD_DISCLOSURE_LIMIT = 5
@@ -643,6 +644,10 @@ def _period_premise(question: str, pct: float, name: str) -> str | None:
         return f"- 질문의 전제와 다릅니다: 질문은 {_rago(word)} 하셨지만, {name} 주가는 이 기간 {_pct(pct)}로 올랐습니다."
     if pct == 0:
         return f"- 질문은 {_rago(word)} 하셨지만, {name} 주가는 이 기간 변동이 없었습니다(0.00%)."
+    if word in ("급등", "급락") and abs(pct) < SHARP_MOVE_PCT:
+        # 최종 점검(2026-11-18): "셀트리온 지난주 급등"(+1.42%, 코스피 +4.56%)을 "같은 방향입니다"라고만 해 급등을 인정하는 것처럼 읽혔다
+        return (f"- 질문의 전제('{word}')와 방향은 같지만, {name} 주가는 이 기간 {_pct(pct)}로 '{word}'이라고 하기는 어렵습니다"
+                f"(기준: {SHARP_MOVE_PCT:.0f}% 이상).")
     return f"- 질문의 전제('{word}')와 같은 방향입니다({name} {_pct(pct)})."
 
 
