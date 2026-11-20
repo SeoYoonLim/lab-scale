@@ -20,6 +20,7 @@ import { languageName, toLocale } from '../i18n'
 import { useLocale } from '../i18n/useLocale'
 import { stripDuplicateDisclaimer } from '../utils/disclaimer'
 import { formatPlainPct, formatWon } from '../utils/format'
+import { plainSummary } from '../utils/plainSummary'
 import { toolLabel } from '../utils/toolLabels'
 import LoadingNotice from '../components/ui/LoadingNotice'
 
@@ -155,7 +156,7 @@ function HistoryCard({ item, terms, onDelete, deleting }: { item: HistoryItem; t
       )}
       {item.summary && (
         <p className="muted small history-card-summary">
-          <Highlight text={item.summary} terms={terms} />
+          <Highlight text={plainSummary(item.summary)} terms={terms} />
         </p>
       )}
 
