@@ -11,6 +11,8 @@
 반복(drop_repeats): 정규화(공백·목록 기호·강조 기호 제거) 뒤 완전히 같은 문단, 그리고 문단 안에서 완전히 같은 문장(20자 이상)만 지운다.
 제목 줄(#)과 짧은 문장은 지우지 않는다. 비슷하지만 다른 사실(숫자나 이름이 다른 문장)은 남는다.
 예외(2026-11-08): 같은 문단에서 바로 앞 줄과 완전히 같은 줄(정규화 6자 이상)은 짧아도 생성 반복으로 보고 지운다.
+목록(2026-11-20): 목록 표시("4. ", "- ")는 문장으로 보지 않는다. 번호 목록 항목끼리 같은 문장은 다른 항목이라 남기고,
+본문이 모두 지워진 목록 줄은 표시도 남기지 않는다.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ import re
 _MONEY_RE = re.compile(r"(?<![\d.,])(?P<int>\d{4,})(?P<frac>\.\d+)?(?P<sp>\s*)(?P<unit>원|주(?!일|간|차|기|년|가|식))")
 _PCT_RE = re.compile(r"(?<![\d.])(?P<num>[+\-−]?\d+\.\d{2})(?P<zeros>0+)(?=\s*%)")
 _SENT_RE = re.compile(r"(?<=[.!?。])\s+")
+_LIST_MARK_RE = re.compile(r"^(\s*(?:[-*•]|\d+[.)])\s+)")
 
 
 def _group(int_part: str) -> str:
@@ -46,6 +49,7 @@ def drop_repeats(text: str, min_chars: int = 20) -> tuple[str, int]:
     removed = 0
     seen_blocks: set[str] = set()
     seen_sents: set[str] = set()
+    seen_items: set[str] = set()  # 번호 목록 항목에서 본 문장
     out_blocks = []
     for block in re.split(r"\n\s*\n", text or ""):
         key = _norm(block)
@@ -67,16 +71,26 @@ def drop_repeats(text: str, min_chars: int = 20) -> tuple[str, int]:
                 removed += 1
                 continue
             prev_line = key_line if key_line else prev_line
+            # 2026-11-20: 목록 표시("4. ", "- ")를 떼고 본문만 문장으로 나눈다. 전에는 "4."가 한 문장으로 잘려 남고 본문이 반복으로
+            # 지워져 "4."만 남았다(최종 검증: 접수번호가 다른 같은 제목 공시 3건 중 2건이 번호만 남음). 번호 목록 항목끼리 같은 문장은
+            # 서로 다른 항목(같은 제목의 공시·기사)이라 남긴다. 앞 산문을 되풀이한 문장은 전처럼 지운다
+            m = _LIST_MARK_RE.match(line)
+            prefix, body = (m.group(1), line[m.end():]) if m else ("", line)
+            numbered = bool(m) and prefix.strip()[0].isdigit()
             kept = []
-            for s in _SENT_RE.split(line):
+            for s in _SENT_RE.split(body):
                 k = _norm(s)
-                if len(k) >= min_chars and k in seen_sents:
+                if len(k) >= min_chars and k in seen_sents and not (numbered and k in seen_items):
                     removed += 1
                     continue
                 seen_sents.add(k)
+                if numbered:
+                    seen_items.add(k)
                 kept.append(s)
-            if kept or not line.strip():
-                lines.append(" ".join(kept))
+            if kept:
+                lines.append(prefix + " ".join(kept))
+            elif not line.strip():
+                lines.append(line)
         cleaned = "\n".join(lines)
         if cleaned.strip() or not block.strip():
             out_blocks.append(cleaned)
