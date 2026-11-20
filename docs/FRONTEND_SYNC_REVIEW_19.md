@@ -144,3 +144,24 @@
 3. 근거 없는 답에서 `source_status.message`를 한 줄로 보여줄지(72차 인계 1절).
 4. 면책 두 번 표시를 화면에서 하나로 줄일지(예: 답 본문이 `disclaimer`로 끝나면 따로 그리지 않기).
 5. ja/zh 사용자의 영어 대체 표시를 그대로 둘지.
+
+## 15. 최종 클로즈아웃의 프런트 변경(2026-11-18 밤~11-20)
+
+13절의 1~4번은 최종 브랜치에서 고쳤다. `origin/main`은 여전히 `5d0dc23`이고, 이 변경은 최종 브랜치 PR로 main에 들어간다. 서윤 씨 검토 대상이다.
+
+| 커밋 | 파일 | 변경 | 13절 |
+| --- | --- | --- | --- |
+| `3fcb808` | `pages/portfolio/HoldingsSection.tsx`, `i18n/extra.en.ts` | 체결가 안내: "정규장 중에는 실시간 시세를, 장외에는 저장된 최근 종가를 기준으로 모의 체결해요. 체결 기준 가격은 시세 시점에 따라 다른 화면의 종가와 다를 수 있어요." | 1 |
+| `3fcb808` | `pages/ResearchPage.tsx` | 지원 범위: "현재 등록된 국내 주식 300종목과 ETF 50개를 지원해요(예: 삼성전자). 그 외 종목과 해외 주식은 지원하지 않을 수 있어요." | 2 |
+| `3fcb808` | `components/SourceStatusNote.tsx`(새 파일), `pages/ResearchPage.tsx`·`pages/HistoryPage.tsx`, `api/schemas.ts`·`types.ts`(`source_status` 타입) | 출처가 비었고 `source_status.message`가 있으면 답 아래 한 줄로 보여 준다 | 3 |
+| `3fcb808` | `utils/disclaimer.ts`(새 파일, `stripDuplicateDisclaimer`) | 답 본문 끝 문단이 응답 `disclaimer`와 정확히 같으면 본문에서만 뺀다. 면책은 답 아래에 한 번 | 4 |
+| `3fcb808` | `components/PriceChartCard.tsx` | 종목 상세 "60거래일" 요약 칸이 `—`이던 문제: 60거래일 수익률에 기준 종가 1행이 더 필요해 `price-history?days=61`을 따로 조회한다 | 72차 인계 |
+| `4fa99f8` | `utils/plainSummary.ts`(새 파일), `pages/HistoryPage.tsx` | 기록 목록 요약에 `## 주가 동향`처럼 마크다운 기호가 보이던 문제. 제목(`#`)·강조(`**`, `__`)·코드(`` ` ``)·인용(`>`) 기호만 뗀다. 숫자·부호·번호 목록·"#1위"는 그대로 | 새로 발견 |
+
+검증:
+
+- vitest 269 통과, 8 skip(원래 skip인 실제 백엔드 통합 테스트), 실패 0. `tsc -b`, oxlint 통과.
+- 2026-11-20 실제 로그인 브라우저 검증(실백엔드·실DB·실LLM, mock 꺼짐): 체결가 안내 표시, 장중 주문 실시간가 체결(삼성전자 185,300원, KODEX 200 77,020원), 지원 범위 안내 표시, 면책 카드마다 1회, 도구 칩 중복 0, 60거래일 -23.11% 표시, 기록 목록 `##` 0건(PC·모바일), 콘솔 오류 0, 가로 넘침 0.
+- 이어서 묻기(PR #19)를 실제 계정으로 다시 확인: 토글을 켠 질문만 `previous_report_id`가 실리고 보낸 뒤 꺼진다(FINAL_RELEASE_REPORT 7절).
+
+남은 것: 13절 5번(ja/zh 영어 대체, 정책상 의도). 키보드 초점에서 입력창 자체는 outline이 없고 부모 `.composer-row:focus-within`이 초점을 보여 준다(11-18과 같음).

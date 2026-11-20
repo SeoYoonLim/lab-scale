@@ -10,6 +10,7 @@ import secrets
 import subprocess
 import sys
 from datetime import date, datetime, timedelta, timezone
+from email.utils import format_datetime
 
 import pandas as pd
 import pytest
@@ -159,7 +160,9 @@ class TestNewsDisclosureEtf:
         good = f"https://www.mk.co.kr/news/{secrets.token_hex(4)}"
         monkeypatch.setattr(collectors, "fetch_naver_news", lambda q, display=10, sort="date": [
             naver_item(good, f"{co.name} 신공장"), naver_item("", f"{co.name} 링크 없음"),
-            naver_item(f"https://www.mk.co.kr/news/{secrets.token_hex(4)}", f"{co.name} 미래 기사", "Fri, 20 Nov 2026 09:00:00 +0900")])
+            # 미래 시각은 실행 시점 기준으로 만든다(고정값 2026-11-20 09:00은 그 시각이 지나자 미래가 아니게 되어 저장됐다, 2026-11-20 CI)
+            naver_item(f"https://www.mk.co.kr/news/{secrets.token_hex(4)}", f"{co.name} 미래 기사",
+                       format_datetime(datetime.now(KST) + timedelta(days=3)))])
         r = collectors.fetch_and_save_news(co.name, display=10, ticker=co.ticker)
         assert r.ok and r.saved == 1 and r.quarantined == 2
         assert [n.url for n in dev_db.query(News).filter(News.company_id == co.id)] == [good]
