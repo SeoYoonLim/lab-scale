@@ -68,7 +68,8 @@ class TestQuestionValidation:
         r = post("  삼성전자 주가  ")
         assert r.status_code == 200
         # 기존 필드는 그대로이고 disclaimer, 38차의 locale·translation_status(ko-KR이면 null)만 추가됐다
-        assert r.json() == {**OK_RESULT, "disclaimer": DISCLAIMER, "locale": "ko-KR", "translation_status": None}
+        assert r.json() == {**OK_RESULT, "disclaimer": DISCLAIMER, "locale": "ko-KR", "translation_status": None,
+                            "source_status": None}  # 72차 추가(가짜 ask_question이 주지 않아 null)
         assert calls == ["삼성전자 주가"]
 
 

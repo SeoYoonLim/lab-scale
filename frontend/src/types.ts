@@ -47,6 +47,22 @@ export interface ResearchResponse {
   // 아직 이 필드를 안 주는 백엔드(예전 버전)와도 맞게 둘 다 없을 수 있다고 둔다.
   locale?: string
   translation_status?: TranslationStatus | null
+  // 2026-11-18(72차 백엔드, 하위 호환 추가): sources가 빈 이유. 없을 수 있다(예전 백엔드)
+  source_status?: SourceStatus | null
+}
+
+// sources가 빈 이유(backend/app/sources.py source_status). status 값이 늘어나도 깨지지 않게 문자열로 받는다.
+// message는 백엔드의 한국어 안내라 화면에 그대로 쓰지 않는다(언어별 문구는 SourceStatusNote가 status로 고른다).
+export interface SourceStatus {
+  status: string
+  count: number
+  is_error: boolean
+  empty_reason?: string | null
+  message?: string | null
+  excluded_after_cutoff_count?: number
+  excluded_unknown_time_count?: number
+  market_data_as_of?: string | null
+  evidence_cutoff?: string | null
 }
 
 // GET /api/research 목록 항목

@@ -149,7 +149,7 @@ class TestPortfolioEtf:
         pf = {"cash_balance": 9_808_000.0, "holdings": [ETF_HOLDING], "total_eval_amount": 192540.0, "total_asset": 10_000_540.0}
         monkeypatch.setattr(portfolio_api, "get_portfolio", lambda db, key: pf)
         h = client.get("/api/portfolio").json()["holdings"][0]
-        assert h == ETF_HOLDING
+        assert h == {**ETF_HOLDING, "price_source": None, "price_as_of": None}  # 72차 현재가 출처·기준 시각 추가
 
     def test_trades_carry_asset_type(self, monkeypatch):
         monkeypatch.setattr(portfolio_api, "list_trades",

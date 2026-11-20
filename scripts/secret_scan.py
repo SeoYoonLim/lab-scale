@@ -37,6 +37,9 @@ from pathlib import Path
 ALLOW_URL_CREDENTIALS = re.compile(r"postgres(?:ql)?(?:\+\w+)?://postgres:postgres@(?:localhost|127\.0\.0\.1)\b")
 # backend/alembic.ini의 자리표시 URL(driver://user:pass@localhost/dbname). 실제 URL은 alembic/env.py가 DATABASE_URL로 덮어쓴다.
 ALLOW_URL_CREDENTIALS = re.compile(ALLOW_URL_CREDENTIALS.pattern + r"|\bdriver://user:pass@localhost/dbname\b")
+# 48차 회귀 테스트(backend/tests/test_audit_db_url_round48.py)가 커밋 ff1309b에서 쓴 가짜 URL. 연결되지 않는 호스트(db.local)의 견본 값이고
+# 다음 커밋(df2865e)에서 dummy 값으로 바꿨다. 이미 푸시된 커밋이라 --history 범위 검사(main 대상 PR 포함)가 다시 보게 되어 이 리터럴만 허용한다.
+ALLOW_URL_CREDENTIALS = re.compile(ALLOW_URL_CREDENTIALS.pattern + r"|postgresql\+psycopg://user:p%40ss@db\.local:15432/ai_investment\b")
 # 테스트와 문서에는 가입/로그인 예시용 가짜 비밀번호 리터럴이 있다(API.md의 "correct-horse-battery", 테스트의 "wrong-password" 등).
 # 이 경로에서는 `assign-quoted` 규칙만 끈다. JWT·Bearer·개인 키·URL 비밀번호·.env 값 대조는 그대로 적용된다.
 ALLOW_PATH_RULES = {"assign-quoted": ("backend/tests/", "*.md")}

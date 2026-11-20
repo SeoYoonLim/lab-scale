@@ -1,0 +1,56 @@
+# 49차(2026-11-13) 신규 독립 평가 문항. 구현 전에 작성하고 구현을 마칠 때까지 실행하지 않았다(SHA-256은 docs/LLM_ANSWER_QUALITY_49.md).
+# 48차 문항(multilingual_cases.txt)과 종목·표현이 겹치지 않게 골랐다.
+# 형식: split|id|locale|기대 종목(쉼표, 없으면 -)|기대 경로|질문
+# 기대 경로: route=forecast|past|flow|compare|analysis|holdings|weight|reject|any, days=N 또는 N-M(거래일), dir=future|past
+#   forecast: 전망 경로(코드), days = 분석 기간 거래일(1주일 5, 1개월 20, 3개월 60)
+#   past: 과거 기간 조회(stock_tool 기간 또는 주가 흐름 창), days = 조회 거래일
+#   flow: 이동평균·수익률 주가 흐름 경로(코드)
+#   compare: 기대 종목 둘 이상을 같은 기간으로 조회
+#   analysis: 종목 분석(주가 조회 포함)
+#   holdings / weight: ETF 구성종목 / 특정 종목 비중 템플릿
+#   reject: 모호한 이름이라 어떤 종목도 고르지 않아야 함
+# id 머리글자: P 과거 기간, F 전망, M 이동평균·수익률, C 비교, H 구성종목, W 비중, A 분석, X 뉴스+주가(혼입 검사), R 모호, N 종목명, L 긴 번역
+new49|P01|ko-KR|신한지주|route=past,days=5|신한지주 최근 5거래일 주가 분석해줘
+new49|F01|ko-KR|신한지주|route=forecast,days=5|신한지주 향후 5거래일 주가 전망
+new49|P08|ko-KR|크래프톤|route=past,days=19-23|크래프톤 지난 한 달 주가 흐름
+new49|F08|ko-KR|크래프톤|route=forecast,days=20|크래프톤 다음 달 오를까?
+new49|X04|ko-KR|LG디스플레이|route=analysis|LG디스플레이 최근 주가와 뉴스 같이 분석해줘
+new49|X05|ko-KR|HMM|route=analysis|HMM 주가 동향과 관련 뉴스 알려줘
+new49|P02|en-US|한화에어로스페이스|route=past,days=5|Analyze Hanwha Aerospace stock over the last 5 trading days
+new49|F02|en-US|한화에어로스페이스|route=forecast,days=5|What is the outlook for Hanwha Aerospace over the next 5 trading days?
+new49|P03|en-US|SK텔레콤|route=past,days=19-23|How did SK Telecom shares move over the past month?
+new49|F03|en-US|SK텔레콤|route=forecast,days=20|Will SK Telecom go up next month?
+new49|M01|en-US|크래프톤|route=flow|Show Krafton's 5-day and 20-day moving averages and returns
+new49|C01|en-US|신한지주,하나금융지주|route=compare,days=20|Compare Shinhan Financial Group and Hana Financial Group over the last 20 trading days
+new49|H01|en-US|KODEX 코스닥150|route=holdings|What are the constituents of KODEX 코스닥150?
+new49|W01|en-US|KODEX 삼성그룹,삼성물산|route=weight|How much Samsung C&T does KODEX 삼성그룹 hold?
+new49|A01|en-US|두산에너빌리티|route=analysis|Give me an analysis of Doosan Enerbility
+new49|X01|en-US|HD현대중공업|route=analysis|What's going on with HD Hyundai Heavy Industries stock and recent news?
+new49|R01|en-US|-|route=reject|How is Samsung stock doing?
+new49|N04|en-US|LS ELECTRIC|route=past,days=5|LS Electric stock price over the last 5 trading days
+new49|L03|en-US|삼성물산|route=analysis|삼성물산 주가 흐름과 최근 뉴스, 공시를 같이 정리해줘
+new49|P04|ja-JP|삼성생명|route=past,days=5|サムスン生命の直近5営業日の株価を分析して
+new49|F04|ja-JP|삼성생명|route=forecast,days=5|サムスン生命の今後5営業日の株価見通しは？
+new49|P05|ja-JP|HMM|route=past,days=19-23|HMMの過去1か月の株価推移を教えて
+new49|F05|ja-JP|고려아연|route=forecast,days=20|高麗亜鉛の株価は来月上がりますか？
+new49|M02|ja-JP|넷마블|route=flow|ネットマーブルの5日・20日移動平均と騰落率を教えて
+new49|C02|ja-JP|삼성화재,삼성생명|route=compare,days=20|サムスン火災とサムスン生命の最近20営業日の株価を比較して
+new49|H02|ja-JP|TIGER 미국배당다우존스|route=holdings|TIGER 미국배당다우존스の構成銘柄は？
+new49|A02|ja-JP|아모레퍼시픽|route=analysis|アモーレパシフィックの株を分析してください
+new49|X02|ja-JP|에코프로비엠|route=analysis|エコプロBMの最近の株価とニュースを教えて
+new49|R02|ja-JP|-|route=reject|現代の株価は？
+new49|N03|ja-JP|한미반도체|route=any|ハンミ半導体の株価推移
+new49|L01|ja-JP|두산에너빌리티,한화에어로스페이스|route=compare,days=19-23|두산에너빌리티와 한화에어로스페이스 최근 1개월 주가와 거래량 비교해줘
+new49|P06|zh-CN|SK이노베이션|route=past,days=5|SK创新最近5个交易日的股价分析
+new49|F06|zh-CN|SK이노베이션|route=forecast,days=5|SK创新未来5个交易日的走势预测
+new49|P07|zh-CN|현대건설|route=past,days=19-23|现代建设过去一个月股价走势
+new49|F07|zh-CN|LG디스플레이|route=forecast,days=20|LG显示下个月会涨吗？
+new49|M03|zh-CN|우리금융지주|route=flow|友利金融的5日和20日均线以及收益率
+new49|C03|zh-CN|미래에셋증권,삼성증권|route=compare,days=20|比较一下未来资产证券和三星证券最近20个交易日的股价
+new49|H03|zh-CN|KODEX 2차전지산업|route=holdings|KODEX 2차전지산업的持仓有哪些？
+new49|W02|zh-CN|KODEX 코스닥150,알테오젠|route=weight|KODEX 코스닥150里Alteogen的权重是多少？
+new49|A03|zh-CN|삼성중공업|route=analysis|分析一下三星重工
+new49|X03|zh-CN|삼양식품|route=analysis|三养食品最近股价和新闻怎么样？
+new49|R03|zh-CN|-|route=reject|三星最近股价怎么样？
+new49|N02|zh-CN|한국항공우주|route=any|韩国航空航天产业股价
+new49|L02|zh-CN|HD현대중공업|route=past,days=20|HD현대중공업 최근 20거래일 주가와 거래량, 최고가 최저가 자세히 알려줘

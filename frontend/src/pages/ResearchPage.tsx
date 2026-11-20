@@ -9,10 +9,12 @@ import DataToolCards from '../components/DataToolCards'
 import MarketSummaryCard from '../components/MarketSummaryCard'
 import ResearchProgress from '../components/ResearchProgress'
 import SourceFootnotes from '../components/SourceFootnotes'
+import SourceStatusNote from '../components/SourceStatusNote'
 import ErrorNotice from '../components/ui/ErrorNotice'
 import TrendingWidget from '../components/TrendingWidget'
 import type { TranslationStatus } from '../api/contracts/common'
-import type { Source } from '../types'
+import type { Source, SourceStatus } from '../types'
+import { stripDuplicateDisclaimer } from '../utils/disclaimer'
 import { formatTime } from '../utils/format'
 
 // 질문 하나 = 장부 항목 하나. reportId는 응답이 오기 전까지 없고(pending),
@@ -27,6 +29,7 @@ interface Entry {
   answer?: string
   usedTools?: string[]
   sources?: Source[]
+  sourceStatus?: SourceStatus | null
   disclaimer?: string
   // 실제로 답한 언어와 번역 상태(핸드오프 15-1절) - 번역문인지, 번역 검증에 실패해 요약만 온 건지 구분해 보여준다
   locale?: string
@@ -42,6 +45,10 @@ const SUGGESTIONS = [
   'SK하이닉스 최근 공시 알려줘.',
   '주식 투자를 처음 시작할 때 알아야 할 기본 용어를 알려줘.',
 ]
+
+// 지원 범위: 백엔드 수집 대상(backend/scripts/build_universe.py 시가총액 상위 300·build_etf_universe.py ETF 50). 2026-11-18 DB company 테이블에서
+// 주식 300·ETF 50을 확인했다. 대상이 바뀌면 이 값도 바꾼다.
+const SUPPORTED_UNIVERSE = { stocks: 300, etfs: 50 }
 
 export default function ResearchPage() {
   const { t, locale } = useLocale()
@@ -118,6 +125,7 @@ export default function ResearchPage() {
                 answer: res.answer,
                 usedTools: res.used_tools,
                 sources: res.sources,
+                sourceStatus: res.source_status ?? null,
                 disclaimer: res.disclaimer,
                 locale: res.locale,
                 translationStatus: res.translation_status ?? null,
@@ -205,7 +213,8 @@ export default function ResearchPage() {
         {/* 지원 범위: 종목 목록에 없는 해외 종목을 물으면 "찾지 못했다"만 나오므로 미리 알려준다 */}
         <p className="muted small scope-hint">
           {t('research.scope_hint', {
-            fallback: '국내 상장 종목만 지원해요(예: 삼성전자). 엔비디아·애플 같은 해외 종목은 답할 수 없어요.',
+            fallback: '현재 등록된 국내 주식 {stocks}종목과 ETF {etfs}개를 지원해요(예: 삼성전자). 그 외 종목과 해외 주식은 지원하지 않을 수 있어요.',
+            vars: SUPPORTED_UNIVERSE,
           })}
         </p>
         {/* 한국어가 아닌 언어로 쓰는 사용자에게: 질문은 한국어가 가장 정확하다 */}
@@ -285,12 +294,13 @@ export default function ResearchPage() {
                       <span className="answer-title">{t('research.answer_title', { fallback: '분석 결과' })}</span>
                     </div>
                     <ResearchAnswerBody
-                      answer={entry.answer ?? ''}
+                      answer={stripDuplicateDisclaimer(entry.answer ?? '', entry.disclaimer)}
                       locale={entry.locale}
                       translationStatus={entry.translationStatus}
                       reportId={entry.reportId ?? null}
                     />
                     <SourceFootnotes usedTools={entry.usedTools ?? []} sources={entry.sources ?? []} />
+                    <SourceStatusNote sources={entry.sources ?? []} status={entry.sourceStatus} />
                     {entry.disclaimer && <p className="disclaimer-note muted small">{entry.disclaimer}</p>}
                   </div>
                 )}

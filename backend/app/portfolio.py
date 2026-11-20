@@ -172,6 +172,11 @@ def place_order(db, device_id: str, company: Company, side: str, quantity: int) 
         "side": side,
         "quantity": quantity,
         "price": price,
+        # 72차(하위 호환 추가): 체결가의 출처·기준 시각. 네이버 실시간이면 체결 시각, 폴백이면 저장 종가의 날짜다.
+        # 차트·종목 상세의 저장 종가(기준 거래일)와 다를 수 있다(서로 다른 시점의 가격)
+        "price_source": price_data.get("source"),
+        "price_is_realtime": bool(price_data.get("is_realtime")),
+        "price_as_of": price_data.get("as_of"),
         "executed_at": executed_at,
         "cash_balance": cash_balance,
         "holding": holding_view,
@@ -215,6 +220,8 @@ def get_portfolio(db, device_id: str) -> dict:
                 "avg_price": avg_price,
                 "current_price": current_price,
                 "is_realtime": bool(price_data and price_data["is_realtime"]),
+                "price_source": (price_data or {}).get("source"),  # 72차: naver(실시간) | fallback(저장 종가) | null
+                "price_as_of": (price_data or {}).get("as_of"),  # 72차: 현재가의 기준 시각(실시간) 또는 저장 종가 날짜(폴백)
                 "eval_amount": eval_amount,
                 "profit_loss": profit_loss,
                 "profit_loss_pct": profit_loss_pct,

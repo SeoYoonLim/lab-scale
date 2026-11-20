@@ -11,6 +11,8 @@
 반복(drop_repeats): 정규화(공백·목록 기호·강조 기호 제거) 뒤 완전히 같은 문단, 그리고 문단 안에서 완전히 같은 문장(20자 이상)만 지운다.
 제목 줄(#)과 짧은 문장은 지우지 않는다. 비슷하지만 다른 사실(숫자나 이름이 다른 문장)은 남는다.
 예외(2026-11-08): 같은 문단에서 바로 앞 줄과 완전히 같은 줄(정규화 6자 이상)은 짧아도 생성 반복으로 보고 지운다.
+목록(2026-11-20): 목록 표시("4. ", "- ")는 문장으로 보지 않는다. 번호 목록 항목끼리 같은 문장은 다른 항목이라 남기고,
+본문이 모두 지워진 목록 줄은 표시도 남기지 않는다.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ import re
 _MONEY_RE = re.compile(r"(?<![\d.,])(?P<int>\d{4,})(?P<frac>\.\d+)?(?P<sp>\s*)(?P<unit>원|주(?!일|간|차|기|년|가|식))")
 _PCT_RE = re.compile(r"(?<![\d.])(?P<num>[+\-−]?\d+\.\d{2})(?P<zeros>0+)(?=\s*%)")
 _SENT_RE = re.compile(r"(?<=[.!?。])\s+")
+_LIST_MARK_RE = re.compile(r"^(\s*(?:[-*•]|\d+[.)])\s+)")
 
 
 def _group(int_part: str) -> str:
@@ -46,6 +49,7 @@ def drop_repeats(text: str, min_chars: int = 20) -> tuple[str, int]:
     removed = 0
     seen_blocks: set[str] = set()
     seen_sents: set[str] = set()
+    seen_items: set[str] = set()  # 번호 목록 항목에서 본 문장
     out_blocks = []
     for block in re.split(r"\n\s*\n", text or ""):
         key = _norm(block)
@@ -67,16 +71,26 @@ def drop_repeats(text: str, min_chars: int = 20) -> tuple[str, int]:
                 removed += 1
                 continue
             prev_line = key_line if key_line else prev_line
+            # 2026-11-20: 목록 표시("4. ", "- ")를 떼고 본문만 문장으로 나눈다. 전에는 "4."가 한 문장으로 잘려 남고 본문이 반복으로
+            # 지워져 "4."만 남았다(최종 검증: 접수번호가 다른 같은 제목 공시 3건 중 2건이 번호만 남음). 번호 목록 항목끼리 같은 문장은
+            # 서로 다른 항목(같은 제목의 공시·기사)이라 남긴다. 앞 산문을 되풀이한 문장은 전처럼 지운다
+            m = _LIST_MARK_RE.match(line)
+            prefix, body = (m.group(1), line[m.end():]) if m else ("", line)
+            numbered = bool(m) and prefix.strip()[0].isdigit()
             kept = []
-            for s in _SENT_RE.split(line):
+            for s in _SENT_RE.split(body):
                 k = _norm(s)
-                if len(k) >= min_chars and k in seen_sents:
+                if len(k) >= min_chars and k in seen_sents and not (numbered and k in seen_items):
                     removed += 1
                     continue
                 seen_sents.add(k)
+                if numbered:
+                    seen_items.add(k)
                 kept.append(s)
-            if kept or not line.strip():
-                lines.append(" ".join(kept))
+            if kept:
+                lines.append(prefix + " ".join(kept))
+            elif not line.strip():
+                lines.append(line)
         cleaned = "\n".join(lines)
         if cleaned.strip() or not block.strip():
             out_blocks.append(cleaned)
@@ -106,5 +120,105 @@ def _drop_empty_headings(text: str) -> str:
 
 
 def tidy(text: str) -> tuple[str, int]:
-    """숫자 표기 정리 + 반복 제거. (정리한 글, 지운 반복 수)."""
-    return drop_repeats(normalize_numbers(text))
+    """숫자 표기 정리 + 반복 제거. (정리한 글, 지운 반복 수). 48차: 본문 없는 제목 줄은 반복이 없어도 지운다("## 관련 뉴스"만 남음)."""
+    out, removed = drop_repeats(normalize_numbers(text))
+    return re.sub(r"\n{3,}", "\n\n", _drop_empty_headings(out)).strip(), removed
+
+
+# ---------- 근거 없는 일반론·같은 값 되풀이 (48차, 2026-11-13) ----------
+# 48차 실측: "현대차의 주가는 일반적인 기업의 주가와 마찬가지로 수많은 요인에 의해 영향을 받습니다", "주가는 뉴스와 공시를 통해
+# 변동합니다", "따라서 … 이러한 요인을 함께 고려해야 합니다", "최신 공시 내용은 disclosure_tool 결과에 있습니다", 그리고 원인 분석 절이
+# 앞 절의 거래량만 되풀이("거래량은 21,638,160주로 … 하루 거래량은 21,638,160주입니다"). 도구 결과에서 온 사실이 아니라 어느 종목에나
+# 붙일 수 있는 문장이다. 지우는 것은 아래 셋뿐이다(값과 구체적인 내용은 지우지 않는다):
+# 1. 숫자가 없고 _GENERIC_RE의 상투 표현이 든 문장
+# 2. 도구 이름(stock_tool 등)이 드러난 문장(내부 구현 노출)
+# 3. "원인 분석" 절에서, 숫자가 모두 앞 절에 이미 나왔고 원인을 가리키는 낱말(뉴스·공시·계약·시장·때문 …)이 없는 문장
+# 그리고 "다음과 같습니다" 같은 안내 문장만 남은 절은 안내 문장도 지운다. 면책 안내는 API의 disclaimer 필드로 따로 나간다.
+_GENERIC_RE = re.compile(
+    r"(?:다양한|여러\s*가지|여러|수많은|많은)\s*요인(?:에\s*의해|의\s*영향|에\s*따라|이|들이|을|를|으로)"
+    r"|대표적인\s*요인은"
+    r"|주가(?:는|가)?\s*(?:뉴스|공시|시장)[^.!?。]{0,20}(?:통해|따라|의해)\s*(?:변동|움직|결정)"
+    r"|일반적인\s*(?:기업|회사|종목)의\s*주가와\s*마찬가지로"
+    r"|이러한\s*(?:요인|점|사항)(?:들)?을\s*(?:함께\s*|종합적으로\s*|충분히\s*)?고려"
+    r"|투자\s*(?:결정|판단)?(?:은|는|을|를|에|시|할\s*때)?\s*(?:신중|주의|유의)"
+    r"|투자자(?:들)?(?:은|는)\s*(?:신중|주의|유의)"
+    r"|(?:시장\s*상황|시장\s*동향|변동성)(?:을|를|에)?\s*(?:주의\s*깊게|면밀히|지속적으로|꾸준히)?\s*(?:주시|모니터링|살펴|지켜)"
+    r"|전문가(?:와|의)?\s*(?:상담|조언)"
+    r"|(?:주가|주식\s*시장)(?:은|는)\s*(?:예측하기\s*어렵|예측할\s*수\s*없|불확실)"
+    r"|향후\s*(?:주가|동향|추이|흐름)(?:를|을)?\s*(?:지켜|주시|살펴)"
+)
+# 2026-11-18: "news_tool에"처럼 한글 조사가 바로 붙으면 \b가 경계로 보지 않았고, "Disclosure_tool"·"RAG_search_tool"처럼 대소문자를 바꿔 쓰면
+# 놓쳤다(최종 리허설 SK하이닉스 흐름 답). 영문·숫자·밑줄이 앞뒤에 없을 때를 경계로 보고 대소문자를 가리지 않는다
+_TOOL_LEAK_RE = re.compile(r"(?<![A-Za-z0-9_])(?:stock|news|disclosure|rag_search|market|fx|discovery|event_reaction)_tool(?![A-Za-z0-9_])",
+                           re.IGNORECASE)
+_INTRO_RE = re.compile(r"(?:다음과|아래와)\s*같습니다[.。]?$")
+_CAUSE_HEAD_RE = re.compile(r"^#{1,6}\s*원인")
+_CAUSE_WORD_RE = re.compile(
+    r"뉴스|기사|보도|공시|발표|계약|수주|실적|시장|코스피|코스닥|지수|업종|금리|환율|정책|수요|공급|때문|영향|덕분|배경|이유|원인|소식|이슈"
+    r"|전망|매도|매수|외국인|기관"
+)
+_DIGITS_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
+_EMPTY_BULLETS_RE = re.compile(r"^\s*(?:[-*•]\s*)+$")
+_BULLET_RE = re.compile(r"^(\s*(?:[-*•]|\d+[.)])\s+)")
+
+
+def _nums(s: str) -> set[str]:
+    return {x.replace(",", "") for x in _DIGITS_RE.findall(s)}
+
+
+def strip_generic(text: str) -> tuple[str, int]:
+    """(정리한 글, 지운 문장 수). 남는 본문이 없으면 빈 문자열(호출측이 코드 요약으로 바꾼다)."""
+    removed = 0
+    seen_nums: set[str] = set()
+    out_lines: list[str] = []
+    state = {"cause": False, "start": 0, "intros": []}  # 지금 절: 원인 분석인지, 시작 줄, 안내 문장만 남은 줄
+
+    def close_section():
+        nonlocal removed
+        body = [i for i in range(state["start"], len(out_lines))
+                if out_lines[i].strip() and not out_lines[i].lstrip().startswith("#")]
+        if body and set(body) <= set(state["intros"]):
+            for i in body:
+                out_lines[i] = ""
+                removed += 1
+
+    for line in (text or "").split("\n"):
+        if line.lstrip().startswith("#"):
+            close_section()
+            state.update(cause=bool(_CAUSE_HEAD_RE.match(line.strip())), start=len(out_lines), intros=[])
+            out_lines.append(line)
+            continue
+        if _EMPTY_BULLETS_RE.match(line):  # 48차: 글머리 기호만 있는 줄("-   -   -   -")은 생성 잔해다
+            removed += 1
+            continue
+        m = _BULLET_RE.match(line)
+        prefix, body = (m.group(1), line[m.end():]) if m else ("", line)
+        kept = []
+        for sent in _SENT_RE.split(body):
+            if not sent.strip():
+                continue
+            nums = _nums(sent)
+            drop = bool(_TOOL_LEAK_RE.search(sent)) or (not nums and bool(_GENERIC_RE.search(sent)))
+            if not drop and state["cause"] and nums and nums <= seen_nums and not _CAUSE_WORD_RE.search(sent):
+                drop = True
+            if drop:
+                removed += 1
+                continue
+            kept.append(sent)
+        if not kept:
+            if not body.strip():
+                out_lines.append(line)  # 빈 줄은 문단 구분으로 남긴다
+            continue
+        joined = prefix + " ".join(kept)
+        if all(_INTRO_RE.search(k.strip()) for k in kept):
+            state["intros"].append(len(out_lines))
+        out_lines.append(joined)
+        seen_nums |= _nums(joined)
+    close_section()
+    result = "\n".join(out_lines)
+    if removed:
+        result = _drop_empty_headings(result)
+    result = re.sub(r"\n{3,}", "\n\n", result).strip()
+    if not re.sub(r"^#.*$", "", result, flags=re.M).strip():
+        return "", removed
+    return result, removed

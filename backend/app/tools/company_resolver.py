@@ -14,6 +14,7 @@ import unicodedata
 from dataclasses import dataclass
 
 from app.company_aliases import COMPANY_ALIASES
+from app.company_names_i18n import foreign_aliases
 from app.etf import rewrite_etf_brand  # noqa: F401  (app.companies 등이 여기서 가져다 쓴다)
 from app.models import Company
 
@@ -43,9 +44,11 @@ def _key(s: str) -> str:
 
 
 # 별칭 조회용. 정규화한 별칭 -> 등록명(resolve_company), 등록명 -> 별칭 목록(extract_from_text).
-_ALIAS_BY_KEY = {_key(alias): name for alias, name in COMPANY_ALIASES.items()}
+# 48차: 영어·일본어·중국어 표기(app/company_names_i18n.py)도 같은 별칭 단계에서 본다. 한글 별칭과 키가 겹치면 한글 별칭이 이긴다.
+_ALL_ALIASES: dict[str, str] = {**foreign_aliases(), **COMPANY_ALIASES}
+_ALIAS_BY_KEY = {_key(alias): name for alias, name in _ALL_ALIASES.items()}
 _ALIASES_BY_NAME: dict[str, list[str]] = {}
-for _alias, _name in COMPANY_ALIASES.items():
+for _alias, _name in _ALL_ALIASES.items():
     _ALIASES_BY_NAME.setdefault(_name, []).append(_alias)
 
 
@@ -240,7 +243,8 @@ def resolve_company(db, raw, allow_fuzzy: bool = True) -> Resolution:
 
 # 종목명 바로 뒤에 붙은 우선주 표기('삼성전자우', '현대차2우B', '삼성전자우선주'). 우선주는 보통주와 다른
 # 종목이라 보통주로 취급하면 안 된다. '우' 뒤에 한글이 이어지면('우리', '우수') 우선주가 아니다.
-_PREFERRED_RE = re.compile(r"^(?:\d?우b?(?![가-힣])|우선주)")
+# 48차: 일본어·중국어 우선주 표기("サムスン電子優先株", "三星电子优先股")도 보통주로 보지 않는다.
+_PREFERRED_RE = re.compile(r"^(?:\d?우b?(?![가-힣])|우선주|\s*(?:優先株|优先股|優先股))")
 _ASCII_ALNUM = re.compile(r"[0-9a-z]")
 
 

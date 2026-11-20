@@ -161,9 +161,13 @@ def _kst(s: str) -> datetime:
 
 
 def _visible_rows(rows: list[tuple], now: datetime) -> list[tuple]:
-    """평가기 쪽 장중 처리(제품과 따로): 평일 15:30 전이면 오늘 날짜 행은 종가가 아니므로 정답 계산에서 뺀다."""
+    """평가기 쪽 장중 처리(제품과 따로): 평일 마감(평소 15:30, 달력의 특수 마감일은 그 값) 전이면 오늘 날짜 행은 종가가 아니므로
+    정답 계산에서 뺀다(56차: 마감 시각은 J.krx_close_hhmm, 제품 코드가 아니라 달력 파일에서 읽는다).
+    57차: "평일"이 아니라 KRX 거래일이다(evals.krx_days.before_close). 휴장일에는 장이 열리지 않아 오늘 행을 빼지 않는다(제품과 같다)."""
+    from evals import krx_days as KD
+
     today = now.date()
-    if now.weekday() < 5 and now.strftime("%H:%M") < "15:30":
+    if KD.before_close(today, now.strftime("%H:%M")):
         return [r for r in rows if r[0] != today]
     return rows
 
@@ -906,7 +910,10 @@ NOT_EVALUATED = [
     "LLM-as-a-Judge는 쓰지 않는다(결정론 판정만)",
     "계정 간 데이터 분리는 이 평가가 아니라 통합 테스트(tests/*_devdb.py의 사용자 분리 테스트)가 확인한다",
     "일일 브리핑·포트폴리오 진단 문장은 이 평가의 제품 경로에 없다(각 기능 테스트가 확인)",
-    "공휴일 달력이 없어 영업일은 평일 기준이다(제품과 같은 한계)",
+    # 42차(2026-11-11): 36차부터 시세 지연은 KRX 거래일 달력(app/data/krx_calendar.json)으로 판정한다. 옛 문장 "공휴일 달력이 없어
+    # 영업일은 평일 기준"은 사실과 달라 고쳤다(evals/results/의 지난 결과 파일은 당시 기록이라 그대로 둔다).
+    "시세 지연 영업일은 KRX 거래일 달력 기준(범위 2026-12-31까지, 범위 밖·미확정 평일은 열릴 수 있는 날로 센다), "
+    "환율·뉴스·공시는 평일 기준이다(제품 app/data_monitor와 같은 정의)",
 ]
 
 

@@ -12,6 +12,7 @@ SECTOR_SOURCES의 ETF 최신 구성종목에 종목코드(또는 이름)가 있�
 import re
 from datetime import datetime
 
+from app.display_dates import kst_iso
 from app.news_relevance import is_duplicate_title, title_names_subject
 
 # 업종 -> 구성종목을 업종 근거로 쓰는 업종 ETF(우선순위 순)
@@ -111,8 +112,10 @@ def indirect_news(db, company, since: datetime | None, exclude_urls=(), limit: i
         if any(is_duplicate_title(title, k["title"]) for k in kept):
             continue
         seen_urls.add(url)
-        kept.append({"title": title, "url": url, "source": source,
-                     "published_at": published.isoformat() if published else None})
+        # 42차(2026-11-11): KST 문자열로(app.display_dates.kst_iso, 39차 직접 뉴스와 같은 규칙). 전에는 DB timestamptz를 그대로
+        # isoformat해 UTC(+00:00)로 나가, 일일 브리핑 응답·출처의 간접 뉴스 시각이 KST 계약과 달랐고 news_tool이 LLM에 넘기는
+        # 간접 뉴스도 앞 10자가 UTC 날짜였다(KST 00~09시 기사는 하루 전 날짜).
+        kept.append({"title": title, "url": url, "source": source, "published_at": kst_iso(published)})
         if len(kept) >= limit:
             break
     return section, topic, kept

@@ -24,7 +24,10 @@ KST = ZoneInfo("Asia/Seoul")
 NEWS_KEYS = {"ticker", "company_name", "asset_type", "total", "limit", "offset", "has_next", "total_pages", "filters",
              "freshness", "items"}
 DISC_KEYS = NEWS_KEYS | {"supported", "message"}
-FRESH_KEYS = {"last_collected_at", "collection_lag_weekdays", "stale", "company_latest_at", "last_collection"}
+# 72차(하위 호환 추가): 데이터 최신 시각·마지막 성공·마지막 시도를 나눈 필드
+FRESH_KEYS = {"last_collected_at", "collection_lag_weekdays", "stale", "company_latest_at", "last_collection",
+              "latest_record_at", "record_lag_weekdays", "freshness_state", "last_successful_collection_at",
+              "last_attempt_finished_at", "last_collection_status", "last_collection_step"}
 NEWS_ITEM_KEYS = {"id", "title", "summary", "source", "url", "published_at", "collected_at", "is_relevant", "related_tickers"}
 DISC_ITEM_KEYS = {"id", "title", "disclosure_type", "rcept_no", "disclosed_date", "disclosed_at", "source_url", "is_correction",
                   "collected_at"}
@@ -292,10 +295,10 @@ class TestDevDb:
             assert all(str(q).lstrip().upper().startswith("SELECT") for q in n)
             return len(n)
 
-        # 종목 해석 1 + 건수·페이지·같은 URL·신선도·수집 시도(뉴스 5, 공시 4). 페이지 크기와 무관(N+1 없음)
-        assert count(f"/api/stocks/{seeded.tick['A']}/news?limit=50") == 6
-        assert count(f"/api/stocks/{seeded.tick['A']}/disclosures?limit=50") == 5
-        assert count(f"/api/stocks/{seeded.tick['E']}/disclosures") == 3
+        # 종목 해석 1 + 건수·페이지·같은 URL·신선도·수집 시도 + 72차 수집 요약 1(뉴스 6, 공시 5). 페이지 크기와 무관(N+1 없음)
+        assert count(f"/api/stocks/{seeded.tick['A']}/news?limit=50") == 7
+        assert count(f"/api/stocks/{seeded.tick['A']}/disclosures?limit=50") == 6
+        assert count(f"/api/stocks/{seeded.tick['E']}/disclosures") == 4
 
     def test_sql_correction_filter_agrees_with_python_on_stored_titles(self, dev_db):
         """저장된 모든 공시 제목(읽기만)에서 PostgreSQL 정규식 판정과 is_correction이 같다. CI 빈 DB면 0건이라 자명하게 맞는다."""

@@ -304,14 +304,11 @@ _STALE_NOTICE_RE = re.compile(r"마지막\s*데이터|기준입니다|기준으�
 
 
 def _business_days_between(a, b) -> int:
-    """a 다음 날부터 b까지의 평일 수(a < b일 때). a >= b면 0."""
-    from datetime import timedelta
+    """a 다음 날부터 b까지의 KRX 거래일 수(a < b일 때). a >= b면 0.
+    57차: 평일 수에서 KRX 거래일 수로 바꿨다(app/data_status.business_days_behind가 36차부터 KRX 달력이다). evals.krx_days를 쓴다."""
+    from evals import krx_days as KD
 
-    n, d = 0, a
-    while d < b:
-        d += timedelta(days=1)
-        n += d.weekday() < 5
-    return n
+    return KD.trading_days_after(a, b)
 
 
 def _date_patterns(d) -> list[str]:

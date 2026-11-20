@@ -1,0 +1,6 @@
+# 68차(2026-11-17)부터 미사용(보관): 분봉 보존은 GitHub Actions 아티팩트로 바뀌었고(docs/GITHUB_ACTIONS_MINUTE_AUTOMATION_68.md) 어떤 workflow도 이 파일을 설치하지 않는다.
+# 67차 R2 저장(R2Store, tests_cloud/)을 다시 쓸 때만 필요하다.
+# 67차 클라우드 분봉 보존(GitHub Actions)에만 쓰는 추가 의존성. 백엔드 서버·로컬 개발에는 필요 없다.
+# 설치: pip install -r requirements.txt -r requirements-cloud.txt
+# 1.43.100 = 2026-09-22 배포(최신판을 바로 쓰지 않음). R2 체크섬 헤더 호환은 R2Store의 Config(when_required)로 맞춘다.
+boto3==1.43.100

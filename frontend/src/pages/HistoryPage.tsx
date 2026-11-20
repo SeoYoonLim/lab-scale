@@ -11,13 +11,16 @@ import DiagnosisResultView from '../components/DiagnosisResultView'
 import Pagination from '../components/Pagination'
 import ResearchAnswerBody from '../components/ResearchAnswerBody'
 import SourceFootnotes from '../components/SourceFootnotes'
+import SourceStatusNote from '../components/SourceStatusNote'
 import Banner from '../components/ui/Banner'
 import EmptyState from '../components/ui/EmptyState'
 import ErrorNotice from '../components/ui/ErrorNotice'
 import StatusBadge from '../components/ui/StatusBadge'
 import { languageName, toLocale } from '../i18n'
 import { useLocale } from '../i18n/useLocale'
+import { stripDuplicateDisclaimer } from '../utils/disclaimer'
 import { formatPlainPct, formatWon } from '../utils/format'
+import { plainSummary } from '../utils/plainSummary'
 import { toolLabel } from '../utils/toolLabels'
 import LoadingNotice from '../components/ui/LoadingNotice'
 
@@ -53,7 +56,7 @@ function ResearchRecord({ reportId }: { reportId: number }) {
     <div className="history-detail">
       {/* 과거 리포트는 당시 저장된 질문·답변·출처 그대로다 - 현재 시세로 다시 만들지 않는다 */}
       <Banner tone="info">{t('history.past_basis_notice')}</Banner>
-      <ResearchAnswerBody answer={r.answer} locale={r.locale} translationStatus={r.translation_status} reportId={r.report_id} originalAnswer={r.original_answer} />
+      <ResearchAnswerBody answer={stripDuplicateDisclaimer(r.answer, r.disclaimer)} locale={r.locale} translationStatus={r.translation_status} reportId={r.report_id} originalAnswer={r.original_answer} />
       {r.data_basis.length > 0 && (
         <div className="data-basis-block">
           <div className="muted small">{t('research.data_basis')}</div>
@@ -71,6 +74,7 @@ function ResearchRecord({ reportId }: { reportId: number }) {
         </div>
       )}
       <SourceFootnotes usedTools={r.used_tools} sources={r.sources} />
+      <SourceStatusNote sources={r.sources} status={r.source_status} />
       <p className="muted small">{t('research.source_title_original')}</p>
       <p className="disclaimer-note muted small">{r.disclaimer}</p>
     </div>
@@ -152,7 +156,7 @@ function HistoryCard({ item, terms, onDelete, deleting }: { item: HistoryItem; t
       )}
       {item.summary && (
         <p className="muted small history-card-summary">
-          <Highlight text={item.summary} terms={terms} />
+          <Highlight text={plainSummary(item.summary)} terms={terms} />
         </p>
       )}
 

@@ -8,6 +8,7 @@
 2. 기준 종가와 반응 시작일
    - 시각을 아는 사건(뉴스):
        * 거래일 15:30(KST) 이후 발행 -> 기준일 = 그날, 반응 시작일 = 다음 거래일
+         (55차: 마감 시각은 KRX 달력 close_time. 수능일 2026-11-19는 16:30)
        * 거래일 장 시작 전·장중(15:30 전) 발행 -> 기준일 = 직전 거래일, 반응 시작일 = 그날
        * 휴장일(주말 포함) 발행 -> 기준일 = 직전 거래일, 반응 시작일 = 다음 거래일
    - 날짜만 아는 사건(공시, time_known=False): 시각을 모르므로 보수적으로 기준일 = 직전 거래일, 반응 시작일 = 접수일
@@ -32,7 +33,7 @@ from typing import Sequence
 from zoneinfo import ZoneInfo
 
 KST = ZoneInfo("Asia/Seoul")
-MARKET_CLOSE = time(15, 30)
+MARKET_CLOSE = time(15, 30)  # 정규 일정의 마감. 55차부터 판정은 krx_calendar.close_time(그날)을 쓴다(수능일 16:30)
 HORIZONS = (1, 5, 20)
 VOLUME_WINDOW = 20
 ADJUSTMENT_WARN_PCT = 30.0
@@ -65,7 +66,10 @@ def resolve_base_and_start(
     """
     if event_at is not None:
         at = event_at.astimezone(KST) if event_at.tzinfo else event_at.replace(tzinfo=KST)
-        d, after_close = at.date(), at.time() >= MARKET_CLOSE
+        from app.krx_calendar import close_time
+
+        d = at.date()
+        after_close = at.time() >= close_time(d)
         known = True
     else:
         d, after_close, known = event_date, False, False

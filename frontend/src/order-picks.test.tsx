@@ -129,10 +129,10 @@ describe('주문 빠른 선택', () => {
     expect(statusTexts().some((t) => t.includes('12주') && t.includes('전량'))).toBe(true)
   })
 
-  it('체결가는 실시간 시세이고 종가와 다를 수 있다는 안내가 항상 보인다', async () => {
+  it('체결가 기준(정규장 실시간, 장외 저장 종가) 안내가 항상 보인다', async () => {
     renderWith(<HoldingsSection portfolio={portfolio as never} />)
     await screen.findByRole('button', { name: 'NAVER' })
-    expect(screen.getByText(/체결가는 주문하는 순간의 실시간 시세/)).toBeTruthy()
+    expect(screen.getByText(/정규장 중에는 실시간 시세를, 장외에는 저장된 최근 종가를 기준으로 모의 체결해요/)).toBeTruthy()
   })
 
   it('보유 종목이 없으면 매도에서 안내를 보여준다', async () => {

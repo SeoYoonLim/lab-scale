@@ -213,3 +213,50 @@ class TestNativeQuantity:
 
     def test_first_expression_still_wins(self):
         assert parse("지난주랑 한 달 비교").matched_text == "지난주"
+
+
+# ---------- 2026-11-18: "N일 수익률"은 N거래일, "최근 N일"은 달력(rt_26) ----------
+_NOW_1118 = datetime(2026, 11, 18, 20, 0, tzinfo=ZoneInfo("Asia/Seoul"))
+
+
+@pytest.mark.parametrize("q, days, text", [
+    ("삼성전자 5일 수익률은?", 5, "5일"),            # 수익률 낱말이 바로 붙은 지표 표현 -> 5거래일
+    ("삼성전자 20일 등락률 알려줘", 20, "20일"),
+    ("삼성전자 1일 변동률은?", 1, "1일"),
+    ("삼성전자 최근 5거래일 수익률은?", 5, "5거래일"),  # 기존 그대로
+])
+def test_return_window_days_are_trading_days(q, days, text):
+    p = parse_period(q, _NOW_1118)
+    assert p is not None and p.period_days == days and p.matched_text == text
+
+
+@pytest.mark.parametrize("q, days", [
+    ("삼성전자 최근 20일 수익률은?", 14),   # 평가 rt_26: 기간 질문(달력)은 기존 경로
+    ("삼성전자 최근 5일 동안 수익률은?", 3),
+    ("삼성전자 5일 동안 수익률", 3),
+    ("삼성전자 5일간 수익률", 3),
+    ("지난 5일 수익률", 3),
+    ("과거 5일 수익률", 3),
+])
+def test_calendar_day_phrases_keep_calendar_meaning(q, days):
+    p = parse_period(q, _NOW_1118)
+    assert p is not None and p.period_days == days
+
+
+def test_english_return_windows_follow_the_same_rules():
+    from app.intent_i18n import normalize
+    five_day = normalize("What was the 5-day return of Samsung Electronics?").text
+    calendar = normalize("Samsung Electronics return over the last 5 calendar days").text
+    trading = normalize("What was Samsung Electronics' return over the last 5 trading days?").text
+    assert parse_period(five_day, _NOW_1118).period_days == 5
+    assert "최근 5일" in calendar and parse_period(calendar, _NOW_1118).period_days == 3
+    assert parse_period(trading, _NOW_1118).period_days == 5
+
+
+def test_trading_days_flag_marks_trading_windows_only():
+    # 에이전트·원인·환율 경로는 이 값으로 "저장된 최근 N개 거래일" 창을 고른다(matched_text는 원문 그대로)
+    assert parse_period("삼성전자 5일 수익률은?", _NOW_1118).trading_days is True
+    assert parse_period("삼성전자 최근 5거래일 수익률은?", _NOW_1118).trading_days is True
+    assert parse_period("삼성전자 최근 20일 수익률은?", _NOW_1118).trading_days is False
+    assert parse_period("삼성전자 지난주 수익률", _NOW_1118).trading_days is False
+    assert parse_period("삼성전자 한 달 수익률", _NOW_1118).trading_days is False

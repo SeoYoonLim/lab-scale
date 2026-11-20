@@ -59,6 +59,9 @@ class ParsedPeriod:
     period_days: int
     # 질문에서 실제로 인식한 원문 조각(로깅/디버깅/테스트용).
     matched_text: str
+    # 거래일 수로 말한 기간인가("최근 5거래일", "5일 수익률"). True면 날짜 창이 아니라 저장된 최근 N개 거래일이 창이다(2026-11-18).
+    # matched_text는 질문 속 위치를 찾는 데도 쓰여(app.period_scope) 원문 그대로 두고, 판정은 이 값으로 한다.
+    trading_days: bool = False
 
 
 def _today(now: datetime | None = None) -> date:
@@ -216,6 +219,35 @@ _NATIVE_PATTERNS: list[tuple[re.Pattern, "callable", str]] = [
 ]
 
 
+# 49차: "최근 5거래일", "지난 20영업일"처럼 거래일 수를 직접 말한 표현. 이 수가 그대로 period_days다(평일 환산 없음).
+# 수정 전에는 이 표현을 인식하지 못해 기간을 LLM 추론에 맡겼다. "향후·앞으로·다음 N거래일"(미래)과 "N거래일 뒤·후"는 기간 조회가 아니라
+# 전망 기간이라 제외한다(app.outlook.horizon_in이 본다).
+_TRADING_DAYS_RE = re.compile(r"(?<![\d])(?<!향후\s)(?<!향후)(?<!앞으로\s)(?<!다음\s)(?<!이후\s)(?<!부터\s)(\d+)\s?(?:거래일|영업일)(?!\s?(?:뒤|후|이후|전))")
+_MAX_TRADING_DAYS = 2600
+
+# 2026-11-18: "5일 수익률", "20일 등락률"처럼 숫자+일 바로 뒤에 수익률 낱말이 오는 표현은 금융 관례대로 N거래일 수익률(5일선과 같은
+# 거래일 창)이다. 영어 "5-day return"도 app.intent_i18n이 "5일 수익률"로 바꾸므로 같다. 수정 전에는 달력 5일(평일 3개 -> 2거래일
+# 등락)로 답했다. 앞에 "최근·지난·과거"가 있으면("최근 20일 수익률은?", 평가 rt_26) 기존대로 달력 기간이고, "5일 동안"·"5일간"처럼
+# 수익률 낱말이 바로 붙지 않으면 이 규칙이 아니다. "5 calendar days"는 intent_i18n이 "최근 5일"로 바꿔 달력 그대로다.
+_RETURN_WORD_RE = re.compile(r"\s?(?:수익률|등락률|변동률|상승률|하락률)")
+_CALENDAR_LEAD_RE = re.compile(r"(?:최근|지난|과거)\s?$")
+
+
+def _is_return_window(question: str, m: re.Match) -> bool:
+    return bool(_RETURN_WORD_RE.match(question, m.end())) and not _CALENDAR_LEAD_RE.search(question[:m.start()])
+
+
+def _trading_days_back(today: date, n: int) -> date:
+    """today를 포함해 평일 n개를 거슬러 올라간 날(공휴일 미고려, _business_days_between과 같은 근사)."""
+    d, left = today, n
+    while True:
+        if d.weekday() < 5:
+            left -= 1
+            if left == 0:
+                return d
+        d -= timedelta(days=1)
+
+
 def _candidates(question: str, today: date) -> list[tuple[int, str, tuple[date, date]]]:
     found = []
     taken = calendar_spans(question, today)
@@ -226,16 +258,25 @@ def _candidates(question: str, today: date) -> list[tuple[int, str, tuple[date, 
     for pattern, to_range in _FIXED_PATTERNS:
         m = pattern.search(question)
         if m and free(m):
-            found.append((m.start(), m.group(), to_range(today)))
+            found.append((m.start(), m.group(), to_range(today), False))
     for m in _QUANTITY_RE.finditer(question):
+        if m.group(2) == "일" and _is_return_window(question, m):
+            n = int(m.group(1))
+            if 1 <= n <= _MAX_TRADING_DAYS and free(m):
+                found.append((m.start(), m.group(), (_trading_days_back(today, n), today), True))
+            continue
         rng = _quantity_range(today, int(m.group(1)), m.group(2))
         if rng is not None and free(m):
-            found.append((m.start(), m.group(), rng))
+            found.append((m.start(), m.group(), rng, False))
     for pattern, quantity, unit in _NATIVE_PATTERNS:
         for m in pattern.finditer(question):
             rng = _quantity_range(today, quantity(m), unit)
             if rng is not None:
-                found.append((m.start(), m.group(), rng))
+                found.append((m.start(), m.group(), rng, False))
+    for m in _TRADING_DAYS_RE.finditer(question):
+        n = int(m.group(1))
+        if 1 <= n <= _MAX_TRADING_DAYS and free(m):
+            found.append((m.start(), m.group(), (_trading_days_back(today, n), today), True))
     return found
 
 
@@ -251,9 +292,9 @@ def parse_period(question: str, now: datetime | None = None) -> ParsedPeriod | N
         return None
 
     found.sort(key=lambda c: c[0])
-    _, matched_text, (start, end) = found[0]
+    _, matched_text, (start, end), trading = found[0]
     period_days = max(1, _business_days_between(start, end))
-    return ParsedPeriod(start_date=start, end_date=end, period_days=period_days, matched_text=matched_text)
+    return ParsedPeriod(start_date=start, end_date=end, period_days=period_days, matched_text=matched_text, trading_days=trading)
 
 
 # --- "기간을 말했는가"만 판단 ---------------------------------------------------

@@ -6,13 +6,30 @@ from app.news_relevance import evidence_news
 from app.tools.company_resolver import not_found_response, resolve_company, to_int
 
 
+def _before(value):
+    """before_kst 문자열 -> 시간대 있는 datetime. 비었거나 형식이 틀리면 None(제한 없음)."""
+    from datetime import datetime
+
+    if not value:
+        return None
+    try:
+        at = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    return at if at.tzinfo else None
+
+
 # 제목에 이름이 직접 나오는 기사만 남기므로 limit의 몇 배를 읽어서 거른다(2026-11-03 4 -> 8: SK하이닉스는 최근 20건 중 제목 일치가 0건이었다).
 ETF_NEWS_OVERFETCH = 8
 
 
-def news_tool(company_name: str, limit: int = 5) -> dict:
-    """지정한 종목(이름 또는 티커)의 최근 뉴스를 DB에서 조회한다."""
+def news_tool(company_name: str, limit: int = 5, before_kst: str | None = None) -> dict:
+    """지정한 종목(이름 또는 티커)의 최근 뉴스를 DB에서 조회한다.
+
+    before_kst(69차, 내부 전용): 이 시각(ISO, 시간대 포함) 전에 발행된 기사만 읽는다. 원인 질문에서 시세 기준 시점 뒤 기사를 뺀 뒤
+    다시 채울 때 app/answer_cause.filter_records가 쓴다. LLM 도구 스키마에는 없고 app/agent._run_tool이 LLM 인자에서 지운다."""
     limit = to_int(limit, default=5)
+    before = _before(before_kst)
     db = SessionLocal()
     try:
         res = resolve_company(db, company_name)
@@ -22,9 +39,11 @@ def news_tool(company_name: str, limit: int = 5) -> dict:
         corrected = {"corrected_from": res.corrected_from} if res.corrected_from else {}
 
         is_etf = company.asset_type == "etf"
+        query = db.query(News).filter(News.company_id == company.id, News.is_relevant.isnot(False))
+        if before is not None:
+            query = query.filter(News.published_at < before)
         rows = (
-            db.query(News)
-            .filter(News.company_id == company.id, News.is_relevant.isnot(False))
+            query
             .order_by(News.published_at.desc())
             .limit(limit * ETF_NEWS_OVERFETCH)
             .all()

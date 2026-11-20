@@ -135,9 +135,75 @@ _CONSTITUENT_RE = re.compile(
 )
 
 
+# 48차(2026-11-13): 같은 뜻의 다른 표현과 영어·일본어·중국어 질문. 수정 전에는 "KODEX 200 포트폴리오 알려줘",
+# "What are the top holdings of KODEX 200?", "KODEX 200の構成銘柄を教えて", "KODEX 200的成分股有哪些？"가 모두 주가·뉴스 LLM 답이 됐다.
+# "보유(holding)"·"포트폴리오"는 매매·배분 질문("Should I keep holding", "포트폴리오에 넣어도 될까")에도 쓰여서 뒤 표현까지 본다.
+_CONSTITUENT_MORE_RE = re.compile(
+    r"포트폴리오\s*(?:구성\s*)?(?:좀\s*)?(?:을|를|는|은|가|이)?\s*(?:알려|보여|어떻|뭐|확인|궁금)"
+    r"|(?:뭐|무엇|뭘|뭣|무얼)(?:가|이|을|를)?\s*(?:들어|담|포함|편입)"
+    r"|(?:무엇|뭐|뭘)에\s*투자"
+    r"|비중\s*(?:이|가)?\s*(?:큰|높은|많은|상위|순)"
+    r"|(?:가장\s*|제일\s*)?많이\s*(?:담|편입|보유)"
+    r"|(?:1|일)\s*위\s*종목|(?:가장|제일)\s*(?:큰|많은|높은)\s*(?:비중|종목)"
+    # 영어
+    r"|\bholdings\b|\bconstituents?\b|\bcomponents\b|\bcomposition\b"
+    r"|\b(?:what|which)\s+(?:stocks|companies|shares|securities)\b[^?]{0,40}\b(?:in|hold|holds|own|owns|contain|contains|include|includes)\b"
+    r"|\btop\s*\d{0,3}\s*(?:stocks|positions|names)\b|\bwhat(?:'s|\s+is)\s+(?:inside|in)\b"
+    # 일본어
+    r"|構成銘柄|構成比|組入(?:れ)?(?:上位)?銘柄|組み入れ(?:上位)?銘柄|組入上位|組入比率|保有銘柄|上位銘柄|何が入って|どんな銘柄|中身"
+    # 중국어(간체·번체)
+    r"|成分股|成份股|持仓|持倉|持股|重仓|重倉|包含哪些|有哪些股票|里面有什么|裡面有什麼|构成|構成股",
+    re.IGNORECASE,
+)
+
+# 특정 종목의 ETF 내 비중("KODEX 200에서 삼성전자 비중", "Samsung Electronics' weight in KODEX 200"). ETF와 주식이 함께 있어야 한다(호출측).
+_HOLDING_WEIGHT_RE = re.compile(
+    r"비중|비율|얼마나\s*(?:담|들어|편입|포함|차지|있)|몇\s*(?:%|퍼센트|프로)|(?:들어|담겨|편입돼|포함돼)\s*(?:있|돼)"
+    r"|\bweight(?:ing)?s?\b|\bhow\s+much\b|\bpercent(?:age)?\b|\bshare\s+of\b|\b(?:include|includes|contain|contains|hold|holds)\b"
+    r"|比率|ウェ?イト|ウエイト|割合|どれくらい|どのくらい|含まれ|入って|組み?入れ"
+    r"|权重|權重|比重|占比|占多少|多少比例|比例|包含|持有|有没有",
+    re.IGNORECASE,
+)
+# 비중을 "어떻게 둘지"(배분·매매·비교)는 구성 비중 질문이 아니다
+_ALLOCATION_RE = re.compile(
+    r"늘려|늘릴|늘리|줄여|줄일|줄이|조정|배분|나눠|나눌|리밸런싱|어떻게\s*(?:해|할|둘|가져)|살까|사야|팔까|팔아야|투자할까|투자해야|비교"
+    r"|\bshould\b|\ballocat|\brebalanc|\bincrease\b|\breduce\b|\bcompare\b|\bvs\.?\b|\bbuy\b|\bsell\b"
+    r"|増や|減ら|配分|すべき|どちら|買う|売る|比較|应该|應該|配置|加仓|减仓|买|卖|比较",
+    re.IGNORECASE,
+)
+
+
+_CJK_START_RE = re.compile(r"(?<=[0-9A-Za-z가-힣)&%+\]])(?=[\u3040-\u30ff\u3400-\u9fff\uff00-\uffef])")
+
+
+def _mask_etf_heads(text: str) -> str:
+    """48차 게이트용: ETF 이름을 "브랜드 + 첫 토큰"까지만 가린다. mask_etf_names는 영문·숫자가 섞인 뒤 토큰("holdings", "1위")과
+    띄어쓰기 없는 일본어·중국어("200の構成銘柄を教えて")까지 이름으로 보고 지워서, 새 패턴이 볼 낱말이 사라졌다.
+    ETF 이름에는 가나·한자가 없으므로 그 앞에서 토큰을 끊는다."""
+    s = _CJK_START_RE.sub(" ", rewrite_etf_brand(text or ""))
+    out, pos = [], 0
+    for m in _ETF_BRAND_START_RE.finditer(s):
+        if m.start() < pos:
+            continue
+        tok = _TOKEN_RE.match(s, m.end())
+        end = tok.end() if tok else m.end()
+        out.append(s[pos:m.start()] + " " * (end - m.start()))
+        pos = end
+    return "".join(out) + s[pos:]
+
+
 def asks_constituents(question: str) -> bool:
     """ETF의 구성종목·편입 비중·상위 보유종목을 묻는 질문이면 True. ETF가 질문에 있는지는 호출측이 본다."""
-    return bool(_CONSTITUENT_RE.search(mask_etf_names(question or "")))
+    if _CONSTITUENT_RE.search(mask_etf_names(question or "")):
+        return True
+    return bool(_CONSTITUENT_MORE_RE.search(_mask_etf_heads(question)))
+
+
+def asks_holding_weight(question: str) -> bool:
+    """ETF 안에서 특정 종목의 비중·편입 여부를 묻는 질문이면 True(48차). ETF와 주식 종목이 둘 다 질문에 있는지는 호출측이 본다.
+    비중을 늘릴지·나눌지·어느 쪽을 살지 묻는 배분·매매·비교 질문은 False다."""
+    q = _mask_etf_heads(question)
+    return bool(_HOLDING_WEIGHT_RE.search(q)) and not _ALLOCATION_RE.search(q)
 
 
 def constituents_answer(names: list[str]) -> str:
@@ -225,10 +291,39 @@ def mask_news_numbers(text: str) -> str:
     return _NEWS_NUMBER_RE.sub(NUMBER_MASK, text or "")
 
 
-def news_result_for_llm(result: dict) -> dict:
-    """news_tool 결과에서 기사 제목·본문의 수치를 가린 사본(LLM에 넘기는 용도). 원본 result는 바꾸지 않는다."""
+# 49차: 주식 답의 기사 시세 표시. 시세 낱말(주가·종가·마감·등락 …)이 있고 실적 낱말이 없는 기사 문장의 원·% 숫자에 기사 발행일을 붙인다
+# ("146,900원" -> "146,900원[기사 2026-10-30 시점]"). 발행일이 없으면 그 숫자를 가린다. 실적·매출·수주 같은 숫자는 그대로 둔다.
+# LLM이 기사 시세를 현재 시세로 옮기지 않게 하려는 것이고, 최종 검증은 answer_guard.strip_article_prices가 한다.
+_ARTICLE_SENT_RE = re.compile(r"[^.!?。\n]+[.!?。]?")
+_ARTICLE_PRICE_WORD_RE = re.compile(r"주가|종가|시가|고가|저가|장중|마감|낙폭|등락|시세|상승|하락|급등|급락|올랐|내렸|올라|내려|떨어|반등")
+_ARTICLE_FIN_RE = re.compile(r"영업이익|영업손실|순이익|순손실|매출|실적|수주|계약|배당|점유율|성장률|판매|수출|투자|예산")
+_ARTICLE_PRICE_NUM_RE = re.compile(r"(?<![\d,.])[+-]?\d[\d,]*(?:\.\d+)?(?:\s?만)?\s?(?:원|%)(?![\d가-힣]*[억조])")
+ARTICLE_UNDATED_MASK = "[날짜 미상 기사 시세 생략]"
+
+
+def _mark_article_prices(text, published: str | None) -> str:
+    if not isinstance(text, str) or not text:
+        return text
+    day = published[:10] if isinstance(published, str) and re.match(r"\d{4}-\d{2}-\d{2}", published) else None
+
+    def sentence(m: re.Match) -> str:
+        s = m.group(0)
+        if not _ARTICLE_PRICE_WORD_RE.search(s) or _ARTICLE_FIN_RE.search(s):
+            return s
+        return _ARTICLE_PRICE_NUM_RE.sub(lambda x: f"{x.group(0)}[기사 {day} 시점]" if day else ARTICLE_UNDATED_MASK, s)
+
+    return _ARTICLE_SENT_RE.sub(sentence, text)
+
+
+def news_result_for_llm(result: dict, etf: bool = True) -> dict:
+    """news_tool 결과에서 LLM에 넘길 사본. 원본 result(도구 기록·출처)는 바꾸지 않는다.
+    etf=True(기존): 기사 제목·본문의 수치를 모두 가린다. etf=False(49차, 주식): 기사 본문의 시세형 숫자에만 기사 발행일을 붙인다(위 설명)."""
     if not isinstance(result, dict) or not isinstance(result.get("news"), list):
         return result
+    if not etf:
+        news = [{**n, "content": _mark_article_prices(n.get("content"), n.get("published_at"))} for n in result["news"]]
+        return {**result, "news": news,
+                "note": "기사 속 주가·등락률은 [기사 날짜 시점] 값이다. 현재 주가는 stock_tool 결과만 쓰고, 기사 값은 그 날짜와 함께만 쓴다."}
     news = [
         {**n, "title": mask_news_numbers(n.get("title")), "content": mask_news_numbers(n.get("content"))}
         for n in result["news"]

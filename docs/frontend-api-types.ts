@@ -538,6 +538,13 @@ export interface FeedFreshness {
   stale: boolean;
   company_latest_at: string | null;
   last_collection: LastAttempt | null;
+  latest_record_at?: string | null;
+  record_lag_weekdays?: number | null;
+  freshness_state?: "fresh" | "stale" | "no_data";
+  last_successful_collection_at?: string | null;
+  last_attempt_finished_at?: string | null;
+  last_collection_status?: "success" | "partial" | "failed" | null;
+  last_collection_step?: string | null;
 }
 
 export interface FlagChanges {
@@ -916,6 +923,9 @@ export interface OrderResponse {
   side: "buy" | "sell";
   quantity: number;
   price: number;
+  price_source?: string | null;
+  price_is_realtime?: boolean | null;
+  price_as_of?: string | null;
   executed_at: string;
   cash_balance: number;
   holding?: HoldingAfterOrder | null;
@@ -1097,6 +1107,7 @@ export interface ReportDetail {
   created_at: string;
   used_tools: string[];
   sources: Source[];
+  source_status?: SourceStatus | null;
   disclaimer?: string;
 }
 
@@ -1127,6 +1138,7 @@ export interface ReportRecordDetail {
   created_at: string;
   used_tools: string[];
   sources: Source[];
+  source_status?: SourceStatus | null;
   disclaimer?: string;
   title: string;
   company_names: string[];
@@ -1192,6 +1204,7 @@ export interface ResearchResponse {
   answer: string;
   used_tools: string[];
   sources?: Source[];
+  source_status?: SourceStatus | null;
   report_id?: number | null;
   previous_report_id?: number | null;
   disclaimer?: string;
@@ -1238,6 +1251,19 @@ export interface Source {
   company_names: string[];
   company_filter?: string | null;
   url?: string | null;
+}
+
+/** 72차(하위 호환 추가): sources가 비었을 때 그 이유. 계산은 app.sources.source_status(tool 기록만 읽는다). */
+export interface SourceStatus {
+  status: "available" | "not_applicable" | "none_found" | "excluded_after_cutoff" | "long_period" | "error";
+  count: number;
+  is_error: boolean;
+  empty_reason?: "available" | "not_applicable" | "none_found" | "excluded_after_cutoff" | "long_period" | "error" | null;
+  message?: string | null;
+  excluded_after_cutoff_count?: number;
+  excluded_unknown_time_count?: number;
+  market_data_as_of?: string | null;
+  evidence_cutoff?: string | null;
 }
 
 export interface Sources {
@@ -1551,6 +1577,8 @@ export interface app__api__portfolio__HoldingItem {
   avg_price: number;
   current_price?: number | null;
   is_realtime?: boolean;
+  price_source?: string | null;
+  price_as_of?: string | null;
   eval_amount?: number | null;
   profit_loss?: number | null;
   profit_loss_pct?: number | null;

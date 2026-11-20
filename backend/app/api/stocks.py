@@ -199,7 +199,16 @@ class FeedFreshness(BaseModel):
     stale: bool  # collection_lag_weekdays >= 2이거나 수집 기록이 없으면 true
     company_latest_at: str | None  # 이 종목의 가장 최근 기사 게시 시각 / 공시 접수일(KST). 오래돼도 수집 지연이 아닐 수 있다
     # refresh_data 뉴스·공시 단계("news")의 마지막 실제 시도. status=failed면 수집 실패, success인데 items가 비면 저장된 항목이 원래 없음.
+    # 복구 단계(news_recovery·disclosure_recovery)는 보지 않는다(뜻 유지). 마지막 수집을 판단할 때는 아래 72차 필드를 쓴다
     last_collection: LastAttempt | None
+    # 72차(하위 호환 추가): 시각 네 가지를 나눈다. 정의는 API.md "뉴스·공시 freshness 필드" 절
+    latest_record_at: str | None = None  # 테이블 전체의 가장 최근 게시(뉴스)·접수(공시) 시각 = 데이터 자체의 최신 시점(KST)
+    record_lag_weekdays: int | None = None  # latest_record_at이 최근 평일보다 늦은 평일 수
+    freshness_state: Literal["fresh", "stale", "no_data"] = "no_data"  # 데이터 최신성만(record_lag_weekdays >= 2면 stale)
+    last_successful_collection_at: str | None = None  # 뉴스(또는 공시)를 저장하는 모든 수집 단계의 마지막 성공 종료 시각
+    last_attempt_finished_at: str | None = None  # 같은 단계들의 마지막 시도(성공·부분·실패) 종료 시각
+    last_collection_status: Literal["success", "partial", "failed"] | None = None  # 그 마지막 시도의 상태
+    last_collection_step: str | None = None  # 그 마지막 시도의 단계 이름(news / news_recovery / disclosure_recovery)
 
 
 class StockNewsItem(BaseModel):

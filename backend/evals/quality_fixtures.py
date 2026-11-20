@@ -13,7 +13,9 @@ from evals.quality_judges import Truth
 
 
 def trading_days(end: date, n: int) -> list[date]:
-    """end 이하의 평일 n개(오름차순). 공휴일은 모른다(제품과 같은 한계)."""
+    """end 이하의 평일 n개(오름차순). 합성 입력이라 KRX 휴장일 날짜에도 행이 생긴다(57차 확인: 53개 중 50개, 304행).
+    제품 경로와 정답 계산이 같은 행 목록을 순서로 읽으므로 판정에는 영향이 없다. 입력을 바꾸면 평가 입력이 바뀌므로 그대로 둔다
+    (docs/KRX_HOLIDAY_EVALUATION_FIX_57.md 16절)."""
     out, d = [], end
     while len(out) < n:
         if d.weekday() < 5:
@@ -81,7 +83,7 @@ def price_truth(rows: list[tuple], window: int = 20, volume_avg: int = 20, windo
     inside = seg[1:] or seg
     v[("high", None)] = max(inside)
     v[("low", None)] = min(inside)
-    v[("from_low", 20)] = _pct(c, min(closes[-21:]))
+    v[("from_low", 20)] = _pct(c, min(closes[-20:]))  # 국면 입력 "최근 20거래일 최저"(기준일 포함 20개 종가, 42차)
     return Truth(v, {r[0].isoformat(): float(r[1]) for r in rows}, rows[-1][0].isoformat())
 
 

@@ -90,7 +90,8 @@ def expected(db, company_name: str, period: str, base_date: str) -> dict:
     out["macd"] = (round(float(line.iloc[-1]), 2), round(float(line.ewm(span=9, adjust=False).mean().iloc[-1]), 2))
     rets = [(b / a - 1) * 100 for a, b in zip(closes[-21:-1], closes[-20:])]
     out["volatility"] = round(statistics.stdev(rets), 2)
-    win = rows[-(spec["range"] + 1):]
+    # 42차(2026-11-11): 최고·최저는 기준일을 포함한 최근 N개 종가(app/price_flow·quality_fixtures와 같은 한 정의)
+    win = rows[-spec["range"]:]
     hi, lo = max(c for _, c, _ in win), min(c for _, c, _ in win)
     out["range"] = {"from": win[0][0].isoformat(), "high": hi, "low": lo,
                     "from_high": round((closes[-1] / hi - 1) * 100, 2), "from_low": round((closes[-1] / lo - 1) * 100, 2)}
@@ -325,7 +326,9 @@ def _check_q4(db, company_name: str, year: int, basis: str, body: str, d: str, r
 REGIMES = ("단기 반등 시도, 추세 전환은 미확인", "상승 추세 지속", "상승 추세 중 조정", "하락 추세 지속", "횡보, 방향 불분명",
            "판단 유보(데이터 부족)")
 _TITLE = re.compile(r"^(?P<name>.+?)\((?P<ticker>[0-9A-Z]{6})\) · 향후 (?P<days>\d+)거래일")
-_STATE = re.compile(r"현재는 (?P<regime>.+?) \(기준일 (?P<date>\d{4}-\d{2}-\d{2}) 종가\)")
+# 46차: 국면 안에 다른 "현재는 "이 들어가지 못하게 한다. 한 줄 답에서 방향이 중립이면 "현재는 상승과 하락 중 …(중립 문장). 현재는 횡보, …
+# (기준일 …)"처럼 "현재는"이 두 번 나오는데, 예전 식은 첫 "현재는"부터 잡아 중립 문장까지 국면으로 읽었다(교정 뒤 삼성바이오로직스에서 드러남)
+_STATE = re.compile(r"현재는 (?P<regime>(?:(?!현재는 ).)+?) \(기준일 (?P<date>\d{4}-\d{2}-\d{2}) 종가\)")
 _SENTENCE_END = re.compile(r"(?:다|요)(?:\([^)]*\))?\.(?=\s|$)")  # "...못했습니다(상승 비율 51.8% vs 전체 49.9%)."도 한 문장
 
 
@@ -337,7 +340,7 @@ def regime_expected(db, company_name: str, base_date: str, hold: bool = False) -
     close = closes[-1]
     r = {n: (close / closes[-1 - n] - 1) * 100 for n in (5, 20, 60)}
     ma = {n: sum(closes[-n:]) / n for n in (5, 20, 60)}
-    low20 = (close / min(closes[-21:]) - 1) * 100
+    low20 = (close / min(closes[-20:]) - 1) * 100  # 최근 20거래일 = 기준일 포함 20개 종가(42차)
     big_drop = r[20] <= -10 or r[60] <= -15
     rebound = r[5] > 0 or ma[5] > ma[20] or low20 >= 5
     if big_drop and rebound and (close < ma[20] or close < ma[60]):
@@ -508,23 +511,23 @@ def check_numbers23(db, answer: str, company_name: str) -> list[str]:
                      r"(?:최고|최저) 종가 ([\d,]+)원, (\S+?)\)")
     for kind, pct, a, b, n, v, d in rng.findall(answer):
         win = _closes_between(db, company_name, a, b)
-        if len(win) != int(n) + 1 or b != base:
-            errs.append(f"{kind} 조회 기간 {a}~{b} 거래일 {len(win) - 1} != {n}")
+        if len(win) != int(n) or b != base:
+            errs.append(f"{kind} 조회 기간 {a}~{b} 거래일 {len(win)} != {n}")
             continue
         pick = (max if kind == "최고" else min)(c for _, c in win)
         days = [dd.isoformat() for dd, c in win if c == pick]
         if abs(_num(v) - pick) > 0.5 or d not in days or abs(float(pct) - round((closes[-1] / pick - 1) * 100, 2)) > 0.011:
             errs.append(f"{kind} 종가 {v}({d}) {pct}% != {pick}({days})")
     def last_window(n):
-        return [(d, c) for d, c, _ in rows[-(n + 1):]]
+        return [(d, c) for d, c, _ in rows[-n:]]
 
     checks = [(kind, v, d, last_window(int(n))) for _, kind, v, d, n in
               re.findall(r"(분석 기간|52주) (최고|최저) 종가 ([\d,]+)원\((\S+?), 최근 (\d+)거래일 기준\)", answer)]
     for n, a, b, v, d, v2, d2 in re.findall(r"분석 기간\(최근 (\d+)거래일, (\S+?)~(\S+?)\) 최저 종가 ([\d,]+)원\((\S+?)\)[^\n]*?"
                                             r"같은 기간 최고 종가 ([\d,]+)원\((\S+?)\)", answer):
         win = _closes_between(db, company_name, a, b)
-        if len(win) != int(n) + 1:
-            errs.append(f"확인할 사항 조회 기간 {a}~{b} 거래일 {len(win) - 1} != {n}")
+        if len(win) != int(n):
+            errs.append(f"확인할 사항 조회 기간 {a}~{b} 거래일 {len(win)} != {n}")
         checks += [("최저", v, d, win), ("최고", v2, d2, win)]
     for kind, v, d, win in checks:
         pick = (max if kind == "최고" else min)(c for _, c in win)
@@ -546,8 +549,8 @@ _JUDGE24 = re.compile(r"현재 판단: (상승|하락|중립|판단 유보)(?:\(
 _PICK24 = re.compile(r"^굳이 하나를 (?:고르면 (상승|하락) 쪽입니다|고를 근거가 부족합니다)\(현재 판단: (상승|하락|중립|판단 유보)\)")
 _FAKE_PROB = re.compile(r"(?:상승|하락|오를|내릴)\s*(?:확률|가능성)(?:은|이|는)?\s*(?:약\s*)?\d+(?:\.\d+)?\s*%|\d+(?:\.\d+)?\s*%\s*(?:의\s*)?(?:확률|가능성)")
 _BUY_PUSH = re.compile(r"매수하세요|사세요|살 만합니다|매수를 (?:추천|권)합니다|매수 추천|지금이 매수 기회|팔아야 합니다|매도하세요")
-_STATUS24 = ("최신", "미수집", "수집 실패", "휴장일 추정", "종목만 누락")
-_MARKET_CLOSE_MIN = 15 * 60 + 30
+_STATUS24 = ("최신", "미수집", "수집 실패", "휴장일 추정", "종목만 누락", "공식 종가 대기", "원천 미제공")
+_MARKET_CLOSE_MIN = 15 * 60 + 30  # 정규 일정 마감. 56차: 판정은 _close_min(그날)을 쓴다(달력 특수 마감, 2026-11-19 16:30)
 TREND_OF = {"상승 추세 지속": 1, "상승 추세 중 조정": 1, "하락 추세 지속": -1}
 
 
@@ -920,21 +923,34 @@ def check_earnings24(db, answer: str, company_name: str, quarter: str | None = N
     return errs
 
 
+def _close_hhmm(d) -> str:
+    """그날 KRX 정규장 마감 "HH:MM". 56차: 제품 코드가 아니라 달력 파일에서 읽는다. 57차: evals.krx_days(평가 공통)."""
+    from evals import krx_days as KD
+    return KD.close_hhmm(d)
+
+
+def _close_min(d) -> int:
+    h, m = _close_hhmm(d).split(":")
+    return int(h) * 60 + int(m)
+
+
 def _before_close24(gen: str) -> bool:
+    """생성 시각(KST "YYYY-MM-DD HH:MM")이 그날 KRX 거래일 마감 전인가. 57차: 평일이 아니라 거래일(휴장일은 False, 제품과 같다)."""
     from datetime import datetime
+    from evals import krx_days as KD
     t = datetime.strptime(gen, "%Y-%m-%d %H:%M")
-    return t.weekday() < 5 and t.hour * 60 + t.minute < _MARKET_CLOSE_MIN
+    return KD.before_close(t.date(), t.strftime("%H:%M"))
 
 
 def _expected_day24(gen: str):
-    """종가가 있어야 할 가장 최근 평일. 평일 15:30 전이면 직전 평일(KRX 휴장일 달력은 없다)."""
-    from datetime import datetime, timedelta
-    d = datetime.strptime(gen, "%Y-%m-%d %H:%M").date()
-    if _before_close24(gen):
-        d -= timedelta(days=1)
-    while d.weekday() >= 5:
-        d -= timedelta(days=1)
-    return d
+    """종가가 있어야 할 가장 최근 KRX 거래일. 거래일 마감(평소 15:30, 달력의 특수 마감일은 그 값) 전이면 직전 거래일,
+    주말·휴장일이면 그 앞 거래일(evals.krx_days.expected_trading_day).
+    57차: 24차부터 평일만 보던 것을 KRX 휴장일까지 보게 고쳤다(제품은 36차부터 휴장일을 본다). 휴장일 다음 날 오전·휴장일 당일에
+    휴장일을 기대 거래일로 잡아 맞는 답을 "미수집·휴장일 추정"으로 틀리게 채점하던 문제(57차 보고서 2절)."""
+    from datetime import datetime
+    from evals import krx_days as KD
+    t = datetime.strptime(gen, "%Y-%m-%d %H:%M")
+    return KD.expected_trading_day(t.date(), t.strftime("%H:%M"))
 
 
 def status24(db, company_name: str, base: str, gen: str) -> tuple[str, str]:
@@ -948,11 +964,16 @@ def status24(db, company_name: str, base: str, gen: str) -> tuple[str, str]:
         return exp.isoformat(), "종목만 누락"
     runs = db.execute(text(
         "select status from data_refresh_log where step = 'prices' and status in ('success', 'failed') "
-        "and started_at >= (cast(:d as date) + time '15:30') at time zone 'Asia/Seoul' order by id desc"), {"d": exp.isoformat()}).fetchall()
+        "and started_at >= (cast(:d as date) + cast(:close as time)) at time zone 'Asia/Seoul' order by id desc"),
+        {"d": exp.isoformat(), "close": _close_hhmm(exp)}).fetchall()
     if runs and runs[0][0] == "failed":
         return exp.isoformat(), "수집 실패"
     if runs:
-        return exp.isoformat(), "휴장일 추정"
+        # 최종 점검(2026-11-18): 제품(app.outlook.price_status)과 같게 KRX 달력으로 거래일이 확정된 날은 휴장일로 추정하지 않는다
+        from evals import krx_days as KD
+        if not KD.is_trading_day(exp):
+            return exp.isoformat(), "휴장일 추정"
+        return exp.isoformat(), "공식 종가 대기" if base >= KD.previous_trading_day(exp).isoformat() else "원천 미제공"
     return exp.isoformat(), "미수집"
 
 

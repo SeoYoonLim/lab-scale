@@ -27,7 +27,7 @@ client = TestClient(app, raise_server_exceptions=False)
 NOW = datetime(2026, 11, 5, 3, 0, tzinfo=timezone.utc)
 SEARCH = "/api/history/search"
 OLD_LIST_KEYS = {"report_id", "previous_report_id", "question", "summary", "company_name", "created_at", "used_tools"}
-OLD_DETAIL_KEYS = OLD_LIST_KEYS | {"answer", "sources", "disclaimer"}
+OLD_DETAIL_KEYS = OLD_LIST_KEYS | {"answer", "sources", "disclaimer", "source_status"}  # 72차 source_status 추가
 OLD_DIAG_KEYS = {"id", "created_at", "source", "total_asset", "holdings_count", "flags", "summary_preview"}
 
 

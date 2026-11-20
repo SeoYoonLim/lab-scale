@@ -25,7 +25,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from app.backtest import sma, sma_target
-from app.briefing import KST, MARKET_CLOSE, drop_open_session, session_is_open
+from app.briefing import KST, drop_open_session, session_is_open
 from app.data_status import business_days_behind, last_business_day
 from app.disclaimer import DISCLAIMER
 from app.etf import leverage_kind, leverage_notice
@@ -338,6 +338,138 @@ def period_in(question: str) -> str | None:
     return None
 
 
+# ---------- 전망 기간을 숫자로 말한 질문 (49차, 2026-11-13) ----------
+# 수정 전: "향후 20거래일 전망"은 period_in이 기간을 못 찾아 기본 1주일(5거래일)로 답했다(요청한 기간 숫자가 바뀜).
+# "향후 1년 전망"도 말없이 1주일로 답했다. 이제 숫자로 말한 미래 기간을 읽는다:
+# - 5·20·60거래일(또는 1주·4주·1개월·3개월처럼 같은 거래일 수)이면 그 기간
+# - 그 밖에 90거래일 이하이면 가장 가까운 지원 기간으로 분석하고, 답 맨 앞에 바꾼 사실을 밝힌다(horizon_note)
+# - 90거래일을 넘거나 연 단위·"내년"이면 전망을 하지 않고 지원 기간을 안내한다(도구를 부르지 않는다)
+_HORIZON_UNIT_DAYS = {"거래일": 1, "영업일": 1, "주": 5, "개월": 20, "달": 20, "년": 250}
+_HORIZON_RE = re.compile(
+    r"(?:향후|앞으로|다음|이후)\s*(\d+)\s*(거래일|영업일|일|주|개월|달|년)(?:\s*(?:동안|간))?"
+    r"|(?<![\d])(\d+)\s*(거래일|영업일|일|주|개월|달|년)\s*(?:뒤|후|이후)"
+)
+_HORIZON_YEAR_RE = re.compile(r"내년|(?:향후|앞으로)\s*(?:한|1)\s*년|(?:향후|앞으로)\s*몇\s*년|장기\s*전망")
+SUPPORTED_HORIZONS = {5: "1주일", 20: "1개월", 60: "3개월"}
+MAX_HORIZON_DAYS = 90
+
+
+@dataclass(frozen=True)
+class Horizon:
+    text: str  # 질문 속 표현
+    requested_days: int | None  # 거래일 환산(연 단위는 None일 수 있다)
+    label: str | None  # 분석할 지원 기간(1주일/1개월/3개월), 지원 밖이면 None
+    note: bool  # 요청과 다른 기간으로 분석했다(답 맨 앞에 밝힌다)
+
+    @property
+    def unsupported(self) -> bool:
+        return self.label is None
+
+
+def horizon_in(question: str) -> Horizon | None:
+    """질문이 숫자로 말한 미래 기간. 없으면 None(기존 period_in·기본 기간을 쓴다)."""
+    q = question or ""
+    y = _HORIZON_YEAR_RE.search(q)
+    if y:
+        return Horizon(y.group(0), None, None, False)
+    m = _HORIZON_RE.search(q)
+    if not m:
+        return None
+    n, unit = (int(m.group(1)), m.group(2)) if m.group(1) else (int(m.group(3)), m.group(4))
+    days = max(1, round(n * 5 / 7)) if unit == "일" else n * _HORIZON_UNIT_DAYS[unit]
+    if days in SUPPORTED_HORIZONS:
+        return Horizon(m.group(0), days, SUPPORTED_HORIZONS[days], False)
+    if days > MAX_HORIZON_DAYS:
+        return Horizon(m.group(0), days, None, False)
+    nearest = min(SUPPORTED_HORIZONS, key=lambda d: (abs(d - days), d))
+    return Horizon(m.group(0), days, SUPPORTED_HORIZONS[nearest], True)
+
+
+def horizon_note(h: Horizon) -> str:
+    used = PERIODS[h.label].days
+    return (f"요청하신 기간({h.text.strip()}, 약 {h.requested_days}거래일)은 지원하는 전망 기간(향후 5·20·60거래일)이 아니어서 "
+            f"가장 가까운 향후 {used}거래일({h.label}) 기준으로 분석했습니다.")
+
+
+def unsupported_horizon_answer(h: Horizon) -> str:
+    return (f"전망은 향후 5·20·60거래일(1주일·1개월·3개월) 기준으로만 제공합니다. 요청하신 기간({h.text.strip()})의 전망은 제공하지 않습니다"
+            "(지표 계산과 과거 검증이 이 세 기간 기준입니다). 기간을 바꿔 다시 질문해 주세요.\n\n" + DISCLAIMER)
+
+
+# ---------- 68차(2026-11-17): 복합 질문·기간 후속·달력 일수·같은 결론 반복 ----------
+# 실사용 #43444 "하이닉스가 왜 올랐어? 그리고 앞으로 7일간 오를 거 같아?"는 "왜"(_OTHER_INTENT_RE) 때문에 전망 경로에서 빠져 LLM이
+# 전망 없이 기준일 뒤 기사로 원인을 지어냈다. #43447 "3개월 후는?"은 전망·후속 어느 쪽에도 걸리지 않아 LLM 경로가 "3개월"을 과거 67거래일로
+# 읽었다. #43446은 직전 간결 답과 같은 기준일·같은 결론을 그대로 다시 찍었다.
+_CAUSE_WORD_RE = re.compile(r"왜|이유|원인|무슨\s*일")
+# 기간만 바꿔 묻는 후속 질문("3개월 후는?", "그럼 한 달 뒤엔 어때?", "1개월은?"). 기간 표현 + 조사·어때 정도만 있다.
+_PERIOD_EXPR = (r"(?:\d+\s*(?:거래일|영업일|일|주|개월|달)|일주일|한\s*주|다음\s*주|이번\s*주|한\s*달|한달|다음\s*달|석\s*달|세\s*달|"
+                r"\d+\s*주일)")
+_PERIOD_FOLLOWUP_RE = re.compile(
+    r"^\s*(?:그럼|그러면|그리고|근데|그래서|그럼요|혹시)?\s*(?:향후|앞으로|이후)?\s*" + _PERIOD_EXPR +
+    r"\s*(?:뒤|후|이후|동안|간|짜리)?\s*(?:에는|엔|에|는|은|이면|라면|기준(?:으로는|으론|은|는)?)?\s*"
+    r"(?:어때|어때요|어떨까|어떨까요|어떻게\s*(?:돼|될까|봐)|봐줘|봐\s*줘|도|요)?\s*[?？.!~]*\s*$")
+_CALENDAR_DAYS_RE = re.compile(r"(\d+)\s*일(?!\s*선)(?:\s*(?:간|동안|뒤|후|이후))?")
+
+
+def is_cause_forecast_question(question: str) -> bool:
+    """원인(왜·이유·원인)과 앞으로의 방향을 한 질문에 함께 묻는가(#43444). 주문 요청은 아니다."""
+    q = question or ""
+    return bool(_CAUSE_WORD_RE.search(q)) and bool(_FORECAST_RE.search(q)) and not is_order_request(q)
+
+
+def is_period_followup(question: str) -> bool:
+    """기간만 바꿔 묻는 짧은 후속 질문인가(#43447 "3개월 후는?"). 직전 전망 답(표식)이 있을 때만 쓴다."""
+    return bool(_PERIOD_FOLLOWUP_RE.match(question or "")) and (period_in(question) is not None or horizon_in(question) is not None)
+
+
+def calendar_days_note(question: str, period: Period) -> str | None:
+    """질문이 달력 일수("7일간", "10일 뒤")로 기간을 말했으면 거래일 환산을 밝히는 한 줄. 거래일·영업일로 말했으면 None."""
+    q = question or ""
+    if re.search(r"\d+\s*(?:거래일|영업일)", q):
+        return None
+    m = _CALENDAR_DAYS_RE.search(q)
+    if not m:
+        return None
+    n = int(m.group(1))
+    return (f"기간 기준: 질문의 {n}일은 달력 기준이라 약 {max(1, round(n * 5 / 7))}거래일로 보고, 향후 {period.days}거래일"
+            f"({period.label}) 신호로 판단했습니다.")
+
+
+_TITLE_HEAD_RE = re.compile(r"^(?P<head>.+?\([0-9A-Z]{6}\) · 향후 \d+거래일 · 방향: [^·\n]+?)\s*(?:·|$)", re.MULTILINE)
+
+
+def same_conclusion(previous_answer: str | None, company, period: Period, res: dict) -> bool:
+    """직전 답이 이 경로의 답이고, 같은 종목·기간·방향 제목에 같은 시세 기준일이면 True(#43446: 같은 답을 다시 찍지 않는다)."""
+    if not previous_answer:
+        return False
+    m = _TITLE_HEAD_RE.search(previous_answer)
+    if not m:
+        return False
+    new = _TITLE_HEAD_RE.search(direction_title(company, period, res))
+    base = res["indicators"]["base_date"]
+    return bool(new) and m.group("head").strip() == new.group("head").strip() and (
+        f"{base} 종가" in previous_answer or f"기준일(최신 거래일): {base}" in previous_answer)
+
+
+def repeat_answer(company, period: Period, res: dict, now: datetime) -> str:
+    """같은 결론을 다시 물었을 때의 짧은 답(#43446). 제목·표식 줄은 유지해 다음 후속 질문이 종목·기간을 잇는다."""
+    ind, label, data = res["indicators"], res["label"], res["data"]
+    regime = classify_regime(ind, label)
+    ge = group_evidence(ind, res["signals"], period)
+    warn = "".join(f"\n- 데이터 경고: {w}" for w in data["warnings"])
+    return "\n".join([
+        f"{direction_title(company, period, res)} · 앞선 답과 같은 결론",
+        "",
+        f"앞선 답변과 같은 {ind['base_date']} 종가 기준이라 판단이 바뀌지 않았습니다. {direction_sentence(res, regime, period)}",
+        "새 시세가 들어오기 전에는 같은 질문에 같은 결론이 나옵니다.",
+        f"- 핵심 근거: {_support_text(ge, 1)} / 위험: {_risk_text(ge, 1)}",
+        _marker_line(company, period, label),
+        f"- 다른 기간으로 보려면 \"1개월 뒤는?\", \"3개월 후는?\", 근거 전체는 \"자세히 분석해줘\"라고 물어보세요.{warn}",
+        f"- 기준일(최신 거래일): {ind['base_date']}, 답변 생성 {now.astimezone(KST):%Y-%m-%d %H:%M} KST. "
+        "과거 시세 신호를 요약한 것이며 투자 권유가 아닙니다.",
+    ])
+
+
 def marker_of(answer: str | None) -> dict | None:
     """이 경로가 만든 답변이면 {"name", "ticker", "period"}, 아니면 None."""
     m = _MARKER_RE.search(answer or "")
@@ -429,7 +561,10 @@ def compute_indicators(rows: list[tuple], period: Period, index_rows: list[tuple
     out["rsi"] = rsi(closes)
     out["macd"] = macd(closes)
     out["volatility"] = volatility(closes)
-    window = list(zip(days, closes))[-(period.range_days + 1):]
+    # 최고·최저 종가(2026-11-11 42차): "최근 N거래일"은 기준일을 포함한 최근 N개 종가다(app/price_flow·stock_tool.summarize_period와
+    # 같은 정의). 전에는 N+1개(수익률의 비교 기준일 종가까지)에서 골라, 같은 "최근 20거래일"인데 주가 흐름 답과 최고·최저가 달랐다
+    # (SK하이닉스 2026-11-03: 전망 1,842,000원(10-02, 21번째 종가) vs 주가 흐름 1,784,000원(10-06)). 비교 기준일은 수익률에만 쓴다.
+    window = list(zip(days, closes))[-period.range_days:]
     hi_d, hi = max(window, key=lambda x: (x[1], x[0]))
     lo_d, lo = min(window, key=lambda x: (x[1], -x[0].toordinal()))
     out["range"] = {"days": len(window), "from_date": window[0][0].isoformat(), "to_date": window[-1][0].isoformat(),
@@ -439,8 +574,9 @@ def compute_indicators(rows: list[tuple], period: Period, index_rows: list[tuple
     if volumes[-1] is not None and len(prior) == VOLUME_AVG_DAYS and sum(prior) > 0:
         avg = sum(prior) / VOLUME_AVG_DAYS
         out["volume"] = {"value": int(volumes[-1]), "avg": round(avg), "ratio": round(volumes[-1] / avg, 2)}
-    # 52주 기준(최근 RANGE52_DAYS거래일 전 종가부터). 분석 기간 기준(range)과 이름·조회 기간을 따로 붙여 보인다(2026-11-04).
-    w52 = list(zip(days, closes))[-(RANGE52_DAYS + 1):]
+    # 52주 기준(기준일을 포함한 최근 RANGE52_DAYS개 종가, 42차에 range와 같은 정의로). 분석 기간 기준(range)과 이름·조회 기간을
+    # 따로 붙여 보인다(2026-11-04).
+    w52 = list(zip(days, closes))[-RANGE52_DAYS:]
     h52_d, h52 = max(w52, key=lambda x: (x[1], x[0]))
     l52_d, l52 = min(w52, key=lambda x: (x[1], -x[0].toordinal()))
     out["range52"] = {"days": len(w52), "from_date": w52[0][0].isoformat(), "to_date": w52[-1][0].isoformat(),
@@ -452,7 +588,7 @@ def compute_indicators(rows: list[tuple], period: Period, index_rows: list[tuple
         ri[f"ma{n}"] = round(ma, 2) if ma is not None else None
         ri[f"r{n}"] = _pct(close, closes[-1 - n]) if len(closes) > n else None
         ri[f"r{n}_from"] = (days[-1 - n].isoformat(), closes[-1 - n]) if len(closes) > n else None
-    low20 = min(closes[-21:])
+    low20 = min(closes[-20:])  # 최근 20거래일(기준일 포함 20개 종가) 최저, 42차에 range와 같은 정의로
     ri["from_low20_pct"] = _pct(close, low20)
     out["regime_inputs"] = ri
     if index_rows:
@@ -764,6 +900,10 @@ def direction_summary_line(res: dict, period: Period) -> str:
 
 PRICE_STATUS_LATEST, PRICE_STATUS_NOT_COLLECTED, PRICE_STATUS_FAILED = "최신", "미수집", "수집 실패"
 PRICE_STATUS_HOLIDAY, PRICE_STATUS_STOCK_ONLY = "휴장일 추정", "종목만 누락"
+# 최종 점검(2026-11-18): KRX 달력(36차)으로 거래일이 확정된 날은 "휴장일 추정"이 아니다. 주식은 정규장 공식 종가를 다음 거래일
+# 기준가로 확인해 저장해서(47차 app.official_close, 최신 거래일은 provisional로 건너뜀) 장 마감 뒤 수집이 성공해도 그날 주식 종가는
+# 다음 거래일 수집 뒤에 생긴다. 2026-11-18 15:51 수집 뒤 답이 정상 거래일 11-18을 "휴장일 추정"이라고 썼다.
+PRICE_STATUS_OFFICIAL_PENDING, PRICE_STATUS_SOURCE_MISSING = "공식 종가 대기", "원천 미제공"
 
 
 def price_status(db, base_date: date, now: datetime) -> dict:
@@ -784,15 +924,26 @@ def price_status(db, base_date: date, now: datetime) -> dict:
         out.update(status=PRICE_STATUS_STOCK_ONLY,
                    detail=f"지수에는 {idx.isoformat()} 시세가 있음, 거래정지이거나 이 종목만 수집되지 않았을 수 있음")
         return out
-    close_at = datetime.combine(expected, MARKET_CLOSE, tzinfo=KST)
+    from app.krx_calendar import close_time
+
+    close_at = datetime.combine(expected, close_time(expected), tzinfo=KST)  # 55차: 특수 마감일(수능일 16:30) 포함
     runs = (db.query(DataRefreshLog).filter(DataRefreshLog.step == "prices", DataRefreshLog.status.in_(("success", "failed")))
             .order_by(DataRefreshLog.id.desc()).limit(20).all())
     after = [r for r in runs if r.started_at is not None and r.started_at >= close_at]
     if after and after[0].status == "failed":
         out.update(status=PRICE_STATUS_FAILED, detail=f"{after[0].started_at.astimezone(KST):%Y-%m-%d %H:%M} 시세 수집 실패 기록")
     elif after:
-        out.update(status=PRICE_STATUS_HOLIDAY,
-                   detail=f"{after[0].started_at.astimezone(KST):%Y-%m-%d %H:%M} 수집에서 시장 전체에 그날 시세 없음")
+        from app import krx_calendar
+
+        at = f"{after[0].started_at.astimezone(KST):%Y-%m-%d %H:%M}"
+        if krx_calendar.day_status(expected) != krx_calendar.TRADING:
+            out.update(status=PRICE_STATUS_HOLIDAY, detail=f"{at} 수집에서 시장 전체에 그날 시세 없음")
+        elif base_date >= krx_calendar.previous_trading_day(expected):
+            out.update(status=PRICE_STATUS_OFFICIAL_PENDING,
+                       detail=(f"주식 종가는 정규장 공식 종가를 다음 거래일 기준가로 확인해 저장하므로 {expected.isoformat()} 종가는 "
+                               "다음 거래일 수집 뒤 저장됨"))
+        else:
+            out.update(status=PRICE_STATUS_SOURCE_MISSING, detail=f"{at} 수집에서 그 사이 거래일 시세를 받지 못함")
     else:
         last = f"마지막 시세 수집 {runs[0].started_at.astimezone(KST):%Y-%m-%d %H:%M}" if runs else "시세 수집 기록 없음"
         out.update(status=PRICE_STATUS_NOT_COLLECTED, detail=f"장 마감 뒤 시세 수집 기록 없음, {last}")
@@ -930,7 +1081,7 @@ def backtest_line(period: Period, label: str) -> str:
 def _range_text(rg: dict, kind: str, basis: str) -> str:
     """최고·최저 종가 한 줄의 괄호: 조회 기간, 기준 이름(분석 기간/52주)과 거래일 수, 값과 날짜."""
     word = "최고" if kind == "high" else "최저"
-    return (f"(조회 기간 {rg['from_date']}~{rg['to_date']}, {basis} 기준 최근 {rg['days'] - 1}거래일, "
+    return (f"(조회 기간 {rg['from_date']}~{rg['to_date']}, {basis} 기준 최근 {rg['days']}거래일, "
             f"{word} 종가 {_won(rg[kind])}, {rg[kind + '_date']})")
 
 
@@ -1299,7 +1450,7 @@ def check_items(ind: dict, res: dict, regime: str, period: Period, is_etf: bool)
     if parts:
         lines.append("- 이동평균: " + ", ".join(parts))
     rg = ind["range"]
-    window = f"분석 기간(최근 {rg['days'] - 1}거래일, {rg['from_date']}~{rg['to_date']})"
+    window = f"분석 기간(최근 {rg['days']}거래일, {rg['from_date']}~{rg['to_date']})"
     lines.append(f"- {window} 최저 종가 {_won(rg['low'])}({rg['low_date']}) 아래로 내려가는지, "
                  f"같은 기간 최고 종가 {_won(rg['high'])}({rg['high_date']}) 위로 올라서는지")
     vol = ind.get("volume")
@@ -1426,7 +1577,7 @@ def forecast_answer(company, period: Period, res: dict, news: list[dict], disclo
 
 
 FOLLOWUP_POINTER = "자세한 근거는 바로 위 분석에 있습니다."
-DATA_POLICY = ("시세가 1~5영업일 늦으면 기준일과 늦은 이유(미수집·수집 실패·휴장일 추정·종목만 누락)를 밝히고 최신 전망이라고 하지 않습니다. "
+DATA_POLICY = ("시세가 1~5영업일 늦으면 기준일과 늦은 이유(미수집·수집 실패·휴장일 추정·종목만 누락·공식 종가 대기·원천 미제공)를 밝히고 최신 전망이라고 하지 않습니다. "
                f"{MAX_LAG_BUSINESS_DAYS}영업일을 넘게 늦거나 계산 구간에 빠진 거래일이 있으면 판단을 유보합니다. "
                "KRX 휴장일 달력이 없어 휴장일은 수집 기록으로 추정합니다.")
 
@@ -1506,7 +1657,9 @@ _SIGNAL_MEANING = {
     "cross": "골든크로스는 단기 이동평균선이 장기 이동평균선을 아래에서 위로 뚫고 올라가는 것, 데드크로스는 위에서 아래로 내려가는 것입니다",
     "macd": "MACD는 12일·26일 지수이동평균의 차이이고 시그널은 MACD의 9일 지수이동평균입니다. MACD가 시그널 위면 단기 상승 탄력이 커지는 쪽으로 봅니다",
     "rsi": "RSI(14)는 최근 14거래일 상승폭과 하락폭으로 계산한 0~100 사이 값이며, 30 아래는 과매도·70 위는 과열 구간으로 봅니다",
-    "volume": "거래량 배수는 기준일 거래량을 직전 20거래일 평균 거래량으로 나눈 값입니다",
+    # 50차: 거래량의 집계 기준을 밝힌다(정규장만이 아니다, app/price_basis.py)
+    "volume": "거래량 배수는 기준일 거래량을 직전 20거래일 평균 거래량으로 나눈 값입니다. "
+              "주식 거래량은 정규장과 장 마감 뒤 KRX 애프터마켓 체결을 합친 KRX 하루 거래량입니다(NXT 체결 제외)",
     "relative": "지수 대비는 같은 기간 종목 수익률에서 지수(코스피·코스닥) 수익률을 뺀 값입니다",
     "ma": "이동평균선은 최근 N거래일 종가의 평균이며, 종가가 그 위면 그 기간 평균보다 강한 흐름으로 봅니다",
 }
@@ -1615,9 +1768,9 @@ def followup_answer(company, period: Period, res: dict, kind: str, now: datetime
         if (ri := ind.get("regime_inputs") or {}).get("ma20") is not None:
             pos = "아래" if ind["close"] < ri["ma20"] else "위"
             levels.append(f"20일선 {_won(round(ri['ma20']))}(종가가 {pos})")
-        levels.append(f"분석 기간 최저 종가 {_won(rg['low'])}({rg['low_date']}, 최근 {rg['days'] - 1}거래일 기준)")
+        levels.append(f"분석 기간 최저 종가 {_won(rg['low'])}({rg['low_date']}, 최근 {rg['days']}거래일 기준)")
         if r52:
-            levels.append(f"52주 최저 종가 {_won(r52['low'])}({r52['low_date']}, 최근 {r52['days'] - 1}거래일 기준)")
+            levels.append(f"52주 최저 종가 {_won(r52['low'])}({r52['low_date']}, 최근 {r52['days']}거래일 기준)")
         lines.append("- 확인할 가격대: " + ", ".join(levels))
         return _blocks([[head], [first], lines])
     if kind == "probability":

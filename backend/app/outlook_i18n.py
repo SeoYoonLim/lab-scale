@@ -76,6 +76,9 @@ _PRICE_STATUS = {
     o.PRICE_STATUS_FAILED: {"en-US": "collection failed", "ja-JP": "収集失敗", "zh-CN": "采集失败"},
     o.PRICE_STATUS_HOLIDAY: {"en-US": "presumed market holiday", "ja-JP": "休場日と推定", "zh-CN": "推定为休市日"},
     o.PRICE_STATUS_STOCK_ONLY: {"en-US": "missing for this stock only", "ja-JP": "この銘柄のみ欠落", "zh-CN": "仅该股票缺失"},
+    o.PRICE_STATUS_OFFICIAL_PENDING: {"en-US": "official close pending (stored after the next trading day)",
+                                      "ja-JP": "公式終値の確定待ち(翌営業日の収集後に保存)", "zh-CN": "等待官方收盘价确认(下一交易日采集后保存)"},
+    o.PRICE_STATUS_SOURCE_MISSING: {"en-US": "not provided by the source", "ja-JP": "提供元に未掲載", "zh-CN": "数据源未提供"},
 }
 
 # 문장 틀. {…}는 코드가 채운다(숫자·날짜·이름은 계산 결과 그대로).
@@ -729,9 +732,9 @@ def followup_answer(company, period: o.Period, res: dict, kind: str, now: dateti
         if (ri := ind.get("regime_inputs") or {}).get("ma20") is not None:
             key = "risk_ma20_down" if ind["close"] < ri["ma20"] else "risk_ma20_up"
             levels.append(_t(key, L, won=_won(round(ri["ma20"]), L)))
-        levels.append(_t("risk_low", L, won=_won(rg["low"], L), d=rg["low_date"], n=rg["days"] - 1))
+        levels.append(_t("risk_low", L, won=_won(rg["low"], L), d=rg["low_date"], n=rg["days"]))
         if r52:
-            levels.append(_t("risk_low52", L, won=_won(r52["low"], L), d=r52["low_date"], n=r52["days"] - 1))
+            levels.append(_t("risk_low52", L, won=_won(r52["low"], L), d=r52["low_date"], n=r52["days"]))
         lines.append(_t("risk_levels", L, x=_t("list_sep", L).join(levels)))
         return o._blocks([[head], [first], lines])
     if kind == "probability":

@@ -390,7 +390,7 @@ def test_main_writes_reports_and_passes(tmp_path):
 
 def test_ci_runs_quality_inside_existing_eval_offline_job():
     """품질 평가는 기존 eval-offline job의 한 단계다(중복 job 없음). offline summary를 넘겨 실패 11건 분류와 대조하고,
-    needs_collected_data 제외 상한(MAX_EXCLUDED 98)은 바뀌지 않는다."""
+    needs_collected_data 제외 상한(MAX_EXCLUDED)은 품질 평가 때문에 바뀌지 않는다(68차에 devdb 확인 2개로 100)."""
     from pathlib import Path
 
     wf = (Path(__file__).resolve().parents[2] / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
@@ -400,7 +400,8 @@ def test_ci_runs_quality_inside_existing_eval_offline_job():
     assert code.count("python -m evals.run_quality") == 1
     assert "python -m evals.run_quality --legacy-summary \"$RUNNER_TEMP/eval/summary_ci_offline.json\"" in eval_job
     assert "run_quality" not in before  # 다른 job에는 없다
-    assert 'MAX_EXCLUDED: "98"' in wf
+    # 68차(2026-11-17): 98 -> 100. 수집 데이터가 필요한 읽기 전용 확인 2개(tests/test_answer_quality_round68_devdb.py)를 더했다(README 분류에 이유)
+    assert 'MAX_EXCLUDED: "100"' in wf
 
 
 def test_hard_failures_are_counted_separately_from_score():
@@ -414,4 +415,9 @@ def test_expected_trading_day_skips_krx_holidays():
     assert J.expected_trading_day(date(2026, 10, 12), "10:00") == date(2026, 10, 8)  # 한글날(금) 다음 월요일 장중
     assert J.trading_days_behind(date(2026, 10, 8), date(2026, 10, 12)) == 1
     assert J.weekdays_behind(date(2026, 10, 8), date(2026, 10, 12)) == 2  # 평일 기준(기존 함수)은 그대로
-    assert J.krx_closed(date(2027, 1, 1)) and not J.krx_closed(date(2027, 2, 8))  # 범위 밖: 고정 휴장일만 휴장
+    assert J.krx_closed(date(2027, 1, 1))  # 범위 밖이라도 고정 휴장일은 휴장
+    # 57차 정책 변경: 범위 밖 평일(고정 휴장일 아님)을 열린 날로 보지 않는다. 확정할 수 없으니 평가를 멈추고 원인을 밝힌다
+    from evals.krx_days import CalendarUnknown
+
+    with pytest.raises(CalendarUnknown):
+        J.krx_closed(date(2027, 2, 8))

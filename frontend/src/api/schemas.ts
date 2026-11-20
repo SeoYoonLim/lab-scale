@@ -42,6 +42,7 @@ import type {
   ResearchResponse,
   RealtimePrice,
   Source,
+  SourceStatus,
   Trade,
   TradeList,
   TrendingItem,
@@ -74,6 +75,18 @@ export const sourceSchema = z.object({
   url: z.string().nullable(),
 }) satisfies z.ZodType<Source>
 
+export const sourceStatusSchema = z.object({
+  status: z.string(),
+  count: z.number(),
+  is_error: z.boolean(),
+  empty_reason: z.string().nullish(),
+  message: z.string().nullish(),
+  excluded_after_cutoff_count: z.number().optional(),
+  excluded_unknown_time_count: z.number().optional(),
+  market_data_as_of: z.string().nullish(),
+  evidence_cutoff: z.string().nullish(),
+}) satisfies z.ZodType<SourceStatus>
+
 export const researchResponseSchema = z.object({
   answer: z.string(),
   used_tools: z.array(z.string()),
@@ -83,6 +96,7 @@ export const researchResponseSchema = z.object({
   disclaimer: z.string(),
   locale: z.string().optional(),
   translation_status: translationStatusSchema.nullish(),
+  source_status: sourceStatusSchema.nullish(),
 }) satisfies z.ZodType<ResearchResponse>
 
 export const reportListItemSchema = z.object({

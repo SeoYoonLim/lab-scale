@@ -260,9 +260,10 @@ describe('리서치 화면', () => {
     expect(follow.getAttribute('aria-pressed')).toBe('false')
   })
 
-  it('입력창 아래에 국내 상장 종목만 지원한다는 안내가 보인다', () => {
+  it('입력창 아래에 등록된 지원 범위(주식 300·ETF 50)를 알려준다', () => {
     renderWith(<ResearchPage />)
-    expect(screen.getByText(/국내 상장 종목만 지원해요/)).toBeTruthy()
+    expect(screen.getByText(/현재 등록된 국내 주식 300종목과 ETF 50개를 지원해요/)).toBeTruthy()
+    expect(screen.queryByText(/국내 상장 종목만 지원해요/)).toBeNull()
   })
 
   it('급등·급락 같은 분류 버튼이 선택 상태(aria-pressed)를 알린다', async () => {
