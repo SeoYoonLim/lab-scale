@@ -36,6 +36,7 @@ from app import security_log
 from app.account_recovery import INVALID_LINK, RECOVERY_ACCEPTED, TOKEN_MAX_LEN, normalize_email
 from app.account_recovery import PURPOSE_RESET as R_PURPOSE_RESET
 from app.api.deps import _bearer_token, client_ip, get_current_user, unauthorized
+from app.api_errors import INVALID_CREDENTIALS, CodedHTTPException
 from app.auth import (
     PASSWORD_MAX_LEN,
     USERNAME_MAX_LEN,
@@ -283,7 +284,8 @@ def login(request: LoginRequest, http_request: Request) -> AuthResponse:
     rate_limit.record_login(lock_key, success=user is not None)
     if user is None:
         security_log.event("login", result="fail", ip=ip)  # 아이디는 남기지 않는다(비밀번호를 아이디 칸에 친 경우)
-        raise HTTPException(status_code=401, detail=LOGIN_FAILED_DETAIL, headers={"WWW-Authenticate": "Bearer"})
+        raise CodedHTTPException(status_code=401, detail=LOGIN_FAILED_DETAIL, code=INVALID_CREDENTIALS,
+                                 headers={"WWW-Authenticate": "Bearer"})
     security_log.event("login", user_id=user.id, ip=ip)
     return _auth_response(user)
 

@@ -11,14 +11,25 @@ export class ApiError extends Error {
   readonly clientCode?: ClientErrorCode
   // 429에서 "n초 뒤 다시"를 덧붙이기 전의 서버 문장
   readonly serverMessage?: string
+  // 2026-11-21: 서버가 준 안정적인 오류 코드(응답 본문의 code, 예: INSUFFICIENT_HOLDINGS). 화면 언어별 문구를 이 코드로 고른다
+  // (detail 문장을 부분 문자열로 비교하지 않는다). 예전 서버·code가 없는 오류면 undefined.
+  readonly code?: string
 
-  constructor(message: string, status: number, retryAfterSec?: number, clientCode?: ClientErrorCode, serverMessage?: string) {
+  constructor(
+    message: string,
+    status: number,
+    retryAfterSec?: number,
+    clientCode?: ClientErrorCode,
+    serverMessage?: string,
+    code?: string,
+  ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.retryAfterSec = retryAfterSec
     this.clientCode = clientCode
     this.serverMessage = serverMessage
+    this.code = code
   }
 }
 

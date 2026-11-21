@@ -955,6 +955,10 @@ async function placeOrder(ticker: string, side: 'buy' | 'sell', quantity: number
       throw new ApiError(
         `잔고가 부족합니다(필요 ${Math.round(cost).toLocaleString('ko-KR')}원, 보유 ${store.cashBalance.toLocaleString('ko-KR')}원).`,
         400,
+        undefined,
+        undefined,
+        undefined,
+        'INSUFFICIENT_CASH', // 2026-11-21: 실제 백엔드와 같은 오류 code(backend/app/api_errors.py)
       )
     }
     store.cashBalance -= cost
@@ -963,7 +967,7 @@ async function placeOrder(ticker: string, side: 'buy' | 'sell', quantity: number
     store.holdings.set(meta.ticker, { quantity: newQuantity, avg_price })
   } else {
     if (!existing || existing.quantity < quantity) {
-      throw new ApiError(`보유 수량이 부족합니다(매도 요청 ${quantity}주, 보유 ${existing?.quantity ?? 0}주).`, 400)
+      throw new ApiError(`보유 수량이 부족합니다(매도 요청 ${quantity}주, 보유 ${existing?.quantity ?? 0}주).`, 400, undefined, undefined, undefined, 'INSUFFICIENT_HOLDINGS')
     }
     store.cashBalance += price * quantity
     const remaining = existing.quantity - quantity

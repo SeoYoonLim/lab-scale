@@ -8,6 +8,7 @@
 
 from fastapi import Depends, Header, HTTPException, Request
 
+from app.api_errors import AUTHENTICATION_REQUIRED, CodedHTTPException
 from app.auth import CurrentUser, InvalidToken, decode_token_claims, get_user
 from app.db.session import SessionLocal
 
@@ -16,7 +17,9 @@ UNAUTHORIZED_DETAIL = "인증이 필요합니다. 다시 로그인해주세요."
 
 
 def unauthorized() -> HTTPException:
-    return HTTPException(status_code=401, detail=UNAUTHORIZED_DETAIL, headers={"WWW-Authenticate": "Bearer"})
+    # 2026-11-21: 실패 사유는 여전히 구분하지 않는다. code는 하나(AUTHENTICATION_REQUIRED)라 사유를 드러내지 않는다
+    return CodedHTTPException(status_code=401, detail=UNAUTHORIZED_DETAIL, code=AUTHENTICATION_REQUIRED,
+                              headers={"WWW-Authenticate": "Bearer"})
 
 
 def _bearer_token(authorization: str | None) -> str:

@@ -266,7 +266,8 @@ class TestResearchRoute:
         r = client.post("/api/research", json={"question": "삼성전자 공시 이후 주가 반응은?"})
         assert r.status_code == 200, r.text
         body = r.json()
-        assert set(body) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer", "locale", "translation_status", "source_status"}  # 72차 추가
+        assert set(body) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer", "locale", "translation_status", "source_status",
+                             "resolved_instruments", "clarification_required", "clarification_reason"}  # 72차·2026-11-21 추가
         assert body["used_tools"] == ["event_reaction_tool"] and body["report_id"] == 99
         assert body["sources"][0]["type"] == "disclosure" and body["sources"][0]["url"]
         assert ("※ " + DISCLAIMER) in body["answer"]

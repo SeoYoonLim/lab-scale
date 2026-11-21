@@ -35,8 +35,10 @@ Authorization: Bearer <access_token>
 **폐기된 토큰**이면(로그아웃·비밀번호 변경 이후, 2026-10-29) **전부 같은 401**이다(사유를 구분해 알려주지 않는다). 응답 헤더에 `WWW-Authenticate: Bearer`가 붙는다.
 
 ```json
-{ "detail": "인증이 필요합니다. 다시 로그인해주세요." }
+{ "detail": "인증이 필요합니다. 다시 로그인해주세요.", "code": "AUTHENTICATION_REQUIRED" }
 ```
+
+2026-11-21(하위 호환 추가): `code`가 함께 온다(사유는 여전히 구분하지 않는다). 아래 "오류 코드(code)" 절.
 
 예전처럼 `X-Device-Id`만 보내면 이제 **422가 아니라 401**이다(헤더는 무시된다).
 
@@ -777,6 +779,23 @@ client id와 secret이 **둘 다** 설정된 공급자만 나온다. 키 값(cli
 | `question` | string | 필수. 앞뒤 공백 제거 후 1자 이상, **최대 1000자**. 위반 시 422 |
 | `previous_report_id` | int 또는 null | 선택. 이어서 물을 **바로 직전 보고서**의 ID(1 이상, **내 리포트만**). 생략하거나 null이면 독립 질문. 없는 ID나 남의 리포트 ID면 404, 정수가 아니거나 1 미만이면 422 |
 | `locale` | string 또는 null | 선택(최대 20자, 2026-11-05). `ko-KR`·`en-US`·`ja-JP`·`zh-CN`(별칭 `ja`·`en_us` 등 허용). 없거나 공백이면 계정 설정, **지원하지 않는 값은 오류 없이 `ko-KR`**. 아래 "다국어" 절 |
+
+#### 분석 기준 종목·되묻기 (2026-11-21, 하위 호환 추가)
+
+응답에 세 필드가 더해졌다. 예전 클라이언트는 무시하면 된다.
+
+| 필드 | 타입 | 뜻 |
+| --- | --- | --- |
+| `resolved_instruments` | 배열 | 답변이 **실제로 분석한** 등록 종목(도구 결과에 나온 종목만). `[{"ticker": "005930", "name": "삼성전자", "name_en": "Samsung Electronics", "source": "explicit"}]`. 여러 종목 비교면 여러 개, 종목이 없는 답(시장·용어·되묻기)이면 `[]` |
+| `clarification_required` | bool | 종목을 정하지 못해 되묻는 답이면 `true`(이때 `resolved_instruments`는 `[]`이고 어떤 종목도 분석하지 않았다) |
+| `clarification_reason` | string 또는 null | `clarification_required`일 때만: `missing_instrument`(종목 없음), `unsupported_instrument`(분석 대상 밖, 예: 엔비디아), `unresolved_instrument`(등록 종목에서 못 찾음), `ambiguous_instrument`(그룹 이름처럼 여러 종목에 걸침) |
+
+`source`: `explicit`=이번 질문에서 지정한 종목, `previous_context`=이번 질문에 종목이 없어 `previous_report_id` 리포트의 종목을 이어받음.
+`name_en`은 영어 표기가 있는 종목만(없으면 null). 종목 우선순위는 **이번 질문에 명시한 종목 > 직전 대화의 종목 > 되묻기**다:
+- 종목도 직전 대화도 없는 질문("오늘 주가 어때?", "How is the stock doing today?")은 LLM에 보내지 않고 되묻는다(`어느 종목을 말씀하시는 건가요? …`).
+  LLM 경로로 갔어도 모델이 질문에 흔적이 없는 종목(예: 질문에 없는 삼성전자)을 고르면 그 조회를 실행하지 않는다. 오타("삼성잔자")는 질문에서 온 것이라 그대로 찾는다.
+- 분석 대상이 아닌 해외 종목(엔비디아·애플·테슬라 등)을 말하면 직전 대화가 있어도 다른 종목으로 대신 분석하지 않고 안내한다.
+- 후속 질문이 등록 종목에 없는 이름으로 시작하거나("롯데칠성은 왜 떨어졌어?") 모델이 질문 속 이름을 그대로 넘겼는데 등록 종목이 아니면, 직전 종목으로 바꾸지 않고 안내한다.
 
 #### ETF 질문 처리 규칙 (2026-10-14, 응답 필드는 그대로)
 
@@ -2246,12 +2265,32 @@ curl -X POST http://localhost:8000/api/portfolio/orders \
 
 | 상태 | 언제 | body |
 | --- | --- | --- |
-| 400 | 매수 시 잔고 부족 | `{"detail": "잔고가 부족합니다(필요 ...원, 보유 ...원)."}` |
-| 400 | 매도 시 보유 수량 초과 | `{"detail": "보유 수량이 부족합니다(매도 요청 ...주, 보유 ...주)."}` |
-| 404 | 정확한 종목을 찾지 못함(엄격 매칭). 비슷한 이름이 있으면 후보 안내 포함 | `{"detail": "정확한 종목을 찾지 못했습니다. 혹시 A, B 중 하나인가요?"}` (후보가 없으면 `... 종목명 또는 종목코드를 정확히 입력해주세요.`) |
+| 400 | 매수 시 잔고 부족 | `{"detail": "잔고가 부족합니다(필요 ...원, 보유 ...원).", "code": "INSUFFICIENT_CASH"}` |
+| 400 | 매도 시 보유 수량 초과 | `{"detail": "보유 수량이 부족합니다(매도 요청 ...주, 보유 ...주).", "code": "INSUFFICIENT_HOLDINGS"}` |
+| 404 | 정확한 종목을 찾지 못함(엄격 매칭). 비슷한 이름이 있으면 후보 안내 포함 | `{"detail": "정확한 종목을 찾지 못했습니다. 혹시 A, B 중 하나인가요?", "code": "STOCK_NOT_FOUND"}` (후보가 없으면 `... 종목명 또는 종목코드를 정확히 입력해주세요.`) |
 | 401 | 토큰 없음/만료/변조 | 위 "인증 에러" |
-| 422 | `ticker`/`side`/`quantity` 형식 위반 | 검증 오류 형식 |
-| 503 | 실시간 소스와 DB 폴백 모두 가격을 못 구함(둘 다 없을 때만) | `{"detail": "'...'의 가격을 구하지 못해 주문을 체결할 수 없습니다."}` |
+| 422 | `ticker`/`side`/`quantity` 형식 위반 | 검증 오류 형식 + `code`: `quantity`가 틀리면 `INVALID_ORDER_QUANTITY`, `side`가 buy/sell이 아니면 `UNSUPPORTED_ORDER_TYPE`, 그 밖에는 `INVALID_ORDER_REQUEST` |
+| 503 | 실시간 소스와 DB 폴백 모두 가격을 못 구함(둘 다 없을 때만) | `{"detail": "'...'의 가격을 구하지 못해 주문을 체결할 수 없습니다.", "code": "PRICE_UNAVAILABLE"}` |
+
+#### 오류 코드(code) (2026-11-21, 하위 호환 추가)
+
+영어·일본어·중국어 화면에 서버의 한국어 `detail`이 그대로 보이던 문제 때문에, 일부 오류 응답에 **안정적인 오류 코드** `code`를 함께 준다.
+`detail`은 예전 문장 그대로다(제거·변경 없음). `code`가 없는 오류는 예전과 같은 `{"detail": ...}`다. 화면은 `detail` 문장을 부분 문자열로
+비교하지 말고 `code`로 그 언어 문구를 고른다(모르는 `code`면 상태 코드별 일반 문구). `code`에는 내부 예외·SQL·스택을 넣지 않는다(`app/api_errors.py`).
+
+| code | 상태 | 어디서 |
+| --- | --- | --- |
+| `INSUFFICIENT_HOLDINGS` | 400 | 주문: 매도 수량 > 보유 수량 |
+| `INSUFFICIENT_CASH` | 400 | 주문: 매수 금액 > 현금 잔고 |
+| `INVALID_ORDER_QUANTITY` | 422 | 주문: 수량 형식·범위 위반 |
+| `UNSUPPORTED_ORDER_TYPE` | 422 | 주문: `side`가 buy/sell이 아님 |
+| `INVALID_ORDER_REQUEST` | 422 | 주문: 그 밖의 요청 형식 위반 |
+| `STOCK_NOT_FOUND` | 404 | 주문·체결 조회(`ticker`)·관심종목 추가/삭제: 종목 없음 |
+| `PRICE_UNAVAILABLE` | 503 | 주문: 체결 가격을 구하지 못함 |
+| `ALREADY_IN_WATCHLIST` / `NOT_IN_WATCHLIST` | 409 / 404 | 관심종목 추가(이미 있음) / 삭제(등록 안 됨) |
+| `RESET_CONFIRM_REQUIRED` | 400 | 모의투자 초기화: `{"confirm": true}` 없음 |
+| `AUTHENTICATION_REQUIRED` | 401 | 인증이 필요한 모든 API(토큰 없음·만료·폐기·위조, 사유 구분 없음) |
+| `INVALID_CREDENTIALS` | 401 | 로그인: 아이디·비밀번호 불일치 |
 | 503 | DB 연결 불가 | `{"detail": "데이터베이스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}` |
 
 ---

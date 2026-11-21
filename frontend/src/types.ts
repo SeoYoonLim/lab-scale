@@ -49,6 +49,19 @@ export interface ResearchResponse {
   translation_status?: TranslationStatus | null
   // 2026-11-18(72차 백엔드, 하위 호환 추가): sources가 빈 이유. 없을 수 있다(예전 백엔드)
   source_status?: SourceStatus | null
+  // 2026-11-21(하위 호환 추가): 답변이 실제로 분석한 종목(도구 결과의 등록 종목). 예전 백엔드는 주지 않는다
+  resolved_instruments?: ResolvedInstrument[]
+  // 종목을 정하지 못해 되묻는 답이면 true(이때 resolved_instruments는 빈 배열). reason 값이 늘어나도 깨지지 않게 문자열로 받는다
+  clarification_required?: boolean
+  clarification_reason?: string | null
+}
+
+// 분석 기준 종목. source: explicit=이번 질문에서 지정, previous_context=직전 대화의 종목을 이어받음(값이 늘어나도 문자열로 받는다)
+export interface ResolvedInstrument {
+  ticker: string
+  name: string
+  name_en?: string | null
+  source: string
 }
 
 // sources가 빈 이유(backend/app/sources.py source_status). status 값이 늘어나도 깨지지 않게 문자열로 받는다.

@@ -189,6 +189,23 @@ export const EXTRA_ZH: Record<string, string> = {
   'errors.client_schema': '服务器响应格式不正确，请稍后再试。',
   'errors.client_timeout': '请求耗时过长已中止，请检查网络后重试。',
   'errors.retry_after': '（请{n}秒后再试）',
+  // 2026-11-21: 서버 오류 code(backend/app/api_errors.py)별 문구, 리서치 답변의 분석 기준 종목 표시
+  'errors.code.insufficient_holdings': '持仓数量不足。',
+  'errors.code.insufficient_cash': '现金余额不足。',
+  'errors.code.invalid_order_quantity': '订单数量无效。请输入至少1股的整数。',
+  'errors.code.unsupported_order_type': '不支持该订单类型。只能买入或卖出。',
+  'errors.code.invalid_order_request': '订单请求无效。请检查输入内容。',
+  'errors.code.stock_not_found': '找不到该股票。请检查股票名称或股票代码。',
+  'errors.code.price_unavailable': '目前无法确认价格，订单未成交。请稍后再试。',
+  'errors.code.not_in_watchlist': '该股票不在自选列表中。',
+  'errors.code.already_in_watchlist': '该股票已在自选列表中。',
+  'errors.code.reset_confirm_required': '确认重置后才能继续。',
+  'errors.code.authentication_required': '需要身份验证。请重新登录。',
+  'errors.status_409': '该请求与现有数据冲突，无法处理。',
+  'errors.code.invalid_credentials':
+    '用户名或密码不正确。',
+  'research.basis_label': '分析对象',
+  'research.basis_previous': '沿用上一个问题的股票',
 
   'etf.col_holding': '成分股',
   'etf.col_rank': '排名',

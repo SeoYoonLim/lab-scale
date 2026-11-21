@@ -20,7 +20,8 @@ from test_auth_api import _requires_login
 
 client = TestClient(app, raise_server_exceptions=False)
 USER = CurrentUser(id=3, username="alice")
-UNAUTHORIZED = {"detail": "인증이 필요합니다. 다시 로그인해주세요."}
+# 2026-11-21: 안정적인 오류 코드 code가 더해졌다(사유 구분 없이 모든 401이 같은 code, app/api_errors)
+UNAUTHORIZED = {"detail": "인증이 필요합니다. 다시 로그인해주세요.", "code": "AUTHENTICATION_REQUIRED"}
 
 
 def _api_routes():

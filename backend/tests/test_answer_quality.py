@@ -610,7 +610,8 @@ class TestResearchRoute:
         assert r.status_code == 200
         body = r.json()
         # 응답 필드는 그대로다
-        assert set(body) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer", "locale", "translation_status", "source_status"}  # 72차 추가
+        assert set(body) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer", "locale", "translation_status", "source_status",
+                             "resolved_instruments", "clarification_required", "clarification_reason"}  # 72차·2026-11-21 추가
         assert body["answer"] == "## 주가 동향\n삼성전자는 ..."
         assert body["used_tools"] == ["stock_tool", "news_tool", "disclosure_tool"]
         assert len(body["sources"]) == 2 and body["report_id"] == 99
@@ -629,7 +630,8 @@ class TestResearchRoute:
         r = client.post("/api/research", json={"question": "카카오는 왜 떨어졌어?"})
         assert r.status_code == 200
         body = r.json()
-        assert set(body) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer", "locale", "translation_status", "source_status"}  # 72차 추가
+        assert set(body) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer", "locale", "translation_status", "source_status",
+                             "resolved_instruments", "clarification_required", "clarification_reason"}  # 72차·2026-11-21 추가
         assert body["used_tools"] == ["news_tool", "stock_tool"]
         assert [s["type"] for s in body["sources"]] == ["news"]
         assert self.saved[0]["tools"] == ["news_tool", "stock_tool"]

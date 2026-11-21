@@ -56,7 +56,8 @@ def test_route_inventory_is_what_the_handoff_documents():
 def test_every_authenticated_route_returns_401_without_token(method, path):  # 2
     r = client.request(method, concrete(path), json={} if method in ("POST", "PUT", "DELETE") else None)
     assert r.status_code == 401, (method, path, r.status_code, r.text[:200])
-    assert r.json() == {"detail": "인증이 필요합니다. 다시 로그인해주세요."}
+    # 2026-11-21: detail은 그대로, 안정적인 오류 코드 code가 더해졌다(하위 호환 추가, app/api_errors)
+    assert r.json() == {"detail": "인증이 필요합니다. 다시 로그인해주세요.", "code": "AUTHENTICATION_REQUIRED"}
     bad = client.request(method, concrete(path), headers={"Authorization": "Bearer not-a-token"},
                          json={} if method in ("POST", "PUT", "DELETE") else None)
     assert bad.status_code == 401

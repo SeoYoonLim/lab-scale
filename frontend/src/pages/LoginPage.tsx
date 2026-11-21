@@ -5,10 +5,11 @@ import { useAuth } from '../auth/useAuth'
 import AuthBrand from '../components/AuthBrand'
 import AuthShell from '../components/AuthShell'
 import { useLocale } from '../i18n/useLocale'
+import { errorText } from '../api/errorMessages'
 
 export default function LoginPage() {
   const { login, notice } = useAuth()
-  const { t } = useLocale()
+  const { t, locale } = useLocale()
   const navigate = useNavigate()
   const location = useLocation()
   const [username, setUsername] = useState('')
@@ -36,7 +37,7 @@ export default function LoginPage() {
       const nav = location.state as { from?: string; state?: unknown } | null
       navigate(nav?.from ?? '/', { replace: true, state: nav?.state ?? null })
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('auth.login_failed', { fallback: '로그인에 실패했어요.' }))
+      setError(errorText(err, t, locale, t('auth.login_failed', { fallback: '로그인에 실패했어요.' })))
     } finally {
       setPending(false)
     }

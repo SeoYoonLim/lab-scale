@@ -77,29 +77,34 @@ const DIAGNOSIS_TIMEOUT_MS = 90_000
 
 // FastAPI 검증 오류(422)는 detail이 [{msg, loc, ...}] 배열이고,
 // 그 외 오류(400/401/404/409/502/503)는 detail이 문자열이다. (backend/API.md 참고)
-async function readErrorMessage(res: Response, fallback: string): Promise<string> {
+// 2026-11-21: 일부 오류는 본문에 안정적인 오류 코드(code)가 함께 온다(backend/app/api_errors.py). 코드는 영문 대문자·밑줄만 받는다.
+const ERROR_CODE_RE = /^[A-Z][A-Z0-9_]{1,63}$/
+
+async function readErrorBody(res: Response, fallback: string): Promise<{ message: string; code?: string }> {
   try {
-    const body = (await res.json()) as { detail?: unknown }
-    if (typeof body.detail === 'string') return body.detail
+    const body = (await res.json()) as { detail?: unknown; code?: unknown }
+    const code = typeof body.code === 'string' && ERROR_CODE_RE.test(body.code) ? body.code : undefined
+    if (typeof body.detail === 'string') return { message: body.detail, code }
     if (Array.isArray(body.detail)) {
       // pydantic은 직접 만든 검증 오류 메시지 앞에 "Value error, "를 붙인다(실제 백엔드 가입 422에서 확인) - 화면에는 문장만 보여준다
-      return (
+      const message =
         body.detail
           .map((e) => ((e as { msg?: string }).msg ?? '').replace(/^Value error,\s*/, ''))
           .filter(Boolean)
           .join(' / ') || fallback
-      )
+      return { message, code }
     }
+    return { message: fallback, code }
   } catch {
     // JSON이 아닌 응답(예: 500의 plain text)은 fallback을 쓴다.
   }
-  return fallback
+  return { message: fallback }
 }
 
 // 429면 Retry-After 헤더(초)를 읽어 "n초 뒤 다시 시도해주세요"를 덧붙인다(backend 핸드오프 6절).
 // 테스트 목(mock)처럼 headers가 없는 응답도 안전하게 지나가게 옵셔널 체이닝을 쓴다.
 async function toApiError(res: Response, fallback: string): Promise<ApiError> {
-  const message = await readErrorMessage(res, fallback)
+  const { message, code } = await readErrorBody(res, fallback)
   if (res.status === 429) {
     const raw = res.headers?.get?.('Retry-After')
     const seconds = raw != null && /^\d+$/.test(raw) ? Number(raw) : undefined
@@ -109,10 +114,11 @@ async function toApiError(res: Response, fallback: string): Promise<ApiError> {
       seconds,
       message === fallback ? 'request_failed' : undefined,
       message,
+      code,
     )
   }
   // 서버가 문장(detail)을 주지 않아 fallback을 쓴 경우만 클라이언트가 만든 오류다
-  return new ApiError(message, res.status, undefined, message === fallback ? 'request_failed' : undefined)
+  return new ApiError(message, res.status, undefined, message === fallback ? 'request_failed' : undefined, undefined, code)
 }
 
 function authHeader(): Record<string, string> {

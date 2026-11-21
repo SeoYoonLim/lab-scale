@@ -11,9 +11,10 @@ import type { WatchlistItem } from '../../types'
 import { formatDate, formatPct, formatPrice, trendClass } from '../../utils/format'
 import ErrorNotice from '../../components/ui/ErrorNotice'
 import LoadingNotice from '../../components/ui/LoadingNotice'
+import { errorText } from '../../api/errorMessages'
 
 export default function WatchlistSection() {
-  const { t } = useLocale()
+  const { t, locale } = useLocale()
   const queryClient = useQueryClient()
   const { data, error, isPending, refetch } = useQuery({ queryKey: queryKeys.watchlist, queryFn: () => api.listWatchlist() })
   const [ticker, setTicker] = useState('')
@@ -77,10 +78,11 @@ export default function WatchlistSection() {
       // CompanyPage의 "이미 관심종목이에요"와 똑같이, 이미 등록된 종목(409)은 에러가 아니라
       // 안내로 보여준다 - 메시지 자체는 서버/mock이 주는 문구를 그대로 쓴다.
       if (err instanceof ApiError && err.status === 409) {
-        setFormNotice(err.message)
-        setAnnouncement(err.message)
+        const notice = errorText(err, t, locale, err.message)
+        setFormNotice(notice)
+        setAnnouncement(notice)
       } else {
-        setFormError(err instanceof Error ? err.message : t('watchlist.add_failed', { fallback: '추가하지 못했어요.' }))
+        setFormError(errorText(err, t, locale, t('watchlist.add_failed', { fallback: '추가하지 못했어요.' })))
       }
     }
   }

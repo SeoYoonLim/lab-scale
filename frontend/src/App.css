@@ -1838,6 +1838,16 @@ body {
   margin-bottom: 10px;
 }
 
+/* 2026-11-21: 리서치 답변의 분석 기준 종목(AnalysisBasisBadge) */
+.analysis-basis {
+  margin: -4px 0 10px;
+  overflow-wrap: anywhere;
+}
+
+.analysis-basis-label {
+  font-weight: 700;
+}
+
 .ai-badge {
   padding: 3px 8px;
   border-radius: 8px;

@@ -12,6 +12,7 @@
 """
 
 import logging
+import re
 from functools import lru_cache
 
 from app import etf_holdings_i18n, glossary, glossary_i18n, outlook_i18n, price_flow_i18n, quote_i18n
@@ -89,15 +90,57 @@ _AMBIGUOUS = {
 }
 
 
+# 2026-11-21: 분석 대상이 아닌 종목·등록 종목에 없는 이름 안내(app.agent._clarify가 만든 한국어 문장과 같은 뜻). 이름은 사용자가 쓴 표기 그대로다
+_CLARIFY_TEMPLATES = {
+    "unsupported_instrument": {
+        "en-US": "{names} is not covered by this service. This service analyzes only stocks and ETFs listed in Korea (registered stocks), "
+                 "and we did not analyze a different stock instead. Please ask again with a Korean stock name or ticker, "
+                 "for example \"Analyze Samsung Electronics over the last 5 trading days\".",
+        "ja-JP": "{names}は本サービスの分析対象ではありません。本サービスは韓国上場の株式・ETF（登録銘柄）のみを分析し、別の銘柄で代わりに分析することはしません。"
+                 "韓国の銘柄名か銘柄コードで再度ご質問ください。例：「サムスン電子の直近5営業日を分析して」",
+        "zh-CN": "{names}不在本服务的分析范围内。本服务只分析在韩国上市的股票和ETF（已登记股票），不会用其他股票代替分析。"
+                 "请用韩国股票名称或股票代码重新提问，例如：“分析三星电子最近5个交易日”。",
+    },
+    "unresolved_instrument": {
+        "en-US": "We could not find {names} among the registered stocks, and we did not analyze the stock from the previous conversation "
+                 "instead. Please ask again with the exact company name or ticker.",
+        "ja-JP": "{names}は登録銘柄の中に見つかりませんでした。直前の会話の銘柄で代わりに分析することはしていません。正確な銘柄名か銘柄コードで再度ご質問ください。",
+        "zh-CN": "在已登记股票中找不到{names}，也没有用上一轮对话的股票代替分析。请用准确的股票名称或股票代码重新提问。",
+    },
+}
+
+
+def _localize_clarification(answer: str, clarification: dict | None, locale: str) -> str | None:
+    if not clarification or clarification.get("text") != answer or not clarification.get("names"):
+        return None
+    template = _CLARIFY_TEMPLATES.get(clarification.get("reason") or "", {}).get(locale)
+    if template is None:
+        return None
+    sep = ", " if locale == "en-US" else "、"
+    names = [_foreign_display(n) for n in clarification["names"]]
+    return template.format(names=sep.join(f"'{n}'" for n in names))
+
+
+def _foreign_display(name: str) -> str:
+    """'엔비디아(NVIDIA)' -> 'NVIDIA'(괄호 안이 영문이면 그 표기). 사용자가 쓴 이름(괄호 없음)은 그대로."""
+    m = re.fullmatch(r".+?\(([A-Za-z0-9&.\- ·]+)\)", name)
+    return m.group(1) if m else name
+
+
 def localize_answer(question: str, answer: str, records: list[dict], locale: str,
                     fixed: dict[str, str] | None = None, code_data: dict | None = None,
-                    horizon: dict | None = None, ambiguous: dict | None = None) -> tuple[str, str]:
+                    horizon: dict | None = None, ambiguous: dict | None = None,
+                    clarification: dict | None = None) -> tuple[str, str]:
     """(그 언어의 답변, translation_status). fixed는 {고정 문구 키: 그 한국어 상수}(app.agent가 넘긴다).
     code_data(48차)는 코드 템플릿 답의 데이터(app.agent 내부 meta["etf_holdings"])다. 있으면 그 데이터로 언어별 템플릿을 먼저 본다.
-    horizon(49차)은 전망 기간 안내(내부 meta["forecast_horizon"])다."""
+    horizon(49차)은 전망 기간 안내(내부 meta["forecast_horizon"])다.
+    clarification(2026-11-21)은 종목 되묻기·대상 밖 안내({"reason", "names", "text"})다. 그 문장 그대로면 언어별 고정 문장으로 바꾼다."""
     for key, korean in (fixed or {}).items():
         if answer == korean:
             return text(key, locale), STATUS_LOCALIZED
+    clarified = _localize_clarification(answer, clarification, locale)
+    if clarified is not None:
+        return clarified, STATUS_LOCALIZED
     if ambiguous and locale in _AMBIGUOUS:
         from app.agent import ambiguous_group_text
 

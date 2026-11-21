@@ -1,9 +1,11 @@
+import { localizedServerMessage } from '../../api/errorMessages'
 import { ApiError, classifyError, isRetryable } from '../../api/errors'
 import { useLocale } from '../../i18n/useLocale'
 
-// 서버가 준 문장(detail)은 한국어라 그대로 두고, 클라이언트가 직접 만든 오류(시간 초과·응답 형식 오류·본문 없는 실패·요청 한도 안내)와
-// 네트워크 끊김(fetch의 TypeError)만 화면 언어로 바꿔 보여준다. 해당하지 않으면 null.
-function localizedMessage(error: unknown, t: ReturnType<typeof useLocale>['t']): string | null {
+// 클라이언트가 직접 만든 오류(시간 초과·응답 형식 오류·본문 없는 실패·요청 한도 안내)와 네트워크 끊김(fetch의 TypeError)은 화면 언어로 바꾼다.
+// 서버가 준 문장(detail, 한국어)은 한국어 화면이면 그대로, 다른 언어 화면이면 오류 code(없으면 상태 코드)로 그 언어 문구를 고른다
+// (2026-11-21, api/errorMessages.ts). 해당하지 않으면 null.
+function localizedMessage(error: unknown, t: ReturnType<typeof useLocale>['t'], locale: string): string | null {
   if (error instanceof ApiError) {
     if (error.clientCode === 'timeout') return t('errors.client_timeout', { fallback: error.message })
     if (error.clientCode === 'schema') return t('errors.client_schema', { fallback: error.message })
@@ -12,9 +14,11 @@ function localizedMessage(error: unknown, t: ReturnType<typeof useLocale>['t']):
       return error.retryAfterSec != null ? `${base} ${t('errors.retry_after', { fallback: '', vars: { n: error.retryAfterSec } })}` : base
     }
     if (error.status === 429 && error.retryAfterSec != null && error.serverMessage) {
-      return `${error.serverMessage} ${t('errors.retry_after', { fallback: '({n}초 뒤 다시 시도해주세요)', vars: { n: error.retryAfterSec } })}`
+      const base = localizedServerMessage(error, t, locale)
+      return `${base} ${t('errors.retry_after', { fallback: '({n}초 뒤 다시 시도해주세요)', vars: { n: error.retryAfterSec } })}`
     }
-    return null
+    // 2026-11-21: 서버 문장은 한국어 화면이면 그대로, 다른 언어면 오류 code(없으면 상태 코드)로 그 언어 문구를 고른다(api/errorMessages.ts)
+    return localizedServerMessage(error, t, locale)
   }
   // 브라우저가 서버에 닿지 못하면 fetch가 TypeError를 던진다("Failed to fetch" 등 브라우저 영어 문장)
   if (error instanceof TypeError) return t('errors.network')
@@ -32,9 +36,9 @@ export default function ErrorNotice({
   onRetry?: () => void
   fallback?: string
 }) {
-  const { t } = useLocale()
+  const { t, locale } = useLocale()
   const kind = classifyError(error)
-  const message = localizedMessage(error, t) ?? (error instanceof Error && error.message ? error.message : (fallback ?? t('errors.500')))
+  const message = localizedMessage(error, t, locale) ?? (error instanceof Error && error.message ? error.message : (fallback ?? t('errors.500')))
   const retryable = onRetry != null && isRetryable(error)
 
   return (

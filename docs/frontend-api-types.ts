@@ -474,6 +474,7 @@ export interface EmailStatus {
 
 export interface ErrorResponse {
   detail: string;
+  code?: string;
 }
 
 export interface EventReaction {
@@ -1204,6 +1205,9 @@ export interface ResearchResponse {
   answer: string;
   used_tools: string[];
   sources?: Source[];
+  resolved_instruments?: ResolvedInstrument[];
+  clarification_required?: boolean;
+  clarification_reason?: "missing_instrument" | "unsupported_instrument" | "unresolved_instrument" | "ambiguous_instrument" | null;
   source_status?: SourceStatus | null;
   report_id?: number | null;
   previous_report_id?: number | null;
@@ -1215,6 +1219,14 @@ export interface ResearchResponse {
 export interface ResetPasswordRequest {
   token: string;
   new_password: string;
+}
+
+/** 2026-11-21(하위 호환 추가): 답변이 실제로 분석한 등록 종목. 도구 결과에 나온 종목만이다. */
+export interface ResolvedInstrument {
+  ticker: string;
+  name: string;
+  name_en?: string | null;
+  source: "explicit" | "previous_context";
 }
 
 export interface ReturnChange {

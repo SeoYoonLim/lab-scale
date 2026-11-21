@@ -24,7 +24,7 @@ client = TestClient(app, raise_server_exceptions=False)
 
 PASSWORD = "dummy-current-pass-1234"
 NEW_PASSWORD = "dummy-new-pass-5678"
-UNAUTHORIZED = {"detail": deps.UNAUTHORIZED_DETAIL}
+UNAUTHORIZED = {"detail": deps.UNAUTHORIZED_DETAIL, "code": "AUTHENTICATION_REQUIRED"}  # 2026-11-21 code 추가(사유 구분 없이 하나)
 
 
 def bearer(token: str) -> dict:

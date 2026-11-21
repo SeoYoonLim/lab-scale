@@ -151,6 +151,109 @@ _GENERIC_RE = re.compile(
 # 놓쳤다(최종 리허설 SK하이닉스 흐름 답). 영문·숫자·밑줄이 앞뒤에 없을 때를 경계로 보고 대소문자를 가리지 않는다
 _TOOL_LEAK_RE = re.compile(r"(?<![A-Za-z0-9_])(?:stock|news|disclosure|rag_search|market|fx|discovery|event_reaction)_tool(?![A-Za-z0-9_])",
                            re.IGNORECASE)
+# 2026-11-21: 도구 이름 말고도 내부 구현이 드러나는 문장(사용자가 이해할 필요가 없는 개발 정보). 브라우저 테스트에서 "parameter", "limit"이
+# 답에 나왔다. 원인 하나는 도구 오류 결과("news_tool 호출에 필요한 인자가 없습니다: limit", 예외 원문)가 LLM에 그대로 들어간 것이다
+# (app.agent._llm_safe_result가 이제 LLM에 넘기기 전에 일반 문장으로 바꾼다). 낱말 하나만으로 지우지 않는다: "limit"·"parameter"는
+# 영어 금융 문장에도 나오므로 내부 문맥(=·:·호출·함수·인자·API와 함께)일 때만이다.
+# 1) 오류·예외·SQL·스택 정보, 2) 내부 필드 이름(snake_case)·키=값 표기, 3) 인자·파라미터를 호출·함수·API와 함께 말한 문장, 4) DB 테이블·컬럼 이름
+_INTERNAL_ERROR_RE = re.compile(
+    r"Traceback\s*\(most recent call last\)|\b(?:psycopg2?|sqlalchemy|IntegrityError|OperationalError|ProgrammingError|DBAPIError"
+    r"|KeyError|TypeError|ValueError|AttributeError|RuntimeError|IndexError|JSONDecodeError|NoneType|Exception)\b"
+    r"|\bSQL\b|stack\s*trace|스택\s*트레이스|\bHTTP\s*[45]\d\d\b|status[_\s]?code"
+)
+_INTERNAL_FIELD_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:period_days|company_name|corrected_from|called_via|before_kst|close_price|change_pct|period_change_pct|tool_calls?"
+    r"|price_date|trading_days|period_start_date|period_end_date|source_status|previous_report_id|rcept_no|corp_code|since_days)(?![A-Za-z0-9_])"
+    r"|\bfound\s*[=:]\s*(?:false|true|False|True)\b|\b(?:limit|ticker|query|offset)\s*[=:]\s*\S"
+    r"|(?<![A-Za-z0-9_])[a-z]+_[a-z_]+\s*\("
+)
+_INTERNAL_ARG_RE = re.compile(
+    r"(?:호출|함수|도구|툴|API|tool|function)[^.!?。\n]{0,20}(?:인자|파라미터|parameter|매개\s*변수|argument)"
+    r"|(?:인자|파라미터|parameter|매개\s*변수|argument)[^.!?。\n]{0,20}(?:호출|함수|도구|툴|API|tool|function|\blimit\b|=)"
+    r"|\blimit\b[^.!?。\n]{0,15}(?:파라미터|parameter|인자|값|설정|argument)|(?:파라미터|parameter|인자|argument)[^.!?。\n]{0,15}\blimit\b",
+    re.IGNORECASE,
+)
+_INTERNAL_TABLE_RE = re.compile(r"\b[a-z_]+\s*(?:테이블|컬럼|칼럼)|\b(?:table|column)\s+[a-z_]+_[a-z_]+\b")
+
+
+def has_internal_leak(sentence: str) -> bool:
+    """문장이 내부 오류·필드 이름·호출 인자·DB 테이블 이름을 드러내는가(위 설명). 일반 영어 금융 문장의 limit·parameter는 아니다."""
+    s = sentence or ""
+    return bool(_TOOL_LEAK_RE.search(s) or _INTERNAL_ERROR_RE.search(s) or _INTERNAL_FIELD_RE.search(s)
+                or _INTERNAL_ARG_RE.search(s) or _INTERNAL_TABLE_RE.search(s))
+
+
+NO_CAUSE_EVIDENCE_NOTE = "※ 조회된 뉴스·공시 중 이 주가 움직임의 원인을 뒷받침하는 자료가 없어 원인을 특정하지 않았습니다."
+_MARKET_WORD_RE = re.compile(r"코스피|코스닥|시장|지수|업종|KOSPI|KOSDAQ", re.IGNORECASE)
+# 원인 절 제목: 마크다운 제목(#) 또는 한 줄 전체가 굵은 글씨인 제목 중 "원인"이 든 것("## 원인 분석", "## 하락 원인", "**원인 분석**").
+# strip_generic의 _CAUSE_HEAD_RE("원인"으로 시작하는 # 제목)보다 넓다. 이 판정은 출처가 없을 때만 쓴다.
+_CAUSE_TITLE_RE = re.compile(r"^(?:#{1,6}\s*.*원인.*|\*\*[^*]*원인[^*]*\*\*\s*:?)$")
+_BOLD_TITLE_RE = re.compile(r"^\*\*[^*]+\*\*\s*:?$")
+
+
+def enforce_cause_section(text: str, has_sources: bool, has_market: bool) -> tuple[str, bool]:
+    """(정리한 글, 바꿨는지). 2026-11-21: 뉴스·공시 근거(sources)가 없는데 LLM이 "## 원인 분석" 절을 쓰면 근거가 있는 것처럼 보인다.
+    근거가 있으면 그대로다. 없으면 그 절을 지우고 근거가 없다는 안내 한 줄로 바꾼다. 시장 비교 결과(market_tool)가 있으면 그 절에서
+    시장·지수를 숫자로 비교한 문장만 "## 시장과 비교" 절로 남긴다(원인 단정이 아니라 조회된 수치다)."""
+    if has_sources or not text:
+        return text, False
+    lines = text.split("\n")
+    out: list[str] = []
+    changed = False
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if not _CAUSE_TITLE_RE.match(line.strip()):
+            out.append(line)
+            i += 1
+            continue
+        changed = True
+        j = i + 1
+        body = []
+        while j < len(lines) and not lines[j].lstrip().startswith("#") and not _BOLD_TITLE_RE.match(lines[j].strip()):
+            body.append(lines[j])
+            j += 1
+        kept = []
+        if has_market:
+            for b in body:
+                m = _BULLET_RE.match(b)
+                prefix, rest = (m.group(1), b[m.end():]) if m else ("", b)
+                sents = [x for x in _SENT_RE.split(rest) if x.strip() and _MARKET_WORD_RE.search(x) and _DIGITS_RE.search(x)]
+                if sents:
+                    kept.append(prefix + " ".join(sents))
+        if kept:
+            out.extend(["## 시장과 비교", *kept, ""])
+        out.extend([NO_CAUSE_EVIDENCE_NOTE, ""])
+        i = j
+    if not changed:
+        return text, False
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip(), True
+
+
+def strip_internal(text: str) -> tuple[str, int]:
+    """(정리한 글, 지운 문장 수). 내부 정보를 드러낸 문장만 지운다(최종 답변 마지막 점검용, 번역된 답에도 쓴다).
+    소제목·빈 줄은 그대로 두고, 지운 뒤 본문이 없으면 빈 문자열(호출측이 일반 안내로 바꾼다)."""
+    removed = 0
+    out = []
+    for line in (text or "").split("\n"):
+        if not line.strip() or line.lstrip().startswith("#"):
+            out.append(line)
+            continue
+        m = _BULLET_RE.match(line)
+        prefix, body = (m.group(1), line[m.end():]) if m else ("", line)
+        sents = [x for x in _SENT_RE.split(body) if x.strip()]
+        kept = [x for x in sents if not has_internal_leak(x)]
+        removed += len(sents) - len(kept)
+        if kept:
+            out.append(prefix + " ".join(kept))
+    if not removed:
+        return text, 0
+    result = re.sub(r"\n{3,}", "\n\n", _drop_empty_headings("\n".join(out))).strip()
+    if not re.sub(r"^#.*$", "", result, flags=re.M).strip():
+        return "", removed
+    return result, removed
+
+
 _INTRO_RE = re.compile(r"(?:다음과|아래와)\s*같습니다[.。]?$")
 _CAUSE_HEAD_RE = re.compile(r"^#{1,6}\s*원인")
 _CAUSE_WORD_RE = re.compile(
@@ -198,7 +301,7 @@ def strip_generic(text: str) -> tuple[str, int]:
             if not sent.strip():
                 continue
             nums = _nums(sent)
-            drop = bool(_TOOL_LEAK_RE.search(sent)) or (not nums and bool(_GENERIC_RE.search(sent)))
+            drop = has_internal_leak(sent) or (not nums and bool(_GENERIC_RE.search(sent)))
             if not drop and state["cause"] and nums and nums <= seen_nums and not _CAUSE_WORD_RE.search(sent):
                 drop = True
             if drop:

@@ -11,12 +11,13 @@ import { useLocale } from '../../i18n/useLocale'
 import type { Holding, Portfolio } from '../../types'
 import { formatPct, formatPrice, trendClass } from '../../utils/format'
 import OrderQuickPicks from './OrderQuickPicks'
+import { errorText } from '../../api/errorMessages'
 
 const ORDER_PREVIEW_DEBOUNCE_MS = 400
 const MAX_ORDER_QUANTITY = 100_000 // backend/API.md: 주문 수량은 1~100,000주(정수)
 
 export default function HoldingsSection({ portfolio, onMutated }: { portfolio: Portfolio; onMutated?: () => void }) {
-  const { t } = useLocale()
+  const { t, locale } = useLocale()
   const queryClient = useQueryClient()
   const won = t('unit.won', { fallback: '원' })
   const [ticker, setTicker] = useState('')
@@ -154,7 +155,8 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
       setQuantity('1')
       setDebouncedTicker('')
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : t('holdings.order_failed', { fallback: '주문에 실패했어요.' }))
+      // 2026-11-21: 서버 오류 code로 화면 언어 문구를 고른다(영어 화면에 한국어 detail이 보이지 않게, api/errorMessages.ts)
+      setFormError(errorText(err, t, locale, t('holdings.order_failed', { fallback: '주문에 실패했어요.' })))
     }
   }
 
@@ -175,7 +177,7 @@ export default function HoldingsSection({ portfolio, onMutated }: { portfolio: P
     try {
       await resetMutation.mutateAsync()
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : t('holdings.reset_failed', { fallback: '초기화하지 못했어요.' }))
+      setFormError(errorText(err, t, locale, t('holdings.reset_failed', { fallback: '초기화하지 못했어요.' })))
     }
   }
 

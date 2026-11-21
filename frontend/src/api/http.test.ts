@@ -102,3 +102,26 @@ describe('httpApi 오류 응답 처리(핸드오프 6절)', () => {
     expect((missing as ApiError).message).toBe("'없는종목' 종목을 찾지 못했습니다.")
   })
 })
+
+describe('서버 오류 code 읽기(2026-11-21)', () => {
+  it('detail과 함께 온 code를 ApiError.code로 넘기고 detail 문장은 그대로 둔다', async () => {
+    mockFetchOnce({ detail: '보유 수량이 부족합니다(매도 요청 5주, 보유 0주).', code: 'INSUFFICIENT_HOLDINGS' }, 400)
+    const err: unknown = await httpApi.getRealtimePrice('005930').catch((e) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect((err as ApiError).code).toBe('INSUFFICIENT_HOLDINGS')
+    expect((err as ApiError).message).toBe('보유 수량이 부족합니다(매도 요청 5주, 보유 0주).')
+  })
+
+  it('검증 오류 배열(422)의 code도 읽는다', async () => {
+    mockFetchOnce({ detail: [{ msg: 'Input should be greater than 0', loc: ['body', 'quantity'] }], code: 'INVALID_ORDER_QUANTITY' }, 422)
+    const err = (await httpApi.getRealtimePrice('005930').catch((e) => e)) as ApiError
+    expect(err.code).toBe('INVALID_ORDER_QUANTITY')
+  })
+
+  it('code가 없는 예전 응답·형식이 이상한 code는 undefined다', async () => {
+    mockFetchOnce({ detail: '잔고가 부족합니다.' }, 400)
+    expect(((await httpApi.getRealtimePrice('005930').catch((e) => e)) as ApiError).code).toBeUndefined()
+    mockFetchOnce({ detail: 'x', code: '<script>' }, 400)
+    expect(((await httpApi.getRealtimePrice('005930').catch((e) => e)) as ApiError).code).toBeUndefined()
+  })
+})

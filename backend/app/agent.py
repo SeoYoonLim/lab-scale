@@ -56,12 +56,13 @@ from app.answer_guard import (
     strip_untrusted_urls,
 )
 from app import answer_basis, answer_cause, answer_i18n, answer_tidy, earnings, intent_i18n, evidence_answer, market_ranking, outlook, price_flow, quote_freshness, related_news
-from app import market_overview, request_safety
+from app import instrument_scope, market_overview, request_safety
 from app.data_status import last_business_day
 from app.etf_holdings import constituents_chat_answer, holding_weight_answer, requested_top_n
 from app.llm_settings import call_options, chat_model
 from app.etf_holdings_db import chat_views, holding_weights
 from app.glossary import comparison_answer, concept_answer, find_term, term_answer
+from app.i18n import text as i18n_text
 from app.models import Company, StockPrice
 from app.period_parser import KST, mentions_period, parse_period
 from app.price_history import last_row_before, market_has_rows, price_range, price_rows_between, recent_price_rows
@@ -1019,6 +1020,30 @@ def _refetch_before(fn_name: str, args: dict) -> dict:
         return {"found": False, "error": f"{fn_name} 실행 중 오류: {e}"}
 
 
+TOOL_ERROR_FOR_LLM = "데이터를 조회하지 못했습니다(일시적인 오류). 이 데이터는 답변에 쓰지 마세요."
+TOOL_MISSING_FOR_LLM = "필요한 조회 조건이 없어 데이터를 조회하지 못했습니다."
+
+
+def _llm_safe_result(result):
+    """(2026-11-21) LLM에 넘길 도구 결과 사본. 예외 원문(SQL·예외 이름)·호출 인자 이름("호출에 필요한 인자가 없습니다: limit")·DB 테이블 이름은
+    사용자에게 보일 수 있는 일반 문장으로 바꾼다(모델이 그대로 옮겨 "parameter", "limit"이 답에 나왔다). 기록(tool_call_log)·출처 상태
+    (source_status의 error 판정)는 원래 결과를 쓴다."""
+    if not isinstance(result, dict):
+        return result
+    out = dict(result)
+    if out.get("error"):
+        out["error"] = TOOL_ERROR_FOR_LLM
+    msg = out.get("message")
+    if isinstance(msg, str):
+        if "호출에 필요한 인자가 없습니다" in msg:
+            out["message"] = TOOL_MISSING_FOR_LLM
+        elif "실행 중 오류" in msg:
+            out["message"] = TOOL_ERROR_FOR_LLM
+        else:
+            out["message"] = msg.replace("company 테이블에 등록된 ", "등록된 ")
+    return out
+
+
 def _run_tool(fn_name: str, fn_args) -> dict:
     """tool을 안전하게 실행한다. 모르는 tool/인자, 필수 인자 누락, 실행 중 예외도 예외 대신 결과로 돌려준다."""
     fn = AVAILABLE_FUNCTIONS.get(fn_name)
@@ -1428,8 +1453,8 @@ def _ambiguous_group_answer(question: str, companies: list | None):
             else:
                 hit = re.search(re.escape(t), q)
             if hit:
-                _meta()["ambiguous_group"] = {"token": hit.group(0), "candidates": list(candidates)}
-                return _code_answer(ambiguous_group_text(hit.group(0), candidates))
+                return _clarify(ambiguous_group_text(hit.group(0), candidates), instrument_scope.REASON_AMBIGUOUS,
+                                ambiguous_group={"token": hit.group(0), "candidates": list(candidates)})
     return None
 
 
@@ -1559,7 +1584,7 @@ def _answer_missing_subject(question: str, companies: list | None):
         return None
     if not is_simple_quote(question, mentions_period(question), _period_text(question)):
         return None
-    return _code_answer(_NO_SUBJECT_ANSWER)
+    return _clarify(_NO_SUBJECT_ANSWER, instrument_scope.REASON_MISSING)
 
 
 def _answer_market_overview(question: str, companies: list | None):
@@ -1732,9 +1757,9 @@ def _answer_forecast(question: str, previous: dict | None):
         return None
     company, marker, mode = found
     if mode == "ask":
-        return _code_answer(outlook.ASK_SUBJECT_ANSWER)
+        return _clarify(outlook.ASK_SUBJECT_ANSWER, instrument_scope.REASON_MISSING)
     if mode == "ask_cause":
-        return _code_answer(answer_cause.ASK_CAUSE_SUBJECT)
+        return _clarify(answer_cause.ASK_CAUSE_SUBJECT, instrument_scope.REASON_MISSING)
     if mode == "cause_period":
         return _with_unmatched(_answer_cause_period(company, question), question, [company])
     out = _forecast_body(question, previous, company, marker, mode)
@@ -2685,6 +2710,126 @@ def _unresolved_company_answer(calls: list[dict], question: str = "") -> str | N
     return text
 
 
+def _clarify(text: str, reason: str, **meta) -> tuple[dict, list[dict]]:
+    """(2026-11-21) 종목을 되묻는 코드 답. 응답의 clarification_required/clarification_reason(ask_question)이 이 meta를 읽는다."""
+    _meta()["clarification_reason"] = reason
+    _meta()["clarification_text"] = text  # 언어별 고정 문장으로 바꿀 때 같은 문장인지 확인한다(app.answer_i18n)
+    _meta().update(meta)
+    return _code_answer(text)
+
+
+def _answer_unsupported_subject(question: str):
+    """(2026-11-21) 분석 대상이 아닌 해외 종목(엔비디아 등)을 말했고 등록 종목은 하나도 말하지 않았으면, 다른 종목(직전 대화의 종목 포함)으로
+    대신 분석하지 않고 안내한다. 전에는 "엔비디아는 왜 하락했어?"(직전 삼성전자)에 삼성전자 시세·뉴스로 답했다(app/instrument_scope)."""
+    names = instrument_scope.foreign_unsupported_names(question)  # DB 없이 먼저 본다(대부분의 질문은 여기서 끝난다)
+    if not names:
+        return None
+    companies = _question_companies(question)
+    if companies is None or companies:
+        return None
+    return _clarify(instrument_scope.unsupported_answer(names), instrument_scope.REASON_UNSUPPORTED, clarification_names=names)
+
+
+_LEADING_NAME_RE = re.compile(r"^\s*([0-9A-Za-z가-힣&]{2,20}?)(?:은|는|이|가|도)\s")
+
+
+def _answer_unknown_followup_subject(question: str, previous: dict | None):
+    """(2026-11-21) 후속 질문이 등록 종목에 없는 이름으로 시작하면("롯데칠성은 왜 떨어졌어?") 직전 대화의 종목으로 바꿔 답하지 않는다.
+    이름처럼 보이는 첫 낱말(조사 '은/는/이/가/도' + 띄어쓰기)이 일반어·시장어·용어 사전 낱말이 아니고 종목으로 해석되지 않을 때만이다."""
+    if not previous:
+        return None
+    m = _LEADING_NAME_RE.match(question or "")
+    if m is None:
+        return None
+    word = m.group(1)
+    if _not_a_name(word):
+        return None
+    companies = _question_companies(question)
+    if companies is None or companies:
+        return None
+    try:
+        db = SessionLocal()
+        try:
+            res = resolve_company(db, word)
+        finally:
+            db.close()
+    except Exception:  # noqa: BLE001 - 판정하지 못하면 기존 흐름
+        return None
+    if res.company is not None:
+        return None
+    text = (f"'{word}'{instrument_scope._eun(word)} 등록된 종목에서 찾지 못했습니다. 직전 대화의 종목으로 대신 분석하지 않았습니다. "
+            "정확한 종목명이나 종목코드로 다시 질문해 주세요.")
+    if res.candidates:
+        text += f" 혹시 {', '.join(res.candidates)}" + (" 중 하나인가요?" if len(res.candidates) > 1 else "인가요?")
+        return _clarify(text, instrument_scope.REASON_UNRESOLVED)  # 후보가 있으면 고정 문장 대신 번역(후보 안내까지 옮긴다)
+    return _clarify(text, instrument_scope.REASON_UNRESOLVED, clarification_names=[word])
+
+
+def _drop_guessed_company_calls(calls: list[dict], question: str) -> list[str]:
+    """(2026-11-21) 질문에 종목이 없고 직전 대화도 없는데 모델이 종목 인자를 채운 호출 중, 그 종목이 질문 원문 어디에서도 오지 않은 호출을
+    뺀다(calls를 직접 수정). 뺀 종목 이름들을 돌려준다. 재현: "오늘 주가 어때?"에 모델이 stock_tool(ticker="삼성전자")를 불렀다.
+    오타("삼성잔자 주가")·외국어 표기처럼 질문에 흔적이 있으면 그대로 둔다(instrument_scope.traceable). DB 오류면 아무것도 빼지 않는다."""
+    targets = []
+    for call in calls:
+        key = _COMPANY_ARG.get(call["function"]["name"])
+        raw = _as_args(call["function"]["arguments"]).get(key) if key else None
+        targets.append(raw if normalize_name(raw) else None)
+    if not any(targets):
+        return []
+    try:
+        db = SessionLocal()
+    except Exception:  # noqa: BLE001
+        return []
+    try:
+        kept, guessed = [], []
+        for call, raw in zip(calls, targets):
+            if raw is not None:
+                res = resolve_company(db, raw)
+                if res.company is not None and not instrument_scope.traceable(db, raw, res.company, question):
+                    if res.company.name not in guessed:
+                        guessed.append(res.company.name)
+                    continue
+            kept.append(call)
+    except Exception:  # noqa: BLE001 - 판정하지 못하면 모델의 호출 그대로
+        return []
+    finally:
+        db.close()
+    calls[:] = kept
+    return guessed
+
+
+def _not_a_name(word: str) -> bool:
+    """종목 이름이 아니라 일반어·후속 주제어·시장어·용어 사전 낱말인가(_answer_unknown_followup_subject·_named_unknown_args 공통)."""
+    return bool(instrument_scope.is_generic_only(word) or instrument_scope.is_followup_topic(word) or answer_cause._NOT_NAME_RE.match(word)
+                or find_term(word) or answer_cause.is_market_subject(word))
+
+
+def _named_unknown_args(calls: list[dict], question: str) -> list[str]:
+    """(2026-11-21) 모델이 넘긴 종목 인자 중 질문 원문에 그대로 있는데(사용자가 직접 쓴 이름) 등록 종목으로 해석되지 않는 것들.
+    후속 질문에서 이런 이름이 있으면 직전 종목으로 바꿔 넣지 않는다(_repair_company_args 앞에서 판정한다)."""
+    out = []
+    qk = re.sub(r"\s+", "", question or "").casefold()
+    try:
+        db = SessionLocal()
+    except Exception:  # noqa: BLE001
+        return []
+    try:
+        for call in calls:
+            fn_name = call["function"]["name"]
+            key = _COMPANY_ARG.get(fn_name)
+            raw = normalize_name(_as_args(call["function"]["arguments"]).get(key)) if key else ""
+            rk = re.sub(r"\s+", "", raw).casefold()
+            if len(rk) < 2 or rk not in qk or raw in out or _not_a_name(raw):
+                continue  # 주제어("포트폴리오", "배당")를 종목 인자로 옮긴 것은 기존 흐름(직전 종목 이어받기)이다
+            if resolve_company(db, raw).company is None:
+                out.append(raw)
+    except Exception:  # noqa: BLE001
+        return []
+    finally:
+        db.close()
+    return out
+
+
 def _answer(question: str, model: str, previous: dict | None = None) -> tuple[dict, list[dict]]:
     """답변을 만든다. (응답 dict, tool 실행 기록 목록)을 돌려준다.
 
@@ -2699,9 +2844,18 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     safety = _answer_request_safety(question)
     if safety is not None:
         return safety
+    # 2026-11-21: 분석 대상이 아닌 종목(해외 상장사)·등록 종목에 없는 이름으로 시작하는 후속 질문은 직전 대화의 종목이나 다른 종목으로
+    # 대신 답하지 않는다. 전망·원인 코드 경로도 직전 종목을 이어받으므로 그보다 먼저다(app/instrument_scope)
+    unsupported = _answer_unsupported_subject(question)
+    if unsupported is not None:
+        return unsupported
     briefing = _answer_briefing(question, getattr(_STATE, "user_id", None))
     if briefing is not None:
         return briefing
+    # 내 보유·포트폴리오 브리핑("포트폴리오는 어때?")은 위에서 끝난다. 그 밖에 등록 종목에 없는 이름으로 시작하는 후속 질문은 직전 종목으로 바꾸지 않는다
+    unknown = _answer_unknown_followup_subject(question, previous)
+    if unknown is not None:
+        return unknown
     # 전망·후속 결론(app/outlook.py)은 사건 반응·용어 사전·기간 질문보다 먼저다: "그래서 결론이 뭐야?"를 용어 사전이 가로챘다(2026-11-03).
     forecast = _answer_forecast(question, previous)
     if forecast is not None:
@@ -2726,6 +2880,11 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
         if handled is not None:
             return handled
 
+    # 2026-11-21: 종목도 직전 대화도 없고 질문이 일반어로만 되어 있으면("오늘 주가 어때?", "How is the stock doing today?") LLM에 보내지 않고
+    # 되묻는다. LLM은 이런 질문에 삼성전자를 임의로 골라 답했다(재현). 종목 이름이 될 낱말이 남으면(오타 등) 기존 흐름이다.
+    if previous is None and companies is not None and not companies and instrument_scope.is_generic_only(question):
+        return _clarify(instrument_scope.CLARIFY_ANSWER, instrument_scope.REASON_MISSING)
+
     if previous is None and evidence_answer.enabled():
         handled = _answer_evidence(question, companies, model)
         if handled is not None:
@@ -2747,6 +2906,22 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
 
     if msg is None:
         return {"answer": FALLBACK_ANSWER, "used_tools": [], "sources": []}, []
+
+    # 2026-11-21: 질문에 종목이 없고 직전 대화도 없는데 모델이 질문과 무관한 종목을 채운 호출은 실행하지 않는다. 남는 호출이 없으면 되묻는다
+    if tool_calls and previous is None and companies is not None and not companies:
+        guessed = _drop_guessed_company_calls(tool_calls, question)
+        if guessed and not tool_calls:
+            return _clarify(instrument_scope.CLARIFY_ANSWER, instrument_scope.REASON_MISSING, guessed_instruments=guessed)
+        if guessed:
+            _meta()["guessed_instruments"] = guessed
+    # 2026-11-21: 후속 질문에서 사용자가 직접 쓴 이름이 등록 종목이 아니면(모델이 그 이름을 인자로 옮겼다) 직전 종목으로 바꿔 넣지 않고 안내한다
+    if tool_calls and previous is not None and companies is not None and not companies:
+        named = _named_unknown_args(tool_calls, question)
+        if named:
+            quoted = ", ".join(f"'{n}'" for n in named)
+            return _clarify(f"{quoted}{instrument_scope._eun(named[-1])} 등록된 종목에서 찾지 못했습니다. 직전 대화의 종목으로 대신 분석하지 "
+                            "않았습니다. 정확한 종목명이나 종목코드로 다시 질문해 주세요.", instrument_scope.REASON_UNRESOLVED,
+                            clarification_names=named)
 
     etf_added: list[int] = []
     if not tool_calls:
@@ -2780,6 +2955,9 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     etf_periods = _apply_etf_period(tool_calls, question) if etf_mode else {}
     unresolved = _unresolved_company_answer(tool_calls, question)
     if unresolved is not None:
+        # 용어 사전 답(종목 인자로 용어를 넘긴 경우)은 되묻기가 아니다
+        if unresolved.startswith(UNRESOLVED_COMPANY_ANSWER):
+            return _clarify(unresolved, instrument_scope.REASON_UNRESOLVED)
         return _code_answer(unresolved)
     for idx, call in enumerate(tool_calls):
         fn_name = call["function"]["name"]
@@ -2825,6 +3003,7 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
         # 49차: 주식 질문은 기사 속 시세형 숫자에 기사 발행일을 붙여 넘긴다(실적 수치는 그대로, app/etf.news_result_for_llm)
         result = rec["result"]
         llm_result = news_result_for_llm(result, etf=etf_mode) if rec["tool_name"] == "news_tool" else result
+        llm_result = _llm_safe_result(llm_result)
         messages.append(
             {
                 "role": "tool",
@@ -2854,12 +3033,46 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
         answer = _with_freshness(_guard_etf_aware(answer, records, question, subjects if etf_mode else None), question, records)
         # 48차: 시세를 쓴 답에 그 데이터의 기준일이 없으면 표준 한 줄을 붙인다(app/answer_basis)
         answer = answer_basis.ensure_basis(answer, records, datetime.now(KST))
+    sources = build_sources((r["tool_name"], r["result"]) for r in records)
+    # 2026-11-21: 뉴스·공시 근거가 없는데 "## 원인 분석" 절을 썼으면 그 절을 근거 없음 안내로 바꾼다(시장 비교 수치 문장만 남긴다, app/answer_tidy)
+    has_market = any(r["tool_name"] == "market_tool" and isinstance(r["result"], dict) and r["result"].get("found") for r in records)
+    answer, cause_fixed = answer_tidy.enforce_cause_section(answer, bool(sources), has_market)
+    if cause_fixed:
+        _meta()["cause_section_without_sources"] = True
     response = {
         "answer": answer,
         "used_tools": unique_tool_names(r["tool_name"] for r in records),
-        "sources": build_sources((r["tool_name"], r["result"]) for r in records),
+        "sources": sources,
     }
     return response, records
+
+
+def _instrument_fields(question: str, records: list[dict], previous: dict | None) -> dict:
+    """응답의 resolved_instruments·clarification_required·clarification_reason(2026-11-21, 하위 호환 추가).
+    분석 기준 종목은 도구 결과에 나온 이름 중 등록 종목만이다(찾지 못한 결과의 이름은 입력 그대로라 뺀다). DB를 읽지 못하면 빈 배열이다."""
+    reason = _meta().get("clarification_reason")
+    rows: list[tuple[str, str]] = []
+    question_names: set[str] = set()
+    names = instrument_scope.instrument_names(records)
+    try:
+        db = SessionLocal()
+        try:
+            if names:
+                found = dict(db.query(Company.name, Company.ticker).filter(Company.name.in_(names)).all())
+                rows = [(n, found[n]) for n in names if n in found]
+            if rows:
+                question_names = {c.name for c in extract_from_text(db, question)}
+        finally:
+            db.close()
+    except Exception as e:  # noqa: BLE001 - 부가 필드다. 답변은 그대로 나간다
+        logger.warning("분석 기준 종목 조회 실패: %s", type(e).__name__)
+        rows = []
+    resolved = instrument_scope.build_resolved(rows, question_names, has_previous=previous is not None)
+    for item in resolved:
+        item["name_en"] = instrument_scope.english_name(item["name"])
+    clarification = reason is not None and not resolved
+    return {"resolved_instruments": resolved, "clarification_required": clarification,
+            "clarification_reason": reason if clarification else None}
 
 
 def ask_question(
@@ -2898,6 +3111,8 @@ def ask_question(
     # 정규화한 질문은 판정과 LLM 입력에만 쓰고, 리포트에는 원래 질문을 저장한다.
     routed = intent_i18n.normalize(question, list(answer_i18n._company_names()))
     response, records = _answer(routed.text, model, previous)
+    # 2026-11-21: 분석 기준 종목(실제 도구 결과의 등록 종목)과 되묻기 상태. 하위 호환 추가 필드다(app/instrument_scope)
+    response.update(_instrument_fields(routed.text, records, previous))
     # 72차: sources가 빈 이유(정상·오류 구분). tool 기록만으로 정하므로 저장된 리포트 상세(app.reports.get_report)도 같은 값이다
     response["source_status"] = source_status(((r["tool_name"], r["result"]) for r in records), response.get("sources") or [])
     # 내부 메타(대체·fallback·잘림). API 응답 모델(ResearchResponse)에는 없는 키라 응답에 나가지 않는다.
@@ -2910,12 +3125,23 @@ def ask_question(
         original = response["answer"]
         response["answer"], status = answer_i18n.localize_answer(
             question, original, records, locale,
-            {"fallback_answer": FALLBACK_ANSWER, "timeout_answer": LLM_TIMEOUT_ANSWER},
+            {"fallback_answer": FALLBACK_ANSWER, "timeout_answer": LLM_TIMEOUT_ANSWER,
+             "clarify_instrument": instrument_scope.CLARIFY_ANSWER},
             code_data=response["meta"].get("etf_holdings"), horizon=response["meta"].get("forecast_horizon"),
             ambiguous=response["meta"].get("ambiguous_group"),
+            # 되묻기 답일 때만 넘긴다(그 밖의 답은 예전과 같은 호출)
+            **({"clarification": {"reason": response["meta"]["clarification_reason"],
+                                  "names": response["meta"].get("clarification_names"),
+                                  "text": response["meta"].get("clarification_text")}}
+               if response["meta"].get("clarification_reason") else {}),
         )
         response["meta"].update(locale=locale, translation_status=status)
         extra = {"locale": locale, "original_content": original, "translation_status": status}
+    # 2026-11-21: 최종 답변(번역된 답 포함)에 내부 오류·필드 이름·호출 인자가 남았으면 그 문장만 지운다. 다 지워지면 그 언어의 일반 안내다
+    cleaned, leaked = answer_tidy.strip_internal(response["answer"])
+    if leaked:
+        response["meta"]["internal_sentences_removed"] = leaked
+        response["answer"] = cleaned or i18n_text("fallback_answer", locale or "ko-KR")
     response["report_id"] = (
         save_report_row(question, response["answer"], records, previous_report_id=previous_id, user_id=user_id, **extra)
         if save_report

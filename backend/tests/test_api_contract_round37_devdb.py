@@ -231,7 +231,7 @@ def test_translation_failure_returns_localized_summary_and_record_keeps_original
     r = client.post("/api/research", headers=u["headers"], json={"question": f"{co.name} 어때?", "locale": "ja-JP"})
     body = r.json()
     assert r.status_code == 200 and set(body) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer", "locale",
-                                            "translation_status", "source_status"}  # 72차 추가
+                                            "translation_status", "source_status", "resolved_instruments", "clarification_required", "clarification_reason"}  # 72차·2026-11-21 추가
     assert korean not in body["answer"] and body["answer"].startswith("※")
     # 38차: POST 응답에도 같은 번역 상태와 실제 언어가 온다
     assert body["translation_status"] == "fallback_summary" and body["locale"] == "ja-JP"

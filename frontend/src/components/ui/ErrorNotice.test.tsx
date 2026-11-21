@@ -23,9 +23,16 @@ function renderNotice(error: unknown, locale: Locale) {
 }
 
 describe('ErrorNotice 언어 처리', () => {
-  it('서버가 준 문장(한국어)은 언어와 상관없이 그대로 보여준다', () => {
-    renderNotice(new ApiError('이미 사용 중인 아이디입니다.', 409), 'ja-JP')
+  // 2026-11-21 정책 변경: 전에는 서버의 한국어 문장을 언어와 상관없이 그대로 보여줬다(영어 화면에 한국어 오류가 보이던 문제).
+  // 이제 한국어 화면만 서버 문장 그대로, 다른 언어 화면은 오류 code(없으면 상태 코드)로 그 언어 문구를 고른다(api/errorMessages.ts).
+  it('서버가 준 한국어 문장은 한국어 화면에서만 그대로 보여준다(code 없는 예전 응답)', () => {
+    const ko = renderNotice(new ApiError('이미 사용 중인 아이디입니다.', 409), 'ko-KR')
     expect(screen.getByRole('alert').textContent).toContain('이미 사용 중인 아이디입니다.')
+    ko.unmount()
+    renderNotice(new ApiError('이미 사용 중인 아이디입니다.', 409), 'ja-JP')
+    const text = screen.getByRole('alert').textContent ?? ''
+    expect(text).not.toMatch(/[\uAC00-\uD7A3]/)
+    expect(text).toContain('既存のデータと競合')
   })
 
   it.each([
@@ -46,12 +53,15 @@ describe('ErrorNotice 언어 처리', () => {
     expect(screen.getByRole('alert').textContent).toContain('リクエストに失敗しました。(500)')
   })
 
-  it('429는 서버 문장은 그대로 두고 "n초 뒤 다시"만 화면 언어로 붙인다', () => {
+  it('429는 한국어 화면이면 서버 문장, 다른 언어면 그 언어 문구에 "n초 뒤 다시"를 화면 언어로 붙인다', () => {
+    const ko = renderNotice(new ApiError('요청이 많습니다. (12초 뒤 다시 시도해주세요)', 429, 12, undefined, '요청이 많습니다.'), 'ko-KR')
+    expect(screen.getByRole('alert').textContent).toContain('요청이 많습니다.')
+    ko.unmount()
     renderNotice(new ApiError('요청이 많습니다. (12초 뒤 다시 시도해주세요)', 429, 12, undefined, '요청이 많습니다.'), 'en-US')
     const text = screen.getByRole('alert').textContent ?? ''
-    expect(text).toContain('요청이 많습니다.')
+    expect(text).toContain('Too many requests')
     expect(text).toContain('try again in 12 seconds')
-    expect(text).not.toContain('초 뒤')
+    expect(text).not.toMatch(/[\uAC00-\uD7A3]/)
   })
 
   it('브라우저가 서버에 닿지 못하면(fetch의 TypeError) 영어 브라우저 문장 대신 번역된 안내를 보여준다', () => {

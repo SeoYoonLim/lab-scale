@@ -261,7 +261,8 @@ class TestResearchRouteLocale:
         assert r.status_code == 200
         assert calls[-1] == ({"user_id": 5} if expected is None else {"user_id": 5, "locale": expected})
         assert r.json()["disclaimer"] == (DISCLAIMER if expected is None else i18n.disclaimer(expected))
-        assert set(r.json()) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer", "locale", "translation_status", "source_status"}  # 72차 source_status 추가
+        assert set(r.json()) == {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer", "locale", "translation_status", "source_status",
+                                 "resolved_instruments", "clarification_required", "clarification_reason"}  # 72차·2026-11-21 추가
         # 38차: 응답 locale은 실제로 쓴 언어(fr-FR → ko-KR), ko-KR이면 번역 상태 null(가짜 ask_question에는 meta가 없다 → null)
         assert r.json()["locale"] == (expected or "ko-KR") and r.json()["translation_status"] is None
 

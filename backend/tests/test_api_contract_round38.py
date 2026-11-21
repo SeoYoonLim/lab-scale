@@ -29,8 +29,9 @@ from app.tools.company_resolver import resolve_company
 
 client = TestClient(app, raise_server_exceptions=False)
 ROOT = Path(__file__).resolve().parents[2]
-# 72차(하위 호환 추가): source_status(sources가 빈 이유)
-NEW_KEYS = {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer", "locale", "translation_status", "source_status"}
+# 72차(하위 호환 추가): source_status(sources가 빈 이유). 2026-11-21(하위 호환 추가): 분석 기준 종목·되묻기 상태
+NEW_KEYS = {"answer", "used_tools", "sources", "report_id", "previous_report_id", "disclaimer", "locale", "translation_status", "source_status",
+            "resolved_instruments", "clarification_required", "clarification_reason"}
 KOREAN = "삼성전자의 최근 흐름은 완만한 상승입니다. 자세한 근거는 공시를 확인하세요."
 NEWS = {"tool_name": "news_tool", "arguments": {}, "result": {"found": True, "news": [
     {"title": "삼성전자 신제품 발표", "published_at": "2026-10-27T23:30:00+00:00"},  # KST 10-28 08:30

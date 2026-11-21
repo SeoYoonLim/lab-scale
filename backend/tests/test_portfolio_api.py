@@ -189,5 +189,6 @@ class TestOrderStrictResolution:
         monkeypatch.setattr(portfolio_api, "place_order", lambda *a, **k: called.append(1))
         r = client.post("/api/portfolio/orders", json={"ticker": "삼성SDS", "side": "buy", "quantity": 1})
         assert r.status_code == 404
-        assert r.json() == {"detail": msg}  # 응답 형식은 기존 404와 같고 detail 문구만 안내를 담는다
+        # 응답 형식은 기존 404와 같고 detail 문구만 안내를 담는다. 2026-11-21: 안정적인 오류 코드 code가 더해졌다
+        assert r.json() == {"detail": msg, "code": "STOCK_NOT_FOUND"}
         assert called == []

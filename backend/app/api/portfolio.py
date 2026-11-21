@@ -5,7 +5,8 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Respon
 from pydantic import BaseModel, Field
 
 import app.diagnosis_history as diagnosis_history
-from app import rate_limit
+from app import api_errors, rate_limit
+from app.api_errors import CodedHTTPException
 from app.api.deps import get_current_user, get_owner_key
 from app.api.history_params import history_window, with_dates
 from app.api.research import BIGINT_MAX, DateGroup, View, timezone_query, view_query
@@ -141,7 +142,7 @@ def get_my_trades(
         if ticker is not None:
             res = resolve_company(db, ticker)
             if res.company is None:
-                raise HTTPException(status_code=404, detail=res.message)
+                raise CodedHTTPException(status_code=404, detail=res.message, code=api_errors.STOCK_NOT_FOUND)
             company_id = res.company.id
         result = list_trades(db, owner_key, limit, offset, company_id, sort, order)
         return TradeList(**result, **page_meta(result["total"], limit, offset))
@@ -158,7 +159,8 @@ def reset_my_portfolio(
     본문이 정확히 `{"confirm": true}`가 아니면(본문 없음 포함) 400이다. 관심종목/리서치 기록은 그대로다.
     """
     if not (isinstance(body, dict) and body.get("confirm") is True):
-        raise HTTPException(status_code=400, detail='초기화하려면 본문에 {"confirm": true}를 보내야 합니다.')
+        raise CodedHTTPException(status_code=400, detail='초기화하려면 본문에 {"confirm": true}를 보내야 합니다.',
+                                 code=api_errors.RESET_CONFIRM_REQUIRED)
     db = SessionLocal()
     try:
         reset_portfolio(db, owner_key)
@@ -512,14 +514,17 @@ def create_order(request: OrderRequest, owner_key: str = Depends(get_owner_key))
     try:
         res = resolve_company(db, request.ticker, allow_fuzzy=False)
         if res.company is None:
-            raise HTTPException(status_code=404, detail=res.message)
+            raise CodedHTTPException(status_code=404, detail=res.message, code=api_errors.STOCK_NOT_FOUND)
 
+        # 2026-11-21: detail(한국어 문장)은 그대로, 화면 언어별 문구를 고를 code를 함께 준다(app/api_errors)
         try:
             result = place_order(db, owner_key, res.company, request.side, request.quantity)
         except PriceUnavailable as e:
-            raise HTTPException(status_code=503, detail=str(e))
-        except (InsufficientBalance, InsufficientQuantity) as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            raise CodedHTTPException(status_code=503, detail=str(e), code=api_errors.PRICE_UNAVAILABLE)
+        except InsufficientBalance as e:
+            raise CodedHTTPException(status_code=400, detail=str(e), code=api_errors.INSUFFICIENT_CASH)
+        except InsufficientQuantity as e:
+            raise CodedHTTPException(status_code=400, detail=str(e), code=api_errors.INSUFFICIENT_HOLDINGS)
 
         return OrderResponse(**result)
     finally:

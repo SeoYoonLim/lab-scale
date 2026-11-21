@@ -189,6 +189,23 @@ export const EXTRA_JA: Record<string, string> = {
   'errors.client_schema': 'サーバーの応答の形式が正しくありません。しばらくしてからもう一度お試しください。',
   'errors.client_timeout': 'リクエストに時間がかかりすぎたため中断しました。ネットワークを確認して、もう一度お試しください。',
   'errors.retry_after': '({n}秒後にもう一度お試しください)',
+  // 2026-11-21: 서버 오류 code(backend/app/api_errors.py)별 문구, 리서치 답변의 분석 기준 종목 표시
+  'errors.code.insufficient_holdings': '保有数量が不足しています。',
+  'errors.code.insufficient_cash': '現金残高が不足しています。',
+  'errors.code.invalid_order_quantity': '注文数量が正しくありません。1株以上の整数で入力してください。',
+  'errors.code.unsupported_order_type': '対応していない注文種類です。買いと売りのみ注文できます。',
+  'errors.code.invalid_order_request': '注文リクエストが正しくありません。入力内容を確認してください。',
+  'errors.code.stock_not_found': '銘柄が見つかりません。銘柄名か銘柄コードを確認してください。',
+  'errors.code.price_unavailable': '現在価格を確認できないため注文を約定できませんでした。しばらくしてからもう一度お試しください。',
+  'errors.code.not_in_watchlist': 'ウォッチリストに登録されていない銘柄です。',
+  'errors.code.already_in_watchlist': 'すでにウォッチリストに登録されている銘柄です。',
+  'errors.code.reset_confirm_required': '初期化を確認すると続行できます。',
+  'errors.code.authentication_required': '認証が必要です。もう一度ログインしてください。',
+  'errors.status_409': '既存のデータと競合するため処理できませんでした。',
+  'errors.code.invalid_credentials':
+    'IDまたはパスワードが正しくありません。',
+  'research.basis_label': '分析対象',
+  'research.basis_previous': '前の質問の銘柄',
 
   'etf.col_holding': '構成銘柄',
   'etf.col_rank': '順位',

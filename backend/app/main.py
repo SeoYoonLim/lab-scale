@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError, OperationalError
 
-from app import rate_limit, security
+from app import api_errors, rate_limit, security
 from app.api.auth import router as auth_router
 from app.api.backtest import router as backtest_router
 from app.api.briefing import router as briefing_router
@@ -69,7 +69,19 @@ async def validation_error(request: Request, exc: RequestValidationError):
     if request.url.path.startswith("/api/auth"):
         errors = [{k: v for k, v in e.items() if k != "input"} for e in exc.errors()]
         return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
+    # 2026-11-21: 주문 요청 검증 오류는 detail(검증 오류 배열, 기본 응답과 같은 내용)을 그대로 두고 어느 필드가 틀렸는지 code를 더한다(app/api_errors)
+    if request.method == "POST" and request.url.path == "/api/portfolio/orders":
+        errors = exc.errors()
+        return JSONResponse(status_code=422, content=api_errors.error_body(jsonable_encoder(errors),
+                                                                           api_errors.order_validation_code(errors)))
     return await request_validation_exception_handler(request, exc)
+
+
+@app.exception_handler(api_errors.CodedHTTPException)
+async def coded_http_error(request: Request, exc: api_errors.CodedHTTPException):
+    # 오류 코드가 있는 HTTPException만 여기로 온다(그 밖의 HTTPException은 FastAPI 기본 처리 그대로). detail은 기존 문장 그대로다
+    return JSONResponse(status_code=exc.status_code, content=api_errors.error_body(exc.detail, exc.code),
+                        headers=getattr(exc, "headers", None))
 
 
 # 외부 의존성(Ollama, DB) 장애는 500 대신 재시도 가능한 5xx와 의미 있는 메시지로 돌려준다.
@@ -184,8 +196,11 @@ app.include_router(market_router)
 # GET /api/*는 IP당 공개 GET 한도(app.security.public_get_limited)로 429, 엔드포인트와 그 안에서 부르는 같은 모듈 도우미 함수
 # (한 단계)의 소스에 status_code=4xx가 있으면 그 코드, rate_limit.check가 있으면 429, 본문이 있으면 413, 모두 503(DB·Ollama 장애).
 # 422 외의 오류 본문은 모두 {"detail": "문장"}이다. tests/test_api_contract_round37.py가 실제 응답 코드와 대조한다.
+# 2026-11-21: 일부 오류는 안정적인 오류 코드 code를 함께 준다(app/api_errors, 하위 호환 추가. 없는 오류는 예전과 같다)
 ERROR_RESPONSE_SCHEMA = {"title": "ErrorResponse", "type": "object", "required": ["detail"],
-                         "properties": {"detail": {"type": "string", "title": "Detail"}}}
+                         "properties": {"detail": {"type": "string", "title": "Detail"},
+                                        "code": {"type": "string", "title": "Code",
+                                                 "description": "안정적인 오류 코드(예: INSUFFICIENT_HOLDINGS). 화면 언어별 문구를 고를 때 쓴다. 없을 수 있다"}}}
 _ERROR_DESCRIPTIONS = {
     "400": "요청은 형식상 맞지만 처리할 수 없음(예: 잔고·보유 수량 부족, 잘못된 토큰·링크). detail 문장을 그대로 보여 준다",
     "401": "인증 필요: 토큰 없음·형식 오류·만료·로그아웃·비밀번호 변경으로 폐기됨",

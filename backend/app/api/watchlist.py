@@ -3,7 +3,9 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Path, Response
 from pydantic import BaseModel, Field
 
+from app import api_errors
 from app.api.deps import get_owner_key
+from app.api_errors import CodedHTTPException
 from app.db.session import SessionLocal
 from app.tools.company_resolver import resolve_company
 from app.watchlist import add_item, added_item, list_items, remove_item
@@ -51,11 +53,12 @@ def add_watchlist_item(request: WatchlistCreate, owner_key: str = Depends(get_ow
     try:
         res = resolve_company(db, request.ticker)
         if res.company is None:
-            raise HTTPException(status_code=404, detail=res.message)
+            raise CodedHTTPException(status_code=404, detail=res.message, code=api_errors.STOCK_NOT_FOUND)
 
         item, already_existed = add_item(db, owner_key, res.company.id)
         if already_existed:
-            raise HTTPException(status_code=409, detail=f"'{res.company.name}'는 이미 관심종목에 등록되어 있습니다.")
+            raise CodedHTTPException(status_code=409, detail=f"'{res.company.name}'는 이미 관심종목에 등록되어 있습니다.",
+                                     code=api_errors.ALREADY_IN_WATCHLIST)
 
         # 목록(GET) 항목과 같은 값으로 채운다(최근 종가 포함). 프론트가 응답을 목록에 바로 끼워 넣을 수 있다.
         return WatchlistItem(**added_item(db, item, res.company))
@@ -73,10 +76,11 @@ def delete_watchlist_item(
     try:
         res = resolve_company(db, ticker)
         if res.company is None:
-            raise HTTPException(status_code=404, detail=res.message)
+            raise CodedHTTPException(status_code=404, detail=res.message, code=api_errors.STOCK_NOT_FOUND)
 
         if not remove_item(db, owner_key, res.company.id):
-            raise HTTPException(status_code=404, detail=f"'{res.company.name}'는 관심종목에 등록되어 있지 않습니다.")
+            raise CodedHTTPException(status_code=404, detail=f"'{res.company.name}'는 관심종목에 등록되어 있지 않습니다.",
+                                     code=api_errors.NOT_IN_WATCHLIST)
         return Response(status_code=204)
     finally:
         db.close()

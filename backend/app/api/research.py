@@ -73,10 +73,31 @@ class SourceStatus(BaseModel):
     evidence_cutoff: str | None = None  # 근거로 쓸 수 있는 마지막 시각(기준일 정규장 마감, ISO 8601 KST). 원인 경로가 아니면 null
 
 
+InstrumentSource = Literal["explicit", "previous_context"]
+ClarificationReason = Literal["missing_instrument", "unsupported_instrument", "unresolved_instrument", "ambiguous_instrument"]
+
+
+class ResolvedInstrument(BaseModel):
+    """2026-11-21(하위 호환 추가): 답변이 실제로 분석한 등록 종목. 도구 결과에 나온 종목만이다."""
+
+    ticker: str
+    name: str  # 등록명(한국어). 답변 본문의 종목명 표기와 같다
+    name_en: str | None = None  # 영어 표기(있을 때만). 영어 화면의 기준 종목 표시용
+    # explicit=이번 질문에서 지정한 종목, previous_context=이번 질문에 종목이 없어 직전 대화(previous_report_id)의 종목을 이어받음
+    source: InstrumentSource
+
+
 class ResearchResponse(BaseModel):
     answer: str
     used_tools: list[str]
     sources: list[Source] = []
+    # 2026-11-21(하위 호환 추가): 분석 기준 종목(여러 종목 비교면 여러 개). 종목을 확인하지 못했거나 종목이 없는 답(시장·용어)이면 []
+    resolved_instruments: list[ResolvedInstrument] = []
+    # 종목을 정하지 못해 되묻는 답이면 true(answer가 그 안내 문장). 이때 resolved_instruments는 []이고 임의 종목을 분석하지 않았다
+    clarification_required: bool = False
+    # clarification_required일 때만: missing_instrument=종목 없음, unsupported_instrument=분석 대상 밖(해외 종목 등),
+    # unresolved_instrument=등록 종목에서 못 찾음, ambiguous_instrument=그룹 이름처럼 여러 종목에 걸침
+    clarification_reason: ClarificationReason | None = None
     source_status: SourceStatus | None = None  # 72차: sources가 빈 이유(하위 호환 추가, 없던 클라이언트는 무시하면 된다)
     # 저장에 실패하면 None. 답변은 저장 성공 여부와 무관하게 정상 반환된다.
     report_id: int | None = None

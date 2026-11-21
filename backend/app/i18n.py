@@ -63,6 +63,13 @@ TEXTS: dict[str, dict[str, str]] = {
         "ja-JP": "申し訳ありません。リクエストの処理中に問題が発生しました。銘柄名を含めて、もう少し具体的に質問し直してください。",
         "zh-CN": "抱歉，处理请求时出现问题。请包含股票名称，更具体地重新提问。",
     },
+    # 2026-11-21: 종목을 말하지 않은 질문의 되묻기(app.instrument_scope.CLARIFY_ANSWER와 같은 뜻)
+    "clarify_instrument": {
+        "ko-KR": "어느 종목을 말씀하시는 건가요? 삼성전자, SK하이닉스 등 분석할 종목을 알려 주세요.",
+        "en-US": "Which stock do you mean? Please tell us the stock to analyze, such as Samsung Electronics or SK hynix.",
+        "ja-JP": "どの銘柄についてのご質問でしょうか。サムスン電子、SKハイニックスなど、分析する銘柄を教えてください。",
+        "zh-CN": "请问您指的是哪只股票？请告诉我们要分析的股票，例如三星电子、SK海力士。",
+    },
     "timeout_answer": {
         "ko-KR": "응답 생성이 지연되어 답변을 만들지 못했습니다. 잠시 후 다시 시도해주세요.",
         "en-US": "The response took too long, so we couldn't create an answer. Please try again in a moment.",

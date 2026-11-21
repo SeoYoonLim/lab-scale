@@ -46,7 +46,9 @@ class TestResearchResponses:
         body = client.post("/api/research", json={"question": "삼성전자 주가"}).json()
         # 38차: 실제 언어(locale)와 번역 상태(ko-KR이면 null)가 더해졌고 기존 필드 값은 그대로다
         # 72차: source_status가 더해졌다(가짜 ask_question이 주지 않아 null)
-        assert body == {**result, "disclaimer": EXPECTED, "locale": "ko-KR", "translation_status": None, "source_status": None}
+        # 2026-11-21: 분석 기준 종목·되묻기 상태가 더해졌다(가짜 ask_question이 주지 않아 기본값)
+        assert body == {**result, "disclaimer": EXPECTED, "locale": "ko-KR", "translation_status": None, "source_status": None,
+                        "resolved_instruments": [], "clarification_required": False, "clarification_reason": None}
 
     def test_detail_has_disclaimer_and_keeps_existing_fields(self, monkeypatch):
         monkeypatch.setattr(research_api, "get_report", lambda report_id, user_id: DETAIL)

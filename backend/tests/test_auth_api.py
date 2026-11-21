@@ -16,7 +16,7 @@ client = TestClient(app, raise_server_exceptions=False)
 
 USER = CurrentUser(id=3, username="alice")
 PASSWORD = "s3cret-pass-word"
-LOGIN_FAILED = {"detail": "아이디 또는 비밀번호가 올바르지 않습니다"}
+LOGIN_FAILED = {"detail": "아이디 또는 비밀번호가 올바르지 않습니다", "code": "INVALID_CREDENTIALS"}  # 2026-11-21 code 추가
 
 PROTECTED = [
     ("GET", "/api/research"),
@@ -176,7 +176,7 @@ class TestBearerDependency:
     def _assert_401(self, r):
         assert r.status_code == 401
         assert r.headers["www-authenticate"] == "Bearer"
-        assert r.json() == {"detail": deps.UNAUTHORIZED_DETAIL}
+        assert r.json() == {"detail": deps.UNAUTHORIZED_DETAIL, "code": "AUTHENTICATION_REQUIRED"}  # 2026-11-21 code 추가
 
     @pytest.mark.parametrize("method, path", PROTECTED)
     def test_no_token_is_401_everywhere(self, method, path):

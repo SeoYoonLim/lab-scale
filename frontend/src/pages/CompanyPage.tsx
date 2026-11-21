@@ -15,6 +15,7 @@ import StockNewsCard from '../components/StockNewsCard'
 import ErrorNotice from '../components/ui/ErrorNotice'
 import LoadingNotice from '../components/ui/LoadingNotice'
 import { formatDate, formatPct, formatPrice, formatTime, trendClass } from '../utils/format'
+import { errorText } from '../api/errorMessages'
 
 // backend/API.md: 서버가 종목별로 3~5초 캐싱하므로 이 주기로 폴링해도 안전하다.
 const REALTIME_POLL_MS = 3000
@@ -31,7 +32,7 @@ type WatchlistState = 'idle' | 'added' | 'already' | 'error'
 function CompanyPageContent({ ticker }: { ticker: string }) {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { t } = useLocale()
+  const { t, locale } = useLocale()
   const queryClient = useQueryClient()
 
   // 과거 주가 차트·뉴스·공시는 대응하는 백엔드 API가 없어서 mock으로 떠받치고 있었는데,
@@ -108,7 +109,7 @@ function CompanyPageContent({ ticker }: { ticker: string }) {
         return
       }
       setWatchlistState('error')
-      setWatchlistError(err instanceof Error ? err.message : t('company.watchlist_failed', { fallback: '관심종목 추가에 실패했어요.' }))
+      setWatchlistError(errorText(err, t, locale, t('company.watchlist_failed', { fallback: '관심종목 추가에 실패했어요.' })))
     }
   }
 

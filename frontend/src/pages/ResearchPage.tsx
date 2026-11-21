@@ -10,10 +10,11 @@ import MarketSummaryCard from '../components/MarketSummaryCard'
 import ResearchProgress from '../components/ResearchProgress'
 import SourceFootnotes from '../components/SourceFootnotes'
 import SourceStatusNote from '../components/SourceStatusNote'
+import AnalysisBasisBadge from '../components/AnalysisBasisBadge'
 import ErrorNotice from '../components/ui/ErrorNotice'
 import TrendingWidget from '../components/TrendingWidget'
 import type { TranslationStatus } from '../api/contracts/common'
-import type { Source, SourceStatus } from '../types'
+import type { ResolvedInstrument, Source, SourceStatus } from '../types'
 import { stripDuplicateDisclaimer } from '../utils/disclaimer'
 import { formatTime } from '../utils/format'
 
@@ -34,6 +35,9 @@ interface Entry {
   // 실제로 답한 언어와 번역 상태(핸드오프 15-1절) - 번역문인지, 번역 검증에 실패해 요약만 온 건지 구분해 보여준다
   locale?: string
   translationStatus?: TranslationStatus | null
+  // 분석 기준 종목과 되묻기 여부(2026-11-21). 예전 백엔드는 주지 않아 undefined다
+  resolvedInstruments?: ResolvedInstrument[]
+  clarificationRequired?: boolean
   error?: unknown
 }
 
@@ -129,6 +133,8 @@ export default function ResearchPage() {
                 disclaimer: res.disclaimer,
                 locale: res.locale,
                 translationStatus: res.translation_status ?? null,
+                resolvedInstruments: res.resolved_instruments ?? [],
+                clarificationRequired: res.clarification_required ?? false,
               }
             : e,
         ),
@@ -293,6 +299,7 @@ export default function ResearchPage() {
                       <span className="ai-badge">AI</span>
                       <span className="answer-title">{t('research.answer_title', { fallback: '분석 결과' })}</span>
                     </div>
+                    {!entry.clarificationRequired && <AnalysisBasisBadge instruments={entry.resolvedInstruments ?? []} />}
                     <ResearchAnswerBody
                       answer={stripDuplicateDisclaimer(entry.answer ?? '', entry.disclaimer)}
                       locale={entry.locale}

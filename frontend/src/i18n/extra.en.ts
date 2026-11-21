@@ -192,6 +192,23 @@ export const EXTRA_EN: Record<string, string> = {
   'errors.client_schema': 'The server response has an unexpected format. Please try again in a moment.',
   'errors.client_timeout': 'The request took too long and was stopped. Check your network and try again.',
   'errors.retry_after': '(try again in {n} seconds)',
+  // 2026-11-21: 서버 오류 code(backend/app/api_errors.py)별 문구, 리서치 답변의 분석 기준 종목 표시
+  'errors.code.insufficient_holdings': 'Insufficient holdings.',
+  'errors.code.insufficient_cash': 'Insufficient cash balance.',
+  'errors.code.invalid_order_quantity': 'The order quantity is invalid. Enter a whole number of at least 1 share.',
+  'errors.code.unsupported_order_type': 'This order type is not supported. Only buy and sell orders are available.',
+  'errors.code.invalid_order_request': 'The order request is invalid. Please check your input.',
+  'errors.code.stock_not_found': 'Stock not found. Please check the stock name or ticker.',
+  'errors.code.price_unavailable': 'The price cannot be confirmed right now, so the order was not filled. Please try again in a moment.',
+  'errors.code.not_in_watchlist': 'This stock is not in your watchlist.',
+  'errors.code.already_in_watchlist': 'This stock is already in your watchlist.',
+  'errors.code.reset_confirm_required': 'Please confirm the reset to continue.',
+  'errors.code.authentication_required': 'Authentication is required. Please log in again.',
+  'errors.status_409': 'The request conflicts with existing data, so it could not be processed.',
+  'errors.code.invalid_credentials':
+    'The username or password is incorrect.',
+  'research.basis_label': 'Analysis based on',
+  'research.basis_previous': 'from the previous question',
 
   'etf.col_holding': 'Holding',
   'etf.col_rank': 'Rank',

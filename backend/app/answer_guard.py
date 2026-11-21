@@ -584,6 +584,9 @@ def code_summary(records: list[dict]) -> str | None:
             disclosures.extend(_titles(r["disclosures"]))
         elif name == "rag_search_tool" and r.get("results"):
             news.extend(_titles(r["results"]))
+    # 2026-11-21: 두 종목 뉴스에 같은 기사가 함께 걸리면(예: "삼성전자·SK하이닉스, …") 한 번만 쓴다. 두 번 쓰면 반복 문장 정리
+    # (app.answer_tidy.tidy)가 두 번째 제목만 지우고 날짜 "- (2026-11-17)"만 남겼다
+    news, disclosures = list(dict.fromkeys(news)), list(dict.fromkeys(disclosures))
     sections = []
     if prices or market:
         sections.append("## 주가 동향\n" + "\n".join(prices + market))
@@ -865,21 +868,30 @@ def guard_answer(answer: str, records: list[dict], question: str = "", today=Non
     """(내보낼 답변, 검증 기록). 기록: {"replaced": bool, "violations": [원문 숫자], "mode": "code_summary"|"drop_sentences"|None,
     "kinds": {"number", "date", "target", "period": 건수}}. today(오늘 날짜, 기본 KST 오늘)는 답변에 오늘 날짜를 써도 되게 한다."""
     results = [r.get("result") for r in records]
-    bad = unsupported_numbers(answer, results, question)
-    kinds = {"number": len(bad), "date": 0, "target": 0, "period": 0}
-    extra = []
+    extreme_reasons: list[str] = []
     if records:
         if today is None:
             from datetime import datetime
             from zoneinfo import ZoneInfo
 
             today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+        # 2026-11-21: 최고·최저가 뒤바뀜·값·날짜 불일치, 저장 종가를 현재가·오늘 종가로 쓴 문장은 그 문장만 도구 결과로 만든 문장으로 바꾼다
+        # (app/answer_extremes). 두 값이 모두 도구 결과에 있어 아래 숫자 검증으로는 걸리지 않던 오류다.
+        from app.answer_extremes import fix_extremes
+
+        answer, extreme_reasons = fix_extremes(answer, records, today)
+    bad = unsupported_numbers(answer, results, question)
+    kinds = {"number": len(bad), "date": 0, "target": 0, "period": 0}
+    extra = []
+    if records:
         for kind, found in (("date", date_violations(answer, results, question, today)),
                             ("target", target_violations(answer, records)),
                             ("period", period_violations(answer, records))):
             kinds[kind] = len(found)
             extra += found
     log = {"replaced": False, "violations": [n.raw for n in bad] + extra, "mode": None, "kinds": kinds}
+    if extreme_reasons:
+        log["extreme_fixes"] = extreme_reasons  # 내부 기록(API 응답에 나가지 않는다)
     if not bad and not extra:
         return answer, log
     if records:

@@ -40,6 +40,7 @@ import type {
   ReportList,
   ReportListItem,
   ResearchResponse,
+  ResolvedInstrument,
   RealtimePrice,
   Source,
   SourceStatus,
@@ -87,6 +88,13 @@ export const sourceStatusSchema = z.object({
   evidence_cutoff: z.string().nullish(),
 }) satisfies z.ZodType<SourceStatus>
 
+const resolvedInstrumentSchema = z.object({
+  ticker: z.string(),
+  name: z.string(),
+  name_en: z.string().nullish(),
+  source: z.string(),
+}) satisfies z.ZodType<ResolvedInstrument>
+
 export const researchResponseSchema = z.object({
   answer: z.string(),
   used_tools: z.array(z.string()),
@@ -97,6 +105,9 @@ export const researchResponseSchema = z.object({
   locale: z.string().optional(),
   translation_status: translationStatusSchema.nullish(),
   source_status: sourceStatusSchema.nullish(),
+  resolved_instruments: z.array(resolvedInstrumentSchema).optional(),
+  clarification_required: z.boolean().optional(),
+  clarification_reason: z.string().nullish(),
 }) satisfies z.ZodType<ResearchResponse>
 
 export const reportListItemSchema = z.object({

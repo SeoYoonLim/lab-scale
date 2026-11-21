@@ -171,7 +171,23 @@ _INTENT_RULES: list[tuple[str, re.Pattern]] = [
     ("추이", re.compile(r"\bhow\s+(?:did|has|have)\b[^?.]{0,60}\b(?:move|moved|perform|performed|trade|traded)\b|\btrend\b"
                       r"|推移|値動き|動き|走势|走勢", _I)),
     ("최고가 최저가", re.compile(r"\bhigh(?:est)?\s+and\s+low(?:est)?\b|\bhighs?\s+and\s+lows?\b|高値|安値|最高价|最低價|最低价|最高價", _I)),
+    # 2026-11-21: 과거 등락의 원인 질문("Why did 삼성전자 fall this week?"). 같은 뜻의 한국어 질문("삼성전자 이번 주 왜 떨어졌어?")과 같은
+    # 원인 경로(app.answer_cause)로 가게 한다. 전에는 "왜/떨어"가 없어 LLM 경로로 가서 한국어 질문과 다른 답이 나왔다. 미래형("will … fall")은 위의 떨어질까다.
+    ("왜 떨어졌어", re.compile(r"\bwhy\b(?![^?.]{0,80}\bwill\b)[^?.]{0,80}\b(?:fall|fell|fallen|drop|dropped|decline|declined|slide|slid|plunge|plunged"
+                           r"|sink|sank|tumble|tumbled|slump|slumped|go\s+down|went\s+down|gone\s+down|down)\b"
+                           r"|\bwhat\s+(?:caused|drove|is\s+behind|was\s+behind)\b[^?.]{0,60}\b(?:fall|drop|decline|slump|plunge)\b"
+                           r"|なぜ[^?？。]{0,20}(?:下が|下落|値下が)|下落(?:の|した)?理由|下がった理由"
+                           r"|为什么[^?？。]{0,20}(?:跌|下滑)|為什麼[^?？。]{0,20}(?:跌|下滑)|为何[^?？。]{0,20}跌|下跌(?:的)?原因", _I)),
+    ("왜 올랐어", re.compile(r"\bwhy\b(?![^?.]{0,80}\bwill\b)[^?.]{0,80}\b(?:rise|rose|risen|jump|jumped|surge|surged|rally|rallied|soar|soared"
+                          r"|climb|climbed|gain|gained|go\s+up|went\s+up|gone\s+up|up)\b"
+                          r"|\bwhat\s+(?:caused|drove|is\s+behind|was\s+behind)\b[^?.]{0,60}\b(?:rise|jump|surge|rally|gain)\b"
+                          r"|なぜ[^?？。]{0,20}(?:上が|上昇|値上が)|上昇(?:の|した)?理由|上がった理由"
+                          r"|为什么[^?？。]{0,20}涨|為什麼[^?？。]{0,20}漲|为何[^?？。]{0,20}涨|上涨(?:的)?原因|上漲(?:的)?原因", _I)),
 ]
+# 원인 질문의 주어가 대명사("Why did it fall?", "Why is the stock down?")면 한국어 주어 없는 질문("왜 떨어졌어?")처럼 직전 대화의 종목을
+# 이어받을 수 있게 앞에 "이 종목"을 붙인다(app.answer_cause.is_subjectless). 다른 이름이 주어면 붙이지 않는다(직전 종목으로 바꾸지 않는다).
+_EN_PRONOUN_CAUSE_RE = re.compile(r"^\s*why\s+(?:did|has|have|is|was|were|are|does|do)\s+(?:it|they|the\s+(?:stock|shares?|price)|this\s+(?:stock|one)"
+                                  r"|that\s+(?:stock|one)|its\s+(?:stock|shares?|price))\b", _I)
 
 
 def _strip_names(text: str, names: list[str]) -> str:
@@ -245,9 +261,15 @@ def normalize(question: str, names: list[str] | None = None) -> Normalized:
             steps.append(f"period:{name}")
             text = new
     intents = [ko for ko, rx in _INTENT_RULES if rx.search(q)]
+    # "Why did it rise and fall?"처럼 둘 다면 원인 방향을 정하지 않는다(둘 다 덧붙이면 한국어 판정이 한쪽을 고른다)
+    if "왜 떨어졌어" in intents and "왜 올랐어" in intents:
+        intents = [k for k in intents if k not in ("왜 떨어졌어", "왜 올랐어")] + ["왜 움직였어"]
     if intents:
         steps += [f"intent:{k}" for k in intents]
         text = text.rstrip() + " (" + " ".join(intents) + ")"
+        if any(k.startswith("왜 ") for k in intents) and _EN_PRONOUN_CAUSE_RE.match(q):
+            text = "이 종목 " + text
+            steps.append("subject:pronoun")
     text = re.sub(r"[ \t]{2,}", " ", text).strip()
     changed = text != q.strip()
     return Normalized(text if changed else q, changed, steps)
