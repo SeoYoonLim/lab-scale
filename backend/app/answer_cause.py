@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from datetime import date, datetime, timedelta
 
-from app import krx_calendar
+from app import evidence_scope, krx_calendar
 from app.briefing import KST
 from app.korean import josa
 
@@ -27,6 +27,7 @@ CAUSE_DAYS = 5  # 움직임·원인 창(거래일). 전망 기간과 관계없�
 NEWS_LIMIT = 3
 DISCLOSURE_LIMIT = 3
 NEWS_FETCH = 300  # 창 안, 기준일 뒤 각각 읽는 기사 수 상한(대형주는 하루 수십 건)
+REFERENCE_LIMIT = 3  # 2026-11-23: 업종·시장 참고 기사(원인 후보가 아님) 표시 상한
 _UP_RE = re.compile(r"올랐|오른\s*(?:이유|원인|거)|상승했|상승한\s*(?:이유|원인)|상승\s*(?:이유|원인)|급등|뛰었|올라갔|강세")
 _DOWN_RE = re.compile(r"내렸|내린\s*(?:이유|원인|거)|하락했|하락한\s*(?:이유|원인)|하락\s*(?:이유|원인)|떨어졌|떨어진|급락|빠졌|빠진|빠져|약세")
 
@@ -121,10 +122,17 @@ def collect(db, company, base: date, start: date, after: datetime | None = None,
     others = ([n for (n,) in db.query(Company.name).filter(Company.asset_type == "etf", Company.id != company.id)]
               if getattr(company, "asset_type", None) == "etf" else [])
 
+    etf = getattr(company, "asset_type", None) == "etf"
+    scope_ctx = None if etf else evidence_scope.company_context(company.name)
+
     def relevant(rows):
         items = [{"company_name": company.name, "title": r.title, "source": r.source, "url": r.url,
                   "published_at": r.published_at.isoformat() if r.published_at else None, "date": kst_date(r.published_at)}
                  for r in rows]
+        if scope_ctx is not None:
+            # 2026-11-23: 제목·본문 요약으로 기업 직접 / 업종·산업 / 시장 / 관련성 미확인을 나눈다(app/evidence_scope). ETF는 나누지 않는다
+            for item, r in zip(items, rows):
+                item["scope"] = evidence_scope.classify(company.name, r.title, getattr(r, "content", None), *scope_ctx)
         return filter_titles(evidence_news(company.name, company.asset_type, items, other_etf_names=others))
 
     base_q = db.query(News).filter(News.company_id == company.id, News.is_relevant.isnot(False))
@@ -142,9 +150,15 @@ def collect(db, company, base: date, start: date, after: datetime | None = None,
     # 기준일 뒤 기사는 원인 후보가 아니므로 건수와 첫 날짜만 센다(이 종목에 수집된 기사 기준, 제목 판정 없이 SQL로 정확히)
     after_count, after_min = (db.query(func.count(News.id), func.min(News.published_at))
                               .filter(News.company_id == company.id, News.is_relevant.isnot(False), News.published_at >= hi).one())
-    key = key_news(in_window)
-    rest = [n for n in in_window if n not in key][:max(0, news_limit - len(key))]
+    # 2026-11-23: 원인 후보(목록 앞)는 이 기업을 직접 다룬 기사만이다. 업종·시장 기사는 참고로 몇 건만 따로 붙이고(scope로 구분),
+    # 이 기업을 직접 다루는지 확인되지 않은 기사는 건수만 센다
+    direct = [n for n in in_window if not evidence_scope.is_reference(n.get("scope"))]
+    context = [n for n in in_window if n.get("scope") in (evidence_scope.SECTOR, evidence_scope.MARKET)]
+    unconfirmed = sum(1 for n in in_window if n.get("scope") == evidence_scope.UNCONFIRMED)
+    key = key_news(direct)
+    rest = [n for n in direct if n not in key][:max(0, news_limit - len(key))]
     news = sorted(key + rest, key=lambda n: n.get("published_at") or "", reverse=True)[:news_limit]
+    references = sorted(context, key=lambda n: n.get("published_at") or "", reverse=True)[:REFERENCE_LIMIT]
     disc_from = (after.astimezone(KST).date() + timedelta(days=1)) if after is not None else start
     disclosures = []
     unknown_disc = 0
@@ -170,10 +184,55 @@ def collect(db, company, base: date, start: date, after: datetime | None = None,
                                     "disclosed_at": d.disclosed_at.isoformat() if d.disclosed_at else None,
                                     "source_url": d.source_url, "date": day})
         disclosures = disclosures[:disclosure_limit]
-    return {"news": news, "disclosures": disclosures, "after_count": int(after_count or 0), "after_first": kst_date(after_min),
+    return {"news": news + references, "disclosures": disclosures, "after_count": int(after_count or 0),
+            "after_first": kst_date(after_min),
             "after_close": int(after_close or 0), "unknown_news": int(unknown_news or 0), "unknown_disclosures": unknown_disc,
             "cutoff": cut.strftime("%H:%M"), "news_candidates": len(in_window), "news_fetch_capped": len(raw) >= NEWS_FETCH,
-            "price_reports": price_reports}
+            "price_reports": price_reports, "direct_candidates": len(direct), "context_candidates": len(context),
+            "unconfirmed_news": unconfirmed}
+
+
+def _move_word(pct: float | None) -> str:
+    if pct is None or pct == 0:
+        return "주가 움직임의"
+    return "하락" if pct < 0 else "상승"
+
+
+def evidence_lines(name: str, what: str, rng: str, found: dict, pct: float | None, extra: str = "") -> list[str]:
+    """원인 단락의 근거 줄(2026-11-23). 이 기업을 직접 다룬 기사·공시와 업종·시장 참고 기사를 나눠 쓴다.
+
+    직접 근거가 없으면 업종·시장 기사가 있어도 이 기업의 개별 원인을 특정하지 않는다고 밝힌다. 기사 제목·날짜·언론사는 조회된 값 그대로다."""
+    news = found.get("news") or []
+    discs = found.get("disclosures") or []
+    direct = [n for n in news if not evidence_scope.is_reference(n.get("scope"))]
+    refs = [n for n in news if evidence_scope.is_reference(n.get("scope"))]
+    lines = []
+    if direct or discs:
+        lines.append(f"- 같은 기간({rng}) {josa(name, '을/를')} 직접 다룬 {what}입니다{extra}. 주가 변동의 직접 원인이라고 단정할 수는 없습니다.")
+        for n in direct:
+            src = f"({n['source']}) " if n.get("source") else ""
+            lines.append(f"  - 뉴스 {n.get('date') or ''} {src}\"{n['title']}\"")
+        for d in discs:
+            many = f"(같은 제목 {d['count']}건)" if d.get("count", 1) > 1 else ""
+            lines.append(f"  - 공시 {d.get('date') or ''} 접수 \"{d['title']}\"{many}")
+    elif refs:
+        lines.append(f"- 같은 기간({rng}) {josa(name, '을/를')} 직접 다룬 {what}를 찾지 못했습니다. 현재 확인된 자료만으로는 "
+                     f"{name}의 개별적인 {_move_word(pct)} 원인을 특정하기 어렵습니다.")
+    else:
+        lines.append(f"- 같은 기간({rng}) {josa(name, '을/를')} 직접 다룬 {what}를 찾지 못해 움직임의 원인을 특정할 수 없습니다.")
+    if refs:
+        lines.append(f"- 업종·시장 참고: 여러 기업이나 업종·시장 전반을 다룬 기사입니다. {name}의 개별 원인으로 보지 않습니다.")
+        for n in refs:
+            src = f"({n['source']}) " if n.get("source") else ""
+            label = evidence_scope.LABEL_KO.get(n.get("scope"), "참고")
+            lines.append(f"  - [{label}] 뉴스 {n.get('date') or ''} {src}\"{n['title']}\"")
+    skipped = max(0, int(found.get("context_candidates") or 0) - len(refs))
+    unconfirmed = int(found.get("unconfirmed_news") or 0)
+    if skipped or unconfirmed:
+        parts = ([f"업종·시장 기사 {skipped:,}건"] if skipped else []) + (
+            [f"제목·본문에서 {josa(name, '을/를')} 직접 다루는지 확인되지 않은 기사 {unconfirmed:,}건"] if unconfirmed else [])
+        lines.append(f"- 그 밖에 {'과 '.join(parts)}은 원인 근거로 쓰지 않았습니다.")
+    return lines
 
 
 def movement(ind: dict) -> dict:
@@ -219,21 +278,10 @@ def section(company, res: dict, question: str, found: dict, day_note: str | None
         word = {"in_line": "시장과 비슷했습니다", "outperform": "시장보다 좋았습니다", "underperform": "시장보다 부진했습니다"}
         lines.append(f"- 같은 기간 지수 {_pct(rel.get('market_change_pct'))}, 종목 {_pct(rel.get('stock_change_pct'))}로 "
                      f"{word.get(rel.get('relative'), '시장과 비교했습니다')}(차이 {rel.get('diff_pct_point', 0):+.2f}%p).")
-    news, discs = found["news"], found["disclosures"]
     cutoff = found.get("cutoff") or cutoff_at(date.fromisoformat(base)).strftime("%H:%M")
-    if news or discs:
-        lines.append(f"- 같은 기간({span}, {base} 장 마감 {cutoff} 전까지) 이 종목 기사·공시입니다. "
-                     "주가 변동의 직접 원인이라고 단정할 수는 없습니다.")
-        for n in news:
-            src = f"({n['source']}) " if n.get("source") else ""
-            lines.append(f"  - 뉴스 {n.get('date') or ''} {src}\"{n['title']}\"")
-        for d in discs:
-            many = f"(같은 제목 {d['count']}건)" if d.get("count", 1) > 1 else ""
-            lines.append(f"  - 공시 {d.get('date') or ''} 접수 \"{d['title']}\"{many}")
-    else:
-        what = "기사" if getattr(company, "asset_type", None) == "etf" else "기사·공시"
-        lines.append(f"- 같은 기간({span}, {base} 장 마감 {cutoff} 전까지) 이 종목을 직접 다룬 {what}를 찾지 못해 움직임의 원인을 "
-                     "특정할 수 없습니다.")
+    what = "기사" if getattr(company, "asset_type", None) == "etf" else "기사·공시"
+    lines += evidence_lines(company.name, what, f"{span}, {base} 장 마감 {cutoff} 전까지", found,
+                            mv["r"] if mv["r"] is not None else mv["day"])
     if found["after_count"]:
         lines.append(f"- 기준일 뒤({found['after_first']}~)에 수집된 이 종목 기사 {found['after_count']:,}건은 {base} 시세에 반영되지 않아 "
                      "원인 후보에서 뺐습니다.")
@@ -735,21 +783,12 @@ def period_cause_answer(company, spec: dict, win: dict, idx: dict | None, found:
         if fresh and fresh != "최신 시세":
             lines.append(f"- 시세가 {fresh} 상태입니다(마지막 저장 거래일 {win['last_stored']}). 그 뒤의 움직임은 알 수 없습니다.")
         return f"{head}\n\n" + "\n".join(lines) + f"\n\n{DISCLAIMER}"
-    news, discs = found.get("news") or [], found.get("disclosures") or []
     cut = found.get("cutoff") or cutoff_at(date.fromisoformat(win["end_date"])).strftime("%H:%M")
     rng = f"{win['from_date']} 장 마감 뒤~{win['end_date']} 장 마감 {cut} 전"
-    if news or discs:
-        more = found.get("news_candidates", 0)
-        extra = f"(제목에 종목명이 있는 기사 {more:,}건 중 {len(news)}건)" if more > len(news) else ""
-        lines.append(f"- 같은 기간({rng}) {josa(name, '을/를')} 직접 다룬 {what}입니다{extra}. 주가 변동의 직접 원인이라고 단정할 수는 없습니다.")
-        for n in news:
-            src = f"({n['source']}) " if n.get("source") else ""
-            lines.append(f"  - 뉴스 {n.get('date') or ''} {src}\"{n['title']}\"")
-        for d in discs:
-            many = f"(같은 제목 {d['count']}건)" if d.get("count", 1) > 1 else ""
-            lines.append(f"  - 공시 {d.get('date') or ''} 접수 \"{d['title']}\"{many}")
-    else:
-        lines.append(f"- 같은 기간({rng}) {josa(name, '을/를')} 직접 다룬 {what}를 찾지 못해 움직임의 원인을 특정할 수 없습니다.")
+    direct_n = sum(1 for n in found.get("news") or [] if not evidence_scope.is_reference(n.get("scope")))
+    more = found.get("direct_candidates", found.get("news_candidates", 0))
+    extra = f"(직접 다룬 기사 {more:,}건 중 {direct_n}건)" if more > direct_n and direct_n else ""
+    lines += evidence_lines(name, what, rng, found, win["pct"], extra)
     if found.get("price_reports"):
         lines.append(f"- 같은 기간 주가·거래 동향을 전한 기사 {found['price_reports']:,}건은 움직임을 묘사한 기사라 원인 후보로 쓰지 않았습니다.")
     if found.get("after_count"):

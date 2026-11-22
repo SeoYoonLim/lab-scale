@@ -341,7 +341,19 @@ def check(source_masked: str, translated: str, locale: str) -> list[str]:
     heads = lambda s: sum(1 for line in s.splitlines() if line.lstrip().startswith("#"))  # noqa: E731
     if heads(source_masked) != heads(translated):
         problems.append("heading count")
+    if _PREAMBLE_RE.search(translated) and not _PREAMBLE_RE.search(source_masked):
+        problems.append("translator preamble")
     return problems
+
+
+# 2026-11-23: 번역 대신 대화 문장을 붙인 출력("I'd be happy to help with the translation. Here is the translation …")은 번역이 아니다.
+# 실측(영어 뉴스 질문): 이 머리말이 검증을 통과해 화면에 그대로 나왔다(자리표시자·숫자·한글 검사에는 걸리지 않는다)
+_PREAMBLE_RE = re.compile(
+    r"(?:here\s+is|here's|below\s+is)\s+(?:the|a|your|my)\s+translation|happy\s+to\s+help\s+with\s+(?:the|this|your)\s+translation"
+    r"|\btranslat(?:ed|ion)\s+(?:of|from)\s+(?:the\s+)?(?:given\s+|provided\s+)?korean\b|^\s*translation\s*:"
+    r"|以下(?:は|が)[^\n]{0,12}翻訳|翻訳(?:します|しました|結果)|以下是[^\n]{0,12}翻译|翻译(?:如下|结果)",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 # ---------- LLM ----------

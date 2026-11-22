@@ -146,6 +146,10 @@ _GENERIC_RE = re.compile(
     r"|전문가(?:와|의)?\s*(?:상담|조언)"
     r"|(?:주가|주식\s*시장)(?:은|는)\s*(?:예측하기\s*어렵|예측할\s*수\s*없|불확실)"
     r"|향후\s*(?:주가|동향|추이|흐름)(?:를|을)?\s*(?:지켜|주시|살펴)"
+    # 2026-11-23: 실제 출처 없이 근거가 있는 것처럼 쓰는 안내("뉴스나 공시에서 이유를 찾을 수 있습니다", "관련 뉴스와 공시를 확인해 보세요")
+    r"|(?:뉴스|공시|기사)(?:나|와|과|및|·|,)?\s*(?:뉴스|공시|기사)?\s*(?:에서|를\s*통해|을\s*통해|를\s*보면|을\s*보면)\s*(?:그\s*|주가\s*변동의\s*|변동\s*)?"
+    r"(?:이유|원인|배경)(?:을|를)?\s*(?:찾|확인|알|파악)"
+    r"|(?:관련\s*)?(?:뉴스|공시)(?:나|와|과|및)?\s*(?:뉴스|공시)?(?:를|을)\s*(?:확인|참고|살펴)(?:해\s*보|하)(?:시|세|면|는\s*것)"
 )
 # 2026-11-18: "news_tool에"처럼 한글 조사가 바로 붙으면 \b가 경계로 보지 않았고, "Disclosure_tool"·"RAG_search_tool"처럼 대소문자를 바꿔 쓰면
 # 놓쳤다(최종 리허설 SK하이닉스 흐름 답). 영문·숫자·밑줄이 앞뒤에 없을 때를 경계로 보고 대소문자를 가리지 않는다
@@ -191,43 +195,93 @@ _CAUSE_TITLE_RE = re.compile(r"^(?:#{1,6}\s*.*원인.*|\*\*[^*]*원인[^*]*\*\*\
 _BOLD_TITLE_RE = re.compile(r"^\*\*[^*]+\*\*\s*:?$")
 
 
-def enforce_cause_section(text: str, has_sources: bool, has_market: bool) -> tuple[str, bool]:
+# 2026-11-23: 근거 절 제목("## 뉴스·공시 근거", "## 관련 뉴스", "**공시**"). 출처가 없으면 절째 지운다(일반론으로 빈 근거 절을 채우지 않는다)
+_EVIDENCE_TITLE_RE = re.compile(r"^(?:#{1,6}\s*.*(?:뉴스|공시|근거|기사|보도).*|\*\*[^*]*(?:뉴스|공시|근거|기사)[^*]*\*\*\s*:?)$")
+NO_DIRECT_EVIDENCE_NOTE = ("※ 조회된 기사는 업종·시장 전반을 다룬 내용이라, 현재 확인된 자료만으로는 {name}의 개별적인 주가 변동 원인을 "
+                           "특정하기 어렵습니다.")
+REFERENCE_HEADING = "## 업종·시장 참고"
+REFERENCE_INTRO = "아래 기사는 여러 기업이나 업종·시장 전반을 다룬 기사로, {name}의 직접 원인 근거가 아닙니다."
+NO_EVIDENCE_NOTE = "※ 현재 확인된 관련 뉴스·공시가 없습니다."
+# 근거 절이 자료가 없다고 밝힌 내용인가("관련 뉴스가 없습니다", "공시를 찾지 못했습니다")
+_SAYS_NONE_RE = re.compile(r"없습니다|없어|없음|없었|찾지\s*못|확인되지\s*않|조회되지\s*않")
+# 답이 이미 "원인을 특정할 수 없다"고 밝혔으면 안내를 덧붙이지 않는다
+_ALREADY_NO_CAUSE_RE = re.compile(r"원인(?:을|은|이)?\s*(?:특정|판단|확인|단정|알)[^.。\n]{0,20}(?:없|어렵|않)")
+
+
+def enforce_cause_section(text: str, has_sources: bool, has_market: bool, direct_evidence: bool | None = None,
+                          references: list[str] | None = None, cause_question: bool = False,
+                          subject: str | None = None) -> tuple[str, bool]:
     """(정리한 글, 바꿨는지). 2026-11-21: 뉴스·공시 근거(sources)가 없는데 LLM이 "## 원인 분석" 절을 쓰면 근거가 있는 것처럼 보인다.
     근거가 있으면 그대로다. 없으면 그 절을 지우고 근거가 없다는 안내 한 줄로 바꾼다. 시장 비교 결과(market_tool)가 있으면 그 절에서
-    시장·지수를 숫자로 비교한 문장만 "## 시장과 비교" 절로 남긴다(원인 단정이 아니라 조회된 수치다)."""
-    if has_sources or not text:
+    시장·지수를 숫자로 비교한 문장만 "## 시장과 비교" 절로 남긴다(원인 단정이 아니라 조회된 수치다).
+
+    2026-11-23:
+    - 출처가 없으면 "## 뉴스·공시 근거" 같은 근거 절도 지운다(빈 근거 절을 일반 문장으로 채운 경우). 그 절이 자료가 없다고 밝힌
+      내용이면("관련 뉴스가 없습니다") 그대로 둔다. 다 지워져 본문이 없으면 자료가 없다는 안내 한 줄이다.
+    - (새 인자) direct_evidence=False(원인 질문인데 출처가 업종·시장 기사뿐, 이 기업 직접 기사·공시 없음): 출처가 있어도 원인 절을
+      "개별 원인을 특정하기 어렵다"는 안내로 바꾸고, 근거 절은 references(코드가 만든 업종·시장 참고 줄, 조회된 제목 그대로)로 바꾼다.
+    - (새 인자) cause_question=True인데 원인 절이 없었으면 같은 안내를 끝에 한 줄 붙인다(이미 그렇게 밝혔으면 붙이지 않는다)."""
+    if not text:
         return text, False
+    no_direct = has_sources and direct_evidence is False
+    if has_sources and not no_direct:
+        return text, False
+    name = subject or "이 종목"
+    note = NO_DIRECT_EVIDENCE_NOTE.format(name=name) if no_direct else NO_CAUSE_EVIDENCE_NOTE
+    ref_block = [REFERENCE_HEADING, REFERENCE_INTRO.format(name=name), *references, ""] if no_direct and references else []
     lines = text.split("\n")
     out: list[str] = []
-    changed = False
+    changed = noted = ref_done = False
     i = 0
     while i < len(lines):
         line = lines[i]
-        if not _CAUSE_TITLE_RE.match(line.strip()):
+        title = line.strip()
+        is_cause = bool(_CAUSE_TITLE_RE.match(title))
+        is_evidence = not is_cause and bool(_EVIDENCE_TITLE_RE.match(title))
+        if not (is_cause or is_evidence):
             out.append(line)
             i += 1
             continue
-        changed = True
         j = i + 1
         body = []
         while j < len(lines) and not lines[j].lstrip().startswith("#") and not _BOLD_TITLE_RE.match(lines[j].strip()):
             body.append(lines[j])
             j += 1
-        kept = []
-        if has_market:
-            for b in body:
-                m = _BULLET_RE.match(b)
-                prefix, rest = (m.group(1), b[m.end():]) if m else ("", b)
-                sents = [x for x in _SENT_RE.split(rest) if x.strip() and _MARKET_WORD_RE.search(x) and _DIGITS_RE.search(x)]
-                if sents:
-                    kept.append(prefix + " ".join(sents))
-        if kept:
-            out.extend(["## 시장과 비교", *kept, ""])
-        out.extend([NO_CAUSE_EVIDENCE_NOTE, ""])
+        if is_evidence and not no_direct and _SAYS_NONE_RE.search("\n".join(body)):
+            out.extend(lines[i:j])  # 자료가 없다고 밝힌 근거 절은 사실이다
+            i = j
+            continue
+        changed = True
+        if is_cause:
+            kept = []
+            if has_market:
+                for b in body:
+                    m = _BULLET_RE.match(b)
+                    prefix, rest = (m.group(1), b[m.end():]) if m else ("", b)
+                    sents = [x for x in _SENT_RE.split(rest) if x.strip() and _MARKET_WORD_RE.search(x) and _DIGITS_RE.search(x)]
+                    if sents:
+                        kept.append(prefix + " ".join(sents))
+            if kept:
+                out.extend(["## 시장과 비교", *kept, ""])
+            if not noted:
+                out.extend([note, ""])
+                noted = True
+        elif ref_block and not ref_done:
+            out.extend(ref_block)
+            ref_done = True
         i = j
+    if cause_question and not noted and not _ALREADY_NO_CAUSE_RE.search("\n".join(out)):
+        out.extend(["", note])
+        changed = noted = True
+    if ref_block and not ref_done and noted:
+        out.extend(["", *ref_block])
+        changed = True
     if not changed:
         return text, False
-    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip(), True
+    result = re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+    if not re.sub(r"^#.*$", "", result, flags=re.M).strip():
+        return NO_EVIDENCE_NOTE, True
+    return result, True
 
 
 def strip_internal(text: str) -> tuple[str, int]:

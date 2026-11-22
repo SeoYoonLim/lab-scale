@@ -257,7 +257,28 @@ def extract_from_text(db, text: str) -> list[Company]:
     - 별칭('네이버' -> NAVER)도 그 회사의 이름처럼 찾는다.
     - ETF는 브랜드 한글 표기('코덱스 200' -> 'KODEX 200')를 영문으로 바꿔서 찾고, 이름의 공백이 빠진 입력('KODEX200')도 인정한다.
     여러 회사가 언급되면 전부 반환하므로, 어느 것을 쓸지는 호출측이 정한다."""
-    hay = rewrite_etf_brand(unicodedata.normalize("NFC", text or "")).casefold()
+    out, seen = [], set()
+    for _, _, c in find_mentions(db, text):
+        if c.id not in seen:
+            seen.add(c.id)
+            out.append(c)
+    return out
+
+
+def mention_text(text: str) -> str:
+    """find_mentions의 위치가 가리키는 글(ETF 브랜드 한글 표기를 영문으로 바꾼 NFC 원문, 대소문자는 원문 그대로)."""
+    return rewrite_etf_brand(unicodedata.normalize("NFC", text or ""))
+
+
+def aliases_of(name: str) -> list[str]:
+    """등록명의 별칭(한글 약칭·외국어 표기). 없으면 빈 목록."""
+    return list(_ALIASES_BY_NAME.get(name, ()))
+
+
+def find_mentions(db, text: str) -> list[tuple[int, int, Company]]:
+    """2026-11-23: extract_from_text의 판정 그대로, 받아들인 종목 언급의 (시작, 끝, 종목)을 등장 순서대로(같은 종목이 여러 번이면 모두).
+    위치는 mention_text(text) 기준이다(대소문자 접기로 길이가 바뀌는 글이면 casefold 기준이라 호출측이 길이를 확인한다)."""
+    hay = mention_text(text).casefold()
     if not hay:
         return []
 
@@ -285,12 +306,7 @@ def extract_from_text(db, text: str) -> list[Company]:
         if all(en <= a_st or st >= a_en for a_st, a_en, _ in accepted):
             accepted.append((st, en, c))
 
-    out, seen = [], set()
-    for _, _, c in sorted(accepted, key=lambda h: h[0]):
-        if c is not None and c.id not in seen:
-            seen.add(c.id)
-            out.append(c)
-    return out
+    return [(st, en, c) for st, en, c in sorted(accepted, key=lambda h: h[0]) if c is not None]
 
 
 def to_int(value, default: int, lo: int = 1, hi: int = 50) -> int:

@@ -56,7 +56,7 @@ from app.answer_guard import (
     strip_untrusted_urls,
 )
 from app import answer_basis, answer_cause, answer_i18n, answer_tidy, earnings, intent_i18n, evidence_answer, market_ranking, outlook, price_flow, quote_freshness, related_news
-from app import instrument_scope, market_overview, request_safety
+from app import evidence_scope, followup_subject, instrument_scope, market_overview, request_safety
 from app.data_status import last_business_day
 from app.etf_holdings import constituents_chat_answer, holding_weight_answer, requested_top_n
 from app.llm_settings import call_options, chat_model
@@ -789,6 +789,26 @@ def _repair_company_args(calls: list[dict], question: str, previous_question: st
         return repaired
     finally:
         db.close()
+
+
+def _swap_company_args(calls: list[dict], old: str, new: str) -> dict[int, str]:
+    """종목 인자가 old 종목으로 해석되는 호출을 new로 바꾼다. {호출 인덱스: 원래 인자}."""
+    out: dict[int, str] = {}
+    db = SessionLocal()
+    try:
+        for i, call in enumerate(calls):
+            key = _COMPANY_ARG.get(call["function"]["name"])
+            args = _as_args(call["function"]["arguments"])
+            raw = args.get(key) if key else None
+            if not normalize_name(raw):
+                continue
+            res = resolve_company(db, raw)
+            if res.company is not None and res.company.name == old:
+                call["function"]["arguments"] = {**args, key: new}
+                out[i] = str(raw)
+    finally:
+        db.close()
+    return out
 
 
 # tool별로 기간(period_days)을 받는 인자 이름. news_tool/disclosure_tool/rag_search_tool은 기간 인자 자체가
@@ -2944,6 +2964,10 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     _expand_multi_company_calls(tool_calls, question, companies)
     repaired = _repair_company_args(tool_calls, question, previous["question"] if previous else None,
                                     (previous or {}).get("company_name"))
+    # 2026-11-23: 종목만 바꾼 후속 질문을 다시 쓴 질문이면, 모델이 직전 종목을 인자로 넣은 호출을 새 종목으로 바꾼다(직전 종목 수치 혼입 방지)
+    swap = getattr(_STATE, "subject_swap", None)
+    if swap:
+        repaired.update(_swap_company_args(tool_calls, swap["from"], swap["to"]))
     added = set(_add_requested_tools(tool_calls, question)) | set(etf_added) | set(_add_cause_price_tools(tool_calls, question))
     subjects = _question_subjects(question, tool_calls)
     etf_mode = any(t == "etf" for _, t in subjects)
@@ -2998,11 +3022,18 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     cut = answer_cause.filter_records(records, question, refetch=_refetch_before)
     if cut is not None and (cut["excluded_after"] or cut["excluded_unknown_time"]):
         _meta()["cause_cutoff"] = cut
+    # 2026-11-23: 원인 질문(주식)이면 기사마다 범위(기업 직접 / 업종·산업 / 시장 / 관련성 미확인)를 정해 LLM에 함께 넘긴다(app/evidence_scope).
+    # 기록(출처)의 기사에는 scope 키만 더한다. 답을 만든 뒤 직접 근거가 없으면 원인 절을 코드가 바꾼다(아래 enforce_cause_section)
+    scoped = is_cause_question(question) and not etf_mode
+    if scoped:
+        _annotate_news_scope(records)
     for rec in records:
         # ETF 질문이면 뉴스 기사 속 수치는 LLM에 넘기지 않는다(기록·출처에는 원문이 남는다).
         # 49차: 주식 질문은 기사 속 시세형 숫자에 기사 발행일을 붙여 넘긴다(실적 수치는 그대로, app/etf.news_result_for_llm)
         result = rec["result"]
         llm_result = news_result_for_llm(result, etf=etf_mode) if rec["tool_name"] == "news_tool" else result
+        if scoped and rec["tool_name"] == "news_tool":
+            llm_result = _news_scope_for_llm(llm_result)
         llm_result = _llm_safe_result(llm_result)
         messages.append(
             {
@@ -3036,15 +3067,107 @@ def _answer(question: str, model: str, previous: dict | None = None) -> tuple[di
     sources = build_sources((r["tool_name"], r["result"]) for r in records)
     # 2026-11-21: 뉴스·공시 근거가 없는데 "## 원인 분석" 절을 썼으면 그 절을 근거 없음 안내로 바꾼다(시장 비교 수치 문장만 남긴다, app/answer_tidy)
     has_market = any(r["tool_name"] == "market_tool" and isinstance(r["result"], dict) and r["result"].get("found") for r in records)
-    answer, cause_fixed = answer_tidy.enforce_cause_section(answer, bool(sources), has_market)
+    # 2026-11-23: 출처가 없으면 "## 뉴스·공시 근거" 절도 지운다. 원인 질문인데 출처가 업종·시장 기사뿐이면(이 기업 직접 기사·공시 없음)
+    # 원인 절을 "개별 원인을 특정하기 어렵다"는 안내로, 근거 절을 업종·시장 참고 목록(조회된 제목 그대로)으로 바꾼다
+    direct = _has_direct_evidence(records) if scoped else None
+    answer, cause_fixed = answer_tidy.enforce_cause_section(
+        answer, bool(sources), has_market, direct_evidence=direct,
+        references=_reference_lines(records) if direct is False else None, cause_question=scoped,
+        subject=_scoped_subject(records) if scoped else None)
     if cause_fixed:
-        _meta()["cause_section_without_sources"] = True
+        _meta()["cause_section_without_sources" if not sources else "cause_section_without_direct_evidence"] = True
     response = {
         "answer": answer,
         "used_tools": unique_tool_names(r["tool_name"] for r in records),
         "sources": sources,
     }
     return response, records
+
+
+_SCOPE_FOR_LLM = {
+    evidence_scope.COMPANY: "이 종목 직접",
+    evidence_scope.SECTOR: "업종·산업 기사(이 종목의 직접 원인이 아님)",
+    evidence_scope.MARKET: "시장 전반 기사(이 종목의 직접 원인이 아님)",
+    evidence_scope.UNCONFIRMED: "이 종목과의 관련성 미확인(원인으로 쓰지 않는다)",
+}
+_SCOPE_NOTE = ("각 기사의 '관련성'을 지킨다. '이 종목 직접'이 아닌 기사는 이 종목의 주가 변동 원인으로 쓰지 말고 업종·시장 배경으로만 쓴다. "
+               "'이 종목 직접' 기사나 공시가 없으면 이 종목의 개별 원인은 특정할 수 없다고 쓴다.")
+
+
+def _annotate_news_scope(records: list[dict]) -> None:
+    """news_tool 기록의 기사마다 scope를 채운다(app/evidence_scope). 판정에 실패하면 그 기록은 그대로 둔다(근거 판정은 아래 None)."""
+    for rec in records:
+        res = rec.get("result")
+        if rec.get("tool_name") != "news_tool" or not isinstance(res, dict) or not isinstance(res.get("news"), list):
+            continue
+        name = res.get("company_name")
+        if not name:
+            continue
+        try:
+            evidence_scope.annotate(res["news"], name, *evidence_scope.company_context(name))
+        except Exception as e:  # noqa: BLE001 - 부가 판정이다
+            logger.warning("기사 범위 판정 실패: %s", type(e).__name__)
+
+
+def _news_scope_for_llm(result):
+    if not isinstance(result, dict) or not isinstance(result.get("news"), list):
+        return result
+    news = []
+    for n in result["news"]:
+        if not isinstance(n, dict):
+            news.append(n)
+            continue
+        item = {k: v for k, v in n.items() if k != "scope"}
+        if n.get("scope") in _SCOPE_FOR_LLM:
+            item["관련성"] = _SCOPE_FOR_LLM[n["scope"]]
+        news.append(item)
+    note = " ".join(x for x in (result.get("note"), _SCOPE_NOTE) if x)
+    return {**result, "news": news, "note": note}
+
+
+def _has_direct_evidence(records: list[dict]) -> bool | None:
+    """이 기업을 직접 다룬 근거가 있는가: scope=company 기사, 공시, RAG 검색 결과(본문 조각은 범위를 나누지 않는다).
+    기사에 scope가 하나도 없으면(판정 실패) None = 예전 규칙."""
+    scoped_any = False
+    for rec in records:
+        res = rec.get("result")
+        if not isinstance(res, dict):
+            continue
+        name = rec.get("tool_name")
+        if name == "disclosure_tool" and res.get("disclosures"):
+            return True
+        if name == "rag_search_tool" and res.get("results"):
+            return True
+        if name == "news_tool":
+            for n in res.get("news") or []:
+                if isinstance(n, dict) and "scope" in n:
+                    scoped_any = True
+                    if n["scope"] == evidence_scope.COMPANY:
+                        return True
+    return False if scoped_any else None
+
+
+def _reference_lines(records: list[dict], limit: int = 3) -> list[str]:
+    """업종·시장 참고 기사 줄(조회된 제목·날짜·언론사 그대로). 관련성 미확인 기사는 넣지 않는다."""
+    from app.display_dates import kst_day
+
+    out = []
+    for rec in records:
+        res = rec.get("result")
+        if rec.get("tool_name") != "news_tool" or not isinstance(res, dict):
+            continue
+        for n in res.get("news") or []:
+            if isinstance(n, dict) and n.get("scope") in (evidence_scope.SECTOR, evidence_scope.MARKET) and n.get("title"):
+                d = kst_day(n.get("published_at"))
+                src = f" ({n['source']})" if n.get("source") else ""
+                out.append(f"- [{evidence_scope.LABEL_KO[n['scope']]}] {d + ' ' if d else ''}\"{n['title']}\"{src}")
+    return list(dict.fromkeys(out))[:limit]
+
+
+def _scoped_subject(records: list[dict]) -> str | None:
+    names = {r["result"].get("company_name") for r in records
+             if r.get("tool_name") == "news_tool" and isinstance(r.get("result"), dict) and r["result"].get("company_name")}
+    return names.pop() if len(names) == 1 else None
 
 
 def _instrument_fields(question: str, records: list[dict], previous: dict | None) -> dict:
@@ -3109,10 +3232,19 @@ def ask_question(
     _STATE.user_id = user_id  # 채팅 브리핑(_answer_briefing)의 소유자. 요청(스레드)마다 덮어쓴다
     # 49차: 영어·일본어·중국어 질문은 기간·방향·의도를 한국어 표준 표현으로 정규화해 판정한다(app/intent_i18n). 한국어 질문은 그대로다.
     # 정규화한 질문은 판정과 LLM 입력에만 쓰고, 리포트에는 원래 질문을 저장한다.
-    routed = intent_i18n.normalize(question, list(answer_i18n._company_names()))
-    response, records = _answer(routed.text, model, previous)
+    names = list(answer_i18n._company_names())
+    routed = intent_i18n.normalize(question, names)
+    # 2026-11-23: 종목만 바꾼 후속 질문("SK하이닉스는?")은 직전 분석 질문의 종목 자리만 바꾼 질문으로 처음부터 답한다(app/followup_subject).
+    # 직전 대화는 넘기지 않는다: 새 종목의 시세·수익률·기사를 새로 조회하고 직전 종목의 수치·기사가 맥락에 들어가지 않게 한다
+    swap = followup_subject.rewrite(routed.text, previous, user_id, normalize=lambda s: intent_i18n.normalize(s, names).text)
+    asked = swap["question"] if swap else routed.text
+    _STATE.subject_swap = swap  # _answer가 모델의 직전 종목 인자를 새 종목으로 바꿀 때 본다(요청마다 덮어쓴다)
+    try:
+        response, records = _answer(asked, model, None if swap else previous)
+    finally:
+        _STATE.subject_swap = None
     # 2026-11-21: 분석 기준 종목(실제 도구 결과의 등록 종목)과 되묻기 상태. 하위 호환 추가 필드다(app/instrument_scope)
-    response.update(_instrument_fields(routed.text, records, previous))
+    response.update(_instrument_fields(asked, records, previous))
     # 72차: sources가 빈 이유(정상·오류 구분). tool 기록만으로 정하므로 저장된 리포트 상세(app.reports.get_report)도 같은 값이다
     response["source_status"] = source_status(((r["tool_name"], r["result"]) for r in records), response.get("sources") or [])
     # 내부 메타(대체·fallback·잘림). API 응답 모델(ResearchResponse)에는 없는 키라 응답에 나가지 않는다.
@@ -3120,6 +3252,8 @@ def ask_question(
     if routed.changed:
         response["meta"]["question_routed"] = routed.text
         response["meta"]["routing_steps"] = routed.steps
+    if swap:
+        response["meta"]["subject_swap"] = swap
     extra = {}
     if locale is not None and locale != "ko-KR":
         original = response["answer"]
