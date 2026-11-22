@@ -407,6 +407,8 @@ export const EXTRA_JA: Record<string, string> = {
   'sources.disclosure_count': '開示 {n}件',
   'sources.news_count': 'ニュース {n}件',
   'sources.title': '主な根拠資料',
+  'sources.original_korean_headline': '韓国語の原文見出し',
+  'sources.original_language_note': '見出しは原文の言語（韓国語）のまま表示しています。翻訳はしていません。',
 
   'stock_feed.also_mentioned': '同じ記事で言及された銘柄',
   'stock_feed.collection_failed': '直近の収集に失敗したため、新しい項目がない可能性があります。',

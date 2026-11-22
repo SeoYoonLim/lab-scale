@@ -413,6 +413,8 @@ export const EXTRA_EN: Record<string, string> = {
   'sources.disclosure_count': 'Filings: {n}',
   'sources.news_count': 'News: {n}',
   'sources.title': 'Key evidence',
+  'sources.original_korean_headline': 'Original Korean headline',
+  'sources.original_language_note': 'Headlines are shown in the original source language (Korean). They are not translated.',
   'sources.empty_none_found': 'No news or filings directly about this stock were found in the analysis period, so there are no sources. No cause was identified.',
   'sources.empty_after_cutoff': '{n} items published after the market close on the price date ({date}) were not used because they are not reflected in that price, and there was no earlier evidence, so there are no sources. No cause was identified.',
   'sources.empty_long_period': 'The period is longer than 3 months, so no articles or filings were chosen as evidence for the cause. There is no source list.',

@@ -407,6 +407,8 @@ export const EXTRA_ZH: Record<string, string> = {
   'sources.disclosure_count': '公告{n}条',
   'sources.news_count': '新闻{n}条',
   'sources.title': '主要依据资料',
+  'sources.original_korean_headline': '韩语原文标题',
+  'sources.original_language_note': '标题按原文语言（韩语）显示，未经翻译。',
 
   'stock_feed.also_mentioned': '同一报道提及的股票',
   'stock_feed.collection_failed': '最近一次收集失败，可能缺少新条目。',
