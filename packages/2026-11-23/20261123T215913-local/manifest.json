@@ -1,0 +1,126 @@
+{
+ "schema_version": 1,
+ "package_version": 1,
+ "data_date": "2026-11-23",
+ "is_trading_day": true,
+ "generated_at_kst": "2026-11-23T21:59:13.009833+09:00",
+ "run": {
+  "runner": "local",
+  "elapsed_sec": 503.7
+ },
+ "encryption": {
+  "scheme": "hmac-sha256-ctr+hmac-sha256/v1",
+  "key_id": "5d48e981"
+ },
+ "complete": true,
+ "sections": {
+  "stocks": {
+   "status": "ok",
+   "source": "네이버 일별 시세(m.stock.naver.com) 공식 종가 복원 + FinanceDataReader 원천 행",
+   "targets": 300,
+   "succeeded": 300,
+   "failed": 0,
+   "note": "최신 거래일 주식 종가는 다음 거래일 기준가로 확정한다(보류 300종목·일)",
+   "failures": [],
+   "rows": 1800,
+   "date_range": [
+    "2026-11-13",
+    "2026-11-20"
+   ],
+   "file": "stocks_2026-11-23.json.gz.enc",
+   "sha256_plain": "864b6026576b3c2b0f7694032d03b92b8563ad023a0c1723b807feb765dbfff0",
+   "sha256_file": "aa4bc6bdc3e2b142b0eae40fbb8d4f1f6d29ffcf4f8e763525300a584892d427",
+   "bytes": 45130
+  },
+  "etfs": {
+   "status": "ok",
+   "source": "네이버 일별 시세 + FinanceDataReader",
+   "targets": 50,
+   "succeeded": 50,
+   "failed": 0,
+   "note": "장 마감 전 최신일은 저장하지 않는다(보류 0건)",
+   "failures": [],
+   "rows": 350,
+   "date_range": [
+    "2026-11-13",
+    "2026-11-23"
+   ],
+   "file": "etfs_2026-11-23.json.gz.enc",
+   "sha256_plain": "d16ae6fd7028f8ea064f526ab24b83a22b48cd36a0a27ea187879a646d13e209",
+   "sha256_file": "d49759f69e82f07e7cd5d2b3cad253a0789931d7671ffba86aaa1bece0028567",
+   "bytes": 9790
+  },
+  "indices": {
+   "status": "ok",
+   "source": "FinanceDataReader KRX 지수 캐시(폴백 FDR 별칭·Yahoo) + 네이버 지수 일별 대조",
+   "targets": 2,
+   "succeeded": 2,
+   "failed": 0,
+   "note": "확정 전(장중·네이버 대조 불일치·대조 불가) 보류: KS11 2026-11-23(mismatch), KQ11 2026-11-23(mismatch)",
+   "failures": [],
+   "rows": 20,
+   "date_range": [
+    "2026-11-09",
+    "2026-11-20"
+   ],
+   "file": "indices_2026-11-23.json.gz.enc",
+   "sha256_plain": "0bfc4270da0f7da326add36f97862da8f30162aa38cdd7281e13d86484365aa3",
+   "sha256_file": "a0c19fba44fef82c19433dc346770f05bd426e4defe4877c41d4e1c642726d6c",
+   "bytes": 443
+  },
+  "fx": {
+   "status": "ok",
+   "source": "Yahoo Finance KRW=X(FinanceDataReader)",
+   "targets": 1,
+   "succeeded": 1,
+   "failed": 0,
+   "note": "일봉 기준 시각: 런던(Europe/London) 하루",
+   "failures": [],
+   "rows": 7,
+   "date_range": [
+    "2026-11-12",
+    "2026-11-20"
+   ],
+   "file": "fx_2026-11-23.json.gz.enc",
+   "sha256_plain": "9c894d19c3efcf23fc68fd1384d80dd4071a96989385cfd038efda0e00e23f5f",
+   "sha256_file": "762916248873236e19b596ea5f690a0467d491e065e0234d96fc28746236c395",
+   "bytes": 260
+  },
+  "news": {
+   "status": "ok",
+   "source": "네이버 뉴스 검색 API(제목·링크·요약·게시 시각만, 기사 본문 없음)",
+   "targets": 350,
+   "succeeded": 350,
+   "failed": 0,
+   "note": "기간 2026-11-22~2026-11-23 KST, 종목당 최신 최대 40건",
+   "failures": [],
+   "rows": 8076,
+   "date_range": [
+    "2026-11-22",
+    "2026-11-23"
+   ],
+   "file": "news_2026-11-23.json.gz.enc",
+   "sha256_plain": "77856562492c516b3fae2e043b1c74aeb1dc5125d491b64001300749d76dd3a7",
+   "sha256_file": "0185fb5597a3f183e55e59b2325d089213a92dfb94792915312bfca549d70b80",
+   "bytes": 1195383
+  },
+  "disclosures": {
+   "status": "ok",
+   "source": "DART OpenAPI 공시 목록(list.json)",
+   "targets": 300,
+   "succeeded": 300,
+   "failed": 0,
+   "note": "최근 3일 접수분",
+   "failures": [],
+   "rows": 248,
+   "date_range": [
+    "2026-11-20",
+    "2026-11-23"
+   ],
+   "file": "disclosures_2026-11-23.json.gz.enc",
+   "sha256_plain": "6bc3012b912adc2f8527ac805fa1fc2f0601a7602b363de52f8dab3c06e4091a",
+   "sha256_file": "33969767aef650da0c2d86822d74bb906e698169e98e78bed95d78735ccf4bba",
+   "bytes": 5662
+  }
+ }
+}
