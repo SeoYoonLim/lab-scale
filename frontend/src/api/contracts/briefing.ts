@@ -51,6 +51,10 @@ export interface MarketIndexQuote {
   change_pct: number | null
   week_change_pct: number | null
   lag_business_days: number | null
+  // 2026-11-23: 이 지표가 정상적으로 있어야 할 기준일(데이터 종류별 제공 시각), 출처, 수집 여부. 예전 저장본에는 없다
+  expected_date?: string | null
+  source?: string | null
+  collected?: boolean | null
   text: string
 }
 
@@ -368,6 +372,9 @@ const quoteSchema = z.object({
   change_pct: nn,
   week_change_pct: nn,
   lag_business_days: nn,
+  expected_date: ns.optional(),
+  source: ns.optional(),
+  collected: z.boolean().nullish(),
   text: z.string(),
 }) satisfies z.ZodType<MarketIndexQuote, unknown>
 

@@ -58,8 +58,10 @@ class TestIndexItem:
         assert it["code"] == "KS11" and all(it[k] is None for k in INDEX_KEYS - {"code", "name"})
 
     def test_lag_counts_trading_days_only(self):
-        """10-08 종가를 10-14 마감 뒤에 보면 10-12·13·14 세 거래일 늦다(10-09 휴장·주말 제외)."""
-        assert ms.index_item("KS11", "코스피", rows((date(2026, 10, 8), 1)), AFTER_CLOSE)["lag_business_days"] == 3
+        """10-08 종가를 10-15 08:00 뒤(10-14 지수 제공 시각 지남)에 보면 10-12·13·14 세 거래일 늦다(10-09 휴장·주말 제외).
+        2026-11-23: 지수는 그날 마감 직후가 아니라 다음 날 08:00에 기대한다(app/data_freshness) -> 10-14 16:00에는 두 거래일."""
+        assert ms.index_item("KS11", "코스피", rows((date(2026, 10, 8), 1)), datetime(2026, 10, 15, 8, 30, tzinfo=KST))["lag_business_days"] == 3
+        assert ms.index_item("KS11", "코스피", rows((date(2026, 10, 8), 1)), AFTER_CLOSE)["lag_business_days"] == 2
 
 
 class TestBreadth:
@@ -101,7 +103,8 @@ class TestBuild:
     def test_ok(self):
         b = ms.build(self.INDEX, date(2026, 10, 14), self.GROUPS, AFTER_CLOSE)
         assert set(b) == TOP_KEYS and b["status"] == "ok" and b["missing"] == []
-        assert b["as_of"] == date(2026, 10, 14) and b["expected_date"] == date(2026, 10, 14)
+        # 2026-11-23: 마감 뒤 유예 시간 안이라 기대 기준일은 10-13(10-14 지수는 다음 날 08:00에 기대). 10-14 데이터가 있으니 최신
+        assert b["as_of"] == date(2026, 10, 14) and b["expected_date"] == date(2026, 10, 13)
         assert b["freshness"] == {"status": "latest", "lag_business_days": 0, "calendar_unknown_days": 0,
                                   "intraday_excluded": False, "dates_differ": False}
         assert [i["code"] for i in b["indices"]] == ["KS11", "KQ11"]

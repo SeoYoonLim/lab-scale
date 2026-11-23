@@ -1,0 +1,88 @@
+# 클라우드 시장 데이터 자동 수집·원격 보관·집 PC 자동 동기화 (2026-11-23)
+
+집 PC가 꺼져 있거나 Ollama·백엔드가 꺼져 있어도 거래일마다 시장 데이터를 수집해 원격에 보관하고, 집 PC에서 백엔드를 켜면
+기존 `ai_investment` DB에 자동으로 넣는다. 데이터 종류별 제공 시각을 반영해 지연 판정도 고쳤다.
+
+## 1. 구조
+
+```
+GitHub Actions (ubuntu-latest, 하루 6번)          market-data 브랜치(같은 저장소)            집 PC (백엔드 8010)
+scripts/cloud_market_data.py  ── 암호화 패키지 ──>  packages/<날짜>/<실행>/manifest.json   ──git fetch(SSH)──>  app/market_data_sync.py
+ (기존 수집기 원천·확정 함수 재사용, DB 없음)        *.json.gz.enc, latest.json, index.json        검증 -> 없는 행만 INSERT -> ai_investment
+```
+
+| 항목 | 내용 |
+|---|---|
+| 실행 환경 | GitHub-hosted runner(`.github/workflows/market-data.yml`). 집 PC·Ollama·로컬 DB 불필요 |
+| 비용 | 공개 저장소의 표준 GitHub-hosted runner는 무료(분 제한 없음). 유료 서비스·Cloudflare 없음 |
+| 권한 | `GITHUB_TOKEN`의 `contents: write`(market-data 브랜치 커밋)만. 개인 액세스 토큰 없음 |
+| 원격 보관 | 같은 저장소의 `market-data` 브랜치(앱 코드·`.env` 없음) |
+| 집 PC 받기 | 이미 쓰는 SSH 자격 증명으로 `git fetch origin market-data`(새 토큰 없음) |
+| 동기화 시점 | 백엔드 시작 직후, 그 뒤 30분마다, 일일 브리핑 생성 직전(마지막 확인이 10분보다 오래됐을 때, 최대 15초 대기) |
+
+### 예약 시각(KST, 평일. 정각 회피, 한 번의 성공에 의존하지 않음)
+
+| 시각 | 목적 |
+|---|---|
+| 09:40 | 직전 거래일 주식 공식 종가 확정(다음 거래일 기준가가 생긴 뒤), 직전 평일 환율(런던 일봉 09:00 KST 마감), 지수(FDR 캐시 06~07시 갱신), 뉴스·공시 |
+| 10:25 | 같은 것 재시도 |
+| 18:35 | 1차: 당일 ETF, 지수 시도, 뉴스·공시 |
+| 19:50 | 2차 재시도 |
+| 21:45 | 3차: 지수(FDR KRX 지수 캐시의 마감 뒤 갱신이 21~23시) |
+| 23:47 | 최종: 지수 |
+
+휴장일·주말에는 수집기가 KRX 달력으로 판단해 건너뛴다(종료 코드 3). 각 실행 안에서 시세가 모두 실패하면 3분 뒤 한 번 더 시도한다.
+GitHub 예약 실행은 몇 분~수십 분 늦을 수 있다. 같은 날 여러 번 돌고, 패키지는 최근 10일치를 담으므로 한 번을 놓쳐도 다음 실행이 채운다.
+
+## 2. 데이터 패키지
+
+- 구역: `stocks`, `etfs`, `indices`, `fx`, `news`, `disclosures`. 구역마다 `<구역>_<기준일>.json.gz.enc`
+- `manifest.json`(평문): 스키마 버전, 패키지 버전, 기준일, 거래일 여부, 생성 시각(KST), 실행 정보(GitHub 실행 번호), 구역별 상태
+  (ok/partial/failed/skipped), 대상·성공·실패 수, 실패 사유(최대 50), 행 수, 날짜 범위, 출처, 평문·암호문 SHA-256, 암호 방식과 key_id(키 SHA-256 앞 8자리)
+- 암호화 이유: 원천(네이버 일별 시세·지수, Yahoo 환율, 네이버 뉴스 검색, DART)의 재배포 허용을 확인하지 못했다. 공개 브랜치에는 암호문만 둔다.
+- 방식: HMAC-SHA256 키 스트림(CTR) + HMAC-SHA256 인증(encrypt-then-MAC), 표준 라이브러리만(`app/market_package.py`)
+- 뉴스는 네이버 검색 API가 주는 제목·링크·요약(검색 결과 문구)·게시 시각만. 기사 본문은 받지 않는다(기존 저장 정책과 같다).
+- 시세가 모두 실패했거나 모든 구역이 비면 게시하지 않는다. 일부 구역 실패는 manifest에 남기고 그 구역만 동기화하지 않는다.
+
+## 3. 집 PC 동기화 규칙(`app/market_data_sync.py`)
+
+1. 구역마다 파일 SHA-256 → 키(key_id) → 인증 태그 → 평문 SHA-256 → 스키마·구역·기준일·행 수를 확인한다. 하나라도 틀리면 그 구역만 실패.
+2. 없는 행만 넣는다(`ON CONFLICT DO NOTHING`). 이미 있는 날짜는 값이 달라도 바꾸지 않고 `existing_different`로 센다. 과거 행 삭제 없음.
+3. 저장 전 검증(`app/ingest_validation`)과 격리 기록을 그대로 거친다. 뉴스는 `news_recovery.store_news(relevant_only=True)`,
+   공시는 `collectors.store_disclosure_items`(기존 수집과 같은 함수)를 쓴다.
+4. refresh_data와 같은 advisory lock. 적용 기록은 `~/.lab-scale/market_data_sync_state.json`, 실행 기록은 `data_refresh_log(step=cloud_sync)`.
+5. 같은 패키지를 다시 적용해도 새 행 0(적용 기록이 없어도 안전).
+
+수동 명령(backend 폴더): `python -m scripts.sync_market_data --status | --dry-run | (적용)`.
+
+## 4. 지연 판정(`app/data_freshness.py`)
+
+| 종류 | 거래일 D의 데이터를 정상적으로 기대하는 시각(KST) |
+|---|---|
+| 주식 | D 다음 거래일 개장 + 60분(공식 종가는 다음 거래일 기준가로 확정) |
+| ETF | D 마감 + 5시간 |
+| 지수 | D 다음 날 08:00 |
+| 환율 | D(평일) 다음 날 런던 0시 + 2시간(겨울 11:00, 영국 서머타임 10:00) |
+
+- 장 시작 전·장중·마감 뒤 유예 시간 안에는 직전 완료 거래일이 정상 최신이다. 그 사이에는 "OO 데이터는 정상 제공 시각(…) 전이라 아직
+  반영되지 않았습니다(지연 아님)" 안내만 붙는다.
+- 휴장일·주말은 마지막 거래일(환율은 마지막 평일)이 최신이면 정상.
+- 브리핑의 지표마다 자기 기준일·출처·수집 여부를 보인다(화면 시장 카드). 서로 다른 날짜를 하나로 맞추지 않는다.
+- 맨 위 문장의 날짜는 판정에 쓴 데이터의 날짜다(종목이 있으면 가장 늦은 종목, 없으면 지수). 지연이 아니면 '미수집' 같은 이유를 붙이지 않는다.
+
+## 5. 활성화에 필요한 사용자 작업
+
+1. 이 브랜치를 main에 병합(예약 실행은 기본 브랜치의 workflow만 돈다).
+2. 저장소 Settings → Secrets and variables → Actions에 추가:
+   - `MARKET_DATA_KEY`: 집 PC `C:\Users\<사용자>\.lab-scale\market_data_key` 파일의 내용(한 줄). 없으면 수집·건수 확인만 하고 게시하지 않는다.
+   - `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`(뉴스), `DART_API_KEY`(공시): 없으면 그 구역만 건너뛴다.
+3. Actions 탭 → market-data → Run workflow로 첫 실행.
+4. 시연 폴더(`lab-scale-final-release`)를 병합 커밋으로 바꾸고 8010을 다시 켜야 시작 시 동기화·새 지연 판정이 동작한다(실행 중인 서버는 예전 코드).
+
+## 6. 한계
+
+- 주식 당일 종가는 다음 거래일 개장 뒤에만 확정된다(공식 종가 기준). 장 마감 당일 밤에는 직전 거래일까지가 정상이다.
+- 지수는 FDR KRX 캐시(제3자)의 마감 뒤 갱신을 기다린다. 갱신이 늦으면 다음 날 아침 실행에서 들어온다.
+- 환율은 Yahoo 런던 일봉이며 서울 외환시장 종가(15:30)나 매매기준율이 아니다.
+- 뉴스는 실행마다 종목당 최신 40건이다(대형주는 하루 기사가 더 많아 일부만 들어온다). 데이터 브랜치는 하루 수 MB씩 늘어난다.
+- 새로 들어온 뉴스·공시는 임베딩이 없다(RAG 검색은 기존 임베딩 단계를 따로 돌려야 한다).

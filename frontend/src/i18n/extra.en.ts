@@ -74,6 +74,9 @@ export const EXTRA_EN: Record<string, string> = {
   'briefing.tab_history': 'Past briefings',
   'briefing.tab_today': 'Today',
   'briefing.week_change': '5D',
+  'briefing.index_as_of': 'As of {date}',
+  'briefing.index_not_collected': 'Not collected',
+  'briefing.index_source': 'Source: {source}',
 
   'chart.close': 'Close {price}',
   'chart.day_change': 'vs. previous day {pct}',

@@ -74,6 +74,9 @@ export const EXTRA_ZH: Record<string, string> = {
   'briefing.tab_history': '历史简报',
   'briefing.tab_today': '今日',
   'briefing.week_change': '5日',
+  'briefing.index_as_of': '截至{date}',
+  'briefing.index_not_collected': '未收集',
+  'briefing.index_source': '来源：{source}',
 
   'chart.close': '收盘价 {price}',
   'chart.day_change': '较前一日 {pct}',

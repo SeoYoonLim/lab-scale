@@ -47,6 +47,10 @@ async def lifespan(app: FastAPI):
     check_jwt_secret_for_startup()
     # 채팅·임베딩 모델을 미리 올린다(백그라운드, 실패 무시, 테스트·CI에서는 돌지 않음)
     start_warmup()
+    # 2026-11-23: 클라우드 수집 패키지(market-data 브랜치)를 DB에 동기화(백그라운드, 시작 직후 + 30분마다, 키 없으면 안 돎)
+    from app import market_data_sync
+
+    market_data_sync.start_background()
     yield
 
 

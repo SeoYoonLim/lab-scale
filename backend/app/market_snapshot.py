@@ -9,7 +9,7 @@
 - 장중(거래일 15:30 전)에는 오늘 날짜 행을 쓰지 않는다(종가가 아니다). app.briefing.drop_open_session과 같은 기준이다.
 - 상승·하락·보합: 같은 날 stock_price의 주식(ETF 제외) change_pct 부호. 수집 대상(시가총액 상위 종목)만이라 시장 전체 종목 수가 아니다.
   등락률이 비어 있는 종목은 상승·하락·보합 어디에도 넣지 않고 따로 센다(app.market_overview와 같은 정의).
-- 신선도: 기대 거래일(app.krx_calendar.expected_trading_day) 대비 늦은 거래일 수로 latest(0)·delayed(1~5)·stale(6 이상)·no_data.
+- 신선도: 기대 기준일(2026-11-23부터 app.data_freshness: 지수는 다음 날 08:00, 등락 종목 수는 주식 공식 종가 확정 시각) 대비 늦은 거래일 수로 latest(0)·delayed(1~5)·stale(6 이상)·no_data.
   일일 브리핑 freshness와 같은 기준(app.outlook.MAX_LAG_BUSINESS_DAYS)이라 화면의 지연 띠를 그대로 재사용할 수 있다.
 - 거래대금·시장 전체 거래량은 저장하지 않는다(market_index에 거래량 열이 없다). 응답 unavailable에 적고 값을 만들지 않는다.
 """
@@ -20,6 +20,7 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy import text
 
+from app import data_freshness as DF
 from app import krx_calendar
 from app.outlook import MAX_LAG_BUSINESS_DAYS
 
@@ -58,7 +59,7 @@ def index_item(code: str, name: str, rows: list[tuple], now: datetime) -> dict:
     c0 = float(c0)
     out = {**base, "date": d0, "close": c0,
            "first_collected_at": created.astimezone(KST).isoformat() if created else None,
-           "lag_business_days": krx_calendar.lag(d0, krx_calendar.expected_trading_day(now)).days}
+           "lag_business_days": DF.lag_days(DF.INDEX, d0, now)}  # 2026-11-23: 지수 제공 시각 기준(app/data_freshness)
     if len(rows) < 2:
         return {**out, "change_unavailable_reason": REASON_NO_PREVIOUS}
     d1, c1 = rows[1][0], float(rows[1][1])
@@ -87,7 +88,8 @@ def breadth_item(day: date | None, groups: dict[str, tuple[int, int, int, int, i
     if day is None:
         return None
     tot = [sum(g[i] for g in groups.values()) for i in range(5)]
-    return {"date": day, "universe": "collected_stocks", "lag_business_days": krx_calendar.lag(day, krx_calendar.expected_trading_day(now)).days,
+    # 2026-11-23: 등락 종목 수는 주식 종가 기준이라 공식 종가 확정 시각(다음 거래일 개장 + 60분)으로 판정한다
+    return {"date": day, "universe": "collected_stocks", "lag_business_days": DF.lag_days(DF.STOCK, day, now),
             **breadth_counts(*tot),
             "by_market": {k: breadth_counts(*v) for k, v in sorted(groups.items())}}
 
@@ -112,7 +114,7 @@ def build(index_rows: dict[str, list[tuple]], breadth_day: date | None, groups: 
     status = NO_DATA if not have and "breadth" in missing else PARTIAL if missing else OK
     dates = [i["date"] for i in have]
     lags = [i["lag_business_days"] for i in have] + ([breadth["lag_business_days"]] if breadth and breadth["total"] else [])
-    expected = krx_calendar.expected_trading_day(now)
+    expected = DF.expected_date(DF.INDEX, now)
     as_of = min(dates) if dates else None
     unknown = krx_calendar.lag(as_of, expected).unknown if as_of else 0
     worst = max(lags) if lags else None

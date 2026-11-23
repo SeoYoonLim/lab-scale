@@ -98,6 +98,13 @@ function MarketCard({ section }: { section: MarketSection }) {
               {formatSignedPct(index.change_pct)}
               <span className="muted small"> · {t('briefing.week_change', { fallback: '5일' })} {formatSignedPct(index.week_change_pct)}</span>
             </span>
+            {/* 2026-11-23: 지표마다 자기 기준일·출처를 보인다(서로 다른 날짜를 하나로 맞추지 않는다) */}
+            <span className="muted small num">
+              {index.date != null
+                ? t('briefing.index_as_of', { fallback: '{date} 기준', vars: { date: index.date } })
+                : t('briefing.index_not_collected', { fallback: '미수집' })}
+            </span>
+            {index.source && <span className="muted small">{t('briefing.index_source', { fallback: '출처: {source}', vars: { source: index.source } })}</span>}
             {index.date == null && <span className="muted small">{index.text}</span>}
           </div>
         ))}

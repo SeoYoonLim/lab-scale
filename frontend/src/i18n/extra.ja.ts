@@ -74,6 +74,9 @@ export const EXTRA_JA: Record<string, string> = {
   'briefing.tab_history': '過去のブリーフィング',
   'briefing.tab_today': '今日',
   'briefing.week_change': '5日',
+  'briefing.index_as_of': '{date}時点',
+  'briefing.index_not_collected': '未収集',
+  'briefing.index_source': '出典: {source}',
 
   'chart.close': '終値 {price}',
   'chart.day_change': '前日比 {pct}',

@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
 from pydantic import BaseModel, Field
 
 from app import daily_briefing_db as store
+from app import market_data_sync
 from app import rate_limit
 from app.api.deps import get_current_user
 from app.api.history_params import history_window
@@ -103,6 +104,8 @@ def generate_daily_briefing(body: GenerateRequest, response: Response, user: Cur
     rate_limit.check(rate_limit.daily_briefing, user.owner_key, "RATE_LIMIT_DAILY_BRIEFING_PER_MIN")
     tz = _tz(body.timezone, user, "body")
     locale = resolve_locale(body.locale, user.preferred_locale)
+    # 2026-11-23: 만들기 직전에 클라우드 패키지를 확인한다(키가 있고 마지막 확인이 10분보다 오래됐을 때만, 최대 15초 기다림)
+    market_data_sync.sync_before_briefing(wait_s=15)
     db = SessionLocal()
     try:
         try:

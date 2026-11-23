@@ -218,15 +218,19 @@ def test_held_row_keeps_existing_confirmed_value():
 
 # ---------- 화면(시장 요약): 보류된 날은 직전 확정일로 보이고, 값이 없으면 0이 아니라 null ----------
 
-def test_market_overview_after_close_shows_previous_confirmed_day_as_delayed():
+def test_market_overview_after_close_previous_confirmed_day_is_normal_until_due():
+    """2026-11-23(정책 변경): 마감 뒤 그날 지수가 확정되기 전에는 직전 확정일이 정상 최신이다. 다음 날 08:00이 지나도 없을 때만 지연."""
     from app import market_snapshot as ms
 
     now = at("2026-11-13T16:00")  # 오늘 지수는 아직 보류(캐시 장중 값) -> 저장된 최신은 11-12
     rows = {"KS11": [(date(2026, 11, 12), 5342.73, None), (date(2026, 11, 11), 5375.36, None)]}
     out = ms.build(rows, date(2026, 11, 12), {"KOSPI": (100, 150, 10, 0, 260)}, now)
     ks = out["indices"][0]
-    assert ks["date"] == date(2026, 11, 12) and ks["lag_business_days"] == 1 and ks["change"] == -32.63
-    assert out["freshness"]["status"] == ms.STATUS_DELAYED and out["expected_date"] == date(2026, 11, 13)
+    assert ks["date"] == date(2026, 11, 12) and ks["lag_business_days"] == 0 and ks["change"] == -32.63
+    assert out["freshness"]["status"] == ms.STATUS_LATEST and out["expected_date"] == date(2026, 11, 12)
+    late = ms.build(rows, date(2026, 11, 12), {"KOSPI": (100, 150, 10, 0, 260)}, at("2026-11-14T09:00"))
+    assert late["indices"][0]["lag_business_days"] == 1 and late["freshness"]["status"] == ms.STATUS_DELAYED
+    assert late["expected_date"] == date(2026, 11, 13)
     kq = out["indices"][1]
     assert kq["date"] is None and kq["close"] is None and kq["change"] is None  # 값을 만들지 않는다
     assert out["status"] == ms.PARTIAL and "KQ11" in out["missing"]

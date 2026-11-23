@@ -149,7 +149,8 @@ def test_since_research_counts():
 
 
 def test_delayed_prices_warn_first_and_in_checklist():
-    now = datetime(2026, 11, 3, 20, 0, tzinfo=KST)  # 기대 거래일 11-03, 시세는 10-30(2영업일 지연)
+    # 2026-11-23: 주식 11-03 공식 종가는 11-04 개장 + 60분에 기대한다(app/data_freshness). 그 뒤라 기대 11-03, 시세 10-30(2영업일 지연)
+    now = datetime(2026, 11, 4, 10, 30, tzinfo=KST)
     c = d.render(_facts(now=now, status={"status": "미수집", "detail": "장 마감 뒤 시세 수집 기록 없음"}), "ko-KR")
     assert c["market_data_status"] == "delayed" and c["freshness"]["warning"] is True
     assert c["freshness"]["headline"] == ("시세가 2영업일 지연됐습니다. 마지막 종가는 2026-10-30, 기대 거래일은 2026-11-03입니다(미수집). "

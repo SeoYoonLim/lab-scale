@@ -1,0 +1,1755 @@
+{
+"description": "클라우드 수집 대상(ai_investment.company와 같은 350종목: 종목코드·이름·자산 구분만, 시세 없음). 2026-11-23 DB에서 생성",
+"companies": [
+{
+"ticker": "000080",
+"name": "하이트진로",
+"asset_type": "stock"
+},
+{
+"ticker": "000100",
+"name": "유한양행",
+"asset_type": "stock"
+},
+{
+"ticker": "000120",
+"name": "CJ대한통운",
+"asset_type": "stock"
+},
+{
+"ticker": "000150",
+"name": "두산",
+"asset_type": "stock"
+},
+{
+"ticker": "000210",
+"name": "DL",
+"asset_type": "stock"
+},
+{
+"ticker": "000240",
+"name": "한국앤컴퍼니",
+"asset_type": "stock"
+},
+{
+"ticker": "000250",
+"name": "삼천당제약",
+"asset_type": "stock"
+},
+{
+"ticker": "000270",
+"name": "기아",
+"asset_type": "stock"
+},
+{
+"ticker": "000500",
+"name": "가온전선",
+"asset_type": "stock"
+},
+{
+"ticker": "000660",
+"name": "SK하이닉스",
+"asset_type": "stock"
+},
+{
+"ticker": "000720",
+"name": "현대건설",
+"asset_type": "stock"
+},
+{
+"ticker": "000810",
+"name": "삼성화재",
+"asset_type": "stock"
+},
+{
+"ticker": "000880",
+"name": "한화",
+"asset_type": "stock"
+},
+{
+"ticker": "000990",
+"name": "DB하이텍",
+"asset_type": "stock"
+},
+{
+"ticker": "0009K0",
+"name": "에임드바이오",
+"asset_type": "stock"
+},
+{
+"ticker": "001040",
+"name": "CJ",
+"asset_type": "stock"
+},
+{
+"ticker": "001120",
+"name": "LX인터내셔널",
+"asset_type": "stock"
+},
+{
+"ticker": "001430",
+"name": "세아베스틸지주",
+"asset_type": "stock"
+},
+{
+"ticker": "001440",
+"name": "대한전선",
+"asset_type": "stock"
+},
+{
+"ticker": "001450",
+"name": "현대해상",
+"asset_type": "stock"
+},
+{
+"ticker": "001720",
+"name": "신영증권",
+"asset_type": "stock"
+},
+{
+"ticker": "001740",
+"name": "SK네트웍스",
+"asset_type": "stock"
+},
+{
+"ticker": "001800",
+"name": "오리온홀딩스",
+"asset_type": "stock"
+},
+{
+"ticker": "001820",
+"name": "삼화콘덴서",
+"asset_type": "stock"
+},
+{
+"ticker": "002380",
+"name": "KCC",
+"asset_type": "stock"
+},
+{
+"ticker": "002790",
+"name": "아모레퍼시픽홀딩스",
+"asset_type": "stock"
+},
+{
+"ticker": "003230",
+"name": "삼양식품",
+"asset_type": "stock"
+},
+{
+"ticker": "003380",
+"name": "하림지주",
+"asset_type": "stock"
+},
+{
+"ticker": "003490",
+"name": "대한항공",
+"asset_type": "stock"
+},
+{
+"ticker": "003540",
+"name": "대신증권",
+"asset_type": "stock"
+},
+{
+"ticker": "003550",
+"name": "LG",
+"asset_type": "stock"
+},
+{
+"ticker": "003670",
+"name": "포스코퓨처엠",
+"asset_type": "stock"
+},
+{
+"ticker": "003690",
+"name": "코리안리",
+"asset_type": "stock"
+},
+{
+"ticker": "004000",
+"name": "롯데정밀화학",
+"asset_type": "stock"
+},
+{
+"ticker": "004020",
+"name": "현대제철",
+"asset_type": "stock"
+},
+{
+"ticker": "004170",
+"name": "신세계",
+"asset_type": "stock"
+},
+{
+"ticker": "004370",
+"name": "농심",
+"asset_type": "stock"
+},
+{
+"ticker": "004800",
+"name": "효성",
+"asset_type": "stock"
+},
+{
+"ticker": "004990",
+"name": "롯데지주",
+"asset_type": "stock"
+},
+{
+"ticker": "005070",
+"name": "코스모신소재",
+"asset_type": "stock"
+},
+{
+"ticker": "005290",
+"name": "동진쎄미켐",
+"asset_type": "stock"
+},
+{
+"ticker": "005380",
+"name": "현대차",
+"asset_type": "stock"
+},
+{
+"ticker": "005440",
+"name": "현대지에프홀딩스",
+"asset_type": "stock"
+},
+{
+"ticker": "005490",
+"name": "POSCO홀딩스",
+"asset_type": "stock"
+},
+{
+"ticker": "005830",
+"name": "DB손해보험",
+"asset_type": "stock"
+},
+{
+"ticker": "005850",
+"name": "에스엘",
+"asset_type": "stock"
+},
+{
+"ticker": "005930",
+"name": "삼성전자",
+"asset_type": "stock"
+},
+{
+"ticker": "005940",
+"name": "NH투자증권",
+"asset_type": "stock"
+},
+{
+"ticker": "006040",
+"name": "동원산업",
+"asset_type": "stock"
+},
+{
+"ticker": "006120",
+"name": "SK디스커버리",
+"asset_type": "stock"
+},
+{
+"ticker": "006260",
+"name": "LS",
+"asset_type": "stock"
+},
+{
+"ticker": "006280",
+"name": "녹십자",
+"asset_type": "stock"
+},
+{
+"ticker": "006340",
+"name": "대원전선",
+"asset_type": "stock"
+},
+{
+"ticker": "006360",
+"name": "GS건설",
+"asset_type": "stock"
+},
+{
+"ticker": "006400",
+"name": "삼성SDI",
+"asset_type": "stock"
+},
+{
+"ticker": "006800",
+"name": "미래에셋증권",
+"asset_type": "stock"
+},
+{
+"ticker": "007070",
+"name": "GS리테일",
+"asset_type": "stock"
+},
+{
+"ticker": "007310",
+"name": "오뚜기",
+"asset_type": "stock"
+},
+{
+"ticker": "007340",
+"name": "DN오토모티브",
+"asset_type": "stock"
+},
+{
+"ticker": "007390",
+"name": "네이처셀",
+"asset_type": "stock"
+},
+{
+"ticker": "007660",
+"name": "이수페타시스",
+"asset_type": "stock"
+},
+{
+"ticker": "007810",
+"name": "코리아써키트",
+"asset_type": "stock"
+},
+{
+"ticker": "008770",
+"name": "호텔신라",
+"asset_type": "stock"
+},
+{
+"ticker": "008930",
+"name": "한미사이언스",
+"asset_type": "stock"
+},
+{
+"ticker": "009150",
+"name": "삼성전기",
+"asset_type": "stock"
+},
+{
+"ticker": "009420",
+"name": "한올바이오파마",
+"asset_type": "stock"
+},
+{
+"ticker": "009540",
+"name": "HD한국조선해양",
+"asset_type": "stock"
+},
+{
+"ticker": "009830",
+"name": "한화솔루션",
+"asset_type": "stock"
+},
+{
+"ticker": "009970",
+"name": "영원무역홀딩스",
+"asset_type": "stock"
+},
+{
+"ticker": "010060",
+"name": "OCI홀딩스",
+"asset_type": "stock"
+},
+{
+"ticker": "010120",
+"name": "LS ELECTRIC",
+"asset_type": "stock"
+},
+{
+"ticker": "010130",
+"name": "고려아연",
+"asset_type": "stock"
+},
+{
+"ticker": "010140",
+"name": "삼성중공업",
+"asset_type": "stock"
+},
+{
+"ticker": "010170",
+"name": "대한광통신",
+"asset_type": "stock"
+},
+{
+"ticker": "010950",
+"name": "S-Oil",
+"asset_type": "stock"
+},
+{
+"ticker": "011070",
+"name": "LG이노텍",
+"asset_type": "stock"
+},
+{
+"ticker": "011170",
+"name": "롯데케미칼",
+"asset_type": "stock"
+},
+{
+"ticker": "011200",
+"name": "HMM",
+"asset_type": "stock"
+},
+{
+"ticker": "011210",
+"name": "현대위아",
+"asset_type": "stock"
+},
+{
+"ticker": "011780",
+"name": "금호석유화학",
+"asset_type": "stock"
+},
+{
+"ticker": "011790",
+"name": "SKC",
+"asset_type": "stock"
+},
+{
+"ticker": "012330",
+"name": "현대모비스",
+"asset_type": "stock"
+},
+{
+"ticker": "012450",
+"name": "한화에어로스페이스",
+"asset_type": "stock"
+},
+{
+"ticker": "012630",
+"name": "HDC",
+"asset_type": "stock"
+},
+{
+"ticker": "0126Z0",
+"name": "삼성에피스홀딩스",
+"asset_type": "stock"
+},
+{
+"ticker": "012750",
+"name": "에스원",
+"asset_type": "stock"
+},
+{
+"ticker": "014680",
+"name": "한솔케미칼",
+"asset_type": "stock"
+},
+{
+"ticker": "015760",
+"name": "한국전력",
+"asset_type": "stock"
+},
+{
+"ticker": "016360",
+"name": "삼성증권",
+"asset_type": "stock"
+},
+{
+"ticker": "017670",
+"name": "SK텔레콤",
+"asset_type": "stock"
+},
+{
+"ticker": "017800",
+"name": "현대엘리베이터",
+"asset_type": "stock"
+},
+{
+"ticker": "017960",
+"name": "한국카본",
+"asset_type": "stock"
+},
+{
+"ticker": "018260",
+"name": "삼성에스디에스",
+"asset_type": "stock"
+},
+{
+"ticker": "018670",
+"name": "SK가스",
+"asset_type": "stock"
+},
+{
+"ticker": "018880",
+"name": "한온시스템",
+"asset_type": "stock"
+},
+{
+"ticker": "020150",
+"name": "롯데에너지머티리얼즈",
+"asset_type": "stock"
+},
+{
+"ticker": "020560",
+"name": "아시아나항공",
+"asset_type": "stock"
+},
+{
+"ticker": "021240",
+"name": "코웨이",
+"asset_type": "stock"
+},
+{
+"ticker": "022100",
+"name": "포스코DX",
+"asset_type": "stock"
+},
+{
+"ticker": "023530",
+"name": "롯데쇼핑",
+"asset_type": "stock"
+},
+{
+"ticker": "023590",
+"name": "다우기술",
+"asset_type": "stock"
+},
+{
+"ticker": "024110",
+"name": "기업은행",
+"asset_type": "stock"
+},
+{
+"ticker": "026960",
+"name": "동서",
+"asset_type": "stock"
+},
+{
+"ticker": "028050",
+"name": "삼성E&A",
+"asset_type": "stock"
+},
+{
+"ticker": "028260",
+"name": "삼성물산",
+"asset_type": "stock"
+},
+{
+"ticker": "028300",
+"name": "HLB",
+"asset_type": "stock"
+},
+{
+"ticker": "028670",
+"name": "팬오션",
+"asset_type": "stock"
+},
+{
+"ticker": "029780",
+"name": "삼성카드",
+"asset_type": "stock"
+},
+{
+"ticker": "030000",
+"name": "제일기획",
+"asset_type": "stock"
+},
+{
+"ticker": "030200",
+"name": "KT",
+"asset_type": "stock"
+},
+{
+"ticker": "030530",
+"name": "원익홀딩스",
+"asset_type": "stock"
+},
+{
+"ticker": "030610",
+"name": "교보증권",
+"asset_type": "stock"
+},
+{
+"ticker": "031210",
+"name": "서울보증보험",
+"asset_type": "stock"
+},
+{
+"ticker": "031980",
+"name": "피에스케이홀딩스",
+"asset_type": "stock"
+},
+{
+"ticker": "032640",
+"name": "LG유플러스",
+"asset_type": "stock"
+},
+{
+"ticker": "032820",
+"name": "우리기술",
+"asset_type": "stock"
+},
+{
+"ticker": "032830",
+"name": "삼성생명",
+"asset_type": "stock"
+},
+{
+"ticker": "033780",
+"name": "KT&G",
+"asset_type": "stock"
+},
+{
+"ticker": "034020",
+"name": "두산에너빌리티",
+"asset_type": "stock"
+},
+{
+"ticker": "034220",
+"name": "LG디스플레이",
+"asset_type": "stock"
+},
+{
+"ticker": "034730",
+"name": "SK",
+"asset_type": "stock"
+},
+{
+"ticker": "035250",
+"name": "강원랜드",
+"asset_type": "stock"
+},
+{
+"ticker": "035420",
+"name": "NAVER",
+"asset_type": "stock"
+},
+{
+"ticker": "035720",
+"name": "카카오",
+"asset_type": "stock"
+},
+{
+"ticker": "035900",
+"name": "JYP Ent.",
+"asset_type": "stock"
+},
+{
+"ticker": "036460",
+"name": "한국가스공사",
+"asset_type": "stock"
+},
+{
+"ticker": "036540",
+"name": "SFA반도체",
+"asset_type": "stock"
+},
+{
+"ticker": "036570",
+"name": "NC",
+"asset_type": "stock"
+},
+{
+"ticker": "036930",
+"name": "주성엔지니어링",
+"asset_type": "stock"
+},
+{
+"ticker": "039030",
+"name": "이오테크닉스",
+"asset_type": "stock"
+},
+{
+"ticker": "039200",
+"name": "오스코텍",
+"asset_type": "stock"
+},
+{
+"ticker": "039490",
+"name": "키움증권",
+"asset_type": "stock"
+},
+{
+"ticker": "041510",
+"name": "에스엠",
+"asset_type": "stock"
+},
+{
+"ticker": "042660",
+"name": "한화오션",
+"asset_type": "stock"
+},
+{
+"ticker": "042700",
+"name": "한미반도체",
+"asset_type": "stock"
+},
+{
+"ticker": "043260",
+"name": "성호전자",
+"asset_type": "stock"
+},
+{
+"ticker": "047040",
+"name": "대우건설",
+"asset_type": "stock"
+},
+{
+"ticker": "047050",
+"name": "포스코인터내셔널",
+"asset_type": "stock"
+},
+{
+"ticker": "047810",
+"name": "한국항공우주",
+"asset_type": "stock"
+},
+{
+"ticker": "051600",
+"name": "한전KPS",
+"asset_type": "stock"
+},
+{
+"ticker": "051900",
+"name": "LG생활건강",
+"asset_type": "stock"
+},
+{
+"ticker": "051910",
+"name": "LG화학",
+"asset_type": "stock"
+},
+{
+"ticker": "052690",
+"name": "한전기술",
+"asset_type": "stock"
+},
+{
+"ticker": "055550",
+"name": "신한지주",
+"asset_type": "stock"
+},
+{
+"ticker": "058470",
+"name": "리노공업",
+"asset_type": "stock"
+},
+{
+"ticker": "058610",
+"name": "에스피지",
+"asset_type": "stock"
+},
+{
+"ticker": "060370",
+"name": "LS마린솔루션",
+"asset_type": "stock"
+},
+{
+"ticker": "062040",
+"name": "산일전기",
+"asset_type": "stock"
+},
+{
+"ticker": "064350",
+"name": "현대로템",
+"asset_type": "stock"
+},
+{
+"ticker": "064400",
+"name": "LG씨엔에스",
+"asset_type": "stock"
+},
+{
+"ticker": "064760",
+"name": "티씨케이",
+"asset_type": "stock"
+},
+{
+"ticker": "066570",
+"name": "LG전자",
+"asset_type": "stock"
+},
+{
+"ticker": "066970",
+"name": "엘앤에프",
+"asset_type": "stock"
+},
+{
+"ticker": "067310",
+"name": "하나마이크론",
+"asset_type": "stock"
+},
+{
+"ticker": "068270",
+"name": "셀트리온",
+"asset_type": "stock"
+},
+{
+"ticker": "068760",
+"name": "셀트리온제약",
+"asset_type": "stock"
+},
+{
+"ticker": "069620",
+"name": "대웅제약",
+"asset_type": "stock"
+},
+{
+"ticker": "069960",
+"name": "현대백화점",
+"asset_type": "stock"
+},
+{
+"ticker": "071050",
+"name": "한국금융지주",
+"asset_type": "stock"
+},
+{
+"ticker": "071970",
+"name": "HD현대마린엔진",
+"asset_type": "stock"
+},
+{
+"ticker": "073240",
+"name": "금호타이어",
+"asset_type": "stock"
+},
+{
+"ticker": "078600",
+"name": "대주전자재료",
+"asset_type": "stock"
+},
+{
+"ticker": "078930",
+"name": "GS",
+"asset_type": "stock"
+},
+{
+"ticker": "079550",
+"name": "LIG디펜스앤에어로스페이스",
+"asset_type": "stock"
+},
+{
+"ticker": "080220",
+"name": "제주반도체",
+"asset_type": "stock"
+},
+{
+"ticker": "081660",
+"name": "미스토홀딩스",
+"asset_type": "stock"
+},
+{
+"ticker": "082740",
+"name": "한화엔진",
+"asset_type": "stock"
+},
+{
+"ticker": "082920",
+"name": "비츠로셀",
+"asset_type": "stock"
+},
+{
+"ticker": "083650",
+"name": "비에이치아이",
+"asset_type": "stock"
+},
+{
+"ticker": "084370",
+"name": "유진테크",
+"asset_type": "stock"
+},
+{
+"ticker": "085620",
+"name": "미래에셋생명",
+"asset_type": "stock"
+},
+{
+"ticker": "086280",
+"name": "현대글로비스",
+"asset_type": "stock"
+},
+{
+"ticker": "086520",
+"name": "에코프로",
+"asset_type": "stock"
+},
+{
+"ticker": "086790",
+"name": "하나금융지주",
+"asset_type": "stock"
+},
+{
+"ticker": "087010",
+"name": "펩트론",
+"asset_type": "stock"
+},
+{
+"ticker": "088350",
+"name": "한화생명",
+"asset_type": "stock"
+},
+{
+"ticker": "088980",
+"name": "맥쿼리인프라",
+"asset_type": "stock"
+},
+{
+"ticker": "089030",
+"name": "테크윙",
+"asset_type": "stock"
+},
+{
+"ticker": "089860",
+"name": "롯데렌탈",
+"asset_type": "stock"
+},
+{
+"ticker": "089970",
+"name": "브이엠",
+"asset_type": "stock"
+},
+{
+"ticker": "090430",
+"name": "아모레퍼시픽",
+"asset_type": "stock"
+},
+{
+"ticker": "093370",
+"name": "후성",
+"asset_type": "stock"
+},
+{
+"ticker": "095340",
+"name": "ISC",
+"asset_type": "stock"
+},
+{
+"ticker": "095610",
+"name": "테스",
+"asset_type": "stock"
+},
+{
+"ticker": "096530",
+"name": "씨젠",
+"asset_type": "stock"
+},
+{
+"ticker": "096770",
+"name": "SK이노베이션",
+"asset_type": "stock"
+},
+{
+"ticker": "097230",
+"name": "HJ중공업",
+"asset_type": "stock"
+},
+{
+"ticker": "097950",
+"name": "CJ제일제당",
+"asset_type": "stock"
+},
+{
+"ticker": "098460",
+"name": "고영",
+"asset_type": "stock"
+},
+{
+"ticker": "103140",
+"name": "풍산",
+"asset_type": "stock"
+},
+{
+"ticker": "103590",
+"name": "일진전기",
+"asset_type": "stock"
+},
+{
+"ticker": "105560",
+"name": "KB금융",
+"asset_type": "stock"
+},
+{
+"ticker": "108490",
+"name": "로보티즈",
+"asset_type": "stock"
+},
+{
+"ticker": "111770",
+"name": "영원무역",
+"asset_type": "stock"
+},
+{
+"ticker": "112610",
+"name": "씨에스윈드",
+"asset_type": "stock"
+},
+{
+"ticker": "120110",
+"name": "코오롱인더",
+"asset_type": "stock"
+},
+{
+"ticker": "127120",
+"name": "제이에스링크",
+"asset_type": "stock"
+},
+{
+"ticker": "128940",
+"name": "한미약품",
+"asset_type": "stock"
+},
+{
+"ticker": "131290",
+"name": "티에스이",
+"asset_type": "stock"
+},
+{
+"ticker": "131970",
+"name": "두산테스나",
+"asset_type": "stock"
+},
+{
+"ticker": "138040",
+"name": "메리츠금융지주",
+"asset_type": "stock"
+},
+{
+"ticker": "138930",
+"name": "BNK금융지주",
+"asset_type": "stock"
+},
+{
+"ticker": "139130",
+"name": "iM금융지주",
+"asset_type": "stock"
+},
+{
+"ticker": "139480",
+"name": "이마트",
+"asset_type": "stock"
+},
+{
+"ticker": "140410",
+"name": "메지온",
+"asset_type": "stock"
+},
+{
+"ticker": "140860",
+"name": "파크시스템스",
+"asset_type": "stock"
+},
+{
+"ticker": "141080",
+"name": "리가켐바이오",
+"asset_type": "stock"
+},
+{
+"ticker": "145020",
+"name": "휴젤",
+"asset_type": "stock"
+},
+{
+"ticker": "161390",
+"name": "한국타이어앤테크놀로지",
+"asset_type": "stock"
+},
+{
+"ticker": "161890",
+"name": "한국콜마",
+"asset_type": "stock"
+},
+{
+"ticker": "166090",
+"name": "하나머티리얼즈",
+"asset_type": "stock"
+},
+{
+"ticker": "175330",
+"name": "JB금융지주",
+"asset_type": "stock"
+},
+{
+"ticker": "178320",
+"name": "서진시스템",
+"asset_type": "stock"
+},
+{
+"ticker": "180640",
+"name": "한진칼",
+"asset_type": "stock"
+},
+{
+"ticker": "181710",
+"name": "NHN",
+"asset_type": "stock"
+},
+{
+"ticker": "183300",
+"name": "코미코",
+"asset_type": "stock"
+},
+{
+"ticker": "192080",
+"name": "더블유게임즈",
+"asset_type": "stock"
+},
+{
+"ticker": "192820",
+"name": "코스맥스",
+"asset_type": "stock"
+},
+{
+"ticker": "195940",
+"name": "HK이노엔",
+"asset_type": "stock"
+},
+{
+"ticker": "196170",
+"name": "알테오젠",
+"asset_type": "stock"
+},
+{
+"ticker": "204270",
+"name": "제이앤티씨",
+"asset_type": "stock"
+},
+{
+"ticker": "204320",
+"name": "HL만도",
+"asset_type": "stock"
+},
+{
+"ticker": "207940",
+"name": "삼성바이오로직스",
+"asset_type": "stock"
+},
+{
+"ticker": "214150",
+"name": "클래시스",
+"asset_type": "stock"
+},
+{
+"ticker": "214370",
+"name": "케어젠",
+"asset_type": "stock"
+},
+{
+"ticker": "214450",
+"name": "파마리서치",
+"asset_type": "stock"
+},
+{
+"ticker": "218410",
+"name": "RFHIC",
+"asset_type": "stock"
+},
+{
+"ticker": "222800",
+"name": "심텍",
+"asset_type": "stock"
+},
+{
+"ticker": "226950",
+"name": "올릭스",
+"asset_type": "stock"
+},
+{
+"ticker": "229640",
+"name": "LS에코에너지",
+"asset_type": "stock"
+},
+{
+"ticker": "232140",
+"name": "와이씨",
+"asset_type": "stock"
+},
+{
+"ticker": "237690",
+"name": "에스티팜",
+"asset_type": "stock"
+},
+{
+"ticker": "240810",
+"name": "원익IPS",
+"asset_type": "stock"
+},
+{
+"ticker": "241560",
+"name": "두산밥캣",
+"asset_type": "stock"
+},
+{
+"ticker": "241710",
+"name": "코스메카코리아",
+"asset_type": "stock"
+},
+{
+"ticker": "247540",
+"name": "에코프로비엠",
+"asset_type": "stock"
+},
+{
+"ticker": "251270",
+"name": "넷마블",
+"asset_type": "stock"
+},
+{
+"ticker": "252990",
+"name": "샘씨엔에스",
+"asset_type": "stock"
+},
+{
+"ticker": "257720",
+"name": "실리콘투",
+"asset_type": "stock"
+},
+{
+"ticker": "259960",
+"name": "크래프톤",
+"asset_type": "stock"
+},
+{
+"ticker": "263750",
+"name": "펄어비스",
+"asset_type": "stock"
+},
+{
+"ticker": "267250",
+"name": "HD현대",
+"asset_type": "stock"
+},
+{
+"ticker": "267260",
+"name": "HD현대일렉트릭",
+"asset_type": "stock"
+},
+{
+"ticker": "267270",
+"name": "HD건설기계",
+"asset_type": "stock"
+},
+{
+"ticker": "271560",
+"name": "오리온",
+"asset_type": "stock"
+},
+{
+"ticker": "272210",
+"name": "한화시스템",
+"asset_type": "stock"
+},
+{
+"ticker": "277810",
+"name": "레인보우로보틱스",
+"asset_type": "stock"
+},
+{
+"ticker": "278470",
+"name": "에이피알",
+"asset_type": "stock"
+},
+{
+"ticker": "279570",
+"name": "케이뱅크",
+"asset_type": "stock"
+},
+{
+"ticker": "280360",
+"name": "롯데웰푸드",
+"asset_type": "stock"
+},
+{
+"ticker": "281820",
+"name": "케이씨텍",
+"asset_type": "stock"
+},
+{
+"ticker": "282330",
+"name": "BGF리테일",
+"asset_type": "stock"
+},
+{
+"ticker": "290650",
+"name": "엘앤씨바이오",
+"asset_type": "stock"
+},
+{
+"ticker": "294870",
+"name": "IPARK현대산업개발",
+"asset_type": "stock"
+},
+{
+"ticker": "298020",
+"name": "효성티앤씨",
+"asset_type": "stock"
+},
+{
+"ticker": "298040",
+"name": "효성중공업",
+"asset_type": "stock"
+},
+{
+"ticker": "298380",
+"name": "에이비엘바이오",
+"asset_type": "stock"
+},
+{
+"ticker": "300720",
+"name": "한일시멘트",
+"asset_type": "stock"
+},
+{
+"ticker": "302440",
+"name": "SK바이오사이언스",
+"asset_type": "stock"
+},
+{
+"ticker": "307950",
+"name": "현대오토에버",
+"asset_type": "stock"
+},
+{
+"ticker": "310210",
+"name": "보로노이",
+"asset_type": "stock"
+},
+{
+"ticker": "316140",
+"name": "우리금융지주",
+"asset_type": "stock"
+},
+{
+"ticker": "319400",
+"name": "현대무벡스",
+"asset_type": "stock"
+},
+{
+"ticker": "319660",
+"name": "피에스케이",
+"asset_type": "stock"
+},
+{
+"ticker": "322000",
+"name": "HD현대에너지솔루션",
+"asset_type": "stock"
+},
+{
+"ticker": "323280",
+"name": "태성",
+"asset_type": "stock"
+},
+{
+"ticker": "323410",
+"name": "카카오뱅크",
+"asset_type": "stock"
+},
+{
+"ticker": "326030",
+"name": "SK바이오팜",
+"asset_type": "stock"
+},
+{
+"ticker": "329180",
+"name": "HD현대중공업",
+"asset_type": "stock"
+},
+{
+"ticker": "330590",
+"name": "롯데리츠",
+"asset_type": "stock"
+},
+{
+"ticker": "336260",
+"name": "두산퓨얼셀",
+"asset_type": "stock"
+},
+{
+"ticker": "347700",
+"name": "스피어",
+"asset_type": "stock"
+},
+{
+"ticker": "347850",
+"name": "디앤디파마텍",
+"asset_type": "stock"
+},
+{
+"ticker": "352820",
+"name": "하이브",
+"asset_type": "stock"
+},
+{
+"ticker": "353200",
+"name": "대덕전자",
+"asset_type": "stock"
+},
+{
+"ticker": "356860",
+"name": "티엘비",
+"asset_type": "stock"
+},
+{
+"ticker": "357780",
+"name": "솔브레인",
+"asset_type": "stock"
+},
+{
+"ticker": "361610",
+"name": "SK아이이테크놀로지",
+"asset_type": "stock"
+},
+{
+"ticker": "373220",
+"name": "LG에너지솔루션",
+"asset_type": "stock"
+},
+{
+"ticker": "375500",
+"name": "DL이앤씨",
+"asset_type": "stock"
+},
+{
+"ticker": "377300",
+"name": "카카오페이",
+"asset_type": "stock"
+},
+{
+"ticker": "383220",
+"name": "F&F",
+"asset_type": "stock"
+},
+{
+"ticker": "395400",
+"name": "SK리츠",
+"asset_type": "stock"
+},
+{
+"ticker": "402340",
+"name": "SK스퀘어",
+"asset_type": "stock"
+},
+{
+"ticker": "403870",
+"name": "HPSP",
+"asset_type": "stock"
+},
+{
+"ticker": "415640",
+"name": "KB발해인프라",
+"asset_type": "stock"
+},
+{
+"ticker": "420770",
+"name": "기가비스",
+"asset_type": "stock"
+},
+{
+"ticker": "437730",
+"name": "삼현",
+"asset_type": "stock"
+},
+{
+"ticker": "439260",
+"name": "대한조선",
+"asset_type": "stock"
+},
+{
+"ticker": "440110",
+"name": "파두",
+"asset_type": "stock"
+},
+{
+"ticker": "443060",
+"name": "HD현대마린솔루션",
+"asset_type": "stock"
+},
+{
+"ticker": "450080",
+"name": "에코프로머티",
+"asset_type": "stock"
+},
+{
+"ticker": "454910",
+"name": "두산로보틱스",
+"asset_type": "stock"
+},
+{
+"ticker": "457190",
+"name": "이수스페셜티케미컬",
+"asset_type": "stock"
+},
+{
+"ticker": "462870",
+"name": "시프트업",
+"asset_type": "stock"
+},
+{
+"ticker": "475150",
+"name": "SK이터닉스",
+"asset_type": "stock"
+},
+{
+"ticker": "483650",
+"name": "달바글로벌",
+"asset_type": "stock"
+},
+{
+"ticker": "489790",
+"name": "한화비전",
+"asset_type": "stock"
+},
+{
+"ticker": "950160",
+"name": "코오롱티슈진",
+"asset_type": "stock"
+},
+{
+"ticker": "950260",
+"name": "인제니아테라퓨틱스(Reg.S)",
+"asset_type": "stock"
+},
+{
+"ticker": "0043B0",
+"name": "TIGER 머니마켓액티브",
+"asset_type": "etf"
+},
+{
+"ticker": "0162Z0",
+"name": "RISE 삼성전자SK하이닉스채권혼합50",
+"asset_type": "etf"
+},
+{
+"ticker": "0167A0",
+"name": "SOL AI반도체TOP2플러스",
+"asset_type": "etf"
+},
+{
+"ticker": "069500",
+"name": "KODEX 200",
+"asset_type": "etf"
+},
+{
+"ticker": "091160",
+"name": "KODEX 반도체",
+"asset_type": "etf"
+},
+{
+"ticker": "102110",
+"name": "TIGER 200",
+"asset_type": "etf"
+},
+{
+"ticker": "102780",
+"name": "KODEX 삼성그룹",
+"asset_type": "etf"
+},
+{
+"ticker": "114800",
+"name": "KODEX 인버스",
+"asset_type": "etf"
+},
+{
+"ticker": "122630",
+"name": "KODEX 레버리지",
+"asset_type": "etf"
+},
+{
+"ticker": "133690",
+"name": "TIGER 미국나스닥100",
+"asset_type": "etf"
+},
+{
+"ticker": "139260",
+"name": "TIGER 200 IT",
+"asset_type": "etf"
+},
+{
+"ticker": "148020",
+"name": "RISE 200",
+"asset_type": "etf"
+},
+{
+"ticker": "161510",
+"name": "PLUS 고배당주",
+"asset_type": "etf"
+},
+{
+"ticker": "214980",
+"name": "KODEX 단기채권PLUS",
+"asset_type": "etf"
+},
+{
+"ticker": "229200",
+"name": "KODEX 코스닥150",
+"asset_type": "etf"
+},
+{
+"ticker": "233740",
+"name": "KODEX 코스닥150레버리지",
+"asset_type": "etf"
+},
+{
+"ticker": "273130",
+"name": "KODEX 종합채권(AA-이상)액티브",
+"asset_type": "etf"
+},
+{
+"ticker": "278530",
+"name": "KODEX 200TR",
+"asset_type": "etf"
+},
+{
+"ticker": "278540",
+"name": "KODEX MSCI Korea TR",
+"asset_type": "etf"
+},
+{
+"ticker": "284430",
+"name": "KODEX 200미국채혼합50",
+"asset_type": "etf"
+},
+{
+"ticker": "292150",
+"name": "TIGER 코리아TOP10",
+"asset_type": "etf"
+},
+{
+"ticker": "305720",
+"name": "KODEX 2차전지산업",
+"asset_type": "etf"
+},
+{
+"ticker": "310970",
+"name": "TIGER MSCI Korea TR",
+"asset_type": "etf"
+},
+{
+"ticker": "357870",
+"name": "TIGER CD금리투자KIS(합성)",
+"asset_type": "etf"
+},
+{
+"ticker": "360200",
+"name": "ACE 미국S&P500",
+"asset_type": "etf"
+},
+{
+"ticker": "360750",
+"name": "TIGER 미국S&P500",
+"asset_type": "etf"
+},
+{
+"ticker": "367380",
+"name": "ACE 미국나스닥100",
+"asset_type": "etf"
+},
+{
+"ticker": "379800",
+"name": "KODEX 미국S&P500",
+"asset_type": "etf"
+},
+{
+"ticker": "379810",
+"name": "KODEX 미국나스닥100",
+"asset_type": "etf"
+},
+{
+"ticker": "381170",
+"name": "TIGER 미국테크TOP10 INDXX",
+"asset_type": "etf"
+},
+{
+"ticker": "381180",
+"name": "TIGER 미국필라델피아반도체나스닥",
+"asset_type": "etf"
+},
+{
+"ticker": "385540",
+"name": "RISE 종합채권(A-이상)액티브",
+"asset_type": "etf"
+},
+{
+"ticker": "395160",
+"name": "KODEX AI반도체TOP2플러스",
+"asset_type": "etf"
+},
+{
+"ticker": "395270",
+"name": "HANARO Fn K-반도체",
+"asset_type": "etf"
+},
+{
+"ticker": "396500",
+"name": "TIGER 반도체TOP10",
+"asset_type": "etf"
+},
+{
+"ticker": "411060",
+"name": "ACE KRX금현물",
+"asset_type": "etf"
+},
+{
+"ticker": "423160",
+"name": "KODEX KOFR금리액티브(합성)",
+"asset_type": "etf"
+},
+{
+"ticker": "426030",
+"name": "TIME 미국나스닥100액티브",
+"asset_type": "etf"
+},
+{
+"ticker": "441640",
+"name": "KODEX 미국배당커버드콜액티브",
+"asset_type": "etf"
+},
+{
+"ticker": "449170",
+"name": "TIGER KOFR금리액티브(합성)",
+"asset_type": "etf"
+},
+{
+"ticker": "455890",
+"name": "RISE 머니마켓액티브",
+"asset_type": "etf"
+},
+{
+"ticker": "456600",
+"name": "TIME 글로벌AI인공지능액티브",
+"asset_type": "etf"
+},
+{
+"ticker": "458730",
+"name": "TIGER 미국배당다우존스",
+"asset_type": "etf"
+},
+{
+"ticker": "459580",
+"name": "KODEX CD금리액티브(합성)",
+"asset_type": "etf"
+},
+{
+"ticker": "472150",
+"name": "TIGER 배당커버드콜액티브",
+"asset_type": "etf"
+},
+{
+"ticker": "481050",
+"name": "KODEX CD1년금리플러스액티브(합성)",
+"asset_type": "etf"
+},
+{
+"ticker": "486290",
+"name": "TIGER 미국나스닥100타겟데일리커버드콜",
+"asset_type": "etf"
+},
+{
+"ticker": "487240",
+"name": "KODEX AI전력핵심설비",
+"asset_type": "etf"
+},
+{
+"ticker": "488770",
+"name": "KODEX 머니마켓액티브",
+"asset_type": "etf"
+},
+{
+"ticker": "498400",
+"name": "KODEX 200타겟위클리커버드콜",
+"asset_type": "etf"
+}
+]
+}

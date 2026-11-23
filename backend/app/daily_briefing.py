@@ -19,11 +19,11 @@ from datetime import date, datetime
 from app import briefing_i18n, diagnosis_i18n, exposure_i18n
 from app import daily_briefing_text as tx
 from app.briefing import KST, RECENT_DAYS, Bar
-from app.data_status import business_days_behind
 from app.diagnosis import HoldingInput, compute_flags, compute_portfolio
 from app.i18n import disclaimer
 from app.news_relevance import is_duplicate_title, title_names_subject
-from app.outlook import MAX_LAG_BUSINESS_DAYS, PRICE_STATUS_LATEST, expected_trading_day
+from app import data_freshness as DF
+from app.outlook import MAX_LAG_BUSINESS_DAYS, PRICE_STATUS_LATEST
 from app.outlook_i18n import _PRICE_STATUS
 
 MAX_CHECKS = 3
@@ -89,20 +89,35 @@ def return_long(bars: list[Bar], n: int = RETURN_LONG_DAYS) -> float | None:
     return _pct(rows[0].close, rows[n].close) if len(rows) > n else None
 
 
-def lag_of(d: str | date | None, now: datetime) -> int | None:
-    """기대 거래일(outlook.expected_trading_day: 장중이면 직전 평일) 대비 늦은 영업일 수."""
-    if d is None:
-        return None
-    d = date.fromisoformat(d) if isinstance(d, str) else d
-    return business_days_behind(d, expected_trading_day(now))
+def lag_of(d: str | date | None, now: datetime, kind: str = DF.INDEX) -> int | None:
+    """데이터 종류(kind)별 기대 기준일(app/data_freshness: 장중·마감 뒤 제공 유예 시간 안에는 직전 완료 거래일) 대비 늦은 영업일 수.
+    2026-11-23: 예전에는 모든 데이터에 outlook.expected_trading_day(마감 15:30 직후부터 그날을 기대)를 썼다."""
+    return DF.lag_days(kind, d, now)
+
+
+SOURCE_KINDS = {"kospi": DF.INDEX, "kosdaq": DF.INDEX, "usd_krw": DF.FX}
+
+
+def item_kind(it: dict) -> str:
+    return DF.ETF if it.get("asset_type") == "etf" else DF.STOCK
 
 
 def freshness(f: Facts) -> dict:
     """데이터 신선도. 판정은 outlook과 같다: 늦음 0이면 latest, 1~MAX_LAG_BUSINESS_DAYS면 delayed, 그 초과면 stale, 시세가 없으면 no_data."""
     b = f.brief
     as_of = b.get("data_date")
-    expected = expected_trading_day(f.now).isoformat()
-    lag = lag_of(as_of, f.now)
+    # 2026-11-23: 판정은 데이터 종류별 기대 기준일로 한다. 종목이 있으면 가장 늦은 종목(주식은 공식 종가 확정 시각, ETF는 마감 뒤), 없으면 지수.
+    priced = [it for it in (b.get("holdings") or []) + (b.get("watchlist") or []) if it.get("latest_date")]
+    if priced:
+        worst = max(priced, key=lambda it: (lag_of(it["latest_date"], f.now, item_kind(it)) or 0, it["latest_date"] != as_of))
+        kind = item_kind(worst)
+        lag = lag_of(worst["latest_date"], f.now, kind)
+        base = worst["latest_date"] if lag else as_of
+    else:
+        kind, base = DF.INDEX, as_of
+        lag = lag_of(as_of, f.now, kind)
+    expected = DF.expected_date(kind, f.now).isoformat()
+    pend = DF.status(kind, base, f.now) if base else None
     if as_of is None:
         status = STATUS_NO_DATA
     elif lag == 0:
@@ -111,16 +126,22 @@ def freshness(f: Facts) -> dict:
         status = STATUS_DELAYED
     else:
         status = STATUS_STALE
-    st = f.price_status or {}
+    st = (f.price_status or {}) if lag else {}  # 지연이 아니면 이유(미수집 등)를 붙이지 않는다
     sources = {}
     for key in ("kospi", "kosdaq", "usd_krw"):
         s = series_stats(f.index_series.get(key, []))
-        sources[key] = {"date": s["date"] if s else None, "lag_business_days": lag_of(s["date"], f.now) if s else None}
+        fs = DF.status(SOURCE_KINDS[key], s["date"] if s else None, f.now)
+        sources[key] = {"date": s["date"] if s else None, "lag_business_days": fs["lag_business_days"],
+                        "expected_date": fs["expected_date"], "pending_date": fs["pending_date"], "pending_due_at": fs["pending_due_at"]}
     return {
         "status": status,
         "data_as_of": as_of,
+        "base_date": base,
+        "basis_kind": kind,
         "expected_date": expected,
         "lag_business_days": lag,
+        "pending_date": pend["pending_date"] if pend and not lag else None,
+        "pending_due_at": pend["pending_due_at"] if pend and not lag else None,
         "price_status": st.get("status") if st.get("status") != PRICE_STATUS_LATEST else None,
         "price_status_detail": st.get("detail") or None,
         "sources": sources,
@@ -177,20 +198,29 @@ def _fresh_notices(fr: dict, L: str) -> tuple[str, list[str]]:
         head = tx.t("fresh_latest", L, base=fr["data_as_of"])
     else:
         key = "fresh_delayed" if fr["status"] == STATUS_DELAYED else "fresh_stale"
-        head = tx.t(key, L, lag=fr["lag_business_days"], base=fr["data_as_of"], exp=fr["expected_date"], why=why)
+        head = tx.t(key, L, lag=fr["lag_business_days"], base=fr.get("base_date") or fr["data_as_of"], exp=fr["expected_date"], why=why)
     extra = []
+    if fr.get("pending_date"):
+        extra.append(tx.t("fresh_pending", L, source=tx.t("src_prices", L), date=fr["pending_date"], at=_hhmm(fr["pending_due_at"])))
     names = {"kospi": "src_index_kospi", "kosdaq": "src_index_kosdaq", "usd_krw": "src_fx"}
     for key, s in fr["sources"].items():
         if s["date"] is None:
             extra.append(tx.t("fresh_source_none", L, source=tx.t(names[key], L)))
         elif s["lag_business_days"]:
             extra.append(tx.t("fresh_source_lag", L, source=tx.t(names[key], L), date=s["date"], lag=s["lag_business_days"]))
+        elif s.get("pending_date"):
+            extra.append(tx.t("fresh_pending", L, source=tx.t(names[key], L), date=s["pending_date"], at=_hhmm(s["pending_due_at"])))
     lr = fr["last_refresh"]
     if lr and not lr.get("ok") and lr.get("failed_steps"):
         extra.append(tx.t("fresh_refresh_failed", L, at=(lr.get("finished_at") or "")[:16].replace("T", " "), steps=", ".join(lr["failed_steps"])))
     if fr["intraday"]:
         extra.append(tx.t("fresh_intraday", L))
     return head, extra
+
+
+def _hhmm(iso: str | None) -> str:
+    """제공 예정 시각 표시(KST 'MM-DD HH:MM')."""
+    return datetime.fromisoformat(iso).astimezone(KST).strftime("%m-%d %H:%M") if iso else ""
 
 
 def _market(f: Facts, L: str) -> dict:
@@ -200,10 +230,13 @@ def _market(f: Facts, L: str) -> dict:
         name = tx.t(f"market_{key}", L)
         if s is None:
             items.append({"code": key, "name": name, "date": None, "close": None, "change_pct": None, "week_change_pct": None,
+                          "source": tx.t(f"src_label_{SOURCE_KINDS[key]}", L), "collected": False,
                           "text": tx.t("mkt_none", L, name=name)})
             continue
         close = tx.won(s["close"], L) if key == "usd_krw" else tx.num(s["close"], L)
-        items.append({"code": key, "name": name, **s, "lag_business_days": lag_of(s["date"], f.now),
+        items.append({"code": key, "name": name, **s, "lag_business_days": lag_of(s["date"], f.now, SOURCE_KINDS[key]),
+                      "expected_date": DF.expected_date(SOURCE_KINDS[key], f.now).isoformat(),
+                      "source": tx.t(f"src_label_{SOURCE_KINDS[key]}", L), "collected": True,
                       "text": tx.t("mkt_line", L, name=name, date=s["date"], close=close, d1=tx.pct(s["change_pct"], L),
                                    d5=tx.pct(s["week_change_pct"], L))})
     news = group_news(f.market_news, MARKET_NEWS_SHOWN)
@@ -237,7 +270,7 @@ def _item_common(it: dict, f: Facts, L: str, base: str | None) -> dict:
     is_etf = it["asset_type"] == "etf"
     return {
         "ticker": it["ticker"], "name": it["name"], "asset_type": it["asset_type"],
-        "latest_date": it["latest_date"], "lag_business_days": lag_of(it["latest_date"], f.now),
+        "latest_date": it["latest_date"], "lag_business_days": lag_of(it["latest_date"], f.now, item_kind(it)),
         "latest_close": it["latest_close"], "day_change_pct": it["day_change_pct"], "week_change_pct": it["week_change_pct"],
         "return_20d_pct": d20, "volume": it["volume"], "avg_volume_20d": it["avg_volume_20d"], "volume_ratio": it["volume_ratio"],
         "price_text": price_text, "notes": notes,

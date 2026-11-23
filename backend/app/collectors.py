@@ -959,54 +959,7 @@ def fetch_and_save_disclosures(
 
         print(f"[{company_name}] DART 공시 수집 중... (corp_code={corp_code})")
         items = fetch_dart_disclosures(corp_code, days=days)
-
-        candidates = []
-        not_company = 0  # 62차: 회사 명의가 아니라 뺀 수(CollectResult.skipped). 기존 저장 수 = fetched - skipped - saved - quarantined
-        for item in items:
-            # 임원/주요주주 개인 명의 공시는 제외하고, 회사 명의 공시만 저장
-            if item.get("flr_nm") != item.get("corp_name"):
-                not_company += 1
-                continue
-
-            source_url = f"https://dart.fss.or.kr/dsaf001/main.do?rcptNo={item.get('rcept_no')}"
-
-            # 중복 저장 방지 (source_url 기준). 정정 공시는 접수번호가 달라 원본과 별개 행으로 저장된다(원본을 덮어쓰지 않는다)
-            exists = db.query(Disclosure).filter(Disclosure.source_url == source_url).first()
-            if exists:
-                continue
-            candidates.append(item)
-
-        # 2026-11-08(36차): 저장 전 검증(접수번호·접수일·제목·종목 연결). 접수번호 날짜와 접수일 차이는 경고만 남긴다
-        checked = V.check_disclosures(company.ticker, candidates)
-        keep, bad = V.split(checked)
-        warned = sum(c.status == V.WARNING for c in keep)
-        to_insert = [
-            Disclosure(
-                company_id=company.id,
-                title=c.record["report_nm"].strip(),
-                disclosure_type=c.record["report_nm"].strip()[:50],
-                content=None,
-                source_url=f"https://dart.fss.or.kr/dsaf001/main.do?rcptNo={c.record['rcept_no']}",
-                disclosed_at=datetime.strptime(c.record["rcept_dt"], "%Y%m%d").replace(tzinfo=KST),
-            )
-            for c in keep
-        ]
-
-        if dry_run:
-            print(
-                f"[dry-run] 신규 저장 예정 {len(to_insert)}건 "
-                f"(전체 조회 {len(items)}건 중, 회사 명의만 필터링)"
-            )
-            return CollectResult(ok=True, saved=len(to_insert), fetched=len(items), records=to_insert,
-                                 quarantined=len(bad), warned=warned, skipped=not_company)
-
-        quarantine.record("disclosure", checked, {"ticker": company.ticker})
-        for record in to_insert:
-            db.add(record)
-        db.commit()
-        print(f"DB 저장 완료: 신규 {len(to_insert)}건 데이터 추가됨" + (f"(격리 {len(bad)}건)" if bad else ""))
-        return CollectResult(ok=True, saved=len(to_insert), fetched=len(items), quarantined=len(bad), warned=warned,
-                             skipped=not_company)
+        return store_disclosure_items(db, company, items, dry_run=dry_run)
     except Exception as e:
         db.rollback()
         msg = _safe_error(e)
@@ -1014,6 +967,58 @@ def fetch_and_save_disclosures(
         return CollectResult(ok=False, fetched=len(items), error=msg)
     finally:
         db.close()
+
+
+def store_disclosure_items(db, company, items: list[dict], dry_run: bool = False, via: str | None = None) -> CollectResult:
+    """DART 공시 목록 항목(items)을 기존 규칙으로 걸러 저장한다(2026-11-23: fetch_and_save_disclosures에서 분리, 클라우드 패키지 동기화가 재사용).
+    회사 명의만, source_url 중복 건너뜀, 저장 전 검증·격리. commit은 이 함수가 한다(dry_run이면 쓰지 않는다)."""
+    candidates = []
+    not_company = 0  # 62차: 회사 명의가 아니라 뺀 수(CollectResult.skipped). 기존 저장 수 = fetched - skipped - saved - quarantined
+    for item in items:
+        # 임원/주요주주 개인 명의 공시는 제외하고, 회사 명의 공시만 저장
+        if item.get("flr_nm") != item.get("corp_name"):
+            not_company += 1
+            continue
+
+        source_url = f"https://dart.fss.or.kr/dsaf001/main.do?rcptNo={item.get('rcept_no')}"
+
+        # 중복 저장 방지 (source_url 기준). 정정 공시는 접수번호가 달라 원본과 별개 행으로 저장된다(원본을 덮어쓰지 않는다)
+        exists = db.query(Disclosure).filter(Disclosure.source_url == source_url).first()
+        if exists:
+            continue
+        candidates.append(item)
+
+    # 2026-11-08(36차): 저장 전 검증(접수번호·접수일·제목·종목 연결). 접수번호 날짜와 접수일 차이는 경고만 남긴다
+    checked = V.check_disclosures(company.ticker, candidates)
+    keep, bad = V.split(checked)
+    warned = sum(c.status == V.WARNING for c in keep)
+    to_insert = [
+        Disclosure(
+            company_id=company.id,
+            title=c.record["report_nm"].strip(),
+            disclosure_type=c.record["report_nm"].strip()[:50],
+            content=None,
+            source_url=f"https://dart.fss.or.kr/dsaf001/main.do?rcptNo={c.record['rcept_no']}",
+            disclosed_at=datetime.strptime(c.record["rcept_dt"], "%Y%m%d").replace(tzinfo=KST),
+        )
+        for c in keep
+    ]
+
+    if dry_run:
+        print(
+            f"[dry-run] 신규 저장 예정 {len(to_insert)}건 "
+            f"(전체 조회 {len(items)}건 중, 회사 명의만 필터링)"
+        )
+        return CollectResult(ok=True, saved=len(to_insert), fetched=len(items), records=to_insert,
+                             quarantined=len(bad), warned=warned, skipped=not_company)
+
+    quarantine.record("disclosure", checked, {"ticker": company.ticker, **({"via": via} if via else {})})
+    for record in to_insert:
+        db.add(record)
+    db.commit()
+    print(f"DB 저장 완료: 신규 {len(to_insert)}건 데이터 추가됨" + (f"(격리 {len(bad)}건)" if bad else ""))
+    return CollectResult(ok=True, saved=len(to_insert), fetched=len(items), quarantined=len(bad), warned=warned,
+                         skipped=not_company)
 
 
 if __name__ == "__main__":
