@@ -653,11 +653,39 @@ def fetch_and_save_market_index(
 # 환율(FR-07, 1차 범위는 환율만 - 금리는 쓸 만한 무료 소스를 찾지 못해 범위 밖). market_index와 달리 FDR이
 # 통화쌍에는 Change 컬럼을 주지 않아서(실제 호출로 확인), 종가의 일별 변화율을 직접 계산한다.
 _EXCHANGE_RATE_COLUMNS = ("close_price", "change_pct")
+# FDR 통화쌍 원천은 Yahoo(KRW=X)다. 일봉 하루는 런던 시각 0시~24시이고(meta exchangeTimezoneName=Europe/London), 그날 봉은
+# 런던 자정이 지나기 전까지 실시간으로 바뀐다(2026-11-23 21:20 KST 확인: 11-23 봉 타임스탬프 = 마지막 체결 시각 12:19 UTC).
+FX_SOURCE_TZ = ZoneInfo("Europe/London")
 
 
-def fetch_and_save_exchange_rate(pair_code: str, days: int = 180, dry_run: bool = False) -> CollectResult:
-    """FinanceDataReader로 환율 일별 종가를 받아 exchange_rate에 upsert한다(멱등). pair_code 예: 'USD/KRW'."""
-    today = datetime.now(KST)
+def fx_bar_complete(day: date, now: datetime) -> bool:
+    """day 날짜로 받은 일봉이 끝났는가(런던 시각으로 day 다음 날 0시가 지났는가). now는 tz 있는 시각."""
+    return now >= datetime.combine(day + timedelta(days=1), datetime.min.time(), tzinfo=FX_SOURCE_TZ)
+
+
+def fx_records(df, prev_close: float | None, now: datetime) -> tuple[list[dict], list[date]]:
+    """FDR 환율 DataFrame -> (저장할 레코드, 끝나지 않아 뺀 날짜). 날짜 정규화는 예전과 같다(index.date(), 주말 행 처리도 그대로).
+
+    2026-11-23: (1) 아직 끝나지 않은 일봉(실시간 값)은 그날 종가가 아니므로 저장하지 않는다.
+    (2) 조회 구간 첫 행의 등락률은 DB의 직전 종가(prev_close)로 계산한다. 예전에는 첫 행이 None이라 upsert가 이미 저장된
+    그날의 등락률을 NULL로 덮어썼다."""
+    df = df.dropna(subset=["Close"]).sort_index()
+    rows = [(idx.date(), round(float(close), 2)) for idx, close in zip(df.index, df["Close"])]
+    incomplete = [d for d, _ in rows if not fx_bar_complete(d, now)]
+    records, prev = [], prev_close
+    for d, close in rows:
+        if d in incomplete:
+            continue
+        records.append({"price_date": d, "close_price": close,
+                        "change_pct": round((close / prev - 1) * 100, 2) if prev else None})
+        prev = close
+    return records, incomplete
+
+
+def fetch_and_save_exchange_rate(pair_code: str, days: int = 180, dry_run: bool = False,
+                                 now: datetime | None = None) -> CollectResult:
+    """FinanceDataReader로 환율 일별 종가를 받아 exchange_rate에 upsert한다(멱등). pair_code 예: 'USD/KRW'. now(KST)는 테스트용."""
+    today = krx_calendar_now(now)
     start_date = (today - timedelta(days=days)).strftime("%Y-%m-%d")
     end_date = today.strftime("%Y-%m-%d")
 
@@ -666,23 +694,21 @@ def fetch_and_save_exchange_rate(pair_code: str, days: int = 180, dry_run: bool 
     except Exception as e:
         return CollectResult(ok=False, error=_safe_error(e))
 
-    if df is None or df.empty:
+    if df is None or df.empty or df["Close"].dropna().empty:
         return CollectResult(ok=False, error=f"'{pair_code}'의 {start_date}~{end_date} 환율 데이터를 받지 못했습니다.")
 
-    df = df.dropna(subset=["Close"]).sort_index()
-    change_pct = df["Close"].pct_change() * 100
-    records = [
-        {
-            "price_date": idx.date(),
-            "close_price": round(float(close), 2),
-            # 첫 행은 전일 데이터가 없어 NaN(pandas 결측 비교는 자기 자신과도 다름을 이용해 None 처리).
-            "change_pct": None if pct != pct else round(float(pct), 2),
-        }
-        for idx, close, pct in zip(df.index, df["Close"], change_pct)
-    ]
-
+    records: list[dict] = []
     db = SessionLocal()
     try:
+        first_day = df.dropna(subset=["Close"]).index.min().date()
+        prev0 = db.query(ExchangeRate.close_price).filter(
+            ExchangeRate.pair_code == pair_code, ExchangeRate.price_date < first_day
+        ).order_by(ExchangeRate.price_date.desc()).limit(1).scalar()
+        records, incomplete = fx_records(df, float(prev0) if prev0 is not None else None, today)
+        for d in incomplete:
+            print(f"[exchange_rate {pair_code}] {d} 일봉은 아직 끝나지 않아(런던 시각 기준) 저장하지 않음")
+        if not records:
+            return CollectResult(ok=True, saved=0, fetched=0)
         existing = {
             row.price_date: (float(row.close_price), None if row.change_pct is None else float(row.change_pct))
             for row in db.query(ExchangeRate).filter(
@@ -698,6 +724,11 @@ def fetch_and_save_exchange_rate(pair_code: str, days: int = 180, dry_run: bool 
         warned, fetched = sum(c.status == V.WARNING for c in keep), len(records)
         records = [c.record for c in keep]
         new = [r for r in records if r["price_date"] not in existing]
+        changed = [r["price_date"].isoformat() for r in records if r["price_date"] in existing
+                   and existing[r["price_date"]] != (r["close_price"], r["change_pct"])]
+        print(f"[exchange_rate {pair_code}] {records[0]['price_date'] if records else '-'}~{records[-1]['price_date'] if records else '-'}: "
+              f"신규 {len(new)}건, 값 갱신 {len(changed)}건{' ' + str(changed) if changed else ''}, 격리 {len(bad)}건"
+              + (" (dry-run)" if dry_run else ""))
         if dry_run:
             return CollectResult(ok=True, saved=len(new), fetched=fetched, quarantined=len(bad), warned=warned)
         quarantine.record("exchange_rate", checked, {"pair_code": pair_code})
