@@ -111,13 +111,14 @@ def freshness(f: Facts) -> dict:
     if priced:
         worst = max(priced, key=lambda it: (lag_of(it["latest_date"], f.now, item_kind(it)) or 0, it["latest_date"] != as_of))
         kind = item_kind(worst)
-        lag = lag_of(worst["latest_date"], f.now, kind)
-        base = worst["latest_date"] if lag else as_of
+        worst_date = worst["latest_date"]
+        lag = lag_of(worst_date, f.now, kind)
+        base = worst_date if lag else as_of
     else:
-        kind, base = DF.INDEX, as_of
+        kind, base, worst_date = DF.INDEX, as_of, as_of
         lag = lag_of(as_of, f.now, kind)
     expected = DF.expected_date(kind, f.now).isoformat()
-    pend = DF.status(kind, base, f.now) if base else None
+    pend = DF.status(kind, worst_date, f.now) if worst_date else None
     if as_of is None:
         status = STATUS_NO_DATA
     elif lag == 0:
@@ -200,7 +201,7 @@ def _fresh_notices(fr: dict, L: str) -> tuple[str, list[str]]:
         key = "fresh_delayed" if fr["status"] == STATUS_DELAYED else "fresh_stale"
         head = tx.t(key, L, lag=fr["lag_business_days"], base=fr.get("base_date") or fr["data_as_of"], exp=fr["expected_date"], why=why)
     extra = []
-    if fr.get("pending_date"):
+    if fr.get("pending_date") and fr.get("basis_kind") != DF.INDEX:  # 지수 기준이면 아래 지수별 안내와 겹친다
         extra.append(tx.t("fresh_pending", L, source=tx.t("src_prices", L), date=fr["pending_date"], at=_hhmm(fr["pending_due_at"])))
     names = {"kospi": "src_index_kospi", "kosdaq": "src_index_kosdaq", "usd_krw": "src_fx"}
     for key, s in fr["sources"].items():

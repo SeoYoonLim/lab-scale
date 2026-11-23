@@ -331,3 +331,20 @@ def test_news_failure_does_not_mark_prices_delayed():
     fr = dbf.freshness(f)
     assert fr["status"] == "latest" and fr["lag_business_days"] == 0
     assert fr["sources"]["usd_krw"]["date"] is None and fr["sources"]["kospi"]["lag_business_days"] == 0
+
+
+def test_stock_holding_waits_for_official_close_without_delay_warning():
+    from app import daily_briefing as dbf
+
+    s = [(date(2026, 11, 20) - timedelta(days=i), 100.0 + i) for i in range(8)]
+    brief = {"data_date": "2026-11-23", "holdings": [{"ticker": "005930", "asset_type": "stock", "latest_date": "2026-11-20"},
+                                                     {"ticker": "069500", "asset_type": "etf", "latest_date": "2026-11-23"}], "watchlist": []}
+    f = dbf.Facts(now=at(2026, 11, 23, 21, 50), timezone="Asia/Seoul", brief=brief, index_series={"kospi": s, "kosdaq": s, "usd_krw": s})
+    fr = dbf.freshness(f)
+    assert fr["status"] == "latest" and fr["basis_kind"] == "stock" and fr["pending_date"] == "2026-11-23"
+    head, notices = dbf._fresh_notices(fr, "ko-KR")
+    assert any(n.startswith("시세 2026-11-23 데이터는 정상 제공 시각(11-24 10:00)") for n in notices)
+    # 다음 날 10:00이 지나도 주식 11-23 종가가 없으면 그때부터 지연
+    late = dbf.freshness(dbf.Facts(now=at(2026, 11, 24, 10, 30), timezone="Asia/Seoul", brief=brief,
+                                   index_series={"kospi": s, "kosdaq": s, "usd_krw": s}))
+    assert late["status"] == "delayed" and late["lag_business_days"] == 1 and late["base_date"] == "2026-11-20"

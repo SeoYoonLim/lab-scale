@@ -149,4 +149,6 @@ jobs:
           echo "게시: ${{ steps.mode.outputs.publish }} / 수집 종료 코드: ${{ steps.collect.outputs.code }}" >> "$GITHUB_STEP_SUMMARY"
           if [ -f summary.json ]; then
             echo '```json' >> "$GITHUB_STEP_SUMMARY"; cat summary.json >> "$GITHUB_STEP_SUMMARY"; echo '```' >> "$GITHUB_STEP_SUMMARY"
+            # 로그인 없이(공개 API의 check-run annotations) 구역별 결과를 볼 수 있게 한 줄씩 남긴다(비밀값 없음)
+            python -c "import json; s=json.load(open('summary.json', encoding='utf-8')); [print(f'::notice title=market-data {k}::{v.get(\"status\")} rows={v.get(\"rows\")} ok={v.get(\"succeeded\")}/{v.get(\"targets\")} range={v.get(\"date_range\")}') for k, v in s['sections'].items()]; print('::notice title=market-data data_date::' + str(s.get('data_date')) + ' published=' + str(s.get('published')))"
           fi
