@@ -187,8 +187,8 @@ def apply_prices(db, rows: list[dict], dry_run: bool, today: date) -> SectionRes
             continue
         quarantine.record("stock_price", checked, {"ticker": ticker, "via": STEP})
         stmt = pg_insert(StockPrice).values([{**x, "company_id": c.id} for x in recs]).on_conflict_do_nothing(
-            constraint="uq_stock_price_company_date")
-        res.inserted += db.execute(stmt).rowcount or 0
+            constraint="uq_stock_price_company_date").returning(StockPrice.id)
+        res.inserted += len(db.execute(stmt).all())  # rowcount는 묶음 INSERT에서 -1일 수 있어 RETURNING으로 센다
     if not dry_run:
         db.commit()
     res.latest_date = max((r["date"] for r in rows), default=None)
@@ -250,8 +250,8 @@ def _apply_series(db, rows: list[dict], dry_run: bool, today: date, kind: str) -
         quarantine.record("market_index" if kind == "index" else "exchange_rate", checked,
                           {("index_code" if kind == "index" else "pair_code"): code, "via": STEP})
         col = "index_code" if kind == "index" else "pair_code"
-        stmt = pg_insert(Model).values([{**x, col: code} for x in recs]).on_conflict_do_nothing(constraint=constraint)
-        res.inserted += db.execute(stmt).rowcount or 0
+        stmt = pg_insert(Model).values([{**x, col: code} for x in recs]).on_conflict_do_nothing(constraint=constraint).returning(Model.id)
+        res.inserted += len(db.execute(stmt).all())
     if not dry_run:
         db.commit()
     res.latest_date = max((r["date"] for r in rows), default=None)

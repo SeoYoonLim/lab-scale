@@ -52,7 +52,7 @@ jobs:
       PYTHONUTF8: "1"
       TZ: Asia/Seoul
       # DB를 쓰지 않는다. 실수로 연결하려 하면 바로 실패하도록 닫힌 주소
-      DATABASE_URL: postgresql+psycopg://none:none@127.0.0.1:1/none
+      DATABASE_URL: postgresql+psycopg://dummy:dummy@127.0.0.1:1/dummy
       MARKET_DATA_KEY: ${{ secrets.MARKET_DATA_KEY }}
       NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
       NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
