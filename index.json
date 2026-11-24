@@ -57,6 +57,57 @@
      ]
     }
    }
+  },
+  {
+   "manifest": "packages/2026-11-23/20261124T103737-local/manifest.json",
+   "data_date": "2026-11-23",
+   "generated_at_kst": "2026-11-24T10:37:37.237054+09:00",
+   "complete": true,
+   "schema_version": 1,
+   "sections": {
+    "stocks": {
+     "status": "skipped",
+     "rows": 0,
+     "date_range": null
+    },
+    "etfs": {
+     "status": "ok",
+     "rows": 300,
+     "date_range": [
+      "2026-11-16",
+      "2026-11-23"
+     ]
+    },
+    "indices": {
+     "status": "ok",
+     "rows": 20,
+     "date_range": [
+      "2026-11-10",
+      "2026-11-23"
+     ]
+    },
+    "fx": {
+     "status": "skipped",
+     "rows": 0,
+     "date_range": null
+    },
+    "news": {
+     "status": "ok",
+     "rows": 8279,
+     "date_range": [
+      "2026-11-23",
+      "2026-11-24"
+     ]
+    },
+    "disclosures": {
+     "status": "ok",
+     "rows": 124,
+     "date_range": [
+      "2026-11-23",
+      "2026-11-24"
+     ]
+    }
+   }
   }
  ]
 }

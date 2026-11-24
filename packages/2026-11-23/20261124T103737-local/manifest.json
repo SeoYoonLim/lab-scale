@@ -1,0 +1,103 @@
+{
+ "schema_version": 1,
+ "package_version": 1,
+ "data_date": "2026-11-23",
+ "is_trading_day": true,
+ "generated_at_kst": "2026-11-24T10:37:37.237054+09:00",
+ "run": {
+  "runner": "local",
+  "elapsed_sec": 298.1
+ },
+ "encryption": {
+  "scheme": "hmac-sha256-ctr+hmac-sha256/v1",
+  "key_id": "5d48e981"
+ },
+ "complete": true,
+ "sections": {
+  "stocks": {
+   "status": "skipped",
+   "note": "수집하지 않음",
+   "failures": [],
+   "rows": 0,
+   "date_range": null
+  },
+  "etfs": {
+   "status": "ok",
+   "source": "네이버 일별 시세 + FinanceDataReader",
+   "targets": 50,
+   "succeeded": 50,
+   "failed": 0,
+   "note": "장 마감 전 최신일은 저장하지 않는다(보류 50건)",
+   "failures": [],
+   "rows": 300,
+   "date_range": [
+    "2026-11-16",
+    "2026-11-23"
+   ],
+   "file": "etfs_2026-11-23.json.gz.enc",
+   "sha256_plain": "a27b91a71727bdec6af91e6b15b99fcbe8047f0fd4a37294748e400c7c37cccf",
+   "sha256_file": "cde423f2a8f5f1791e78aad43ca1d8a38cdb88272af915d11bc18511a4ae4f03",
+   "bytes": 8571
+  },
+  "indices": {
+   "status": "ok",
+   "source": "FinanceDataReader KRX 지수 캐시(폴백 FDR 별칭·Yahoo) + 네이버 지수 일별 대조",
+   "targets": 2,
+   "succeeded": 2,
+   "failed": 0,
+   "failures": [],
+   "rows": 20,
+   "date_range": [
+    "2026-11-10",
+    "2026-11-23"
+   ],
+   "file": "indices_2026-11-23.json.gz.enc",
+   "sha256_plain": "912e9f5589cf9ea392d752bbd5fd6da3594a6d3a923685e30213940fd27e7546",
+   "sha256_file": "2904f2e97940eee6e8291cacce3de6bb68201b971409a6284d7ce5231694ad84",
+   "bytes": 438
+  },
+  "fx": {
+   "status": "skipped",
+   "note": "수집하지 않음",
+   "failures": [],
+   "rows": 0,
+   "date_range": null
+  },
+  "news": {
+   "status": "ok",
+   "source": "네이버 뉴스 검색 API(제목·링크·요약·게시 시각만, 기사 본문 없음)",
+   "targets": 350,
+   "succeeded": 350,
+   "failed": 0,
+   "note": "기간 2026-11-23~2026-11-24 KST, 종목당 최신 최대 40건",
+   "failures": [],
+   "rows": 8279,
+   "date_range": [
+    "2026-11-23",
+    "2026-11-24"
+   ],
+   "file": "news_2026-11-23.json.gz.enc",
+   "sha256_plain": "88058833e3c9440359141981503986e2dede52bd7f82c69921730b5fdc2ef75d",
+   "sha256_file": "2f7aeae029e6fbd6cac1af928852a775d5d9abdc93a46f5d1d2799072735967f",
+   "bytes": 1218606
+  },
+  "disclosures": {
+   "status": "ok",
+   "source": "DART OpenAPI 공시 목록(list.json)",
+   "targets": 300,
+   "succeeded": 300,
+   "failed": 0,
+   "note": "최근 3일 접수분",
+   "failures": [],
+   "rows": 124,
+   "date_range": [
+    "2026-11-23",
+    "2026-11-24"
+   ],
+   "file": "disclosures_2026-11-23.json.gz.enc",
+   "sha256_plain": "e92c50d8eac37afe5d577e0fb1aebd2b6dbc1b3eb852c4b9f3f1495c8705cbfc",
+   "sha256_file": "9ef838f67262e2b04ff7d3c978ca03fa298081f53b647447f2627cd88d44082a",
+   "bytes": 3611
+  }
+ }
+}

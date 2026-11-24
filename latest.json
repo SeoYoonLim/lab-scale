@@ -1,23 +1,20 @@
 {
- "manifest": "packages/2026-11-23/20261123T215913-local/manifest.json",
+ "manifest": "packages/2026-11-23/20261124T103737-local/manifest.json",
  "data_date": "2026-11-23",
- "generated_at_kst": "2026-11-23T21:59:13.009833+09:00",
+ "generated_at_kst": "2026-11-24T10:37:37.237054+09:00",
  "complete": true,
  "schema_version": 1,
  "sections": {
   "stocks": {
-   "status": "ok",
-   "rows": 1800,
-   "date_range": [
-    "2026-11-13",
-    "2026-11-20"
-   ]
+   "status": "skipped",
+   "rows": 0,
+   "date_range": null
   },
   "etfs": {
    "status": "ok",
-   "rows": 350,
+   "rows": 300,
    "date_range": [
-    "2026-11-13",
+    "2026-11-16",
     "2026-11-23"
    ]
   },
@@ -25,32 +22,29 @@
    "status": "ok",
    "rows": 20,
    "date_range": [
-    "2026-11-09",
-    "2026-11-20"
+    "2026-11-10",
+    "2026-11-23"
    ]
   },
   "fx": {
-   "status": "ok",
-   "rows": 7,
-   "date_range": [
-    "2026-11-12",
-    "2026-11-20"
-   ]
+   "status": "skipped",
+   "rows": 0,
+   "date_range": null
   },
   "news": {
    "status": "ok",
-   "rows": 8076,
+   "rows": 8279,
    "date_range": [
-    "2026-11-22",
-    "2026-11-23"
+    "2026-11-23",
+    "2026-11-24"
    ]
   },
   "disclosures": {
    "status": "ok",
-   "rows": 248,
+   "rows": 124,
    "date_range": [
-    "2026-11-20",
-    "2026-11-23"
+    "2026-11-23",
+    "2026-11-24"
    ]
   }
  }
