@@ -1,0 +1,71 @@
+{
+ "schema_version": 1,
+ "package_version": 1,
+ "data_date": "2026-11-23",
+ "is_trading_day": true,
+ "generated_at_kst": "2026-11-24T11:19:03.083905+09:00",
+ "run": {
+  "runner": "local",
+  "elapsed_sec": 1.6
+ },
+ "encryption": {
+  "scheme": "hmac-sha256-ctr+hmac-sha256/v1",
+  "key_id": "5d48e981"
+ },
+ "complete": true,
+ "sections": {
+  "stocks": {
+   "status": "skipped",
+   "note": "수집하지 않음",
+   "failures": [],
+   "rows": 0,
+   "date_range": null
+  },
+  "etfs": {
+   "status": "skipped",
+   "note": "수집하지 않음",
+   "failures": [],
+   "rows": 0,
+   "date_range": null
+  },
+  "indices": {
+   "status": "skipped",
+   "note": "수집하지 않음",
+   "failures": [],
+   "rows": 0,
+   "date_range": null
+  },
+  "fx": {
+   "status": "ok",
+   "source": "Yahoo Finance KRW=X(FinanceDataReader)",
+   "targets": 1,
+   "succeeded": 1,
+   "failed": 0,
+   "note": "일봉 기준 시각: 런던(Europe/London) 하루",
+   "failures": [],
+   "rows": 7,
+   "date_range": [
+    "2026-11-13",
+    "2026-11-23"
+   ],
+   "file": "fx_2026-11-23.json.gz.enc",
+   "sha256_plain": "0c1583cdc46288e11008b50ef3fa913d7009e6f67cdc394e1205be07cbf6907e",
+   "sha256_file": "82970843a140e93cc966716adc1b0b28991093d5e2d35cedecab4a9ab3c4bfd3",
+   "bytes": 262
+  },
+  "news": {
+   "status": "skipped",
+   "note": "수집하지 않음",
+   "failures": [],
+   "rows": 0,
+   "date_range": null
+  },
+  "disclosures": {
+   "status": "skipped",
+   "note": "수집하지 않음",
+   "failures": [],
+   "rows": 0,
+   "date_range": null
+  }
+ }
+}
