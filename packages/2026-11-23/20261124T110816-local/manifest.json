@@ -1,0 +1,104 @@
+{
+ "schema_version": 1,
+ "package_version": 1,
+ "data_date": "2026-11-23",
+ "is_trading_day": true,
+ "generated_at_kst": "2026-11-24T11:08:16.461821+09:00",
+ "run": {
+  "runner": "local",
+  "elapsed_sec": 488.3
+ },
+ "encryption": {
+  "scheme": "hmac-sha256-ctr+hmac-sha256/v1",
+  "key_id": "5d48e981"
+ },
+ "complete": true,
+ "sections": {
+  "stocks": {
+   "status": "ok",
+   "source": "네이버 일별 시세(m.stock.naver.com) 공식 종가 복원 + FinanceDataReader 원천 행",
+   "targets": 300,
+   "succeeded": 300,
+   "failed": 0,
+   "note": "최신 거래일 주식 종가는 다음 거래일 기준가로 확정한다(보류 300종목·일)",
+   "failures": [],
+   "rows": 1800,
+   "date_range": [
+    "2026-11-16",
+    "2026-11-23"
+   ],
+   "file": "stocks_2026-11-23.json.gz.enc",
+   "sha256_plain": "ccbc472fd3ef84fc79783bfe81c86481a484d2321d989c9abe8f0d8b26ce0fdc",
+   "sha256_file": "94f1ab3378690a904f0a5a9b9eaa4ac219193eeba896659686086a3feda6ce85",
+   "bytes": 45418
+  },
+  "etfs": {
+   "status": "ok",
+   "source": "네이버 일별 시세 + FinanceDataReader",
+   "targets": 50,
+   "succeeded": 50,
+   "failed": 0,
+   "note": "장 마감 전 최신일은 저장하지 않는다(보류 50건)",
+   "failures": [],
+   "rows": 300,
+   "date_range": [
+    "2026-11-16",
+    "2026-11-23"
+   ],
+   "file": "etfs_2026-11-23.json.gz.enc",
+   "sha256_plain": "a27b91a71727bdec6af91e6b15b99fcbe8047f0fd4a37294748e400c7c37cccf",
+   "sha256_file": "4f09fff0befd12f3ee44bd6be78a4c61a1c7d10411064aa68a7f7bc7c5cba700",
+   "bytes": 8571
+  },
+  "indices": {
+   "status": "skipped",
+   "note": "수집하지 않음",
+   "failures": [],
+   "rows": 0,
+   "date_range": null
+  },
+  "fx": {
+   "status": "skipped",
+   "note": "수집하지 않음",
+   "failures": [],
+   "rows": 0,
+   "date_range": null
+  },
+  "news": {
+   "status": "ok",
+   "source": "네이버 뉴스 검색 API(제목·링크·요약·게시 시각만, 기사 본문 없음)",
+   "targets": 350,
+   "succeeded": 350,
+   "failed": 0,
+   "note": "기간 2026-11-23~2026-11-24 KST, 종목당 최신 최대 40건",
+   "failures": [],
+   "rows": 8317,
+   "date_range": [
+    "2026-11-23",
+    "2026-11-24"
+   ],
+   "file": "news_2026-11-23.json.gz.enc",
+   "sha256_plain": "360763fd7df2ec1dae03b4861b2f1e45970dc77391b0c97788a664a19588efda",
+   "sha256_file": "fe76644062ce5568b6c706249bcecaee484f04c7ee6d3e0d82d1117039ca6027",
+   "bytes": 1225263
+  },
+  "disclosures": {
+   "status": "ok",
+   "source": "DART OpenAPI 공시 목록(list.json)",
+   "targets": 300,
+   "succeeded": 300,
+   "failed": 0,
+   "note": "최근 3일 접수분",
+   "failures": [],
+   "rows": 129,
+   "date_range": [
+    "2026-11-23",
+    "2026-11-24"
+   ],
+   "file": "disclosures_2026-11-23.json.gz.enc",
+   "sha256_plain": "20528d0bdc45ffb3d35372e802e466854db94f6ab1b73804b545cc497526c5c6",
+   "sha256_file": "370f5c9d0c80616d0f86962aad362ab6315246c07570de411ecf19ff326e87de",
+   "bytes": 3740
+  }
+ }
+}
